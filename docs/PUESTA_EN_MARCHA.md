@@ -83,7 +83,9 @@ Aplicado el 2026-10-19. Se deja escrito para poder rehacerlo.
      - conversaciones resueltas antes de integrar;
      - sin force push ni borrado.
 
-     **Al cerrar el hito 1 se añade:** exigir que pase el CI.
+     **Tras integrar el PR 1 del hito 1 se añade:** exigir que pasen los
+     checks del CI `checks (3.14)`, `checks (3.15)` y `secrets` (spec del
+     hito 1, §6).
    - **tags de versión** (`v*`): no se mueven ni se borran.
 
 ## 6. Agente de código
