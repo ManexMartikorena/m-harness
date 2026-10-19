@@ -53,20 +53,19 @@ Lo más reciente primero.
 ## Siguiente paso
 
 1. **Humano:** revisar el PR de la spec del hito 1
-   (`docs/specs/hito-1-esqueleto.md`), contestar la decisión abierta 13
-   (Windows nativo o WSL2, y job de Windows en el CI) e integrarlo, que es
-   aprobarla.
-2. **Agente:** implementar el PR 1 del hito 1 (`feature/hito-1-esqueleto`),
-   en el orden de piezas de la spec (§6).
+   (`docs/specs/hito-1-esqueleto.md`) e integrarlo, que es aprobarla.
+2. **Humano:** en este PC, instalar Ubuntu 26.04 en WSL2, clonar el repo en
+   `~/` y preparar ahí git, gh, uv y el agente (spec §1.14 y §8;
+   `docs/PUESTA_EN_MARCHA.md` §1 y §6).
+3. **Agente**, desde ese clon: implementar el PR 1 del hito 1
+   (`feature/hito-1-esqueleto`), en el orden de piezas de la spec (§6).
 
 ## Pendientes / decisiones abiertas
 
 **Para el hito 1:**
 - Tras integrar su PR 1, añadir al ruleset "main protegida" los checks
   obligatorios del CI (spec del hito 1, §6).
-- Actualizar uv a 0.13.1 o posterior en cada PC: el hito 1 lo exige
-  (spec §1.1). En este PC hay 0.12.17.
-- Decisión abierta 13 de la spec: Windows nativo o WSL2 en este PC.
+- uv 0.13.1 o posterior en cada PC: el hito 1 lo exige (spec §1.1).
 
 **Externas, con el hito en que bloquean:**
 - **Proveedor de modelos** (hito 2): suscripción propia a OpenCode Go (un solo
