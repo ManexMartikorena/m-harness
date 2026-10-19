@@ -1,0 +1,29 @@
+# Credenciales
+.env
+.env.*
+!.env.example
+
+# Datos sensibles: nunca en el repo
+datos/
+
+# Editores y sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Agentes de código: solo la configuración compartida viaja por git
+.claude/settings.local.json
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
