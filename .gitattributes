@@ -1,0 +1,7 @@
+# Fin de línea LF en el repo para todos los PCs (Windows y Linux)
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
+*.bin binary
+*.elf binary
