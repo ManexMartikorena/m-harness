@@ -23,6 +23,12 @@ variable nueva o un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **GitHub configurado, 2026-10-19.**
+  - Solo merge commit; las ramas integradas se conservan.
+  - `main` y los tags `v*` protegidos con rulesets.
+  - Alertas de seguridad activadas.
+
+  Detalle en `docs/PUESTA_EN_MARCHA.md` §5.
 - **Repositorio público creado y primer push, 2026-10-19.** Un commit por
   fichero fundacional.
 - **Documentos fundacionales, 2026-10-19:**
@@ -46,15 +52,15 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** aplicar los ajustes de GitHub (`docs/PUESTA_EN_MARCHA.md` §5,
-   punto 2). La regla que exige el CI se activa al cerrar el hito 1.
-2. **Agente:** escribir la spec del hito 1 (`docs/specs/hito-1-esqueleto.md`)
+1. **Agente:** escribir la spec del hito 1 (`docs/specs/hito-1-esqueleto.md`)
    con `docs/specs/PLANTILLA.md`, en su propio PR.
-3. **Humano:** revisarla e integrarla, que es aprobarla.
+2. **Humano:** revisarla e integrarla, que es aprobarla.
 
 ## Pendientes / decisiones abiertas
 
 **Para el hito 1:**
+- Al cerrarlo, añadir al ruleset "main protegida" la exigencia de que pase el
+  CI.
 - Versiones exactas de uv, ruff, mypy, pytest, pytest-asyncio, import-linter,
   pre-commit y gitleaks, comprobadas el día de la spec.
 

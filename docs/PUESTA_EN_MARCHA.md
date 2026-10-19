@@ -62,16 +62,27 @@ uv run pytest
 
 ## 5. GitHub (una vez por repositorio)
 
-1. Crear el repo público `ManexMartikorena/m-harness` y hacer el primer push.
-2. En *Settings*:
-   - **General → Pull Requests:**
-     - dejar solo *Allow merge commits*;
-     - activar *Automatically delete head branches*.
-   - **Advanced Security:** comprobar que *Secret scanning* y *Push protection*
-     están activados.
-   - **Rules → regla para `main`:**
-     - exigir PR antes de integrar;
-     - exigir que pase el CI, desde el hito 1, cuando exista el workflow.
+Aplicado el 2026-10-19. Se deja escrito para poder rehacerlo.
+
+1. Repo público `ManexMartikorena/m-harness`, con descripción y topics.
+2. *Settings → General:*
+   - **Pull Requests:**
+     - solo *Allow merge commits*, con el título y la descripción del PR como
+       mensaje;
+     - *Always suggest updating pull request branches*;
+     - *Automatically delete head branches* **desactivado**: las ramas
+       integradas se conservan.
+   - Sin Wiki ni Projects.
+3. *Advanced Security:* secret scanning, push protection, alertas de
+   Dependabot y reporte privado de vulnerabilidades, activados.
+4. *Rules → Rulesets:*
+   - **main protegida:**
+     - solo por PR y solo merge commit;
+     - conversaciones resueltas antes de integrar;
+     - sin force push ni borrado.
+
+     **Al cerrar el hito 1 se añade:** exigir que pase el CI.
+   - **tags de versión** (`v*`): no se mueven ni se borran.
 
 ## 6. Agente de código
 
