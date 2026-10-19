@@ -117,9 +117,9 @@ Desde el hito 8 (DESIGN §9).
 
   **Todo entra en `main` por PR**, también los ajustes menores de docs: `main`
   está protegida.
-- Una rama mergeada se BORRA, en local y en origin (GitHub la borra sola al
-  integrar el PR). El historial vive en `main`. Por eso los documentos citan
-  commits por hash, no por rama.
+- Una rama integrada se CONSERVA en GitHub como registro visible de la
+  construcción, y no se vuelve a usar. En local se borra tras el merge. Los
+  documentos citan commits por hash, no por rama. *(Adaptado, DESIGN §15.)*
 - Versiones: tag anotado sobre el commit de `main` que cierra un hito, y push
   del tag. El tag dispara el workflow que crea la GitHub Release.
   - Desarrollo: un tag `v0.N.0` por hito, con el número del hito.
@@ -164,7 +164,8 @@ Desde el hito 8 (DESIGN §9).
   `gh pr create`) cuando el humano se lo pide en esa sesión.
 - **Integración con merge commit**, desde GitHub y solo con el CI en verde.
   Nunca squash ni rebase and merge.
-- Tras el merge: `git switch main && git pull` y borrar la rama local.
+- Tras el merge: `git switch main && git pull` y borrar la rama local. La rama
+  de GitHub se conserva.
 
 ## Ciclo de cada cambio (hitos y mejoras)
 1. **Entender antes de escribir.** Leer el código que se va a tocar y la
@@ -190,8 +191,8 @@ Desde el hito 8 (DESIGN §9).
 7. **Cierre.**
    1. La spec pasa a IMPLEMENTADA, con su sección "Aprendido al implementar".
    2. Se escribe la nota del hito en docs/guia/.
-   3. Los PRs se integran con merge commit y la rama se borra en local y en
-      origin.
+   3. Los PRs se integran con merge commit. La rama se borra en local y se
+      conserva en GitHub.
    4. Se crea el tag y el humano hace push del tag.
 
    *(Adaptado, DESIGN §15.)*
