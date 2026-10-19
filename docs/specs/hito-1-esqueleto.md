@@ -39,7 +39,8 @@ Dentro de alcance:
 - Dependencias de ejecución (Pydantic, httpx, Rich…): cada una llega con la
   pieza que la usa, desde el hito 2.
 - respx y `tests/fakes/`: hito 2, con el primer adaptador HTTP.
-- CI en Windows o macOS: ver §10 (riesgos) y la decisión abierta de §11.
+- Windows nativo y macOS: la plataforma es Linux, y en Windows se trabaja
+  con WSL2 (ANALISIS §7). Ver §1.14.
 - Ficheros adjuntos a la release (wheel) y PyPI: fuera de v1 (DESIGN §13).
 - Actualización automática de versiones (Dependabot version updates,
   Renovate): se valora cuando haya dependencias de ejecución.
@@ -71,7 +72,8 @@ cada proyecto.
   comprobada); la versión exacta la fija `uv.lock`. Subir versiones es un
   cambio aparte (`uv lock --upgrade`), con su propio commit.
 - **Hace falta uv 0.13.** Es la primera versión que trae Python 3.15.0, y
-  pasa a usar 3.15 por defecto. En este PC hay uv 0.12.17. Con
+  pasa a usar 3.15 por defecto. En este PC había uv 0.12.17 (el mantenedor
+  lo actualizó a 0.13.1 el 2026-10-19). Con
   `[tool.uv] required-version = ">=0.13.1"`, un uv viejo falla con un mensaje
   claro en lugar de comportarse distinto.
 
@@ -230,10 +232,13 @@ externas solo admite listas negras, y la regla de AGENTS es una lista blanca:
   - DESIGN §12 decía "en cada push y PR"; se corrige en el mismo commit que
     esta spec. Todo entra por PR, así que no se pierde nada y no se
     duplican ejecuciones.
-- **Job `checks`:** Ubuntu, con Python 3.14 y 3.15 en matriz. Pasos:
-  `uv sync --locked` → `ruff check` → `ruff format --check` → `mypy` →
-  `lint-imports` → `pytest`.
+- **Job `checks`:** Ubuntu 26.04 (`runs-on: ubuntu-26.04`), con Python 3.14
+  y 3.15 en matriz. Pasos: `uv sync --locked` → `ruff check` →
+  `ruff format --check` → `mypy` → `lint-imports` → `pytest`.
   - `--locked` falla si `uv.lock` no está al día con `pyproject.toml`.
+  - Por qué no `ubuntu-latest`: hoy apunta a 24.04 y cambia sin avisar. Con
+    la versión explícita, el CI usa la misma Ubuntu que el puesto de
+    desarrollo (§1.14), y cambiarla es un commit visible.
 - **Job `secrets`:** gitleaks-action sobre todo el historial
   (`fetch-depth: 0`). Es gratis en cuentas personales; en una organización
   pediría licencia.
@@ -275,6 +280,30 @@ git tag -a v0.1.0 -m "v0.1.0 — Esqueleto" -m "Paquete, capas, calidad automát
 - **PR 2:** la release y el cierre del hito.
 - **Por qué:** cada uno se revisa de una sentada, y el PR 1 ya pasa por su
   propio CI.
+
+### 1.14 Plataforma: Linux, también en este PC
+
+Hoy este PC trabaja en Windows nativo, y `PUESTA_EN_MARCHA` §1 pide WSL2. El
+mantenedor delegó la decisión en el agente (2026-10-19). La decisión es
+aplicar lo que ya fija ANALISIS §7: **Linux, y en Windows, WSL2.**
+
+- **Puesto de desarrollo:** Ubuntu 26.04 LTS, la misma versión que el CI. En
+  Windows, dentro de WSL2 (`wsl --install -d Ubuntu-26.04`), con el repo
+  clonado en `~/` y el agente de código ejecutándose también dentro de WSL.
+  Así, los comandos que lanza el agente son los de Linux.
+- **CI:** solo Linux (§1.11). Sin job de Windows.
+- **Windows nativo no es una plataforma soportada en v1.** Soportarlo sería
+  un cambio de alcance (ANALISIS y DESIGN), y choca con dos hitos:
+  - la terminal del agente (hito 5) ejecuta comandos de shell, distintos en
+    PowerShell;
+  - el sandbox (hito 14) se apoya en el aislamiento del sistema operativo, y
+    las opciones de DESIGN §7.1 (bubblewrap, Landlock, contenedores) son de
+    Linux.
+- **Descartado:** añadir un job de Windows al CI. Probaría una plataforma que
+  no se soporta, y cada fallo propio de Windows costaría tiempo sin acercar
+  la v1.
+- **En este PC** solo hay la distribución `docker-desktop` en WSL2
+  (comprobado el 2026-10-19). Falta instalar Ubuntu 26.04. Ver §8.
 
 ## 2. En la industria
 
@@ -493,6 +522,11 @@ merge commit de `main`; el humano hace push del tag, que dispara la release.
 
 ## 8. Lo que no viaja por git y lo que necesita la release
 
+- **Este PC, antes del PR 1** (humano): instalar Ubuntu 26.04 en WSL2,
+  clonar el repo en `~/` e instalar ahí git, gh (con su login), uv y el
+  agente de código (§1.14). La implementación se hace desde ese clon. El
+  clon de Windows deja de usarse. Va a `PUESTA_EN_MARCHA` §1 y §6 en el
+  mismo commit que esta decisión.
 - **uv ≥ 0.13.1 en cada máquina:** `uv self update`, o el método con que se
   instaló uv. Va a `PUESTA_EN_MARCHA` §1 y §0, en la pieza 1.
 - **`uv run pre-commit install`**, una vez por clon. La primera ejecución de
@@ -525,10 +559,8 @@ agente":
   él. Si pasa, se anota aquí y decide el mantenedor: esperar, fijar una
   versión o quitar 3.15 de los checks obligatorios. El job no se marca como
   opcional sin esa decisión.
-- **Este PC trabaja en Windows nativo**, y `PUESTA_EN_MARCHA` §1 pide WSL2.
-  Para este hito da igual: uv, pre-commit y gitleaks funcionan en Windows.
-  Pero el CI solo prueba Ubuntu, y un fallo propio de Windows (rutas, finales
-  de línea, terminal) no se vería hasta usarlo. Ver la decisión abierta 13.
+- **Clonar en `/mnt/c/…` en lugar de `~/`** dentro de WSL: es mucho más
+  lento y mezcla permisos y finales de línea. `PUESTA_EN_MARCHA` §1 lo avisa.
 - **`filterwarnings = ["error"]`** puede romper los tests por un aviso de una
   librería de terceros. Si pasa, se ignora solo ese aviso, con un comentario
   y la referencia; nunca todos.
@@ -541,8 +573,10 @@ agente":
 
 ## 11. Decisiones
 
-Del humano:
-- (Se anotan al aprobar.)
+Del humano (2026-10-19):
+- Delega en el agente la decisión de plataforma (antes, la decisión abierta
+  13): "lo que sea más serio y bueno para el proyecto". El resto se anota al
+  aprobar.
 
 Propuestas del agente, que se aprueban al integrar este PR (2026-10-19):
 1. Versiones de §1.1: cota inferior en `pyproject.toml` y versión exacta en
@@ -561,12 +595,8 @@ Propuestas del agente, que se aprueban al integrar este PR (2026-10-19):
 11. Release con `gh` y el mensaje del tag (§1.12).
 12. Dos PRs de implementación y checks obligatorios desde el PR 1 (§1.13 y
     §6).
-
-Abierta, para el mantenedor:
-
-13. ¿Este PC sigue en Windows nativo o pasa a WSL2? Y, si sigue en Windows,
-    ¿se añade ya un job de Windows al CI, o en el hito 5 (ficheros y
-    terminal)?
+13. Plataforma Linux también en este PC: Ubuntu 26.04 en WSL2, CI solo en
+    Linux con `ubuntu-26.04` y sin soporte de Windows nativo en v1 (§1.14).
 
 ## 12. Aprendido al implementar
 

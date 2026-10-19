@@ -18,9 +18,11 @@ Lo último que hay que hacer, lo más reciente arriba:
 
 ## 1. Entorno
 
-- **Linux (Ubuntu).** En Windows, **WSL2** con Ubuntu. Hay que clonar y
-  trabajar dentro del sistema de ficheros de WSL (`~/…`), no en `/mnt/c/…`:
-  es mucho más lento y mezcla finales de línea.
+- **Linux: Ubuntu 26.04 LTS**, la misma versión que el CI. En Windows,
+  **WSL2** con Ubuntu 26.04: `wsl --install -d Ubuntu-26.04`. Hay que clonar
+  y trabajar dentro del sistema de ficheros de WSL (`~/…`), no en
+  `/mnt/c/…`: es mucho más lento y mezcla finales de línea. Windows nativo no
+  es una plataforma soportada (spec del hito 1, §1.14).
 - **git** y **GitHub CLI** (`gh`).
 - **uv** (https://docs.astral.sh/uv/). Python lo instala uv:
   `uv python install 3.14`.
@@ -89,6 +91,8 @@ Aplicado el 2026-10-19. Se deja escrito para poder rehacerlo.
 - Trabaja siguiendo `AGENTS.md` (Claude Code lo lee a través de `CLAUDE.md`).
   Todo el contexto está en el repo: no se usa la memoria local del agente en
   ningún PC.
+- En Windows, el agente se instala y se lanza **dentro de WSL**, desde el
+  clon de `~/`. Así, los comandos que ejecuta son los de Linux.
 - `gh` autenticado para push, PRs y consultar el CI:
   `gh auth login --hostname github.com --git-protocol https --web`. El login no
-  viaja por git: se hace una vez por PC.
+  viaja por git: se hace una vez por PC (en Windows, dentro de WSL).
