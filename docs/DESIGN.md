@@ -497,13 +497,21 @@ a `AGENTS.md`:
 4. **Explicar al mantenedor.** Todo agente de código explica cada cosa que
    hace, corto y directo: qué, por qué, dónde y cómo se hace en la industria
    (`AGENTS.md`, "Explicar al mantenedor").
+5. **Ramas conservadas.** Las ramas integradas no se borran en GitHub: quedan
+   como registro visible de cada paso de la construcción. No se reutilizan.
+   En local sí se borran.
 
 **Ajustes de GitHub que se hacen una vez** (anotados en
 `docs/PUESTA_EN_MARCHA.md`):
-- `main` protegida: solo entra por PR y con el CI en verde;
-- escaneo de secretos con push protection;
-- borrado automático de las ramas integradas;
-- solo merge commit habilitado.
+- solo merge commit habilitado, con el título y la descripción del PR como
+  mensaje;
+- las ramas integradas se conservan (sin borrado automático);
+- `main` protegida con un ruleset: solo por PR, solo merge commit,
+  conversaciones resueltas, sin force push ni borrado. Desde el hito 1, además,
+  con el CI en verde;
+- tags `v*` protegidos: no se mueven ni se borran;
+- escaneo de secretos con push protection, alertas de Dependabot y reporte
+  privado de vulnerabilidades.
 
 ---
 
@@ -523,6 +531,8 @@ a `AGENTS.md`:
   commit (D10), muchos commits pequeños y explicaciones al mantenedor (§15);
   CI y release con GitHub Actions (§12); plan de hitos (§14). **Diseño
   cerrado.**
+- **19/10/2026.** Las ramas integradas se conservan en GitHub como registro
+  visible (§15, punto 5). `main` y los tags `v*` se protegen con rulesets.
 
 ---
 
