@@ -8,11 +8,11 @@ Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo, hito 1 (esqueleto): spec propuesta, pendiente de aprobación.**
+**Desarrollo, hito 1 (esqueleto): spec aprobada; implementación por empezar.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: ninguna.
-- Ramas abiertas: `docs/spec-hito-1-esqueleto` (spec del hito 1).
+- Ramas abiertas: ninguna.
 
 ## Para la release
 
@@ -23,6 +23,10 @@ variable nueva o un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Spec del hito 1 aprobada, 2026-10-19** (PR #2), sin cambios.
+  - Plataforma: Linux. En Windows, Ubuntu 26.04 en WSL2, con el agente
+    dentro de WSL. CI con `ubuntu-26.04`.
+  - Versiones de las herramientas comprobadas ese día (spec §1.1).
 - **GitHub configurado, 2026-10-19.**
   - Solo merge commit; las ramas integradas se conservan.
   - `main` y los tags `v*` protegidos con rulesets.
@@ -52,13 +56,12 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** revisar el PR de la spec del hito 1
-   (`docs/specs/hito-1-esqueleto.md`) e integrarlo, que es aprobarla.
-2. **Humano:** en este PC, instalar Ubuntu 26.04 en WSL2, clonar el repo en
-   `~/` y preparar ahí git, gh, uv y el agente (spec §1.14 y §8;
+1. **Humano:** en el PC de Windows, instalar Ubuntu 26.04 en WSL2, clonar
+   el repo en `~/` y preparar ahí git, gh, uv y el agente (spec §1.14 y §8;
    `docs/PUESTA_EN_MARCHA.md` §1 y §6).
-3. **Agente**, desde ese clon: implementar el PR 1 del hito 1
-   (`feature/hito-1-esqueleto`), en el orden de piezas de la spec (§6).
+2. **Agente**, desde ese clon: implementar el PR 1 del hito 1
+   (`feature/hito-1-esqueleto`), en el orden de piezas de la spec
+   (`docs/specs/hito-1-esqueleto.md` §6).
 
 ## Pendientes / decisiones abiertas
 
