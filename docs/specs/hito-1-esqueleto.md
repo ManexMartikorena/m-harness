@@ -1,4 +1,4 @@
-Estado: PROPUESTA (2026-10-19)
+Estado: PROPUESTA (2026-10-19) → APROBADA (2026-10-19, por el humano, sin cambios)
 
 # Spec — Hito 1: Esqueleto
 
@@ -575,10 +575,10 @@ agente":
 
 Del humano (2026-10-19):
 - Delega en el agente la decisión de plataforma (antes, la decisión abierta
-  13): "lo que sea más serio y bueno para el proyecto". El resto se anota al
-  aprobar.
+  13): "lo que sea más serio y bueno para el proyecto".
+- Aprueba la spec sin cambios, en el PR #2.
 
-Propuestas del agente, que se aprueban al integrar este PR (2026-10-19):
+Propuestas del agente, aprobadas por el humano (2026-10-19):
 1. Versiones de §1.1: cota inferior en `pyproject.toml` y versión exacta en
    el lockfile.
 2. Python 3.14 en `.python-version` y uv ≥ 0.13.1 obligatorio (§1.1 y §1.2).
