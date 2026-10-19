@@ -8,7 +8,7 @@ Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo, hito 1 (esqueleto) por empezar.**
+**Desarrollo, hito 1 (esqueleto): spec aprobada; implementación por empezar.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: ninguna.
@@ -23,6 +23,10 @@ variable nueva o un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Spec del hito 1 aprobada, 2026-10-19** (PR #2), sin cambios.
+  - Plataforma: Linux. En Windows, Ubuntu 26.04 en WSL2, con el agente
+    dentro de WSL. CI con `ubuntu-26.04`.
+  - Versiones de las herramientas comprobadas ese día (spec §1.1).
 - **GitHub configurado, 2026-10-19.**
   - Solo merge commit; las ramas integradas se conservan.
   - `main` y los tags `v*` protegidos con rulesets.
@@ -52,17 +56,19 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente:** escribir la spec del hito 1 (`docs/specs/hito-1-esqueleto.md`)
-   con `docs/specs/PLANTILLA.md`, en su propio PR.
-2. **Humano:** revisarla e integrarla, que es aprobarla.
+1. **Humano:** en el PC de Windows, instalar Ubuntu 26.04 en WSL2, clonar
+   el repo en `~/` y preparar ahí git, gh, uv y el agente (spec §1.14 y §8;
+   `docs/PUESTA_EN_MARCHA.md` §1 y §6).
+2. **Agente**, desde ese clon: implementar el PR 1 del hito 1
+   (`feature/hito-1-esqueleto`), en el orden de piezas de la spec
+   (`docs/specs/hito-1-esqueleto.md` §6).
 
 ## Pendientes / decisiones abiertas
 
 **Para el hito 1:**
-- Al cerrarlo, añadir al ruleset "main protegida" la exigencia de que pase el
-  CI.
-- Versiones exactas de uv, ruff, mypy, pytest, pytest-asyncio, import-linter,
-  pre-commit y gitleaks, comprobadas el día de la spec.
+- Tras integrar su PR 1, añadir al ruleset "main protegida" los checks
+  obligatorios del CI (spec del hito 1, §6).
+- uv 0.13.1 o posterior en cada PC: el hito 1 lo exige (spec §1.1).
 
 **Externas, con el hito en que bloquean:**
 - **Proveedor de modelos** (hito 2): suscripción propia a OpenCode Go (un solo

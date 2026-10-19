@@ -3,7 +3,7 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-19 (documentos fundacionales; aún no hay código).
+Última actualización: 2026-10-19 (spec del hito 1; aún no hay código).
 
 ## Raíz
 
@@ -28,6 +28,7 @@ ficheros.
 | `MAPA.md` | Este fichero |
 | `guia/README.md` | Índice de la guía de conceptos (una nota por hito) |
 | `specs/PLANTILLA.md` | Formato de las specs de hito y de mejora |
+| `specs/hito-1-esqueleto.md` | Spec del hito 1: paquete, capas, calidad, CI y release |
 
 ## Código
 

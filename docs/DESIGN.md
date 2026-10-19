@@ -385,7 +385,10 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
 - **Arquitectura:** import-linter verifica las reglas de dependencia (§3).
 - **No se prueba con tests:** la calidad de las respuestas del modelo, que es
   cosa de las evals (§9).
-- **CI** (GitHub Actions, en cada push y PR, con Python 3.14 y 3.15):
+- **CI** (GitHub Actions, en cada PR y en cada push a `main`, con Python 3.14
+  y 3.15). *(Corregido el 19/10/2026, spec del hito 1, §1.11: antes decía "en
+  cada push y PR". Todo entra por PR, así que cubre lo mismo sin duplicar
+  ejecuciones.)*
   - `ruff check`, `ruff format --check`;
   - `mypy`;
   - `lint-imports`;
