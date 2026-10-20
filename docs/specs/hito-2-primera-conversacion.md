@@ -676,4 +676,11 @@ Propuestas del agente, aprobadas por el humano (2026-10-20):
 
 ## 12. Aprendido al implementar
 
-(Se añade al implementar.)
+1. **`frozen` como argumento de la clase** (PR 1, pieza 2):
+   `class Message(BaseModel, frozen=True)`, no `model_config =
+   ConfigDict(frozen=True)`. Pydantic usa `dataclass_transform`, y mypy solo
+   ve `frozen` en la primera forma. Así, asignar a un campo es error de tipos,
+   además de error al ejecutar.
+2. **`Chat` deshace el turno sin borrar nada** (PR 1, pieza 7): construye la
+   lista nueva aparte y solo la guarda si la llamada termina bien. También
+   cubre la cancelación, que no es un `ModelError`.
