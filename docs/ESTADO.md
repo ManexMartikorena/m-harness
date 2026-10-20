@@ -1,34 +1,38 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-20. **Hito 1 (esqueleto) implementado**: falta
-integrar su PR 2 y publicar `v0.1.0`. Después, la spec del hito 2.
+Última actualización: 2026-10-20. **Hito 1 (esqueleto) cerrado y publicado
+como `v0.1.0`.** Lo siguiente es proponer la spec del hito 2.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo, hito 1 (esqueleto): las 15 piezas hechas. PR 1 (#4)
-integrado; PR 2 (release y cierre) abierto. Falta integrarlo, crear el tag
-`v0.1.0` y comprobar la release.**
+**Desarrollo. Hito 1 cerrado (`v0.1.0`). Hito 2 (primera conversación): sin
+empezar; el primer paso es su spec.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: ninguna (la primera será `v0.1.0`, al cerrar el hito 1).
-- Ramas abiertas: `feature/hito-1-release` (PR 2 del hito 1).
+- Última versión: **`v0.1.0` — Esqueleto** (2026-10-20):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.1.0
+- Ramas abiertas: ninguna. (Todas las integradas se conservan en GitHub.)
 
 ## Para la release
 
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
 
-- `v0.1.0`: nada fuera de lo normal. Es la primera release, así que es
-  también la primera prueba real de `.github/workflows/release.yml`.
+- Nada pendiente. `v0.1.0` salió sin pasos fuera de lo normal.
 
 ## Hecho
 
 Lo más reciente primero.
 
-- **Hito 1, PR 2 abierto, 2026-10-20** (rama `feature/hito-1-release`,
-  piezas 11 a 15 de la spec §6):
+- **`v0.1.0` publicada, 2026-10-20.** Tag anotado sobre el merge del PR #5
+  (`e78f7d9`). `release.yml` creó la release en 12 s: título
+  "v0.1.0 — Esqueleto", las notas del tag y la lista de PRs #1 a #5.
+  `uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.1.0`
+  instala `maha 0.1.0`. Spec §7 completa.
+- **Hito 1, PR 2 (#5) integrado, 2026-10-20** (merge `e78f7d9`; piezas 11 a
+  15 de la spec §6):
   - workflow de release, versión 0.1.0, nota de la guía
     `docs/guia/01-arquitectura-hexagonal.md`, spec en IMPLEMENTADA, y README,
     MAPA, PUESTA_EN_MARCHA y ESTADO al día;
@@ -45,8 +49,7 @@ Lo más reciente primero.
     `bootstrap.py` y el comando `maha`, pre-commit, CI y mapa;
   - en verde: ruff, mypy, import-linter y pytest (8 tests), con Python 3.14
     y también con 3.15;
-  - verificación a mano (spec §7): puntos 1 a 8 hechos, salvo la release,
-    que se ve al hacer push del tag;
+  - verificación a mano (spec §7): puntos 1 a 8 hechos;
   - lo imprevisto, en la spec §12 "Aprendido al implementar": ruff formatea
     Markdown, mypy e import-linter piden que existan `tests/` y las capas, y
     el hook de gitleaks no mira el primer commit de un repo.
@@ -91,21 +94,18 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** revisar el PR 2 del hito 1 (`feature/hito-1-release`) e
-   integrarlo con merge commit, con los tres checks en verde.
-2. **Agente**, tras el merge: `git switch main && git pull`, borrar la rama
-   local y crear el tag anotado sobre el merge commit:
-   `git tag -a v0.1.0 -m "v0.1.0 — Esqueleto" -m "Paquete, capas, calidad automática, CI y release."`
-3. **Humano** (o el agente, si se lo pide): `git push origin v0.1.0`. Eso
-   dispara `release.yml`.
-4. **Agente:** comprobar que la release existe con su título y sus notas
-   (`gh release view v0.1.0`) y probar
-   `uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.1.0`
-   (spec §7, puntos 7 y 8). Si el workflow falla, se arregla con un PR
-   `fix/…` y se repite con un tag nuevo: un tag `v*` no se mueve.
-5. **Agente:** proponer la spec del hito 2 (primera conversación) en su
-   propio PR (`docs/spec-hito-2-<slug>`). En ese mismo PR, ESTADO marca
-   `v0.1.0` como publicada.
+1. **Agente:** escribir la spec del hito 2, "Primera conversación"
+   (`docs/specs/hito-2-primera-conversacion.md`, con `docs/specs/PLANTILLA.md`
+   y DESIGN §14 punto 2), en la rama `docs/spec-hito-2-primera-conversacion`.
+   Alcance según DESIGN: tipos del dominio, puerto `ModelClient`, adaptador
+   compatible con OpenAI (sin streaming), configuración (proveedor, modelo,
+   clave), conversación mínima en la terminal y `FakeModelClient`. Antes,
+   comprobar en la documentación oficial (con fecha) la API del proveedor
+   y las versiones de httpx, Pydantic y respx.
+2. **Humano:** revisar la spec en su PR. Integrarlo es aprobarla.
+3. **Humano**, antes de la verificación a mano del hito 2 (no hace falta
+   para la spec): elegir proveedor y conseguir la clave (ver "Pendientes",
+   "Externas"). Sin clave, todo se prueba con `FakeModelClient`.
 
 ### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
 
@@ -119,7 +119,7 @@ Una vez, la primera vez tras este hito:
 4. `uv sync` y `uv run pre-commit install` (`PUESTA_EN_MARCHA` §0). La
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
-   verde, y `uv run maha --version`.
+   verde, y `uv run maha --version` → `maha 0.1.0`.
 
 Después, lanzar el agente desde el clon. Él lee `AGENTS.md` y este fichero,
 y sigue por el primer punto de "Siguiente paso" que no esté hecho. Para
@@ -131,8 +131,7 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 
 ## Pendientes / decisiones abiertas
 
-**Para el hito 1:**
-- Integrar el PR 2, tag `v0.1.0` y release (Siguiente paso 1 a 4).
+**Puestos de trabajo:**
 - Ubuntu de casa: uv ≥ 0.13.1, `gh` con el scope `workflow`, `uv sync` y
   `pre-commit install` (ver "Al abrir el agente en otro PC"). El WSL del PC
   de Windows ya está listo.
@@ -157,7 +156,7 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 
 Fase de desarrollo (DESIGN §14), un tag por hito:
 
-- [ ] 1. Esqueleto. `v0.1.0` (implementado; falta el tag)
+- [x] 1. Esqueleto. `v0.1.0` (2026-10-20)
 - [ ] 2. Primera conversación. `v0.2.0`
 - [ ] 3. Streaming. `v0.3.0`
 - [ ] 4. Tool calling y bucle agéntico. `v0.4.0`
