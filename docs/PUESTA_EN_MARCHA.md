@@ -8,13 +8,16 @@ Qué hay que hacer para dejar este proyecto funcionando en una máquina nueva o
 en otra de las que se usan. **El `.env` no viaja por git**, así que todo lo que
 hay aquí es exactamente lo que no se arregla con un `git pull`.
 
-Última revisión: 2026-10-19.
+Última revisión: 2026-10-20.
 
 ## 0. Tras cada `git pull`
 
 Lo último que hay que hacer, lo más reciente arriba:
 
-- (nada todavía)
+- **Hito 1, pieza 1 (2026-10-20):** uv 0.13.1 o posterior. Comprobar con
+  `uv --version`; si es más viejo, `uv self update` (o el método con que se
+  instaló uv). Con uno viejo, `uv sync` falla con un aviso claro. Después,
+  `uv sync`.
 
 ## 1. Entorno
 
@@ -24,8 +27,9 @@ Lo último que hay que hacer, lo más reciente arriba:
   `/mnt/c/…`: es mucho más lento y mezcla finales de línea. Windows nativo no
   es una plataforma soportada (spec del hito 1, §1.14).
 - **git** y **GitHub CLI** (`gh`).
-- **uv** (https://docs.astral.sh/uv/). Python lo instala uv:
-  `uv python install 3.14`.
+- **uv 0.13.1 o posterior** (https://docs.astral.sh/uv/). `pyproject.toml`
+  lo exige (`required-version`). Python lo instala uv: `uv sync` descarga
+  3.14 si falta, la versión que fija `.python-version`.
 - Desde el hito 1:
   - `uv sync` tras clonar y tras cada pull que cambie `pyproject.toml` o
     `uv.lock`;
