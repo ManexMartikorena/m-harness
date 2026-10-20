@@ -65,7 +65,14 @@ root_package = "mharness"
 name = "Hexagonal layers"
 type = "layers"
 containers = ["mharness"]
-layers = ["__main__", "bootstrap", "adapters", "application", "ports", "domain"]
+layers = [
+    "__main__",
+    "bootstrap",
+    "adapters | config",
+    "application",
+    "ports",
+    "domain",
+]
 exhaustive = true
 
 [[tool.importlinter.contracts]]
