@@ -323,7 +323,10 @@ conversación, en el idioma del usuario. Los tokens de entrada pasan de 12 a
 - Error de configuración o falta la clave: mensaje en stderr y sale con 1,
   antes de abrir la conversación.
 - Entrada con `input()` en un hilo aparte (`asyncio.to_thread`), para no
-  bloquear el bucle de asyncio.
+  bloquear el bucle de asyncio. *(Corregido al implementarlo, 2026-10-20:
+  con un hilo, Ctrl+C deja `maha` colgado. La entrada se lee sin hilos, con
+  `loop.add_reader` y `os.read`, y Ctrl+C se captura con
+  `loop.add_signal_handler`. Ver §12.6.)*
 
 ### 1.12 Cableado en `bootstrap.py`
 
@@ -336,7 +339,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     return asyncio.run(_converse(settings))
 
 async def _converse(settings: Settings) -> int:
-    provider = settings.active_provider()
+    provider = settings.provider  # (Corregido al implementarlo: §12.7.)
     async with OpenAIChatClient(base_url=..., api_key=..., ...) as client:
         chat = Chat(client, model=settings.model)
         return await cli.converse(chat, ...)
@@ -628,7 +631,8 @@ el modelo no recuerda":
 ## 10. Riesgos
 
 - **La autenticación de Go no está documentada.** Se supone
-  `Authorization: Bearer`, como en Zen. Si falla, se comprueba a mano y se
+  `Authorization: Bearer`, como en Zen. *(Comprobado al implementarlo, el
+  2026-10-20: funciona. Ver §12.10.)* Si falla, se comprueba a mano y se
   corrige en el adaptador (el proveedor tendría su propio esquema). Ver §7.5.
 - **Formato de errores de OpenCode sin documentar.** El adaptador lee
   `error.message` si está y, si no, usa el código HTTP. Nunca falla por no
@@ -697,3 +701,52 @@ Propuestas del agente, aprobadas por el humano (2026-10-20):
 5. **El User-Agent lo construye el adaptador** (PR 2, pieza 10), con la
    versión instalada (`importlib.metadata`). El id de sesión es un UUID por
    cliente, y hay un cliente por ejecución de `maha`.
+6. **Leer la terminal sin hilos** (PR 3, pieza 15). Probado en una terminal
+   simulada (pty) con Python 3.14:
+   - `asyncio.to_thread(input)` + Ctrl+C: `maha` se cuelga. `asyncio.run`
+     espera al hilo, que sigue en `input()`;
+   - hilo daemon + `input()`: también se cuelga, al cerrar el intérprete,
+     porque el hilo tiene el lock del buffer de stdin;
+   - `loop.add_reader(0)` + `os.read` + `loop.add_signal_handler(SIGINT)`:
+     sale con 130 en 0,01 s.
+
+   `StdinLines` (en `adapters/cli/conversation.py`) corta los bytes por
+   líneas. Un fichero normal (`maha < notas.txt`) no se puede vigilar con
+   `add_reader`, y se lee directamente: nunca bloquea. El mantenedor dio el
+   visto bueno al cambio el 2026-10-20.
+7. **`Settings` lleva el proveedor ya resuelto** (PR 3, pieza 14):
+   `settings.provider` en lugar de `settings.active_provider()`, y la clave
+   en `settings.api_key`, sacada del entorno al cargar y fuera del `repr`.
+   Así, si falta la clave, `maha` sale con 1 antes de abrir la conversación.
+8. **`sys.stdout` se toma al llamar, no al importar** (PR 3, pieza 16): un
+   valor por defecto `out=sys.stdout` fija el objeto del momento de la
+   importación. El test de punta a punta lo destapó.
+9. **`fail()` en la terminal** (PR 3, pieza 16): los errores de arranque los
+   escribe el adaptador `cli`, no `bootstrap`, para que toda la E/S de la
+   terminal esté en su adaptador.
+10. **Verificación a mano (§7), 2026-10-20**, en el WSL del PC de Windows,
+    con OpenCode Go y `glm-5.3-flash`, en una terminal simulada (pty). Los 9
+    puntos, en verde:
+    - 1 a 3: `--version` sin configuración; sin `config.toml`, explica qué
+      escribir; sin la clave, nombra `OPENCODE_API_KEY`. Los dos últimos
+      salen con 1;
+    - 4: dos turnos reales; en el segundo, el modelo recuerda el nombre, y
+      los tokens de entrada pasan de 25 a 62;
+    - 5: **Go acepta `Authorization: Bearer`** (riesgo de §10, cerrado);
+    - 6: clave inventada → `error: HTTP 401: Upstream request failed:
+      Invalid credential`, y la conversación sigue;
+    - 7: modelo que no existe → `error: HTTP 400: Upstream request failed:
+      Model is unavailable.` (400, no 404), y la conversación sigue;
+    - 8: `/exit` y Ctrl+D salen con 0; Ctrl+C, con 130;
+    - 9: un `.maha/config.toml` con `[providers]` en un directorio desechable
+      → `maha` se niega a arrancar.
+
+    Fuera de la lista: Ctrl+C con la petición HTTP en curso corta la llamada
+    y sale con 130 al momento.
+11. **Formato de errores de OpenCode** (riesgo de §10): el cuerpo trae
+    `error.message`, que el adaptador lee bien. El texto empieza por
+    "Upstream request failed:".
+12. **Tokens de salida altos para respuestas cortas** con `glm-5.3-flash`
+    (por ejemplo, 142 para una frase). Probablemente cuenta el razonamiento,
+    que el adaptador ignora (§10). Se mira en el hito 3 (streaming) o en el 7
+    (coste).
