@@ -96,7 +96,9 @@ Una vez, la primera vez tras este hito:
 1. `cd` al clon y `git switch main && git pull`.
 2. `uv --version`: tiene que ser 0.13.1 o posterior (si no,
    `uv self update`).
-3. `gh auth status`: con login en github.com.
+3. `gh auth status`: con login en github.com y el scope `workflow` en
+   "Token scopes". Si falta: `gh auth refresh --hostname github.com --scopes
+   workflow` (sin él, GitHub rechaza el push de `.github/workflows/`).
 4. `uv sync` y `uv run pre-commit install` (`PUESTA_EN_MARCHA` §0). La
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en

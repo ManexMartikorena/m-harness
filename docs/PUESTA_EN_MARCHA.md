@@ -14,6 +14,9 @@ hay aquí es exactamente lo que no se arregla con un `git pull`.
 
 Lo último que hay que hacer, lo más reciente arriba:
 
+- **Hito 1, CI (2026-10-20):** `gh auth refresh --hostname github.com
+  --scopes workflow`. Sin él, no se puede hacer push de `.github/workflows/`
+  (§6).
 - **Hito 1, pieza 8 (2026-10-20):** `uv sync` y `uv run pre-commit install`
   (una vez por clon). La primera ejecución de los hooks descarga Go y compila
   gitleaks: necesita red y tarda un poco (25 s en el WSL del PC de Windows).
@@ -105,6 +108,11 @@ Aplicado el 2026-10-19. Se deja escrito para poder rehacerlo.
   ningún PC.
 - En Windows, el agente se instala y se lanza **dentro de WSL**, desde el
   clon de `~/`. Así, los comandos que ejecuta son los de Linux.
-- `gh` autenticado para push, PRs y consultar el CI:
-  `gh auth login --hostname github.com --git-protocol https --web`. El login no
+- `gh` autenticado para push, PRs y consultar el CI, **con el scope
+  `workflow`**:
+  `gh auth login --hostname github.com --git-protocol https --web --scopes workflow`.
+  Sin ese scope, GitHub rechaza el push de cualquier cambio en
+  `.github/workflows/` ("refusing to allow an OAuth App to create or update
+  workflow … without `workflow` scope"). Si el login ya existe:
+  `gh auth refresh --hostname github.com --scopes workflow`. El login no
   viaja por git: se hace una vez por PC (en Windows, dentro de WSL).
