@@ -1,14 +1,14 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-20. **Hito 2 (primera conversación) cerrado y
-publicado como `v0.2.0`.** Hito 3 (streaming): spec PROPUESTA, PR por abrir.
+publicado como `v0.2.0`.** Hito 3 (streaming): spec PROPUESTA, PR abierto.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 2 cerrado (`v0.2.0`). Hito 3 (streaming): spec PROPUESTA
-en la rama `docs/spec-hito-3-streaming`, PR por abrir.**
+en la rama `docs/spec-hito-3-streaming`, PR abierto.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.2.0` — Primera conversación** (2026-10-20):
@@ -28,7 +28,7 @@ un paso fuera de lo normal.
 Lo más reciente primero.
 
 - **Spec del hito 3 propuesta, 2026-10-20** (rama
-  `docs/spec-hito-3-streaming`, PR por abrir):
+  `docs/spec-hito-3-streaming`, PR abierto):
   - `complete()` sale del puerto: queda `stream()`, y `collect()` (en
     `application`) construye la respuesta entera a partir de los eventos;
   - SSE (*Server-Sent Events*, el formato de streaming de las APIs) a mano,
@@ -37,8 +37,14 @@ Lo más reciente primero.
     rompería un JSON válido;
   - corrige DESIGN §5: `MessageEnd` lleva `model`;
   - Ctrl+C a mitad de respuesta corta la respuesta y vuelve al prompt;
-  - POR VERIFICAR: el streaming de OpenCode Go (`stream_options`, `usage`,
-    razonamiento). Lo resuelve la sonda (pieza 1).
+  - sonda lanzada en la fase de spec, con permiso del mantenedor (spec
+    §1.7): los tokens de salida altos de `glm-5.3-flash` son razonamiento.
+    `completion_tokens` incluye `reasoning_tokens`: para "OK", 13 de 16,
+    18 de 21 y 43 de 46 (varía mucho). Llega en `delta.reasoning_content`
+    con stream y en `message.reasoning` sin él;
+  - OpenCode manda `usage` aunque no se pida `stream_options`; ~5 s de
+    silencio hasta el primer byte. En OpenCode solo queda POR VERIFICAR el
+    formato de un error a mitad de stream.
 
   Hechos comprobados ese día por el agente en la documentación oficial: el
   endpoint de Go, `https://opencode.ai/inference/go/openai/v1/chat/completions`,
@@ -173,16 +179,19 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente:** commitear la spec del hito 3, DESIGN §5, ESTADO y MAPA en la
-   rama `docs/spec-hito-3-streaming`. **Humano:** revisar los commits y pedir
-   el push y el PR al agente (o hacerlos él).
-2. **Humano:** revisar la spec en el PR, decidir las dudas de su §11 e
-   integrarlo con merge commit (la spec pasa a APROBADA).
-3. **Agente:** implementar el hito 3 por piezas (spec §6), empezando por la
-   sonda (pieza 1), en `feature/hito-3-eventos`.
+1. **Humano:** decidir las dudas de la spec §11 e integrar el PR de la spec
+   con merge commit (pasa a APROBADA). Las dudas, con su número en §11:
+   - 1: `complete()` fuera del puerto;
+   - 2: indicador "esperando…" durante el silencio inicial (recomendada la
+     opción B);
+   - 3: Ctrl+C a mitad de respuesta vuelve al prompt;
+   - 5: `Usage` sin `None`.
+2. **Agente:** implementar el hito 3 por piezas (spec §6) en
+   `feature/hito-3-eventos`, desde la pieza 1: eventos del dominio. La sonda
+   ya no es una pieza.
 
-**Sesión abierta el 2026-10-20 en el Ubuntu de casa**, con la spec del hito 3
-escrita y sin commitear. Se sigue desde el punto 1.
+**Sesión abierta el 2026-10-20 en el Ubuntu de casa.** El mantenedor revisó la
+spec y pidió push y PR. Se sigue desde el punto 1.
 
 ### Al abrir el agente en otro PC (por ejemplo, de vuelta en el WSL del PC de Windows)
 
