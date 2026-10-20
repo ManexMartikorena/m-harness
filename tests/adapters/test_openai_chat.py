@@ -9,6 +9,14 @@ import respx
 
 from mharness.adapters.models import OpenAIChatClient
 from mharness.adapters.models.openai_chat import TIMEOUT
+from mharness.domain.errors import (
+    ModelAuthError,
+    ModelError,
+    ModelRateLimitError,
+    ModelRequestError,
+    ModelResponseError,
+    ModelUnavailableError,
+)
 from mharness.domain.messages import Message, TextBlock
 from mharness.domain.model import ModelRequest, StopReason, Usage
 from mharness.ports.model import ModelClient
@@ -268,3 +276,142 @@ async def test_without_model_uses_the_requested_one(client: OpenAIChatClient) ->
     )
 
     assert response.model == "glm-5.3-flash"
+
+
+def error_body(message: str) -> dict[str, Any]:
+    return {
+        "error": {
+            "message": message,
+            "type": "invalid_request_error",
+            "param": None,
+            "code": None,
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    ("status", "error"),
+    [
+        (400, ModelRequestError),
+        (401, ModelAuthError),
+        (403, ModelAuthError),
+        (404, ModelRequestError),
+        (429, ModelRateLimitError),
+        (500, ModelUnavailableError),
+        (503, ModelUnavailableError),
+    ],
+)
+@respx.mock
+async def test_http_errors_become_model_errors(
+    client: OpenAIChatClient, status: int, error: type[ModelError]
+) -> None:
+    respx.post(ENDPOINT).respond(status, json=error_body("Something failed"))
+
+    with pytest.raises(error) as raised:
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert str(raised.value) == f"HTTP {status}: Something failed"
+
+
+@respx.mock
+async def test_long_provider_message_is_cut(client: OpenAIChatClient) -> None:
+    respx.post(ENDPOINT).respond(400, json=error_body("x" * 1000))
+
+    with pytest.raises(ModelRequestError) as raised:
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert str(raised.value) == "HTTP 400: " + "x" * 300
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"<html>Bad Gateway</html>", b"{}", b'{"error": {"code": 1}}', b"[]", b""],
+)
+@respx.mock
+async def test_error_without_a_message_uses_the_status(
+    client: OpenAIChatClient, body: bytes
+) -> None:
+    respx.post(ENDPOINT).respond(502, content=body)
+
+    with pytest.raises(ModelUnavailableError) as raised:
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert str(raised.value) == "HTTP 502"
+
+
+@respx.mock
+async def test_error_as_a_plain_string(client: OpenAIChatClient) -> None:
+    respx.post(ENDPOINT).respond(404, json={"error": "Model not found"})
+
+    with pytest.raises(ModelRequestError, match="HTTP 404: Model not found"):
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+
+@pytest.mark.parametrize(
+    "exception",
+    [
+        httpx.ConnectTimeout("connect timed out"),
+        httpx.ReadTimeout("read timed out"),
+        httpx.ConnectError("Name or service not known"),
+        httpx.RemoteProtocolError("Server disconnected"),
+    ],
+)
+@respx.mock
+async def test_network_failures_are_unavailable(
+    client: OpenAIChatClient, exception: Exception
+) -> None:
+    respx.post(ENDPOINT).mock(side_effect=exception)
+
+    with pytest.raises(ModelUnavailableError):
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b"{not json", b'{"model": "m"}', b'{"choices": []}', b'{"choices": [{}]}'],
+)
+@respx.mock
+async def test_unreadable_200_is_a_response_error(
+    client: OpenAIChatClient, content: bytes
+) -> None:
+    respx.post(ENDPOINT).respond(200, content=content)
+
+    with pytest.raises(ModelResponseError):
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+
+@pytest.mark.parametrize("status", [401, 400, 500])
+@respx.mock
+async def test_no_error_contains_the_key(client: OpenAIChatClient, status: int) -> None:
+    # A provider that echoes the key back in its error message.
+    respx.post(ENDPOINT).respond(status, json=error_body(f"Invalid key: {API_KEY}"))
+
+    with pytest.raises(ModelError) as raised:
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert API_KEY not in str(raised.value)
+    assert "[redacted]" in str(raised.value)
+
+
+@respx.mock
+async def test_network_error_does_not_contain_the_key(
+    client: OpenAIChatClient,
+) -> None:
+    respx.post(ENDPOINT).mock(side_effect=httpx.ConnectError("refused"))
+
+    with pytest.raises(ModelUnavailableError) as raised:
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert API_KEY not in str(raised.value)
+
+
+@respx.mock
+async def test_key_cut_by_the_limit_is_not_shown(client: OpenAIChatClient) -> None:
+    # The key straddles the 300-character cut: no piece of it may remain.
+    message = "x" * 290 + API_KEY
+    respx.post(ENDPOINT).respond(401, json=error_body(message))
+
+    with pytest.raises(ModelAuthError) as raised:
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert API_KEY[:10] not in str(raised.value)

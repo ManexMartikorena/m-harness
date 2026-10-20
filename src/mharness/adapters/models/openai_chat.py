@@ -11,8 +11,16 @@ from types import TracebackType
 from typing import Any, Self
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 
+from mharness.domain.errors import (
+    ModelAuthError,
+    ModelError,
+    ModelRateLimitError,
+    ModelRequestError,
+    ModelResponseError,
+    ModelUnavailableError,
+)
 from mharness.domain.messages import Message, TextBlock
 from mharness.domain.model import ModelRequest, ModelResponse, StopReason, Usage
 
@@ -28,6 +36,8 @@ STOP_REASONS: dict[str, StopReason] = {
     "tool_calls": "tool_use",
     "content_filter": "content_filter",
 }
+# The provider's error message is shown to the user, cut to this length.
+MAX_PROVIDER_MESSAGE = 300
 
 
 class OpenAIChatClient:
@@ -44,6 +54,7 @@ class OpenAIChatClient:
         session_header: str | None = None,
         session_id: str | None = None,
     ) -> None:
+        self._api_key = api_key
         headers = {"User-Agent": USER_AGENT}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -69,9 +80,56 @@ class OpenAIChatClient:
         await self._http.aclose()
 
     async def complete(self, request: ModelRequest) -> ModelResponse:
-        response = await self._http.post("chat/completions", json=_to_openai(request))
-        completion = _Completion.model_validate_json(response.content)
+        """Send the request; raise a `ModelError` if anything goes wrong."""
+        try:
+            response = await self._http.post(
+                "chat/completions", json=_to_openai(request)
+            )
+        except httpx.TimeoutException as exc:
+            raise ModelUnavailableError("the provider took too long to answer") from exc
+        except httpx.TransportError as exc:
+            reason = str(exc) or type(exc).__name__
+            raise ModelUnavailableError(f"cannot reach the provider: {reason}") from exc
+        if not response.is_success:
+            raise self._status_error(response)
+        try:
+            completion = _Completion.model_validate_json(response.content)
+        except ValidationError:
+            # The body is untrusted: it is not copied into the error.
+            raise ModelResponseError(
+                "the provider's response could not be understood"
+            ) from None
         return _to_domain(completion, request)
+
+    def _status_error(self, response: httpx.Response) -> ModelError:
+        status = response.status_code
+        detail = _provider_message(response)
+        if detail and self._api_key:
+            # Never show the key, even if the provider echoes it back.
+            detail = detail.replace(self._api_key, "[redacted]")
+        if detail:
+            detail = detail[:MAX_PROVIDER_MESSAGE]
+        message = f"HTTP {status}: {detail}" if detail else f"HTTP {status}"
+        if status in (401, 403):
+            return ModelAuthError(message)
+        if status == 429:
+            return ModelRateLimitError(message)
+        if status >= 500:
+            return ModelUnavailableError(message)
+        return ModelRequestError(message)
+
+
+def _provider_message(response: httpx.Response) -> str | None:
+    """The `error.message` of an OpenAI error body, if there is one."""
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    error = body.get("error") if isinstance(body, dict) else None
+    message = error.get("message") if isinstance(error, dict) else error
+    if not isinstance(message, str) or not message.strip():
+        return None
+    return message.strip()
 
 
 def _to_openai(request: ModelRequest) -> dict[str, Any]:
@@ -111,7 +169,7 @@ class _Usage(BaseModel):
 
 class _Completion(BaseModel):
     model: str | None = None
-    choices: list[_Choice]
+    choices: list[_Choice] = Field(min_length=1)
     usage: _Usage | None = None
 
 
