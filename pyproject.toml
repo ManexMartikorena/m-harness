@@ -21,6 +21,7 @@ module-name = "mharness"
 
 [dependency-groups]
 dev = [
+    "mypy>=2.4.0",
     "ruff>=0.17.1",
 ]
 
@@ -41,3 +42,7 @@ select = [
     "PT",    # pytest style
     "RUF",   # ruff-specific
 ]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]

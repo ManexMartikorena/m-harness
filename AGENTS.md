@@ -42,7 +42,7 @@ Disponibles desde el hito 1 (esqueleto). `maha eval`, desde el hito 8.
 - uv run pre-commit install                 # hooks (una vez por clon)
 - uv run pytest                             # tests (sin llamadas reales)
 - uv run ruff check . && uv run ruff format .
-- uv run mypy src
+- uv run mypy                               # lee src y tests de pyproject.toml
 - uv run lint-imports                       # reglas de la arquitectura hexagonal
 - uv run --env-file .env maha               # ejecutar maha en desarrollo
 - uv run --env-file .env maha eval          # evals (llamadas reales)

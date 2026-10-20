@@ -61,7 +61,7 @@ Desde el hito 1:
 
 ```
 uv run ruff check . && uv run ruff format --check .
-uv run mypy src
+uv run mypy
 uv run lint-imports
 uv run pytest
 ```
