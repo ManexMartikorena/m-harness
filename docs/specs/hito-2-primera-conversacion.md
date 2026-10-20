@@ -1,4 +1,4 @@
-Estado: PROPUESTA (2026-10-20) → APROBADA (2026-10-20, por el humano, sin cambios)
+Estado: PROPUESTA (2026-10-20) → APROBADA (2026-10-20, por el humano, sin cambios) → IMPLEMENTADA (2026-10-20)
 
 # Spec — Hito 2: Primera conversación
 
@@ -660,6 +660,8 @@ Del humano (2026-10-20):
   el pendiente de ANALISIS §12. La verificación a mano (§7) se hace con
   `provider = "opencode-go"`.
 - Aprueba la spec sin cambios, en el PR #7.
+- Aprueba leer la terminal sin hilos, que corrige §1.11 (§12.6).
+- Pide que el ajuste del CI (§12.13) vaya en el PR 4.
 
 Propuestas del agente, aprobadas por el humano (2026-10-20):
 1. Dependencias: pydantic y httpx de ejecución; respx de desarrollo (§1.2).
@@ -678,7 +680,7 @@ Propuestas del agente, aprobadas por el humano (2026-10-20):
    hito 1 (§1.11).
 9. Cuatro PRs de implementación (§6).
 
-## 12. Aprendido al implementar
+## 12. Aprendido al implementar (2026-10-20)
 
 1. **`frozen` como argumento de la clase** (PR 1, pieza 2):
    `class Message(BaseModel, frozen=True)`, no `model_config =
@@ -750,3 +752,12 @@ Propuestas del agente, aprobadas por el humano (2026-10-20):
     (por ejemplo, 142 para una frase). Probablemente cuenta el razonamiento,
     que el adaptador ignora (§10). Se mira en el hito 3 (streaming) o en el 7
     (coste).
+13. **Integrar PRs seguidos cancelaba el CI de `main`** (PR 4): con
+    `cancel-in-progress: true`, el push del merge del #9 canceló la ejecución
+    del merge del #8, y la del #10 la del #9. No había fallo: cada PR había
+    pasado su CI antes del merge. Ahora solo se cancelan las ejecuciones de
+    los PRs (`cancel-in-progress: ${{ github.event_name == 'pull_request'
+    }}`), y cada merge commit de `main` conserva la suya.
+14. **ruff vuelve a formatear el Python de los `.md`** (PR 4, pieza 20): el
+    hook partió una línea larga de un ejemplo de la nota 02. Ya estaba
+    anotado en el hito 1; basta con volver a commitear.

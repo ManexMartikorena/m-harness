@@ -1,57 +1,60 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-20. **Hito 1 (esqueleto) cerrado y publicado
-como `v0.1.0`.** Hito 2: PRs #8, #9 y #10 abiertos; verificación a mano hecha.
+Última actualización: 2026-10-20. **Hito 2 (primera conversación)
+terminado: PRs 1 a 3 integrados y PR 4 (cierre) por integrar.** Después,
+tag `v0.2.0`.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 1 cerrado (`v0.1.0`). Hito 2 (primera conversación): spec
-APROBADA (PR #7); PRs 1 a 3 (#8, #9 y #10) abiertos, por integrar;
-verificación a mano hecha. Falta el PR 4 (cierre).**
+**Desarrollo. Hito 2 (primera conversación): spec IMPLEMENTADA, PRs 1 a 3
+integrados (#8, #9 y #10), verificación a mano hecha y PR 4 (cierre) por
+integrar.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.1.0` — Esqueleto** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.1.0
-- Ramas abiertas, apiladas: `feature/hito-2-nucleo` (PR 1, #8) ←
-  `feature/hito-2-openai` (PR 2, #9) ← `feature/hito-2-terminal` (PR 3, #10).
-  Las integradas se conservan en GitHub.
+- Ramas abiertas: `feature/hito-2-cierre` (PR 4 del hito 2). Las integradas
+  se conservan en GitHub.
 
 ## Para la release
 
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
 
-- Nada pendiente. `v0.1.0` salió sin pasos fuera de lo normal.
+- `v0.2.0`: nada fuera de lo normal. `OPENCODE_API_KEY` y `config.toml` solo
+  hacen falta para usar `maha`, no para la release (`PUESTA_EN_MARCHA` §2 y
+  §3.1).
 
 ## Hecho
 
 Lo más reciente primero.
 
+- **Hito 2, PR 4 (cierre) commiteado, 2026-10-20** (rama
+  `feature/hito-2-cierre`; piezas 19 a 22): versión 0.2.0, nota
+  `docs/guia/02-llamada-a-un-llm.md`, spec en IMPLEMENTADA, y README, MAPA y
+  ESTADO al día.
+  - fuera de plan, a petición del mantenedor: el CI ya no cancela las
+    ejecuciones de los pushes a `main`. Al integrar #8, #9 y #10 seguidos,
+    las de #8 y #9 salieron canceladas (spec §12.13).
+- **Hito 2, PRs 1 a 3 integrados, 2026-10-20** (#8 `ca1aa21`, #9 `dcb7983`,
+  #10 `a1964f5`):
+  - PR 1, el núcleo: Pydantic 2.14.1, mensajes, petición y respuesta,
+    errores del modelo, puerto `ModelClient`, `FakeModelClient` y `Chat`;
+  - PR 2, el adaptador: httpx 0.28.1, respx 0.23.1 y `OpenAIChatClient`.
+    Un fallo encontrado (la clave cortada por el límite de 300 caracteres),
+    convertido en test y arreglado;
+  - PR 3, configuración y terminal: `config.py`, la conversación, el
+    cableado en `bootstrap`, `.env.example` y `PUESTA_EN_MARCHA` §3.1.
+    Corrige la spec §1.11, con el visto bueno del mantenedor: la entrada se
+    lee sin hilos, porque con `input()` en un hilo Ctrl+C colgaba `maha`;
+  - en verde: 116 tests, con Python 3.14 y 3.15. Lo imprevisto, en la spec
+    §12.
 - **Verificación a mano del hito 2, 2026-10-20** (spec §7 y §12.10): los
   9 puntos en verde con OpenCode Go y `glm-5.3-flash`. Go acepta
   `Authorization: Bearer`. Clave del mantenedor en el `.env` y
   `~/.config/maha/config.toml` creados en el WSL del PC de Windows.
-- **Hito 2, PR 3 abierto, 2026-10-20** (PR #10) (rama `feature/hito-2-terminal`;
-  piezas 14 a 18): `config.py`, conversación en la terminal, cableado en
-  `bootstrap`, `.env.example` y `PUESTA_EN_MARCHA` §3.1, y mapa. En verde:
-  116 tests. Probado con un pty: Ctrl+D y `/exit` salen con 0, Ctrl+C con
-  130, y un error de red no corta la conversación.
-  - corrige la spec §1.11, con el visto bueno del mantenedor: la entrada se
-    lee sin hilos, porque con `input()` en un hilo Ctrl+C colgaba `maha`
-    (spec §12.6).
-- **Hito 2, PR 2 abierto, 2026-10-20** (PR #9) (rama `feature/hito-2-openai`,
-  apilada sobre la del PR 1; piezas 9 a 13): httpx 0.28.1 y respx 0.23.1,
-  `OpenAIChatClient` con petición, cabeceras, respuesta y errores, y mapa.
-  En verde: 81 tests. Un fallo encontrado (clave cortada por el límite de
-  300 caracteres), convertido en test y arreglado. Lo imprevisto, en la
-  spec §12.
-- **Hito 2, PR 1 abierto, 2026-10-20** (PR #8) (rama `feature/hito-2-nucleo`;
-  piezas 1 a 8 de la spec §6): Pydantic 2.14.1, mensajes, petición y
-  respuesta, errores del modelo, puerto `ModelClient`, `FakeModelClient`,
-  `Chat` y mapa. En verde: ruff, mypy, import-linter y pytest (32 tests).
-  Lo imprevisto, en la spec §12.
 - **Spec del hito 2 aprobada, 2026-10-20** (PR #7, merge `09ebdb5`), sin
   cambios.
 - **Spec del hito 2 propuesta, 2026-10-20** (rama
@@ -134,14 +137,20 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** revisar e integrar, en este orden y con merge commit, los
-   PRs #8, #9 y #10. Cada uno muestra también los commits de los anteriores
-   hasta que se integran.
-2. **Agente:** PR 4 del hito 2 (`feature/hito-2-cierre`), piezas 19 a 22:
-   versión 0.2.0, nota 02 de la guía, spec IMPLEMENTADA y docs.
+1. **Humano:** revisar e integrar el PR 4 del hito 2
+   (`feature/hito-2-cierre`) con merge commit.
+2. **Agente:** `git switch main && git pull`, borrar la rama local y crear
+   el tag anotado `v0.2.0` sobre ese merge commit (título
+   "v0.2.0 — Primera conversación"). **Humano:** push del tag (o pedírselo
+   al agente). `release.yml` crea la release.
+3. **Agente:** comprobar la release y que
+   `uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.2.0`
+   instala `maha 0.2.0`; anotarlo aquí.
+4. **Agente:** proponer la spec del hito 3 (streaming) en su propio PR
+   (`docs/spec-hito-3-streaming`).
 
-**Sesión del 2026-10-20 en el WSL del PC de Windows:** PRs 1 a 3 del hito 2
-abiertos en GitHub y verificación a mano hecha. Se sigue desde el punto 1.
+**Sesión del 2026-10-20 en el WSL del PC de Windows:** PR 4 del hito 2
+abierto en GitHub. Se sigue desde el punto 1.
 
 ### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
 
@@ -155,10 +164,10 @@ Una vez, la primera vez tras este hito:
 4. `uv sync` y `uv run pre-commit install` (`PUESTA_EN_MARCHA` §0). La
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
-   verde, y `uv run maha --version` → `maha 0.1.0`.
-
-Para revisar la spec en el PC (opcional, también se puede en GitHub):
-`git fetch && git switch docs/spec-hito-2-primera-conversacion`.
+   verde, y `uv run maha --version` → `maha 0.2.0`.
+6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
+   `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). Probar con
+   `uv run --env-file .env maha`.
 
 Después, lanzar el agente desde el clon. Él lee `AGENTS.md` y este fichero,
 y sigue por el primer punto de "Siguiente paso" que no esté hecho. Para
@@ -197,7 +206,7 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 Fase de desarrollo (DESIGN §14), un tag por hito:
 
 - [x] 1. Esqueleto. `v0.1.0` (2026-10-20)
-- [ ] 2. Primera conversación. `v0.2.0`
+- [x] 2. Primera conversación. `v0.2.0` (2026-10-20)
 - [ ] 3. Streaming. `v0.3.0`
 - [ ] 4. Tool calling y bucle agéntico. `v0.4.0`
 - [ ] 5. Permisos y herramientas con efecto. `v0.5.0`

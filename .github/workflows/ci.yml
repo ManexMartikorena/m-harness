@@ -12,9 +12,11 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR cancels its stale run. Pushes to main are never
+# cancelled: every merge commit keeps its full run.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   checks:
