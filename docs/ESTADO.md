@@ -1,19 +1,20 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-20. **Hito 1 (esqueleto) cerrado y publicado
-como `v0.1.0`.** Lo siguiente es proponer la spec del hito 2.
+como `v0.1.0`.** Spec del hito 2 propuesta, pendiente de aprobación.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 1 cerrado (`v0.1.0`). Hito 2 (primera conversación): sin
-empezar; el primer paso es su spec.**
+**Desarrollo. Hito 1 cerrado (`v0.1.0`). Hito 2 (primera conversación): spec
+PROPUESTA en `docs/specs/hito-2-primera-conversacion.md`, en revisión.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.1.0` — Esqueleto** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.1.0
-- Ramas abiertas: ninguna. (Todas las integradas se conservan en GitHub.)
+- Ramas abiertas: `docs/spec-hito-2-primera-conversacion` (la spec del
+  hito 2). Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -25,6 +26,17 @@ un paso fuera de lo normal.
 ## Hecho
 
 Lo más reciente primero.
+
+- **Spec del hito 2 propuesta, 2026-10-20** (rama
+  `docs/spec-hito-2-primera-conversacion`):
+  - hechos comprobados ese día en la documentación oficial (spec §1.1): URLs
+    de chat completions de OpenCode Go y Zen, cabecera
+    `x-opencode-session`, modelos sin entrenamiento, formato de OpenAI;
+    versiones de pydantic 2.14.1, httpx 0.28.1 y respx 0.23.1, probadas con
+    Python 3.14 y 3.15;
+  - corrige DESIGN §7: la configuración del proyecto solo elige proveedor y
+    modelo (spec §1.10);
+  - cuatro PRs de implementación (spec §6).
 
 - **`v0.1.0` publicada, 2026-10-20.** Tag anotado sobre el merge del PR #5
   (`e78f7d9`). `release.yml` creó la release en 12 s: título
@@ -94,18 +106,18 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente:** escribir la spec del hito 2, "Primera conversación"
-   (`docs/specs/hito-2-primera-conversacion.md`, con `docs/specs/PLANTILLA.md`
-   y DESIGN §14 punto 2), en la rama `docs/spec-hito-2-primera-conversacion`.
-   Alcance según DESIGN: tipos del dominio, puerto `ModelClient`, adaptador
-   compatible con OpenAI (sin streaming), configuración (proveedor, modelo,
-   clave), conversación mínima en la terminal y `FakeModelClient`. Antes,
-   comprobar en la documentación oficial (con fecha) la API del proveedor
-   y las versiones de httpx, Pydantic y respx.
-2. **Humano:** revisar la spec en su PR. Integrarlo es aprobarla.
-3. **Humano**, antes de la verificación a mano del hito 2 (no hace falta
-   para la spec): elegir proveedor y conseguir la clave (ver "Pendientes",
-   "Externas"). Sin clave, todo se prueba con `FakeModelClient`.
+1. **Humano:** revisar la spec del hito 2 en su PR (rama
+   `docs/spec-hito-2-primera-conversacion`). Lo que más pesa: §1 (decisiones)
+   y §11 (la lista que se aprueba). Si hay cambios, se piden en el PR.
+2. **Agente**, en ese PR y antes del merge: pasar la spec a APROBADA (con
+   fecha y "con o sin cambios") en la primera línea, y anotar la aprobación
+   en §11.
+3. **Humano:** integrar el PR (merge commit). Eso es la aprobación.
+4. **Agente:** PR 1 del hito 2 (`feature/hito-2-nucleo`), piezas 1 a 8 de
+   la spec §6.
+5. **Humano**, antes de la verificación a mano del hito 2 (PR 3): elegir
+   proveedor y conseguir la clave (ver "Pendientes", "Externas"). Hasta
+   entonces, todo se prueba con `FakeModelClient`.
 
 ### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
 
@@ -137,9 +149,11 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   de Windows ya está listo.
 
 **Externas, con el hito en que bloquean:**
-- **Proveedor de modelos** (hito 2): suscripción propia a OpenCode Go (un solo
-  miembro por espacio de trabajo) u OpenCode Zen con pago por uso. Mientras
-  tanto, `FakeModelClient`.
+- **Proveedor de modelos** (hito 2, verificación a mano del PR 3):
+  suscripción propia a OpenCode Go (10 $/mes; un solo miembro por espacio de
+  trabajo) u OpenCode Zen con pago por uso. `maha` trae los dos
+  predefinidos. Clave en `OPENCODE_API_KEY`. Mientras tanto,
+  `FakeModelClient`.
 
 **Se deciden en la spec de su hito:**
 - búsqueda en la memoria (hito 13);
