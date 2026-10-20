@@ -606,3 +606,8 @@ Propuestas del agente, aprobadas por el humano (2026-10-19):
 - **mypy falla si falta un directorio de `files`** (pieza 3, 2026-10-20):
   `tests: error: Cannot read file`. Por eso `tests/__init__.py` nace en la
   pieza 3 y no en la 5.
+- **import-linter rompe si falta una capa** (pieza 4, 2026-10-20):
+  `Missing layer in container 'mharness': module mharness.bootstrap does not
+  exist`. `__main__` y `bootstrap` van entre paréntesis (capa opcional) hasta
+  la pieza 7, que los quita. Probado a mano: detecta `domain → adapters` y un
+  `config.py` sin capa.
