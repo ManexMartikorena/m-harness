@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-19. **Diseño cerrado**: análisis
+Última actualización: 2026-10-20. **Diseño cerrado**: análisis
 (`docs/ANALISIS.md`) y diseño (`docs/DESIGN.md`) aprobados. Empieza la fase de
 código con el hito 1.
 
@@ -8,11 +8,11 @@ Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo, hito 1 (esqueleto): spec aprobada; implementación por empezar.**
+**Desarrollo, hito 1 (esqueleto): spec aprobada; implementación en curso.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: ninguna.
-- Ramas abiertas: ninguna.
+- Ramas abiertas: `feature/hito-1-esqueleto` (PR 1 del hito 1).
 
 ## Para la release
 
@@ -23,9 +23,11 @@ variable nueva o un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Clon en `~/` en el PC de Windows, 2026-10-20:** el agente trabaja desde
+  `~/Desarrollo/m-harness`, dentro de WSL. El clon viejo de `/mnt/c/…`, limpio
+  y al día, se borró.
 - **WSL preparado en el PC de Windows, 2026-10-19:** Ubuntu 26.04.1,
-  uv 0.13.1, gh 2.102 con login y el agente dentro de WSL. Falta el clon en
-  `~/`: esta sesión aún trabajó desde `/mnt/c/…`.
+  uv 0.13.1, gh 2.102 con login y el agente dentro de WSL.
 - **GitHub revisado, 2026-10-19:** ajustes, rulesets y alertas coinciden con
   `docs/PUESTA_EN_MARCHA.md` §5. Sin issues, tags ni releases.
 - **Spec del hito 1 aprobada, 2026-10-19** (PR #2), sin cambios.
@@ -61,14 +63,10 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano**, en el PC en que se siga (el Ubuntu de casa o el WSL del PC de
-   Windows): clonar el repo en `~/` (o `git pull` si ya está), comprobar
-   uv ≥ 0.13.1 y `gh auth status`, y lanzar el agente desde ese clon
-   (`docs/PUESTA_EN_MARCHA.md` §1 y §6). En el PC de Windows, el clon de
-   `/mnt/c/…` deja de usarse.
-2. **Agente**, desde ese clon: implementar el PR 1 del hito 1
-   (`feature/hito-1-esqueleto`), en el orden de piezas de la spec
-   (`docs/specs/hito-1-esqueleto.md` §6).
+1. **Agente**, en `feature/hito-1-esqueleto`: implementar el PR 1 del hito 1
+   en el orden de piezas de la spec (`docs/specs/hito-1-esqueleto.md` §6).
+2. **Humano**, la próxima vez en el Ubuntu de casa: `git pull`, comprobar
+   uv ≥ 0.13.1 (`uv self update` si no) y `gh auth status`.
 
 ## Pendientes / decisiones abiertas
 
@@ -76,7 +74,8 @@ Lo más reciente primero.
 - Tras integrar su PR 1, añadir al ruleset "main protegida" los checks
   obligatorios del CI (spec del hito 1, §6).
 - uv 0.13.1 o posterior en cada PC: el hito 1 lo exige (spec §1.1). Ya
-  está en el WSL del PC de Windows; falta comprobarlo en el Ubuntu de casa.
+  está en el WSL del PC de Windows; falta comprobarlo en el Ubuntu de casa
+  (Siguiente paso 2).
 
 **Externas, con el hito en que bloquean:**
 - **Proveedor de modelos** (hito 2): suscripción propia a OpenCode Go (un solo
