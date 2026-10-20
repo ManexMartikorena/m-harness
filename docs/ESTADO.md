@@ -1,21 +1,22 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-20. **Hito 1 (esqueleto) cerrado y publicado
-como `v0.1.0`.** Hito 2: PR 1 (el núcleo, #8) y PR 2 (el adaptador) abiertos.
+como `v0.1.0`.** Hito 2: PRs 1 (#8) y 2 (#9) abiertos; PR 3 commiteado.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 1 cerrado (`v0.1.0`). Hito 2 (primera conversación): spec
-APROBADA (PR #7); PR 1 (#8) y PR 2 de 4 abiertos, por integrar.**
+APROBADA (PR #7); PRs 1 (#8) y 2 (#9) abiertos, por integrar; PR 3
+commiteado en local.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.1.0` — Esqueleto** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.1.0
-- Ramas abiertas: `feature/hito-2-nucleo` (PR 1, #8) y
-  `feature/hito-2-openai` (PR 2, sale de la del PR 1). Las integradas se
-  conservan en GitHub.
+- Ramas abiertas, apiladas: `feature/hito-2-nucleo` (PR 1, #8) ←
+  `feature/hito-2-openai` (PR 2, #9) ← `feature/hito-2-terminal` (PR 3).
+  Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -28,7 +29,15 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
-- **Hito 2, PR 2 abierto, 2026-10-20** (rama `feature/hito-2-openai`,
+- **Hito 2, PR 3 commiteado, 2026-10-20** (rama `feature/hito-2-terminal`;
+  piezas 14 a 18): `config.py`, conversación en la terminal, cableado en
+  `bootstrap`, `.env.example` y `PUESTA_EN_MARCHA` §3.1, y mapa. En verde:
+  116 tests. Probado con un pty: Ctrl+D y `/exit` salen con 0, Ctrl+C con
+  130, y un error de red no corta la conversación.
+  - corrige la spec §1.11, con el visto bueno del mantenedor: la entrada se
+    lee sin hilos, porque con `input()` en un hilo Ctrl+C colgaba `maha`
+    (spec §12.6).
+- **Hito 2, PR 2 abierto, 2026-10-20** (PR #9) (rama `feature/hito-2-openai`,
   apilada sobre la del PR 1; piezas 9 a 13): httpx 0.28.1 y respx 0.23.1,
   `OpenAIChatClient` con petición, cabeceras, respuesta y errores, y mapa.
   En verde: 81 tests. Un fallo encontrado (clave cortada por el límite de
@@ -121,17 +130,20 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** revisar e integrar el PR #8 (PR 1) y **después** el PR 2,
-   en ese orden, con merge commit. El PR 2 muestra también los commits del
-   PR 1 hasta que este se integre.
-2. **Agente:** PR 3 del hito 2 (`feature/hito-2-terminal`), piezas 14 a 18
-   de la spec §6.
-3. **Humano**, antes de la verificación a mano del hito 2 (PR 3): copiar la
-   clave de OpenCode Go (consola de opencode.ai) en el `.env` del PC, como
-   `OPENCODE_API_KEY`. Hasta entonces, todo se prueba con `FakeModelClient`.
+1. **Humano:** revisar e integrar, en este orden y con merge commit, el
+   PR #8, el #9 y el del PR 3. Cada uno muestra también los commits de los
+   anteriores hasta que se integran.
+2. **Humano:** copiar la clave de OpenCode Go (consola de opencode.ai) en el
+   `.env` del PC, como `OPENCODE_API_KEY`, y crear
+   `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §3.1). Hasta entonces,
+   todo se prueba sin red.
+3. **Humano y agente:** verificación a mano del hito 2 (spec §7), con la
+   clave real. El punto 5 confirma la autenticación de Go.
+4. **Agente:** PR 4 del hito 2 (`feature/hito-2-cierre`), piezas 19 a 22:
+   versión 0.2.0, nota 02 de la guía, spec IMPLEMENTADA y docs.
 
 **Sesión del 2026-10-20 en el WSL del PC de Windows:** PRs 1 y 2 del hito 2
-abiertos en GitHub. Se sigue desde el punto 1.
+abiertos en GitHub; PR 3 commiteado. Se sigue desde el punto 1.
 
 ### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
 
