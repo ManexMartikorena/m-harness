@@ -1,38 +1,40 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-20. **Hito 2 (primera conversación)
-terminado: PRs 1 a 3 integrados y PR 4 (cierre) por integrar.** Después,
-tag `v0.2.0`.
+Última actualización: 2026-10-20. **Hito 2 (primera conversación) cerrado y
+publicado como `v0.2.0`.** Siguiente: la spec del hito 3 (streaming).
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 2 (primera conversación): spec IMPLEMENTADA, PRs 1 a 3
-integrados (#8, #9 y #10), verificación a mano hecha y PR 4 (cierre) por
-integrar.**
+**Desarrollo. Hito 2 cerrado (`v0.2.0`). Hito 3 (streaming): spec por
+proponer.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.1.0` — Esqueleto** (2026-10-20):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.1.0
-- Ramas abiertas: `feature/hito-2-cierre` (PR 4 del hito 2). Las integradas
-  se conservan en GitHub.
+- Última versión: **`v0.2.0` — Primera conversación** (2026-10-20):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.2.0
+- Ramas abiertas: `docs/cierre-hito-2` (este cierre). Las integradas se
+  conservan en GitHub.
 
 ## Para la release
 
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
 
-- `v0.2.0`: nada fuera de lo normal. `OPENCODE_API_KEY` y `config.toml` solo
-  hacen falta para usar `maha`, no para la release (`PUESTA_EN_MARCHA` §2 y
-  §3.1).
+- Nada pendiente. `v0.2.0` salió sin pasos fuera de lo normal.
 
 ## Hecho
 
 Lo más reciente primero.
 
-- **Hito 2, PR 4 (cierre) commiteado, 2026-10-20** (rama
-  `feature/hito-2-cierre`; piezas 19 a 22): versión 0.2.0, nota
+- **`v0.2.0` publicada, 2026-10-20.** Tag anotado sobre el merge del PR #11
+  (`9480b1d`). `release.yml` creó la release en 12 s: título
+  "v0.2.0 — Primera conversación", las notas del tag y la lista de PRs #6 a
+  #11. `uvx --from git+https://github.com/ManexMartikorena/m-harness@v0.2.0
+  maha --version` → `maha 0.2.0`. El CI del merge del #11 pasó entero (ya sin
+  cancelaciones en `main`).
+- **Hito 2, PR 4 (#11) integrado, 2026-10-20** (merge `9480b1d`; piezas 19
+  a 22): versión 0.2.0, nota
   `docs/guia/02-llamada-a-un-llm.md`, spec en IMPLEMENTADA, y README, MAPA y
   ESTADO al día.
   - fuera de plan, a petición del mantenedor: el CI ya no cancela las
@@ -137,20 +139,20 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** revisar e integrar el PR 4 del hito 2
-   (`feature/hito-2-cierre`) con merge commit.
-2. **Agente:** `git switch main && git pull`, borrar la rama local y crear
-   el tag anotado `v0.2.0` sobre ese merge commit (título
-   "v0.2.0 — Primera conversación"). **Humano:** push del tag (o pedírselo
-   al agente). `release.yml` crea la release.
-3. **Agente:** comprobar la release y que
-   `uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.2.0`
-   instala `maha 0.2.0`; anotarlo aquí.
-4. **Agente:** proponer la spec del hito 3 (streaming) en su propio PR
-   (`docs/spec-hito-3-streaming`).
+1. **Humano:** integrar el PR de este cierre (`docs/cierre-hito-2`) con merge
+   commit, antes de cambiar de PC.
+2. **Humano, en el Ubuntu de casa:** preparar el PC (ver "Al abrir el agente
+   en otro PC", más abajo), con la clave de OpenCode Go en el `.env` y
+   `~/.config/maha/config.toml`.
+3. **Agente:** proponer la spec del hito 3 (streaming) en su propio PR
+   (`docs/spec-hito-3-streaming`), con los hechos de SSE (*Server-Sent
+   Events*, el formato de streaming de las APIs) comprobados ese día en la
+   documentación oficial. Arrastra dos puntos del hito 2: si `complete()` se
+   queda junto a `stream()` (spec 2, §1.3) y los tokens de salida altos de
+   `glm-5.3-flash` (spec 2, §12.12).
 
-**Sesión del 2026-10-20 en el WSL del PC de Windows:** PR 4 del hito 2
-abierto en GitHub. Se sigue desde el punto 1.
+**Sesión cerrada el 2026-10-20 en el WSL del PC de Windows**, con el hito 2
+publicado (`v0.2.0`) y este cierre en su PR. Se sigue desde el punto 1.
 
 ### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
 
@@ -166,8 +168,9 @@ Una vez, la primera vez tras este hito:
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → `maha 0.2.0`.
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
-   `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). Probar con
-   `uv run --env-file .env maha`.
+   `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
+   viaja por git: se copia de la consola de opencode.ai (o se crea otra para
+   ese PC). Probar con `uv run --env-file .env maha`: dos turnos y `/exit`.
 
 Después, lanzar el agente desde el clon. Él lee `AGENTS.md` y este fichero,
 y sigue por el primer punto de "Siguiente paso" que no esté hecho. Para
