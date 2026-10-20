@@ -600,4 +600,40 @@ Propuestas del agente, aprobadas por el humano (2026-10-19):
 
 ## 12. Aprendido al implementar
 
-(Se añade al implementar.)
+- **ruff 0.17 formatea también Markdown** (pieza 2, 2026-10-20): por
+  defecto, `ruff format` revisa los bloques de código Python de los `.md`.
+  Se deja así: los ejemplos de las docs siguen el mismo estilo que el código.
+- **mypy falla si falta un directorio de `files`** (pieza 3, 2026-10-20):
+  `tests: error: Cannot read file`. Por eso `tests/__init__.py` nace en la
+  pieza 3 y no en la 5.
+- **import-linter rompe si falta una capa** (pieza 4, 2026-10-20):
+  `Missing layer in container 'mharness': module mharness.bootstrap does not
+  exist`. `__main__` y `bootstrap` van entre paréntesis (capa opcional) hasta
+  la pieza 7, que los quita. Probado a mano: detecta `domain → adapters` y un
+  `config.py` sin capa.
+- **El hook de gitleaks no mira el primer commit de un repo** (pieza 8,
+  2026-10-20): usa `gitleaks git --pre-commit --staged`, que compara con
+  `HEAD`, y sin commits no hay `HEAD`. En un repo desechable con un commit
+  previo, el token inventado (`ghp_` + 36) bloquea el commit
+  (`RuleID: github-pat`). A M-Harness no le afecta: ya tiene historial, y el
+  CI revisa el historial entero.
+- **La primera instalación de pre-commit tardó 25 s** (Go y gitleaks), no
+  minutos.
+- **Acciones del CI comprobadas el 2026-10-20** en sus releases de GitHub:
+  los hashes de `checkout` v7.0.1, `setup-uv` v10.3.0 y `gitleaks-action`
+  v3.0.0 son los de §1.1 y §1.11, y las tres siguen siendo la última versión.
+- **actionlint 1.7.12 no conoce `ubuntu-26.04`** (pieza 9): su lista de
+  runners está anticuada. El runner existe y no es beta (README de
+  `actions/runner-images`, 2026-10-20). Sin más avisos.
+- **Python 3.15 en local** (pieza 9): con `UV_PYTHON=3.15` pasan `uv sync
+  --locked`, ruff, mypy, import-linter y pytest. El riesgo de §10 no se ha
+  dado, de momento.
+- **CI del PR #4, 2026-10-20:** `checks (3.14)`, `checks (3.15)` y
+  `secrets` en verde. gitleaks-action funciona con `contents: read`: no hace
+  falta `pull-requests: read` (riesgo de §10).
+- **gitleaks-action no revisa todo el historial en un PR** (2026-10-20): en
+  un PR solo mira sus commits (13 de 43 en el PR #4), y en un push, los
+  commits del push. El historial entero, solo con `workflow_dispatch`. Como
+  todo entra por PR, cada commit nuevo queda revisado. Los commits anteriores
+  al CI se revisan una vez, a mano, tras integrar el PR 1 (`ESTADO`). §1.11
+  decía "sobre todo el historial": eso es lo que hace con `workflow_dispatch`.

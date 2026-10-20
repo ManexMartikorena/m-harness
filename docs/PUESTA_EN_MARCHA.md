@@ -8,13 +8,22 @@ Qué hay que hacer para dejar este proyecto funcionando en una máquina nueva o
 en otra de las que se usan. **El `.env` no viaja por git**, así que todo lo que
 hay aquí es exactamente lo que no se arregla con un `git pull`.
 
-Última revisión: 2026-10-19.
+Última revisión: 2026-10-20.
 
 ## 0. Tras cada `git pull`
 
 Lo último que hay que hacer, lo más reciente arriba:
 
-- (nada todavía)
+- **Hito 1, CI (2026-10-20):** `gh auth refresh --hostname github.com
+  --scopes workflow`. Sin él, no se puede hacer push de `.github/workflows/`
+  (§6).
+- **Hito 1, pieza 8 (2026-10-20):** `uv sync` y `uv run pre-commit install`
+  (una vez por clon). La primera ejecución de los hooks descarga Go y compila
+  gitleaks: necesita red y tarda un poco (25 s en el WSL del PC de Windows).
+- **Hito 1, pieza 1 (2026-10-20):** uv 0.13.1 o posterior. Comprobar con
+  `uv --version`; si es más viejo, `uv self update` (o el método con que se
+  instaló uv). Con uno viejo, `uv sync` falla con un aviso claro. Después,
+  `uv sync`.
 
 ## 1. Entorno
 
@@ -24,12 +33,16 @@ Lo último que hay que hacer, lo más reciente arriba:
   `/mnt/c/…`: es mucho más lento y mezcla finales de línea. Windows nativo no
   es una plataforma soportada (spec del hito 1, §1.14).
 - **git** y **GitHub CLI** (`gh`).
-- **uv** (https://docs.astral.sh/uv/). Python lo instala uv:
-  `uv python install 3.14`.
+- **uv 0.13.1 o posterior** (https://docs.astral.sh/uv/). `pyproject.toml`
+  lo exige (`required-version`). Python lo instala uv: `uv sync` descarga
+  3.14 si falta, la versión que fija `.python-version`.
 - Desde el hito 1:
   - `uv sync` tras clonar y tras cada pull que cambie `pyproject.toml` o
     `uv.lock`;
-  - `uv run pre-commit install`, una vez por clon.
+  - `uv run pre-commit install`, una vez por clon. Desde entonces, cada
+    `git commit` pasa ruff, gitleaks y las comprobaciones de YAML y TOML.
+    La primera vez descarga Go y compila gitleaks (necesita red); queda en
+    `~/.cache/pre-commit/`.
 
 ## 2. `.env`
 
@@ -57,7 +70,7 @@ Desde el hito 1:
 
 ```
 uv run ruff check . && uv run ruff format --check .
-uv run mypy src
+uv run mypy
 uv run lint-imports
 uv run pytest
 ```
@@ -95,6 +108,11 @@ Aplicado el 2026-10-19. Se deja escrito para poder rehacerlo.
   ningún PC.
 - En Windows, el agente se instala y se lanza **dentro de WSL**, desde el
   clon de `~/`. Así, los comandos que ejecuta son los de Linux.
-- `gh` autenticado para push, PRs y consultar el CI:
-  `gh auth login --hostname github.com --git-protocol https --web`. El login no
+- `gh` autenticado para push, PRs y consultar el CI, **con el scope
+  `workflow`**:
+  `gh auth login --hostname github.com --git-protocol https --web --scopes workflow`.
+  Sin ese scope, GitHub rechaza el push de cualquier cambio en
+  `.github/workflows/` ("refusing to allow an OAuth App to create or update
+  workflow … without `workflow` scope"). Si el login ya existe:
+  `gh auth refresh --hostname github.com --scopes workflow`. El login no
   viaja por git: se hace una vez por PC (en Windows, dentro de WSL).

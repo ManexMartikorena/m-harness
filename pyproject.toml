@@ -1,0 +1,76 @@
+[project]
+name = "m-harness"
+version = "0.0.0"
+description = "Agente de terminal de propósito general, construido desde cero."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Manex Martikorena" }]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+maha = "mharness.bootstrap:main"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv]
+required-version = ">=0.13.1"
+
+[tool.uv.build-backend]
+module-name = "mharness"
+
+[dependency-groups]
+dev = [
+    "import-linter>=2.15",
+    "mypy>=2.4.0",
+    "pre-commit>=4.7.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.17.1",
+]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # import order
+    "B",     # bugbear
+    "UP",    # modern syntax
+    "SIM",   # simplifications
+    "ASYNC", # asyncio pitfalls
+    "PT",    # pytest style
+    "RUF",   # ruff-specific
+]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+
+[tool.importlinter]
+root_package = "mharness"
+
+[[tool.importlinter.contracts]]
+name = "Hexagonal layers"
+type = "layers"
+containers = ["mharness"]
+layers = ["__main__", "bootstrap", "adapters", "application", "ports", "domain"]
+exhaustive = true
+
+[[tool.importlinter.contracts]]
+name = "Adapters are independent"
+type = "independence"
+modules = ["mharness.adapters.*"]
+
+[tool.pytest]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config"]
+filterwarnings = ["error"]
+asyncio_mode = "auto"
