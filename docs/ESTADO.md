@@ -1,20 +1,22 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-20. **Hito 2 (primera conversación) cerrado y
-publicado como `v0.2.0`.** Hito 3 (streaming): spec PROPUESTA, PR abierto.
+publicado como `v0.2.0`.** Hito 3 (streaming): spec PROPUESTA, PR #13 abierto
+(https://github.com/ManexMartikorena/m-harness/pull/13), CI en verde.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 2 cerrado (`v0.2.0`). Hito 3 (streaming): spec PROPUESTA
-en la rama `docs/spec-hito-3-streaming`, PR abierto.**
+en la rama `docs/spec-hito-3-streaming`, PR #13 abierto
+(https://github.com/ManexMartikorena/m-harness/pull/13), CI en verde.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.2.0` — Primera conversación** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.2.0
-- Ramas abiertas: `docs/spec-hito-3-streaming` (spec del hito 3). Las
-  integradas se conservan en GitHub.
+- Ramas abiertas: `docs/spec-hito-3-streaming` (PR #13). Las integradas se
+  conservan en GitHub.
 
 ## Para la release
 
@@ -28,7 +30,8 @@ un paso fuera de lo normal.
 Lo más reciente primero.
 
 - **Spec del hito 3 propuesta, 2026-10-20** (rama
-  `docs/spec-hito-3-streaming`, PR abierto):
+  `docs/spec-hito-3-streaming`, PR #13 abierto
+  (https://github.com/ManexMartikorena/m-harness/pull/13), CI en verde):
   - `complete()` sale del puerto: queda `stream()`, y `collect()` (en
     `application`) construye la respuesta entera a partir de los eventos;
   - SSE (*Server-Sent Events*, el formato de streaming de las APIs) a mano,
@@ -179,23 +182,43 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** decidir las dudas de la spec §11 e integrar el PR de la spec
-   con merge commit (pasa a APROBADA). Las dudas, con su número en §11:
+1. **Humano:** decidir las dudas de la spec §11 y decírselas al agente. Las
+   dudas, con su número en §11:
    - 1: `complete()` fuera del puerto;
    - 2: indicador "esperando…" durante el silencio inicial (recomendada la
      opción B);
    - 3: Ctrl+C a mitad de respuesta vuelve al prompt;
    - 5: `Usage` sin `None`.
-2. **Agente:** implementar el hito 3 por piezas (spec §6) en
-   `feature/hito-3-eventos`, desde la pieza 1: eventos del dominio. La sonda
-   ya no es una pieza.
+2. **Agente, en la rama del PR** (`git fetch && git switch
+   docs/spec-hito-3-streaming && git pull`):
+   - anotar las decisiones en §11, "Del humano", con fecha;
+   - pasar la primera línea de la spec a "Estado: APROBADA (fecha)" (AGENTS:
+     en ese PR la spec pasa a APROBADA);
+   - ajustar la spec si alguna decisión cambia lo propuesto;
+   - actualizar ESTADO, commit, y push si el humano lo pide.
+3. **Humano:** integrar el PR #13 con merge commit desde GitHub, con el CI en
+   verde.
+4. **Humano o agente, en cada PC:** `git switch main && git pull` y borrar la
+   rama local de la spec si existe (`git branch -d
+   docs/spec-hito-3-streaming`). En el PC de Windows, borrar también las
+   ramas locales ya integradas que queden (p. ej. `docs/cierre-hito-2`).
+5. **Agente:** implementar el hito 3 por piezas (spec §6) en
+   `feature/hito-3-eventos`, desde la pieza 1 (eventos del dominio).
 
-**Sesión abierta el 2026-10-20 en el Ubuntu de casa.** El mantenedor revisó la
-spec y pidió push y PR. Se sigue desde el punto 1.
+**Sesión cerrada el 2026-10-20 en el Ubuntu de casa.** PR #13 abierto con la
+spec PROPUESTA y el CI en verde; nada sin push. Se sigue desde el punto 1, en
+cualquier PC.
 
-### Al abrir el agente en otro PC (por ejemplo, de vuelta en el WSL del PC de Windows)
+### Al abrir el agente en otro PC
 
-Una vez, la primera vez tras este hito:
+Los dos PCs ya están preparados: el WSL del PC de Windows y el Ubuntu de
+casa. No hace falta repetir la puesta a punto. Si un pull cambia
+dependencias, basta con `uv sync`.
+
+Lo primero, en cualquiera de los dos: `cd` al clon, `git fetch` y contrastar
+con GitHub (`gh pr list`) en qué punto de "Siguiente paso" se está.
+
+**Solo para un PC nuevo o tras un pull que toque dependencias:**
 1. `cd` al clon y `git switch main && git pull`.
 2. `uv --version`: tiene que ser 0.13.1 o posterior (si no,
    `uv self update`).
