@@ -1,21 +1,21 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-20. **Hito 1 (esqueleto) cerrado y publicado
-como `v0.1.0`.** Hito 2: PRs 1 (#8) y 2 (#9) abiertos; PR 3 commiteado.
+como `v0.1.0`.** Hito 2: PRs #8, #9 y #10 abiertos; verificación a mano hecha.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 1 cerrado (`v0.1.0`). Hito 2 (primera conversación): spec
-APROBADA (PR #7); PRs 1 (#8) y 2 (#9) abiertos, por integrar; PR 3
-commiteado en local.**
+APROBADA (PR #7); PRs 1 a 3 (#8, #9 y #10) abiertos, por integrar;
+verificación a mano hecha. Falta el PR 4 (cierre).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.1.0` — Esqueleto** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.1.0
 - Ramas abiertas, apiladas: `feature/hito-2-nucleo` (PR 1, #8) ←
-  `feature/hito-2-openai` (PR 2, #9) ← `feature/hito-2-terminal` (PR 3).
+  `feature/hito-2-openai` (PR 2, #9) ← `feature/hito-2-terminal` (PR 3, #10).
   Las integradas se conservan en GitHub.
 
 ## Para la release
@@ -29,7 +29,11 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
-- **Hito 2, PR 3 commiteado, 2026-10-20** (rama `feature/hito-2-terminal`;
+- **Verificación a mano del hito 2, 2026-10-20** (spec §7 y §12.10): los
+  9 puntos en verde con OpenCode Go y `glm-5.3-flash`. Go acepta
+  `Authorization: Bearer`. Clave del mantenedor en el `.env` y
+  `~/.config/maha/config.toml` creados en el WSL del PC de Windows.
+- **Hito 2, PR 3 abierto, 2026-10-20** (PR #10) (rama `feature/hito-2-terminal`;
   piezas 14 a 18): `config.py`, conversación en la terminal, cableado en
   `bootstrap`, `.env.example` y `PUESTA_EN_MARCHA` §3.1, y mapa. En verde:
   116 tests. Probado con un pty: Ctrl+D y `/exit` salen con 0, Ctrl+C con
@@ -130,20 +134,14 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** revisar e integrar, en este orden y con merge commit, el
-   PR #8, el #9 y el del PR 3. Cada uno muestra también los commits de los
-   anteriores hasta que se integran.
-2. **Humano:** copiar la clave de OpenCode Go (consola de opencode.ai) en el
-   `.env` del PC, como `OPENCODE_API_KEY`, y crear
-   `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §3.1). Hasta entonces,
-   todo se prueba sin red.
-3. **Humano y agente:** verificación a mano del hito 2 (spec §7), con la
-   clave real. El punto 5 confirma la autenticación de Go.
-4. **Agente:** PR 4 del hito 2 (`feature/hito-2-cierre`), piezas 19 a 22:
+1. **Humano:** revisar e integrar, en este orden y con merge commit, los
+   PRs #8, #9 y #10. Cada uno muestra también los commits de los anteriores
+   hasta que se integran.
+2. **Agente:** PR 4 del hito 2 (`feature/hito-2-cierre`), piezas 19 a 22:
    versión 0.2.0, nota 02 de la guía, spec IMPLEMENTADA y docs.
 
-**Sesión del 2026-10-20 en el WSL del PC de Windows:** PRs 1 y 2 del hito 2
-abiertos en GitHub; PR 3 commiteado. Se sigue desde el punto 1.
+**Sesión del 2026-10-20 en el WSL del PC de Windows:** PRs 1 a 3 del hito 2
+abiertos en GitHub y verificación a mano hecha. Se sigue desde el punto 1.
 
 ### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
 
@@ -174,13 +172,14 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 
 **Puestos de trabajo:**
 - Ubuntu de casa: uv ≥ 0.13.1, `gh` con el scope `workflow`, `uv sync` y
-  `pre-commit install` (ver "Al abrir el agente en otro PC"). El WSL del PC
-  de Windows ya está listo.
+  `pre-commit install` (ver "Al abrir el agente en otro PC"). Para conversar
+  con `maha`, además: el `.env` con `OPENCODE_API_KEY` y
+  `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). El WSL del PC
+  de Windows ya está listo, con clave y configuración.
 
 **Externas, con el hito en que bloquean:**
-- **Proveedor de modelos: decidido, OpenCode Go** (el mantenedor tiene la
-  suscripción, 2026-10-20). Falta la clave en el `.env` de cada PC, como
-  `OPENCODE_API_KEY`, antes de la verificación a mano del PR 3 del hito 2.
+- **Proveedor de modelos: OpenCode Go**, funcionando desde el 2026-10-20
+  (verificación a mano del hito 2).
 
 **Se deciden en la spec de su hito:**
 - búsqueda en la memoria (hito 13);
