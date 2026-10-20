@@ -3,7 +3,7 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-20 (hito 1 cerrado).
+Última actualización: 2026-10-20 (spec del hito 2 aprobada).
 
 ## Raíz
 
@@ -36,6 +36,7 @@ ficheros.
 | `guia/01-arquitectura-hexagonal.md` | Nota del hito 1: capas, raíz de composición y la base que lo vigila |
 | `specs/PLANTILLA.md` | Formato de las specs de hito y de mejora |
 | `specs/hito-1-esqueleto.md` | Spec del hito 1 (IMPLEMENTADA): paquete, capas, calidad, CI y release |
+| `specs/hito-2-primera-conversacion.md` | Spec del hito 2 (APROBADA): dominio, puerto `ModelClient`, adaptador de OpenAI, configuración y conversación en la terminal |
 
 ## Código: `src/mharness/`
 

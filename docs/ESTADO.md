@@ -1,19 +1,21 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-20. **Hito 1 (esqueleto) cerrado y publicado
-como `v0.1.0`.** Lo siguiente es proponer la spec del hito 2.
+como `v0.1.0`.** Spec del hito 2 aprobada, sin cambios; falta integrar su PR.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 1 cerrado (`v0.1.0`). Hito 2 (primera conversación): sin
-empezar; el primer paso es su spec.**
+**Desarrollo. Hito 1 cerrado (`v0.1.0`). Hito 2 (primera conversación): spec
+APROBADA en `docs/specs/hito-2-primera-conversacion.md` (PR #7, por
+integrar); implementación por empezar.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.1.0` — Esqueleto** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.1.0
-- Ramas abiertas: ninguna. (Todas las integradas se conservan en GitHub.)
+- Ramas abiertas: `docs/spec-hito-2-primera-conversacion` (la spec del
+  hito 2). Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -25,6 +27,20 @@ un paso fuera de lo normal.
 ## Hecho
 
 Lo más reciente primero.
+
+- **Spec del hito 2 aprobada, 2026-10-20** (PR #7), sin cambios. Primera
+  línea y §11 al día en la rama de la spec.
+- **Spec del hito 2 propuesta, 2026-10-20** (rama
+  `docs/spec-hito-2-primera-conversacion`, PR abierto en GitHub, sin
+  integrar). Proveedor elegido por el mantenedor: OpenCode Go.
+  - hechos comprobados ese día en la documentación oficial (spec §1.1): URLs
+    de chat completions de OpenCode Go y Zen, cabecera
+    `x-opencode-session`, modelos sin entrenamiento, formato de OpenAI;
+    versiones de pydantic 2.14.1, httpx 0.28.1 y respx 0.23.1, probadas con
+    Python 3.14 y 3.15;
+  - corrige DESIGN §7: la configuración del proyecto solo elige proveedor y
+    modelo (spec §1.10);
+  - cuatro PRs de implementación (spec §6).
 
 - **`v0.1.0` publicada, 2026-10-20.** Tag anotado sobre el merge del PR #5
   (`e78f7d9`). `release.yml` creó la release en 12 s: título
@@ -94,18 +110,17 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente:** escribir la spec del hito 2, "Primera conversación"
-   (`docs/specs/hito-2-primera-conversacion.md`, con `docs/specs/PLANTILLA.md`
-   y DESIGN §14 punto 2), en la rama `docs/spec-hito-2-primera-conversacion`.
-   Alcance según DESIGN: tipos del dominio, puerto `ModelClient`, adaptador
-   compatible con OpenAI (sin streaming), configuración (proveedor, modelo,
-   clave), conversación mínima en la terminal y `FakeModelClient`. Antes,
-   comprobar en la documentación oficial (con fecha) la API del proveedor
-   y las versiones de httpx, Pydantic y respx.
-2. **Humano:** revisar la spec en su PR. Integrarlo es aprobarla.
-3. **Humano**, antes de la verificación a mano del hito 2 (no hace falta
-   para la spec): elegir proveedor y conseguir la clave (ver "Pendientes",
-   "Externas"). Sin clave, todo se prueba con `FakeModelClient`.
+1. **Humano:** integrar el PR #7 (merge commit), con el CI en verde.
+   Después, en local: `git switch main && git pull` y borrar la rama
+   `docs/spec-hito-2-primera-conversacion`.
+2. **Agente:** PR 1 del hito 2 (`feature/hito-2-nucleo`), piezas 1 a 8 de
+   la spec §6.
+3. **Humano**, antes de la verificación a mano del hito 2 (PR 3): copiar la
+   clave de OpenCode Go (consola de opencode.ai) en el `.env` del PC, como
+   `OPENCODE_API_KEY`. Hasta entonces, todo se prueba con `FakeModelClient`.
+
+**Sesión del 2026-10-20 en el WSL del PC de Windows:** spec del hito 2
+aprobada en su PR, pendiente de integrar. Se sigue desde el punto 1.
 
 ### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
 
@@ -120,6 +135,9 @@ Una vez, la primera vez tras este hito:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → `maha 0.1.0`.
+
+Para revisar la spec en el PC (opcional, también se puede en GitHub):
+`git fetch && git switch docs/spec-hito-2-primera-conversacion`.
 
 Después, lanzar el agente desde el clon. Él lee `AGENTS.md` y este fichero,
 y sigue por el primer punto de "Siguiente paso" que no esté hecho. Para
@@ -137,9 +155,9 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   de Windows ya está listo.
 
 **Externas, con el hito en que bloquean:**
-- **Proveedor de modelos** (hito 2): suscripción propia a OpenCode Go (un solo
-  miembro por espacio de trabajo) u OpenCode Zen con pago por uso. Mientras
-  tanto, `FakeModelClient`.
+- **Proveedor de modelos: decidido, OpenCode Go** (el mantenedor tiene la
+  suscripción, 2026-10-20). Falta la clave en el `.env` de cada PC, como
+  `OPENCODE_API_KEY`, antes de la verificación a mano del PR 3 del hito 2.
 
 **Se deciden en la spec de su hito:**
 - búsqueda en la memoria (hito 13);

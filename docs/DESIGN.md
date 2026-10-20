@@ -230,7 +230,7 @@ Session(id, created_at, cwd, model, messages, usage)
 | Concurrencia | `asyncio` | Streaming, cancelación y paralelismo |
 | Transporte HTTP | httpx (asíncrono), directo | Se ve el JSON exacto que viaja. En la industria se usan los SDK oficiales o LiteLLM (§7.1) |
 | Validación y esquemas | Pydantic v2 | Herramientas, JSON Schema para el modelo, configuración, tipos del dominio |
-| Configuración | TOML (`tomllib`) validado con Pydantic. Usuario: `~/.config/maha/config.toml`; proyecto: `.maha/config.toml` | Biblioteca estándar. La configuración del proyecto prevalece sobre la del usuario |
+| Configuración | TOML (`tomllib`) validado con Pydantic. Usuario: `~/.config/maha/config.toml`; proyecto: `.maha/config.toml` | Biblioteca estándar. La configuración del proyecto prevalece sobre la del usuario, pero solo puede elegir proveedor y modelo: los proveedores (URL y variable de la clave) solo se declaran en la del usuario. *(Corregido el 20/10/2026, spec del hito 2, §1.10: un repositorio ajeno podría desviar la clave del usuario a otro servidor.)* |
 | Credenciales | Variables de entorno (por ejemplo, `OPENCODE_API_KEY`). En desarrollo, `.env` cargado con `uv run --env-file .env` | `maha` nunca lee un `.env` por su cuenta, para no cargar secretos de los proyectos donde trabaja |
 | Interfaz de terminal | Rich (pintar) + prompt_toolkit (entrada) | Fontanería estándar. Textual queda como opción si algún día se quiere una TUI completa |
 | Argumentos de línea de comandos | `argparse` | Biblioteca estándar; bastan unas pocas opciones |
