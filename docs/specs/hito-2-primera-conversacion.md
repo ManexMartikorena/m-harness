@@ -1,4 +1,4 @@
-Estado: PROPUESTA (2026-10-20)
+Estado: PROPUESTA (2026-10-20) → APROBADA (2026-10-20, por el humano, sin cambios)
 
 # Spec — Hito 2: Primera conversación
 
@@ -655,8 +655,9 @@ Del humano (2026-10-20):
 - Proveedor para el desarrollo: **OpenCode Go**, con su suscripción. Cierra
   el pendiente de ANALISIS §12. La verificación a mano (§7) se hace con
   `provider = "opencode-go"`.
+- Aprueba la spec sin cambios, en el PR #7.
 
-Propuestas del agente, pendientes de aprobación (2026-10-20):
+Propuestas del agente, aprobadas por el humano (2026-10-20):
 1. Dependencias: pydantic y httpx de ejecución; respx de desarrollo (§1.2).
 2. Puerto `ModelClient.complete()`, sin streaming; `stream()` en el hito 3
    (§1.3).
