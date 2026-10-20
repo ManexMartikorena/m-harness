@@ -1,14 +1,15 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-20. **Hito 1 (esqueleto) cerrado y publicado
-como `v0.1.0`.** Spec del hito 2 propuesta, pendiente de aprobación.
+como `v0.1.0`.** Spec del hito 2 aprobada, sin cambios; falta integrar su PR.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 1 cerrado (`v0.1.0`). Hito 2 (primera conversación): spec
-PROPUESTA en `docs/specs/hito-2-primera-conversacion.md`, en revisión.**
+APROBADA en `docs/specs/hito-2-primera-conversacion.md` (PR #7, por
+integrar); implementación por empezar.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.1.0` — Esqueleto** (2026-10-20):
@@ -27,6 +28,8 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Spec del hito 2 aprobada, 2026-10-20** (PR #7), sin cambios. Primera
+  línea y §11 al día en la rama de la spec.
 - **Spec del hito 2 propuesta, 2026-10-20** (rama
   `docs/spec-hito-2-primera-conversacion`, PR abierto en GitHub, sin
   integrar). Proveedor elegido por el mantenedor: OpenCode Go.
@@ -107,21 +110,17 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** revisar la spec del hito 2 en su PR (rama
-   `docs/spec-hito-2-primera-conversacion`). Lo que más pesa: §1 (decisiones)
-   y §11 (la lista que se aprueba). Si hay cambios, se piden en el PR.
-2. **Agente**, en ese PR y antes del merge: pasar la spec a APROBADA (con
-   fecha y "con o sin cambios") en la primera línea, y anotar la aprobación
-   en §11.
-3. **Humano:** integrar el PR (merge commit). Eso es la aprobación.
-4. **Agente:** PR 1 del hito 2 (`feature/hito-2-nucleo`), piezas 1 a 8 de
+1. **Humano:** integrar el PR #7 (merge commit), con el CI en verde.
+   Después, en local: `git switch main && git pull` y borrar la rama
+   `docs/spec-hito-2-primera-conversacion`.
+2. **Agente:** PR 1 del hito 2 (`feature/hito-2-nucleo`), piezas 1 a 8 de
    la spec §6.
-5. **Humano**, antes de la verificación a mano del hito 2 (PR 3): copiar la
+3. **Humano**, antes de la verificación a mano del hito 2 (PR 3): copiar la
    clave de OpenCode Go (consola de opencode.ai) en el `.env` del PC, como
    `OPENCODE_API_KEY`. Hasta entonces, todo se prueba con `FakeModelClient`.
 
-**Sesión cerrada el 2026-10-20 en el WSL del PC de Windows**, con la spec del
-hito 2 en su PR, sin integrar. Se sigue desde el punto 1.
+**Sesión del 2026-10-20 en el WSL del PC de Windows:** spec del hito 2
+aprobada en su PR, pendiente de integrar. Se sigue desde el punto 1.
 
 ### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
 
