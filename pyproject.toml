@@ -9,6 +9,9 @@ authors = [{ name = "Manex Martikorena" }]
 requires-python = ">=3.14"
 dependencies = []
 
+[project.scripts]
+maha = "mharness.bootstrap:main"
+
 [build-system]
 requires = ["uv_build>=0.13.1,<0.14"]
 build-backend = "uv_build"
@@ -57,15 +60,7 @@ root_package = "mharness"
 name = "Hexagonal layers"
 type = "layers"
 containers = ["mharness"]
-# (__main__) and (bootstrap) are optional until they exist (hito 1, piece 7).
-layers = [
-    "(__main__)",
-    "(bootstrap)",
-    "adapters",
-    "application",
-    "ports",
-    "domain",
-]
+layers = ["__main__", "bootstrap", "adapters", "application", "ports", "domain"]
 exhaustive = true
 
 [[tool.importlinter.contracts]]
