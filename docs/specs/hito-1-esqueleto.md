@@ -655,6 +655,11 @@ Propuestas del agente, aprobadas por el humano (2026-10-19):
   revisó con gitleaks 41 commits (el historial entero, sin contar merges
   vacíos): sin secretos.
 
+- **Release `v0.1.0`, 2026-10-20:** el push del tag disparó `release.yml`,
+  que pasó a la primera (12 s). Título y notas salieron del tag anotado, con
+  la lista de PRs debajo. `uv tool install` desde el tag instala
+  `maha 0.1.0`. Con esto, §7 queda completa.
+
 Resumen: el hito se hizo en dos PRs (#4 y el de la release) con el orden de
 §6, más un commit fuera de plan (versión de gitleaks en el CI). Ninguna
 decisión de §11 cambió.
