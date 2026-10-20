@@ -70,11 +70,14 @@ async def converse(
     provider: str,
     model: str,
     read_line: ReadLine | None = None,
-    out: TextIO = sys.stdout,
-    err: TextIO = sys.stderr,
+    out: TextIO | None = None,
+    err: TextIO | None = None,
 ) -> int:
     """Run the conversation until /exit, Ctrl+D or Ctrl+C; return the exit code."""
     read = read_line or StdinLines().readline
+    # Looked up now, not at import time, in case they were replaced.
+    out = sys.stdout if out is None else out
+    err = sys.stderr if err is None else err
     loop = asyncio.get_running_loop()
     task = asyncio.current_task()
     assert task is not None

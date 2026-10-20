@@ -1,6 +1,7 @@
 """Command-line parsing for `maha`."""
 
 import argparse
+import sys
 from collections.abc import Sequence
 from importlib.metadata import version
 
@@ -20,13 +21,18 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def run(argv: Sequence[str] | None = None) -> int:
-    """Run the command line and return the process exit code."""
-    parser = build_parser()
+def parse(argv: Sequence[str] | None = None) -> argparse.Namespace | int:
+    """The options, or the exit code if the command line already finished.
+
+    `--version` and `--help` end here (0), as do usage errors (2).
+    """
     try:
-        parser.parse_args(argv)
+        return build_parser().parse_args(argv)
     except SystemExit as exit_:
-        # argparse exits on --version (0) and on usage errors (2).
         return exit_.code if isinstance(exit_.code, int) else 1
-    parser.print_help()
-    return 0
+
+
+def fail(message: str) -> int:
+    """Report an error that stops `maha` before the conversation opens."""
+    print(f"error: {message}", file=sys.stderr)
+    return 1
