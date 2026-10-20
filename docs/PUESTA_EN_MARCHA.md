@@ -14,6 +14,9 @@ hay aquí es exactamente lo que no se arregla con un `git pull`.
 
 Lo último que hay que hacer, lo más reciente arriba:
 
+- **Hito 1, pieza 8 (2026-10-20):** `uv sync` y `uv run pre-commit install`
+  (una vez por clon). La primera ejecución de los hooks descarga Go y compila
+  gitleaks: necesita red y tarda un poco (25 s en el WSL del PC de Windows).
 - **Hito 1, pieza 1 (2026-10-20):** uv 0.13.1 o posterior. Comprobar con
   `uv --version`; si es más viejo, `uv self update` (o el método con que se
   instaló uv). Con uno viejo, `uv sync` falla con un aviso claro. Después,
@@ -33,7 +36,10 @@ Lo último que hay que hacer, lo más reciente arriba:
 - Desde el hito 1:
   - `uv sync` tras clonar y tras cada pull que cambie `pyproject.toml` o
     `uv.lock`;
-  - `uv run pre-commit install`, una vez por clon.
+  - `uv run pre-commit install`, una vez por clon. Desde entonces, cada
+    `git commit` pasa ruff, gitleaks y las comprobaciones de YAML y TOML.
+    La primera vez descarga Go y compila gitleaks (necesita red); queda en
+    `~/.cache/pre-commit/`.
 
 ## 2. `.env`
 

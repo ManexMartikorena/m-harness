@@ -611,3 +611,11 @@ Propuestas del agente, aprobadas por el humano (2026-10-19):
   exist`. `__main__` y `bootstrap` van entre paréntesis (capa opcional) hasta
   la pieza 7, que los quita. Probado a mano: detecta `domain → adapters` y un
   `config.py` sin capa.
+- **El hook de gitleaks no mira el primer commit de un repo** (pieza 8,
+  2026-10-20): usa `gitleaks git --pre-commit --staged`, que compara con
+  `HEAD`, y sin commits no hay `HEAD`. En un repo desechable con un commit
+  previo, el token inventado (`ghp_` + 36) bloquea el commit
+  (`RuleID: github-pat`). A M-Harness no le afecta: ya tiene historial, y el
+  CI revisa el historial entero.
+- **La primera instalación de pre-commit tardó 25 s** (Go y gitleaks), no
+  minutos.

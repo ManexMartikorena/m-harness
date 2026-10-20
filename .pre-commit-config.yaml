@@ -1,0 +1,30 @@
+# Hooks that run before each `git commit`. Install once per clone:
+#   uv run pre-commit install
+# mypy, import-linter and pytest are left to CI (they are slower).
+repos:
+  - repo: local
+    hooks:
+      # Local hooks so ruff has a single version: the one in uv.lock.
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        # ruff 0.17 also formats Python code blocks in Markdown.
+        types_or: [python, pyi, markdown]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
