@@ -1,20 +1,21 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-20. **Hito 1 (esqueleto) cerrado y publicado
-como `v0.1.0`.** Hito 2: spec aprobada (PR #7) y PR 1 (el núcleo) commiteado.
+como `v0.1.0`.** Hito 2: PR 1 (el núcleo, #8) y PR 2 (el adaptador) abiertos.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 1 cerrado (`v0.1.0`). Hito 2 (primera conversación): spec
-APROBADA (PR #7); PR 1 de 4 (el núcleo) en la rama `feature/hito-2-nucleo`.**
+APROBADA (PR #7); PR 1 (#8) y PR 2 de 4 abiertos, por integrar.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.1.0` — Esqueleto** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.1.0
-- Ramas abiertas: `feature/hito-2-nucleo` (PR 1 del hito 2). Las
-  integradas se conservan en GitHub.
+- Ramas abiertas: `feature/hito-2-nucleo` (PR 1, #8) y
+  `feature/hito-2-openai` (PR 2, sale de la del PR 1). Las integradas se
+  conservan en GitHub.
 
 ## Para la release
 
@@ -27,7 +28,13 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
-- **Hito 2, PR 1 commiteado, 2026-10-20** (rama `feature/hito-2-nucleo`;
+- **Hito 2, PR 2 abierto, 2026-10-20** (rama `feature/hito-2-openai`,
+  apilada sobre la del PR 1; piezas 9 a 13): httpx 0.28.1 y respx 0.23.1,
+  `OpenAIChatClient` con petición, cabeceras, respuesta y errores, y mapa.
+  En verde: 81 tests. Un fallo encontrado (clave cortada por el límite de
+  300 caracteres), convertido en test y arreglado. Lo imprevisto, en la
+  spec §12.
+- **Hito 2, PR 1 abierto, 2026-10-20** (PR #8) (rama `feature/hito-2-nucleo`;
   piezas 1 a 8 de la spec §6): Pydantic 2.14.1, mensajes, petición y
   respuesta, errores del modelo, puerto `ModelClient`, `FakeModelClient`,
   `Chat` y mapa. En verde: ruff, mypy, import-linter y pytest (32 tests).
@@ -114,17 +121,17 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** revisar los commits del PR 1 (`git log main..` y el diff),
-   push de `feature/hito-2-nucleo` y PR (o pedírselo al agente). Integrarlo
-   con merge commit cuando el CI esté en verde.
-2. **Agente:** PR 2 del hito 2 (`feature/hito-2-openai`), piezas 9 a 13 de
-   la spec §6.
+1. **Humano:** revisar e integrar el PR #8 (PR 1) y **después** el PR 2,
+   en ese orden, con merge commit. El PR 2 muestra también los commits del
+   PR 1 hasta que este se integre.
+2. **Agente:** PR 3 del hito 2 (`feature/hito-2-terminal`), piezas 14 a 18
+   de la spec §6.
 3. **Humano**, antes de la verificación a mano del hito 2 (PR 3): copiar la
    clave de OpenCode Go (consola de opencode.ai) en el `.env` del PC, como
    `OPENCODE_API_KEY`. Hasta entonces, todo se prueba con `FakeModelClient`.
 
-**Sesión del 2026-10-20 en el WSL del PC de Windows:** PR 1 del hito 2
-commiteado en su rama, sin push. Se sigue desde el punto 1.
+**Sesión del 2026-10-20 en el WSL del PC de Windows:** PRs 1 y 2 del hito 2
+abiertos en GitHub. Se sigue desde el punto 1.
 
 ### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
 
