@@ -1,0 +1,19 @@
+{
+  "id": "chatcmpl-0000000000000000",
+  "object": "chat.completion",
+  "created": 1792500000,
+  "model": "glm-5.3-flash",
+  "choices": [
+    {
+      "index": 0,
+      "message": {"role": "assistant", "content": "Te llamas Ane."},
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 31,
+    "completion_tokens": 5,
+    "total_tokens": 36,
+    "prompt_tokens_details": {"cached_tokens": 12}
+  }
+}

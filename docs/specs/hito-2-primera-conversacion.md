@@ -684,3 +684,16 @@ Propuestas del agente, aprobadas por el humano (2026-10-20):
 2. **`Chat` deshace el turno sin borrar nada** (PR 1, pieza 7): construye la
    lista nueva aparte y solo la guarda si la llamada termina bien. También
    cubre la cancelación, que no es un `ModelError`.
+3. **La clave se tapa antes de recortar** (PR 2, pieza 12): si el proveedor
+   devuelve la clave en su mensaje de error, se cambia por `[redacted]` y
+   después se recorta a 300 caracteres. Al revés, una clave cortada por el
+   límite dejaba un trozo visible. Lo fija un test, escrito antes del
+   arreglo.
+4. **Respuestas incompletas** (PR 2, piezas 11 y 12):
+   - contadores de `usage` a `null` cuentan 0, igual que si faltan;
+   - `content` a `null` da un mensaje sin bloques;
+   - sin `model` en la respuesta, se usa el pedido;
+   - `error` como texto plano (`{"error": "..."}`) también se lee.
+5. **El User-Agent lo construye el adaptador** (PR 2, pieza 10), con la
+   versión instalada (`importlib.metadata`). El id de sesión es un UUID por
+   cliente, y hay un cliente por ejecución de `maha`.

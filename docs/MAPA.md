@@ -3,7 +3,7 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-20 (hito 2, PR 1: el núcleo).
+Última actualización: 2026-10-20 (hito 2, PR 2: el adaptador de OpenAI).
 
 ## Raíz
 
@@ -53,6 +53,7 @@ import-linter (`pyproject.toml`).
 | `domain/errors.py` | domain | `ModelError` y sus cinco tipos (autenticación, límite, petición, no disponible, respuesta) |
 | `ports/model.py` | ports | `ModelClient`: `complete(request) -> response` |
 | `application/chat.py` | application | `Chat`: la conversación en memoria, reenviada entera en cada llamada |
+| `adapters/models/openai_chat.py` | adapters | `OpenAIChatClient`: la conversación en formato OpenAI Chat Completions, con httpx; traduce respuesta y errores |
 | `adapters/cli/app.py` | adapters | Línea de comandos con argparse: `--version` y la ayuda |
 
 ## Tests: `tests/`
@@ -61,6 +62,8 @@ import-linter (`pyproject.toml`).
 |---|---|
 | `test_entry_point.py` | El script `maha` entra por `bootstrap.main`; `python -m mharness --version` |
 | `adapters/test_cli.py` | `--version`, la ayuda y el error con una opción desconocida |
+| `adapters/test_openai_chat.py` | JSON y cabeceras enviados, traducción de la respuesta y de cada error, y que la clave nunca sale en un error (con respx) |
+| `fixtures/openai_chat/` | Respuestas de ejemplo de Chat Completions, con datos inventados |
 | `unit/test_messages.py` | `Message.text` une los bloques; mensajes inmutables |
 | `unit/test_model.py` | `Usage` a 0 por defecto; petición sin `system`; `StopReason` válido |
 | `unit/test_errors.py` | Todos los errores del modelo heredan de `ModelError` |
