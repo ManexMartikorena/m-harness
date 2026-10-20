@@ -1,20 +1,20 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-20. **Hito 2 (primera conversación) cerrado y
-publicado como `v0.2.0`.** Siguiente: la spec del hito 3 (streaming).
+publicado como `v0.2.0`.** Hito 3 (streaming): spec PROPUESTA, PR por abrir.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 2 cerrado (`v0.2.0`). Hito 3 (streaming): spec por
-proponer.**
+**Desarrollo. Hito 2 cerrado (`v0.2.0`). Hito 3 (streaming): spec PROPUESTA
+en la rama `docs/spec-hito-3-streaming`, PR por abrir.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.2.0` — Primera conversación** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.2.0
-- Ramas abiertas: `docs/cierre-hito-2` (este cierre). Las integradas se
-  conservan en GitHub.
+- Ramas abiertas: `docs/spec-hito-3-streaming` (spec del hito 3). Las
+  integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -27,6 +27,40 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Spec del hito 3 propuesta, 2026-10-20** (rama
+  `docs/spec-hito-3-streaming`, PR por abrir):
+  - `complete()` sale del puerto: queda `stream()`, y `collect()` (en
+    `application`) construye la respuesta entera a partir de los eventos;
+  - SSE (*Server-Sent Events*, el formato de streaming de las APIs) a mano,
+    sin dependencias nuevas. Las líneas se parten solo en CRLF, LF o CR:
+    `aiter_lines()` de httpx 0.28.1 parte también en U+2028 y otros, y
+    rompería un JSON válido;
+  - corrige DESIGN §5: `MessageEnd` lleva `model`;
+  - Ctrl+C a mitad de respuesta corta la respuesta y vuelve al prompt;
+  - POR VERIFICAR: el streaming de OpenCode Go (`stream_options`, `usage`,
+    razonamiento). Lo resuelve la sonda (pieza 1).
+
+  Hechos comprobados ese día por el agente en la documentación oficial: el
+  endpoint de Go, `https://opencode.ai/inference/go/openai/v1/chat/completions`,
+  coincide con el código; la URL que dio Context7 estaba desfasada.
+- **Ubuntu de casa preparado, 2026-10-20:**
+  - Ubuntu 24.04.5 LTS, no 26.04 como el CI. Funciona: 116 tests, mypy,
+    lint-imports y ruff en verde con el python3.14 del sistema (3.14.8), sin
+    Python gestionado por uv;
+  - uv 0.13.4, con el instalador oficial y `UV_NO_MODIFY_PATH=1`, en
+    `~/.local/bin` (ya estaba en el PATH; no se tocó ningún fichero de
+    shell). `uv sync` y `pre-commit install` hechos;
+  - `.env` con la clave de OpenCode Go y `~/.config/maha/config.toml`.
+    Prueba de dos turnos con `glm-5.3-flash` correcta;
+  - `gh auth status`: login en github.com como ManexMartikorena, con el scope
+    `workflow`;
+  - aviso: en ese PC hay otro uv 0.12.17 en `~/.hermes/bin/` (de hermes,
+    fuera del PATH) que comparte `~/.cache/uv`. Para quitar uv, no usar
+    `uv cache clean` ni `rm -r "$(uv tool dir)"`;
+  - dato: "OK" contó `22 in · 67 out` (spec 2 §12.12; se investiga en la
+    spec 3, §1.7).
+- **PR #12 integrado, 2026-10-20** (merge `80d958d`): cierre de la
+  documentación del hito 2.
 - **`v0.2.0` publicada, 2026-10-20.** Tag anotado sobre el merge del PR #11
   (`9480b1d`). `release.yml` creó la release en 12 s: título
   "v0.2.0 — Primera conversación", las notas del tag y la lista de PRs #6 a
@@ -139,22 +173,18 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** integrar el PR de este cierre (`docs/cierre-hito-2`) con merge
-   commit, antes de cambiar de PC.
-2. **Humano, en el Ubuntu de casa:** preparar el PC (ver "Al abrir el agente
-   en otro PC", más abajo), con la clave de OpenCode Go en el `.env` y
-   `~/.config/maha/config.toml`.
-3. **Agente:** proponer la spec del hito 3 (streaming) en su propio PR
-   (`docs/spec-hito-3-streaming`), con los hechos de SSE (*Server-Sent
-   Events*, el formato de streaming de las APIs) comprobados ese día en la
-   documentación oficial. Arrastra dos puntos del hito 2: si `complete()` se
-   queda junto a `stream()` (spec 2, §1.3) y los tokens de salida altos de
-   `glm-5.3-flash` (spec 2, §12.12).
+1. **Agente:** commitear la spec del hito 3, DESIGN §5, ESTADO y MAPA en la
+   rama `docs/spec-hito-3-streaming`. **Humano:** revisar los commits y pedir
+   el push y el PR al agente (o hacerlos él).
+2. **Humano:** revisar la spec en el PR, decidir las dudas de su §11 e
+   integrarlo con merge commit (la spec pasa a APROBADA).
+3. **Agente:** implementar el hito 3 por piezas (spec §6), empezando por la
+   sonda (pieza 1), en `feature/hito-3-eventos`.
 
-**Sesión cerrada el 2026-10-20 en el WSL del PC de Windows**, con el hito 2
-publicado (`v0.2.0`) y este cierre en su PR. Se sigue desde el punto 1.
+**Sesión abierta el 2026-10-20 en el Ubuntu de casa**, con la spec del hito 3
+escrita y sin commitear. Se sigue desde el punto 1.
 
-### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
+### Al abrir el agente en otro PC (por ejemplo, de vuelta en el WSL del PC de Windows)
 
 Una vez, la primera vez tras este hito:
 1. `cd` al clon y `git switch main && git pull`.
@@ -183,11 +213,9 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 ## Pendientes / decisiones abiertas
 
 **Puestos de trabajo:**
-- Ubuntu de casa: uv ≥ 0.13.1, `gh` con el scope `workflow`, `uv sync` y
-  `pre-commit install` (ver "Al abrir el agente en otro PC"). Para conversar
-  con `maha`, además: el `.env` con `OPENCODE_API_KEY` y
-  `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). El WSL del PC
-  de Windows ya está listo, con clave y configuración.
+- Los dos listos, con clave y configuración: el WSL del PC de Windows
+  (Ubuntu 26.04.1) y el Ubuntu de casa (24.04.5, no 26.04; ver "Hecho",
+  2026-10-20).
 
 **Externas, con el hito en que bloquean:**
 - **Proveedor de modelos: OpenCode Go**, funcionando desde el 2026-10-20
