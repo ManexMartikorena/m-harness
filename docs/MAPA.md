@@ -3,7 +3,7 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-20 (spec del hito 2 aprobada).
+Última actualización: 2026-10-20 (hito 2, PR 1: el núcleo).
 
 ## Raíz
 
@@ -48,9 +48,11 @@ import-linter (`pyproject.toml`).
 | `__init__.py` | — | El paquete |
 | `__main__.py` | entrada | `python -m mharness`: igual que `maha` |
 | `bootstrap.py` | raíz de composición | `main()` del comando `maha`; el único que conoce todas las piezas |
-| `domain/` | domain | Tipos y reglas del agente (vacía en el hito 1) |
-| `ports/` | ports | Interfaces hacia el exterior (vacía en el hito 1) |
-| `application/` | application | Casos de uso, como el bucle (vacía en el hito 1) |
+| `domain/messages.py` | domain | `TextBlock` y `Message`: mensajes hechos de bloques |
+| `domain/model.py` | domain | `ModelRequest`, `ModelResponse`, `Usage` y `StopReason` |
+| `domain/errors.py` | domain | `ModelError` y sus cinco tipos (autenticación, límite, petición, no disponible, respuesta) |
+| `ports/model.py` | ports | `ModelClient`: `complete(request) -> response` |
+| `application/chat.py` | application | `Chat`: la conversación en memoria, reenviada entera en cada llamada |
 | `adapters/cli/app.py` | adapters | Línea de comandos con argparse: `--version` y la ayuda |
 
 ## Tests: `tests/`
@@ -59,4 +61,10 @@ import-linter (`pyproject.toml`).
 |---|---|
 | `test_entry_point.py` | El script `maha` entra por `bootstrap.main`; `python -m mharness --version` |
 | `adapters/test_cli.py` | `--version`, la ayuda y el error con una opción desconocida |
+| `unit/test_messages.py` | `Message.text` une los bloques; mensajes inmutables |
+| `unit/test_model.py` | `Usage` a 0 por defecto; petición sin `system`; `StopReason` válido |
+| `unit/test_errors.py` | Todos los errores del modelo heredan de `ModelError` |
+| `unit/test_fake_model.py` | El fake cumple el puerto, sigue el guion y falla al agotarse |
+| `unit/test_chat.py` | `Chat` reenvía el historial y deshace el turno si la llamada falla |
+| `fakes/model.py` | `FakeModelClient` guionizado y `reply()` (no es un test: lo usan los tests) |
 | `architecture/test_core_imports.py` | `domain`, `ports` y `application` solo usan la biblioteca estándar y Pydantic |
