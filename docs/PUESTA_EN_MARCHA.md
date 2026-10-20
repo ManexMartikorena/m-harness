@@ -8,12 +8,17 @@ Qué hay que hacer para dejar este proyecto funcionando en una máquina nueva o
 en otra de las que se usan. **El `.env` no viaja por git**, así que todo lo que
 hay aquí es exactamente lo que no se arregla con un `git pull`.
 
-Última revisión: 2026-10-20.
+Última revisión: 2026-10-20 (hito 2).
 
 ## 0. Tras cada `git pull`
 
 Lo último que hay que hacer, lo más reciente arriba:
 
+- **Hito 2, PR 3 (2026-10-20):** para conversar con `maha`, crear
+  `~/.config/maha/config.toml` (§3.1) y el `.env` con `OPENCODE_API_KEY`
+  (§2). Los tests no necesitan ninguno de los dos.
+- **Hito 2, PRs 1 y 2 (2026-10-20):** `uv sync`. Llegan pydantic, httpx y
+  respx.
 - **Hito 1, CI (2026-10-20):** `gh auth refresh --hostname github.com
   --scopes workflow`. Sin él, no se puede hacer push de `.github/workflows/`
   (§6).
@@ -46,9 +51,10 @@ Lo último que hay que hacer, lo más reciente arriba:
 
 ## 2. `.env`
 
-Desde el hito 2. Copiar `.env.example` a `.env` y rellenar. `maha` no lee el
-`.env` por su cuenta: en desarrollo se carga con
-`uv run --env-file .env maha`.
+Desde el hito 2. `cp .env.example .env` y rellenar. `maha` no lee el `.env`
+por su cuenta: en desarrollo se carga con `uv run --env-file .env maha`.
+Con `maha` instalado (`uv tool install`), la variable se exporta en el
+shell.
 
 | Variable | Para qué | Si falta |
 | --- | --- | --- |
@@ -58,11 +64,34 @@ Desde el hito 2. Copiar `.env.example` a `.env` y rellenar. `maha` no lee el
 
 No hay servicios ni base de datos. Cada máquina tiene sus propios datos, y nada
 de esto entra en git:
-- `~/.config/maha/`: configuración del usuario.
+- `~/.config/maha/`: configuración del usuario (§3.1).
 - `~/.local/share/maha/`: sesiones, trazas y memoria.
 - `~/.local/state/maha/`: registro de la aplicación.
 
 Lo que se haga en una máquina no está en la otra.
+
+### 3.1 `~/.config/maha/config.toml`
+
+Desde el hito 2. Elige proveedor y modelo. Sin `model`, `maha` no arranca y
+dice qué escribir. Respeta `XDG_CONFIG_HOME`.
+
+```toml
+provider = "opencode-go"   # o "opencode-zen"; por defecto, "opencode-go"
+model = "glm-5.3-flash"    # el id, tal cual lo da el proveedor (cambian a menudo)
+
+# Opcional: un servidor propio con formato OpenAI.
+# [providers.local]
+# base_url = "http://localhost:11434/v1"
+# api_key_env = "MI_CLAVE"   # sin ella, no se envía Authorization
+```
+
+Un proyecto puede tener `.maha/config.toml` con `provider` y `model`, que
+ganan a los del usuario. Si declara `[providers]`, `maha` se niega a
+arrancar: un repositorio ajeno podría enviar la clave a otro servidor (spec
+del hito 2, §1.10).
+
+Ids de modelo comprobados el 2026-10-20 en https://opencode.ai/docs/go/:
+`glm-5.3-flash`, `glm-5.3`, `kimi-k3`, `deepseek-v4.1-flash`.
 
 ## 4. Comprobar que todo está en pie
 
