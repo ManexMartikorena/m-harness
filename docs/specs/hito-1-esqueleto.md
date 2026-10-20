@@ -637,3 +637,8 @@ Propuestas del agente, aprobadas por el humano (2026-10-19):
   todo entra por PR, cada commit nuevo queda revisado. Los commits anteriores
   al CI se revisan una vez, a mano, tras integrar el PR 1 (`ESTADO`). §1.11
   decía "sobre todo el historial": eso es lo que hace con `workflow_dispatch`.
+- **gitleaks-action instala gitleaks 8.24.3 por defecto** (CI manual sobre
+  `main`, 2026-10-20), no la 8.30.1 de pre-commit. Se fija con la variable
+  `GITLEAKS_VERSION: 8.30.1` (README de la acción, v3.0.0). Así el CI y
+  pre-commit detectan lo mismo. Cambio añadido en el PR 2, con el visto bueno
+  del mantenedor.
