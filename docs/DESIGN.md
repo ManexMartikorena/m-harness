@@ -177,7 +177,10 @@ ModelRequest(model, system, messages, tools: list[ToolSpec], max_tokens)
 ToolSpec(name, description, input_schema)       # JSON Schema generado por Pydantic
 
 # Respuesta del modelo, en streaming             (adaptador → bucle)
-ModelEvent = TextDelta | ReasoningDelta | ToolCallDelta | MessageEnd(stop_reason, usage)
+ModelEvent = TextDelta | ReasoningDelta | ToolCallDelta | MessageEnd(stop_reason, usage, model)
+# (Corregido el 20/10/2026, spec del hito 3, §1.4: MessageEnd lleva `model`, que
+#  ModelResponse exige y solo llega en los trozos. El hito 3 solo implementa
+#  TextDelta y MessageEnd.)
 Usage(input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
 
 # Lo que cuenta el núcleo                        (bucle → interfaz y trazas)
