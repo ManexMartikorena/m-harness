@@ -14,13 +14,20 @@ import httpx
 from pydantic import BaseModel
 
 from mharness.domain.messages import Message, TextBlock
-from mharness.domain.model import ModelRequest, ModelResponse, Usage
+from mharness.domain.model import ModelRequest, ModelResponse, StopReason, Usage
 
 USER_AGENT = (
     f"maha/{version('m-harness')} (+https://github.com/ManexMartikorena/m-harness)"
 )
 # Without streaming, a long answer takes a while to arrive in full.
 TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+
+STOP_REASONS: dict[str, StopReason] = {
+    "stop": "end_turn",
+    "length": "max_tokens",
+    "tool_calls": "tool_use",
+    "content_filter": "content_filter",
+}
 
 
 class OpenAIChatClient:
@@ -79,7 +86,8 @@ def _to_openai(request: ModelRequest) -> dict[str, Any]:
     return {"model": request.model, "messages": messages}
 
 
-# What the adapter reads from the response. Unknown fields are ignored.
+# What the adapter reads from the response. Unknown fields (such as
+# `reasoning_content`) are ignored; missing or null counters count as 0.
 
 
 class _ResponseMessage(BaseModel):
@@ -88,19 +96,43 @@ class _ResponseMessage(BaseModel):
 
 class _Choice(BaseModel):
     message: _ResponseMessage
+    finish_reason: str | None = None
+
+
+class _PromptTokensDetails(BaseModel):
+    cached_tokens: int | None = None
+
+
+class _Usage(BaseModel):
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    prompt_tokens_details: _PromptTokensDetails | None = None
 
 
 class _Completion(BaseModel):
     model: str | None = None
     choices: list[_Choice]
+    usage: _Usage | None = None
 
 
 def _to_domain(completion: _Completion, request: ModelRequest) -> ModelResponse:
-    content = completion.choices[0].message.content
+    choice = completion.choices[0]
+    content = choice.message.content
     blocks = [TextBlock(text=content)] if content else []
     return ModelResponse(
         message=Message(role="assistant", blocks=blocks),
-        stop_reason="other",
-        usage=Usage(),
+        stop_reason=STOP_REASONS.get(choice.finish_reason or "", "other"),
+        usage=_usage(completion.usage),
         model=completion.model or request.model,
+    )
+
+
+def _usage(usage: _Usage | None) -> Usage:
+    if usage is None:
+        return Usage()
+    details = usage.prompt_tokens_details
+    return Usage(
+        input_tokens=usage.prompt_tokens or 0,
+        output_tokens=usage.completion_tokens or 0,
+        cache_read_tokens=(details.cached_tokens or 0) if details else 0,
     )

@@ -10,7 +10,7 @@ import respx
 from mharness.adapters.models import OpenAIChatClient
 from mharness.adapters.models.openai_chat import TIMEOUT
 from mharness.domain.messages import Message, TextBlock
-from mharness.domain.model import ModelRequest
+from mharness.domain.model import ModelRequest, StopReason, Usage
 from mharness.ports.model import ModelClient
 
 BASE_URL = "https://models.example.test/v1"
@@ -154,3 +154,117 @@ async def test_closing_closes_the_http_client() -> None:
 
 def test_timeouts() -> None:
     assert httpx.Timeout(120.0, connect=10.0) == TIMEOUT
+
+
+@respx.mock
+async def test_translates_the_response(client: OpenAIChatClient) -> None:
+    respx.post(ENDPOINT).respond(json=fixture("completion.json"))
+
+    response = await client.complete(
+        ModelRequest(model="glm-5.3-flash", messages=CONVERSATION)
+    )
+
+    assert response.message == Message(
+        role="assistant", blocks=[TextBlock(text="Te llamas Ane.")]
+    )
+    assert response.stop_reason == "end_turn"
+    assert response.usage == Usage(
+        input_tokens=31, output_tokens=5, cache_read_tokens=12
+    )
+    assert response.model == "glm-5.3-flash"
+
+
+@pytest.mark.parametrize(
+    ("finish_reason", "stop_reason"),
+    [
+        ("stop", "end_turn"),
+        ("length", "max_tokens"),
+        ("tool_calls", "tool_use"),
+        ("content_filter", "content_filter"),
+        ("something_new", "other"),
+        (None, "other"),
+    ],
+)
+@respx.mock
+async def test_translates_each_finish_reason(
+    client: OpenAIChatClient, finish_reason: str | None, stop_reason: StopReason
+) -> None:
+    body = fixture("completion.json")
+    body["choices"][0]["finish_reason"] = finish_reason
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.stop_reason == stop_reason
+
+
+@respx.mock
+async def test_usage_without_cached_tokens(client: OpenAIChatClient) -> None:
+    body = fixture("completion.json")
+    del body["usage"]["prompt_tokens_details"]
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.usage == Usage(input_tokens=31, output_tokens=5)
+
+
+@respx.mock
+async def test_usage_with_null_counters(client: OpenAIChatClient) -> None:
+    body = fixture("completion.json")
+    body["usage"] = {
+        "prompt_tokens": 31,
+        "completion_tokens": None,
+        "prompt_tokens_details": {"cached_tokens": None},
+    }
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.usage == Usage(input_tokens=31)
+
+
+@respx.mock
+async def test_without_usage_tokens_are_zero(client: OpenAIChatClient) -> None:
+    body = fixture("completion.json")
+    del body["usage"]
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.usage == Usage()
+
+
+@respx.mock
+async def test_reasoning_and_unknown_fields_are_ignored(
+    client: OpenAIChatClient,
+) -> None:
+    respx.post(ENDPOINT).respond(json=fixture("completion_with_reasoning.json"))
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.message.text == "Te llamas Ane."
+
+
+@respx.mock
+async def test_null_content_gives_an_empty_message(client: OpenAIChatClient) -> None:
+    body = fixture("completion.json")
+    body["choices"][0]["message"]["content"] = None
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.message == Message(role="assistant", blocks=[])
+
+
+@respx.mock
+async def test_without_model_uses_the_requested_one(client: OpenAIChatClient) -> None:
+    body = fixture("completion.json")
+    del body["model"]
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(
+        ModelRequest(model="glm-5.3-flash", messages=CONVERSATION)
+    )
+
+    assert response.model == "glm-5.3-flash"
