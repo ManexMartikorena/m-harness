@@ -598,9 +598,9 @@ Con el entorno de desarrollo y una clave real (§8).
 
 ## 8. Lo que no viaja por git y lo que necesita la release
 
-- **Proveedor y clave** (humano): suscripción a OpenCode Go o saldo en
-  OpenCode Zen, y la clave en `OPENCODE_API_KEY` del `.env` de cada PC. Solo
-  hace falta para la verificación a mano; los tests no la usan.
+- **Clave del proveedor** (humano): el mantenedor ya tiene la suscripción a
+  OpenCode Go. Falta poner la clave en `OPENCODE_API_KEY` del `.env` de cada
+  PC. Solo hace falta para la verificación a mano; los tests no la usan.
 - **`~/.config/maha/config.toml`** en cada PC, con `provider` y `model`.
 - **`.env.example`** nuevo, con `OPENCODE_API_KEY=` vacío.
 - **`PUESTA_EN_MARCHA`:** §0 (tras el pull: `uv sync`, crear la
@@ -650,6 +650,11 @@ el modelo no recuerda":
   httpx o respx. Si pasa, se ignora solo ese aviso, con su referencia.
 
 ## 11. Decisiones
+
+Del humano (2026-10-20):
+- Proveedor para el desarrollo: **OpenCode Go**, con su suscripción. Cierra
+  el pendiente de ANALISIS §12. La verificación a mano (§7) se hace con
+  `provider = "opencode-go"`.
 
 Propuestas del agente, pendientes de aprobación (2026-10-20):
 1. Dependencias: pydantic y httpx de ejecución; respx de desarrollo (§1.2).

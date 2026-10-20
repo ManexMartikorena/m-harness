@@ -28,7 +28,8 @@ un paso fuera de lo normal.
 Lo más reciente primero.
 
 - **Spec del hito 2 propuesta, 2026-10-20** (rama
-  `docs/spec-hito-2-primera-conversacion`):
+  `docs/spec-hito-2-primera-conversacion`, PR abierto en GitHub, sin
+  integrar). Proveedor elegido por el mantenedor: OpenCode Go.
   - hechos comprobados ese día en la documentación oficial (spec §1.1): URLs
     de chat completions de OpenCode Go y Zen, cabecera
     `x-opencode-session`, modelos sin entrenamiento, formato de OpenAI;
@@ -115,9 +116,12 @@ Lo más reciente primero.
 3. **Humano:** integrar el PR (merge commit). Eso es la aprobación.
 4. **Agente:** PR 1 del hito 2 (`feature/hito-2-nucleo`), piezas 1 a 8 de
    la spec §6.
-5. **Humano**, antes de la verificación a mano del hito 2 (PR 3): elegir
-   proveedor y conseguir la clave (ver "Pendientes", "Externas"). Hasta
-   entonces, todo se prueba con `FakeModelClient`.
+5. **Humano**, antes de la verificación a mano del hito 2 (PR 3): copiar la
+   clave de OpenCode Go (consola de opencode.ai) en el `.env` del PC, como
+   `OPENCODE_API_KEY`. Hasta entonces, todo se prueba con `FakeModelClient`.
+
+**Sesión cerrada el 2026-10-20 en el WSL del PC de Windows**, con la spec del
+hito 2 en su PR, sin integrar. Se sigue desde el punto 1.
 
 ### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
 
@@ -132,6 +136,9 @@ Una vez, la primera vez tras este hito:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → `maha 0.1.0`.
+
+Para revisar la spec en el PC (opcional, también se puede en GitHub):
+`git fetch && git switch docs/spec-hito-2-primera-conversacion`.
 
 Después, lanzar el agente desde el clon. Él lee `AGENTS.md` y este fichero,
 y sigue por el primer punto de "Siguiente paso" que no esté hecho. Para
@@ -149,11 +156,9 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   de Windows ya está listo.
 
 **Externas, con el hito en que bloquean:**
-- **Proveedor de modelos** (hito 2, verificación a mano del PR 3):
-  suscripción propia a OpenCode Go (10 $/mes; un solo miembro por espacio de
-  trabajo) u OpenCode Zen con pago por uso. `maha` trae los dos
-  predefinidos. Clave en `OPENCODE_API_KEY`. Mientras tanto,
-  `FakeModelClient`.
+- **Proveedor de modelos: decidido, OpenCode Go** (el mantenedor tiene la
+  suscripción, 2026-10-20). Falta la clave en el `.env` de cada PC, como
+  `OPENCODE_API_KEY`, antes de la verificación a mano del PR 3 del hito 2.
 
 **Se deciden en la spec de su hito:**
 - búsqueda en la memoria (hito 13);
