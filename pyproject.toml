@@ -23,6 +23,8 @@ module-name = "mharness"
 dev = [
     "import-linter>=2.15",
     "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.17.1",
 ]
 
@@ -70,3 +72,9 @@ exhaustive = true
 name = "Adapters are independent"
 type = "independence"
 modules = ["mharness.adapters.*"]
+
+[tool.pytest]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config"]
+filterwarnings = ["error"]
+asyncio_mode = "auto"
