@@ -8,11 +8,13 @@ Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo, hito 1 (esqueleto): spec aprobada; implementación en curso.**
+**Desarrollo, hito 1 (esqueleto): PR 1 terminado en local (10 piezas de 15);
+falta subirlo, revisarlo e integrarlo. Después, el PR 2.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: ninguna.
-- Ramas abiertas: `feature/hito-1-esqueleto` (PR 1 del hito 1).
+- Ramas abiertas: `feature/hito-1-esqueleto` (PR 1 del hito 1), con las
+  piezas 1 a 10 commiteadas, de `9de9fa6` a `db7ea5d`.
 
 ## Para la release
 
@@ -22,6 +24,20 @@ variable nueva o un paso fuera de lo normal.
 ## Hecho
 
 Lo más reciente primero.
+
+- **Hito 1, PR 1 terminado en local, 2026-10-20** (WSL del PC de Windows).
+  Rama `feature/hito-1-esqueleto`, un commit por pieza (spec §6, piezas
+  1 a 10):
+  - proyecto uv, ruff, mypy estricto, las cuatro capas con import-linter,
+    pytest con el test de arquitectura, el adaptador `cli` con `--version`,
+    `bootstrap.py` y el comando `maha`, pre-commit, CI y mapa;
+  - en verde: ruff, mypy, import-linter y pytest (8 tests), con Python 3.14
+    y también con 3.15;
+  - verificación a mano (spec §7): puntos 1 a 7 hechos; el 8 es el CI en
+    GitHub, al abrir el PR;
+  - lo imprevisto, en la spec §12 "Aprendido al implementar": ruff formatea
+    Markdown, mypy e import-linter piden que existan `tests/` y las capas, y
+    el hook de gitleaks no mira el primer commit de un repo.
 
 - **Clon en `~/` en el PC de Windows, 2026-10-20:** el agente trabaja desde
   `~/Desarrollo/m-harness`, dentro de WSL. El clon viejo de `/mnt/c/…`, limpio
@@ -63,19 +79,43 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente**, en `feature/hito-1-esqueleto`: implementar el PR 1 del hito 1
-   en el orden de piezas de la spec (`docs/specs/hito-1-esqueleto.md` §6).
-2. **Humano**, la próxima vez en el Ubuntu de casa: `git pull`, comprobar
-   uv ≥ 0.13.1 (`uv self update` si no) y `gh auth status`.
+1. **Humano** (o el agente, si se lo pide): push de
+   `feature/hito-1-esqueleto` y abrir el PR 1 con la plantilla. **Sin este
+   push, el otro PC no ve nada de lo hecho.**
+2. **Humano:** revisar el PR 1 (commit a commit) y comprobar en GitHub que
+   pasan `checks (3.14)`, `checks (3.15)` y `secrets`. Si `secrets` falla
+   por permisos, ver spec §10. Integrar con merge commit.
+3. **Humano**, justo después: en el ruleset "main protegida", exigir esos
+   tres checks (`docs/PUESTA_EN_MARCHA.md` §5).
+4. **Agente:** PR 2 (`feature/hito-1-release`), piezas 11 a 15 de la spec
+   §6: release, versión 0.1.0, nota de la guía, cierre de la spec y docs.
+
+### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
+
+Una vez, la primera vez tras este hito:
+1. `cd` al clon y `git switch main && git pull`.
+2. `uv --version`: tiene que ser 0.13.1 o posterior (si no,
+   `uv self update`).
+3. `gh auth status`: con login en github.com.
+4. `uv sync` y `uv run pre-commit install` (`PUESTA_EN_MARCHA` §0). La
+   primera ejecución de los hooks descarga Go y compila gitleaks.
+5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
+   verde, y `uv run maha --version`.
+
+Después, lanzar el agente desde el clon. Él lee `AGENTS.md` y este fichero,
+y sigue por el primer punto de "Siguiente paso" que no esté hecho. Si el
+PR 1 sigue sin integrar, se trabaja en su rama:
+`git switch feature/hito-1-esqueleto && git pull`.
+
+Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 
 ## Pendientes / decisiones abiertas
 
 **Para el hito 1:**
 - Tras integrar su PR 1, añadir al ruleset "main protegida" los checks
-  obligatorios del CI (spec del hito 1, §6).
-- uv 0.13.1 o posterior en cada PC: el hito 1 lo exige (spec §1.1). Ya
-  está en el WSL del PC de Windows; falta comprobarlo en el Ubuntu de casa
-  (Siguiente paso 2).
+  obligatorios del CI (Siguiente paso 3).
+- Ubuntu de casa: uv ≥ 0.13.1, `uv sync` y `pre-commit install` (ver "Al
+  abrir el agente en otro PC"). El WSL del PC de Windows ya está listo.
 
 **Externas, con el hito en que bloquean:**
 - **Proveedor de modelos** (hito 2): suscripción propia a OpenCode Go (un solo
