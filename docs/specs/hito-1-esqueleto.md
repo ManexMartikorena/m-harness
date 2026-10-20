@@ -600,4 +600,6 @@ Propuestas del agente, aprobadas por el humano (2026-10-19):
 
 ## 12. Aprendido al implementar
 
-(Se añade al implementar.)
+- **ruff 0.17 formatea también Markdown** (pieza 2, 2026-10-20): por
+  defecto, `ruff format` revisa los bloques de código Python de los `.md`.
+  Se deja así: los ejemplos de las docs siguen el mismo estilo que el código.
