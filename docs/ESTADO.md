@@ -1,40 +1,52 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-20. **Diseño cerrado**: análisis
-(`docs/ANALISIS.md`) y diseño (`docs/DESIGN.md`) aprobados. Empieza la fase de
-código con el hito 1.
+Última actualización: 2026-10-20. **Hito 1 (esqueleto) implementado**: falta
+integrar su PR 2 y publicar `v0.1.0`. Después, la spec del hito 2.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo, hito 1 (esqueleto): PR 1 terminado en local (10 piezas de 15);
-falta subirlo, revisarlo e integrarlo. Después, el PR 2.**
+**Desarrollo, hito 1 (esqueleto): las 15 piezas hechas. PR 1 (#4)
+integrado; PR 2 (release y cierre) abierto. Falta integrarlo, crear el tag
+`v0.1.0` y comprobar la release.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: ninguna.
-- Ramas abiertas: `feature/hito-1-esqueleto` (PR 1 del hito 1), con las
-  piezas 1 a 10 commiteadas, de `9de9fa6` a `db7ea5d`.
+- Última versión: ninguna (la primera será `v0.1.0`, al cerrar el hito 1).
+- Ramas abiertas: `feature/hito-1-release` (PR 2 del hito 1).
 
 ## Para la release
 
-Nada todavía. Aquí va solo lo que el workflow de release no hace solo: una
-variable nueva o un paso fuera de lo normal.
+Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
+un paso fuera de lo normal.
+
+- `v0.1.0`: nada fuera de lo normal. Es la primera release, así que es
+  también la primera prueba real de `.github/workflows/release.yml`.
 
 ## Hecho
 
 Lo más reciente primero.
 
-- **Hito 1, PR 1 terminado en local, 2026-10-20** (WSL del PC de Windows).
-  Rama `feature/hito-1-esqueleto`, un commit por pieza (spec §6, piezas
-  1 a 10):
+- **Hito 1, PR 2 abierto, 2026-10-20** (rama `feature/hito-1-release`,
+  piezas 11 a 15 de la spec §6):
+  - workflow de release, versión 0.1.0, nota de la guía
+    `docs/guia/01-arquitectura-hexagonal.md`, spec en IMPLEMENTADA, y README,
+    MAPA, PUESTA_EN_MARCHA y ESTADO al día;
+  - fuera de plan, con el visto bueno del mantenedor: el CI fija gitleaks
+    8.30.1, la misma versión que pre-commit (spec §12).
+- **GitHub tras el PR 1, 2026-10-20** (humano): el ruleset "main protegida"
+  exige `checks (3.14)`, `checks (3.15)` y `secrets`, con "up to date"
+  activada (`PUESTA_EN_MARCHA` §5). CI lanzado a mano sobre `main`: gitleaks
+  revisó el historial entero (41 commits), sin secretos.
+- **Hito 1, PR 1 (#4) integrado, 2026-10-20** (merge `e935068`). Un commit
+  por pieza (spec §6, piezas 1 a 10):
   - proyecto uv, ruff, mypy estricto, las cuatro capas con import-linter,
     pytest con el test de arquitectura, el adaptador `cli` con `--version`,
     `bootstrap.py` y el comando `maha`, pre-commit, CI y mapa;
   - en verde: ruff, mypy, import-linter y pytest (8 tests), con Python 3.14
     y también con 3.15;
-  - verificación a mano (spec §7): puntos 1 a 7 hechos; el 8 es el CI en
-    GitHub, al abrir el PR;
+  - verificación a mano (spec §7): puntos 1 a 8 hechos, salvo la release,
+    que se ve al hacer push del tag;
   - lo imprevisto, en la spec §12 "Aprendido al implementar": ruff formatea
     Markdown, mypy e import-linter piden que existan `tests/` y las capas, y
     el hook de gitleaks no mira el primer commit de un repo.
@@ -79,19 +91,21 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano** (o el agente, si se lo pide): push de
-   `feature/hito-1-esqueleto` y abrir el PR 1 con la plantilla. **Sin este
-   push, el otro PC no ve nada de lo hecho.**
-2. **Humano:** revisar el PR 1 (commit a commit) y comprobar en GitHub que
-   pasan `checks (3.14)`, `checks (3.15)` y `secrets`. Si `secrets` falla
-   por permisos, ver spec §10. Integrar con merge commit.
-3. **Humano**, justo después: en el ruleset "main protegida", exigir esos
-   tres checks (`docs/PUESTA_EN_MARCHA.md` §5).
-   Y lanzar el CI a mano una vez sobre `main` (*Actions → CI → Run
-   workflow*, o `gh workflow run ci.yml --ref main`): así gitleaks revisa el
-   historial entero, también los commits de antes del CI (spec §12).
-4. **Agente:** PR 2 (`feature/hito-1-release`), piezas 11 a 15 de la spec
-   §6: release, versión 0.1.0, nota de la guía, cierre de la spec y docs.
+1. **Humano:** revisar el PR 2 del hito 1 (`feature/hito-1-release`) e
+   integrarlo con merge commit, con los tres checks en verde.
+2. **Agente**, tras el merge: `git switch main && git pull`, borrar la rama
+   local y crear el tag anotado sobre el merge commit:
+   `git tag -a v0.1.0 -m "v0.1.0 — Esqueleto" -m "Paquete, capas, calidad automática, CI y release."`
+3. **Humano** (o el agente, si se lo pide): `git push origin v0.1.0`. Eso
+   dispara `release.yml`.
+4. **Agente:** comprobar que la release existe con su título y sus notas
+   (`gh release view v0.1.0`) y probar
+   `uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.1.0`
+   (spec §7, puntos 7 y 8). Si el workflow falla, se arregla con un PR
+   `fix/…` y se repite con un tag nuevo: un tag `v*` no se mueve.
+5. **Agente:** proponer la spec del hito 2 (primera conversación) en su
+   propio PR (`docs/spec-hito-2-<slug>`). En ese mismo PR, ESTADO marca
+   `v0.1.0` como publicada.
 
 ### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
 
@@ -108,19 +122,20 @@ Una vez, la primera vez tras este hito:
    verde, y `uv run maha --version`.
 
 Después, lanzar el agente desde el clon. Él lee `AGENTS.md` y este fichero,
-y sigue por el primer punto de "Siguiente paso" que no esté hecho. Si el
-PR 1 sigue sin integrar, se trabaja en su rama:
-`git switch feature/hito-1-esqueleto && git pull`.
+y sigue por el primer punto de "Siguiente paso" que no esté hecho. Para
+saber cuál es, el agente lo contrasta con GitHub (`gh pr list`, `gh release
+list`). Si hay un PR abierto, se trabaja en su rama:
+`git switch <rama> && git pull`.
 
 Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 
 ## Pendientes / decisiones abiertas
 
 **Para el hito 1:**
-- Tras integrar su PR 1, añadir al ruleset "main protegida" los checks
-  obligatorios del CI (Siguiente paso 3).
-- Ubuntu de casa: uv ≥ 0.13.1, `uv sync` y `pre-commit install` (ver "Al
-  abrir el agente en otro PC"). El WSL del PC de Windows ya está listo.
+- Integrar el PR 2, tag `v0.1.0` y release (Siguiente paso 1 a 4).
+- Ubuntu de casa: uv ≥ 0.13.1, `gh` con el scope `workflow`, `uv sync` y
+  `pre-commit install` (ver "Al abrir el agente en otro PC"). El WSL del PC
+  de Windows ya está listo.
 
 **Externas, con el hito en que bloquean:**
 - **Proveedor de modelos** (hito 2): suscripción propia a OpenCode Go (un solo
@@ -142,7 +157,7 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 
 Fase de desarrollo (DESIGN §14), un tag por hito:
 
-- [ ] 1. Esqueleto. `v0.1.0`
+- [ ] 1. Esqueleto. `v0.1.0` (implementado; falta el tag)
 - [ ] 2. Primera conversación. `v0.2.0`
 - [ ] 3. Streaming. `v0.3.0`
 - [ ] 4. Tool calling y bucle agéntico. `v0.4.0`

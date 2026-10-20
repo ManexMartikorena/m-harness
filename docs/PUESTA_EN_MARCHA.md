@@ -96,10 +96,19 @@ Aplicado el 2026-10-19. Se deja escrito para poder rehacerlo.
      - conversaciones resueltas antes de integrar;
      - sin force push ni borrado.
 
-     **Tras integrar el PR 1 del hito 1 se añade:** exigir que pasen los
-     checks del CI `checks (3.14)`, `checks (3.15)` y `secrets` (spec del
-     hito 1, §6).
+     - *Require status checks to pass* (desde el 2026-10-20, tras el PR 1
+       del hito 1): `checks (3.14)`, `checks (3.15)` y `secrets`.
+       - *Require branches to be up to date before merging*: **activada**. Si
+         `main` cambió desde que se abrió el PR, hay que pulsar "Update
+         branch" y el CI vuelve a pasar con el código combinado.
+       - *Do not require status checks on creation*: **desactivada** (solo
+         afecta a ramas nuevas, y la regla protege `main`).
    - **tags de versión** (`v*`): no se mueven ni se borran.
+5. *Actions:* tras crear o cambiar el CI, lanzarlo una vez a mano sobre
+   `main` (*Actions → CI → Run workflow*, o
+   `gh workflow run ci.yml --ref main`). Solo así gitleaks revisa el
+   historial entero; en un PR mira solo sus commits. Hecho el 2026-10-20:
+   41 commits, sin secretos.
 
 ## 6. Agente de código
 

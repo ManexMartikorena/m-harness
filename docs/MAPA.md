@@ -3,7 +3,7 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-20 (hito 1, PR 1: esqueleto).
+Última actualización: 2026-10-20 (hito 1 cerrado).
 
 ## Raíz
 
@@ -20,7 +20,8 @@ ficheros.
 | `.python-version` | Python de desarrollo: 3.14 |
 | `.pre-commit-config.yaml` | Hooks antes de cada commit: ruff, gitleaks, YAML, TOML y ficheros grandes |
 | `.github/pull_request_template.md` | Plantilla de PR: qué hace cada fichero y por qué |
-| `.github/workflows/ci.yml` | CI: checks con Python 3.14 y 3.15, y gitleaks sobre todo el historial |
+| `.github/workflows/ci.yml` | CI: checks con Python 3.14 y 3.15, y gitleaks (commits del PR; historial entero si se lanza a mano) |
+| `.github/workflows/release.yml` | Al hacer push de un tag `v*`: comprueba la versión y crea la GitHub Release |
 
 ## `docs/`
 
@@ -32,8 +33,9 @@ ficheros.
 | `PUESTA_EN_MARCHA.md` | Lo que no viaja por git: entorno, `.env` y ajustes de GitHub |
 | `MAPA.md` | Este fichero |
 | `guia/README.md` | Índice de la guía de conceptos (una nota por hito) |
+| `guia/01-arquitectura-hexagonal.md` | Nota del hito 1: capas, raíz de composición y la base que lo vigila |
 | `specs/PLANTILLA.md` | Formato de las specs de hito y de mejora |
-| `specs/hito-1-esqueleto.md` | Spec del hito 1: paquete, capas, calidad, CI y release |
+| `specs/hito-1-esqueleto.md` | Spec del hito 1 (IMPLEMENTADA): paquete, capas, calidad, CI y release |
 
 ## Código: `src/mharness/`
 
