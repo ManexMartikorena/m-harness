@@ -628,3 +628,12 @@ Propuestas del agente, aprobadas por el humano (2026-10-19):
 - **Python 3.15 en local** (pieza 9): con `UV_PYTHON=3.15` pasan `uv sync
   --locked`, ruff, mypy, import-linter y pytest. El riesgo de §10 no se ha
   dado, de momento.
+- **CI del PR #4, 2026-10-20:** `checks (3.14)`, `checks (3.15)` y
+  `secrets` en verde. gitleaks-action funciona con `contents: read`: no hace
+  falta `pull-requests: read` (riesgo de §10).
+- **gitleaks-action no revisa todo el historial en un PR** (2026-10-20): en
+  un PR solo mira sus commits (13 de 43 en el PR #4), y en un push, los
+  commits del push. El historial entero, solo con `workflow_dispatch`. Como
+  todo entra por PR, cada commit nuevo queda revisado. Los commits anteriores
+  al CI se revisan una vez, a mano, tras integrar el PR 1 (`ESTADO`). §1.11
+  decía "sobre todo el historial": eso es lo que hace con `workflow_dispatch`.

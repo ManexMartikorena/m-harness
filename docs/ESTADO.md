@@ -87,6 +87,9 @@ Lo más reciente primero.
    por permisos, ver spec §10. Integrar con merge commit.
 3. **Humano**, justo después: en el ruleset "main protegida", exigir esos
    tres checks (`docs/PUESTA_EN_MARCHA.md` §5).
+   Y lanzar el CI a mano una vez sobre `main` (*Actions → CI → Run
+   workflow*, o `gh workflow run ci.yml --ref main`): así gitleaks revisa el
+   historial entero, también los commits de antes del CI (spec §12).
 4. **Agente:** PR 2 (`feature/hito-1-release`), piezas 11 a 15 de la spec
    §6: release, versión 0.1.0, nota de la guía, cierre de la spec y docs.
 
