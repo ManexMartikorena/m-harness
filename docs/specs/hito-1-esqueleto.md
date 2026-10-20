@@ -619,3 +619,12 @@ Propuestas del agente, aprobadas por el humano (2026-10-19):
   CI revisa el historial entero.
 - **La primera instalación de pre-commit tardó 25 s** (Go y gitleaks), no
   minutos.
+- **Acciones del CI comprobadas el 2026-10-20** en sus releases de GitHub:
+  los hashes de `checkout` v7.0.1, `setup-uv` v10.3.0 y `gitleaks-action`
+  v3.0.0 son los de §1.1 y §1.11, y las tres siguen siendo la última versión.
+- **actionlint 1.7.12 no conoce `ubuntu-26.04`** (pieza 9): su lista de
+  runners está anticuada. El runner existe y no es beta (README de
+  `actions/runner-images`, 2026-10-20). Sin más avisos.
+- **Python 3.15 en local** (pieza 9): con `UV_PYTHON=3.15` pasan `uv sync
+  --locked`, ruff, mypy, import-linter y pytest. El riesgo de §10 no se ha
+  dado, de momento.
