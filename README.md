@@ -15,13 +15,30 @@ Lo que lo diferencia es cómo se construye:
   explica el concepto;
 - el historial del repositorio es la guía.
 
-> 🚧 **En construcción.** Hito 1 (esqueleto) terminado: de momento, `maha`
-> solo responde a `maha --version`. El estado al día está en
-> [`docs/ESTADO.md`](docs/ESTADO.md).
+> 🚧 **En construcción.** Hito 2 (primera conversación) terminado: `maha`
+> conversa en la terminal con un modelo, todavía sin herramientas. El estado
+> al día está en [`docs/ESTADO.md`](docs/ESTADO.md).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.1.0
-maha --version
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.2.0
+```
+
+Necesita un proveedor con formato OpenAI (de serie, OpenCode Go o Zen) y su
+clave en una variable de entorno:
+
+```toml
+# ~/.config/maha/config.toml
+provider = "opencode-go"
+model = "glm-5.3-flash"
+```
+
+```
+$ export OPENCODE_API_KEY=...
+$ maha
+maha 0.2.0 · opencode-go · glm-5.3-flash · /exit to quit
+> Hola, soy Ane
+Hola, Ane. ¿En qué te ayudo?
+  [tokens: 25 in · 9 out]
 ```
 
 ## Cómo funciona un agente
@@ -70,7 +87,7 @@ detalle está en [`docs/DESIGN.md`](docs/DESIGN.md).
 | # | Hito | Estado |
 |---|---|---|
 | 1 | Esqueleto del proyecto y CI | ✅ `v0.1.0` |
-| 2 | Primera conversación con un modelo | ⬜ |
+| 2 | Primera conversación con un modelo | ✅ `v0.2.0` |
 | 3 | Streaming | ⬜ |
 | 4 | Tool calling y bucle agéntico | ⬜ |
 | 5 | Permisos y herramientas con efecto | ⬜ |
