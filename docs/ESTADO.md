@@ -1,21 +1,20 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-20. **Hito 1 (esqueleto) cerrado y publicado
-como `v0.1.0`.** Spec del hito 2 aprobada, sin cambios; falta integrar su PR.
+como `v0.1.0`.** Hito 2: spec aprobada (PR #7) y PR 1 (el núcleo) commiteado.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 1 cerrado (`v0.1.0`). Hito 2 (primera conversación): spec
-APROBADA en `docs/specs/hito-2-primera-conversacion.md` (PR #7, por
-integrar); implementación por empezar.**
+APROBADA (PR #7); PR 1 de 4 (el núcleo) en la rama `feature/hito-2-nucleo`.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.1.0` — Esqueleto** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.1.0
-- Ramas abiertas: `docs/spec-hito-2-primera-conversacion` (la spec del
-  hito 2). Las integradas se conservan en GitHub.
+- Ramas abiertas: `feature/hito-2-nucleo` (PR 1 del hito 2). Las
+  integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -28,8 +27,13 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
-- **Spec del hito 2 aprobada, 2026-10-20** (PR #7), sin cambios. Primera
-  línea y §11 al día en la rama de la spec.
+- **Hito 2, PR 1 commiteado, 2026-10-20** (rama `feature/hito-2-nucleo`;
+  piezas 1 a 8 de la spec §6): Pydantic 2.14.1, mensajes, petición y
+  respuesta, errores del modelo, puerto `ModelClient`, `FakeModelClient`,
+  `Chat` y mapa. En verde: ruff, mypy, import-linter y pytest (32 tests).
+  Lo imprevisto, en la spec §12.
+- **Spec del hito 2 aprobada, 2026-10-20** (PR #7, merge `09ebdb5`), sin
+  cambios.
 - **Spec del hito 2 propuesta, 2026-10-20** (rama
   `docs/spec-hito-2-primera-conversacion`, PR abierto en GitHub, sin
   integrar). Proveedor elegido por el mantenedor: OpenCode Go.
@@ -110,17 +114,17 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** integrar el PR #7 (merge commit), con el CI en verde.
-   Después, en local: `git switch main && git pull` y borrar la rama
-   `docs/spec-hito-2-primera-conversacion`.
-2. **Agente:** PR 1 del hito 2 (`feature/hito-2-nucleo`), piezas 1 a 8 de
+1. **Humano:** revisar los commits del PR 1 (`git log main..` y el diff),
+   push de `feature/hito-2-nucleo` y PR (o pedírselo al agente). Integrarlo
+   con merge commit cuando el CI esté en verde.
+2. **Agente:** PR 2 del hito 2 (`feature/hito-2-openai`), piezas 9 a 13 de
    la spec §6.
 3. **Humano**, antes de la verificación a mano del hito 2 (PR 3): copiar la
    clave de OpenCode Go (consola de opencode.ai) en el `.env` del PC, como
    `OPENCODE_API_KEY`. Hasta entonces, todo se prueba con `FakeModelClient`.
 
-**Sesión del 2026-10-20 en el WSL del PC de Windows:** spec del hito 2
-aprobada en su PR, pendiente de integrar. Se sigue desde el punto 1.
+**Sesión del 2026-10-20 en el WSL del PC de Windows:** PR 1 del hito 2
+commiteado en su rama, sin push. Se sigue desde el punto 1.
 
 ### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
 
