@@ -1,4 +1,4 @@
-Estado: PROPUESTA (2026-10-19) → APROBADA (2026-10-19, por el humano, sin cambios)
+Estado: PROPUESTA (2026-10-19) → APROBADA (2026-10-19, por el humano, sin cambios) → IMPLEMENTADA (2026-10-20)
 
 # Spec — Hito 1: Esqueleto
 
@@ -637,3 +637,24 @@ Propuestas del agente, aprobadas por el humano (2026-10-19):
   todo entra por PR, cada commit nuevo queda revisado. Los commits anteriores
   al CI se revisan una vez, a mano, tras integrar el PR 1 (`ESTADO`). §1.11
   decía "sobre todo el historial": eso es lo que hace con `workflow_dispatch`.
+- **gitleaks-action instala gitleaks 8.24.3 por defecto** (CI manual sobre
+  `main`, 2026-10-20), no la 8.30.1 de pre-commit. Se fija con la variable
+  `GITLEAKS_VERSION: 8.30.1` (README de la acción, v3.0.0). Así el CI y
+  pre-commit detectan lo mismo. Cambio añadido en el PR 2, con el visto bueno
+  del mantenedor.
+- **El workflow de release vuelve a pedir el tag anotado** (pieza 11):
+  `actions/checkout` puede dejar el tag como una referencia ligera, sin su
+  mensaje. Por eso hace `git fetch` del tag y comprueba que es anotado
+  (`git cat-file -t` → `tag`). La lectura del título y las notas se probó en
+  un repo desechable; la prueba real es el push de `v0.1.0`.
+- **`uv version --short` no crea el entorno** (pieza 11): en un clon limpio
+  solo lee `pyproject.toml`. El workflow de release no necesita `uv sync`.
+- **Ruleset "main protegida", 2026-10-20** (humano, tras el PR 1): exige
+  `checks (3.14)`, `checks (3.15)` y `secrets`, con "Require branches to be
+  up to date before merging" activada. El CI lanzado a mano sobre `main`
+  revisó con gitleaks 41 commits (el historial entero, sin contar merges
+  vacíos): sin secretos.
+
+Resumen: el hito se hizo en dos PRs (#4 y el de la release) con el orden de
+§6, más un commit fuera de plan (versión de gitleaks en el CI). Ninguna
+decisión de §11 cambió.

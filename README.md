@@ -1,5 +1,7 @@
 # M-Harness
 
+[![CI](https://github.com/ManexMartikorena/m-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/ManexMartikorena/m-harness/actions/workflows/ci.yml)
+
 **Un agente de terminal construido desde cero, pieza a pieza, para entender cómo
 funciona un arnés de agente por dentro.**
 
@@ -13,8 +15,14 @@ Lo que lo diferencia es cómo se construye:
   explica el concepto;
 - el historial del repositorio es la guía.
 
-> 🚧 **En construcción.** El diseño está cerrado y el desarrollo empieza por el
-> hito 1. El estado al día está en [`docs/ESTADO.md`](docs/ESTADO.md).
+> 🚧 **En construcción.** Hito 1 (esqueleto) terminado: de momento, `maha`
+> solo responde a `maha --version`. El estado al día está en
+> [`docs/ESTADO.md`](docs/ESTADO.md).
+
+```
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.1.0
+maha --version
+```
 
 ## Cómo funciona un agente
 
@@ -61,7 +69,7 @@ detalle está en [`docs/DESIGN.md`](docs/DESIGN.md).
 
 | # | Hito | Estado |
 |---|---|---|
-| 1 | Esqueleto del proyecto y CI | ⬜ |
+| 1 | Esqueleto del proyecto y CI | ✅ `v0.1.0` |
 | 2 | Primera conversación con un modelo | ⬜ |
 | 3 | Streaming | ⬜ |
 | 4 | Tool calling y bucle agéntico | ⬜ |
@@ -92,8 +100,8 @@ detalle está en [`docs/DESIGN.md`](docs/DESIGN.md).
 - **Revisión humana.** El código lo escribe un agente de código siguiendo
   [`AGENTS.md`](AGENTS.md), y cada fichero pasa por revisión antes de
   integrarse.
-- **CI en cada push:** lint, tipos, reglas de arquitectura, tests y escaneo de
-  secretos.
+- **CI en cada PR:** lint, tipos, reglas de arquitectura, tests y escaneo de
+  secretos. Sin el CI en verde, nada entra en `main`.
 - **Un tag y una release por hito.**
 
 ## Documentación

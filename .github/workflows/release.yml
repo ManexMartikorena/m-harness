@@ -1,0 +1,44 @@
+# Creates the GitHub Release when a version tag (v*) is pushed.
+# Title: first line of the annotated tag's message. Notes: the rest of the
+# message, followed by the list of PRs that GitHub generates.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the release
+
+jobs:
+  release:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Check that the tag matches the version in pyproject.toml
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          expected="v$(uv version --short)"
+          if [ "$TAG" != "$expected" ]; then
+            echo "::error::Tag $TAG does not match version $expected"
+            exit 1
+          fi
+      - name: Create the release from the annotated tag
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # checkout leaves a lightweight ref; fetch the annotated tag itself.
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          if [ "$(git cat-file -t "$TAG")" != "tag" ]; then
+            echo "::error::Tag $TAG is not annotated"
+            exit 1
+          fi
+          title="$(git tag -l --format='%(contents:subject)' "$TAG")"
+          git tag -l --format='%(contents:body)' "$TAG" > notes.md
+          gh release create "$TAG" --verify-tag --title "$title" \
+            --notes-file notes.md --generate-notes
