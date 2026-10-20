@@ -23,13 +23,13 @@ Dentro de alcance:
 - `OpenAIChatClient.stream()` con errores a mitad de stream y tiempos (§1.8).
 - `FakeModelClient` que emite eventos; `Chat` que los reenvía (§1.6).
 - Terminal en directo y Ctrl+C por respuesta (§1.10).
-- Una sonda manual contra el proveedor real (§1.7).
 - Nota 03 de la guía y docs al día.
 
 **Fuera de alcance** (y por qué):
 - Herramientas (`ToolCallDelta`): hito 4. Aquí no se envían `tools`.
-- `ReasoningDelta`/`ReasoningBlock`: no se sabe qué campo usa
-  `glm-5.3-flash` (§1.7). Se ignoran; decide el mantenedor tras la sonda.
+- `ReasoningDelta`/`ReasoningBlock`: `glm-5.3-flash` manda el razonamiento
+  en `delta.reasoning_content` (§1.7). Se ignora; decide el mantenedor
+  (§11, duda 2).
 - Desglose de tokens (razonamiento, caché, coste): hito 7.
 - Reintentos (§1.9), límite de tokens de salida y de tiempo total del turno
   (hitos 4 y 11), guardar el texto parcial de una respuesta cancelada
@@ -39,9 +39,9 @@ Dentro de alcance:
 
 ### 1.1 Hechos comprobados
 
-Todos el 2026-10-20. Los marca "agente" quien los comprobó: el agente de la
-sesión en la documentación oficial (salvo Context7, indicado). Lo no
-comprobado es **POR VERIFICAR** y está en §10.
+Todos el 2026-10-20. "Agente" = comprobado por el agente de la sesión en la
+documentación oficial (salvo Context7, indicado). "Sonda" = medido por el
+agente con la sonda (§1.7). Lo no comprobado es **POR VERIFICAR** (§10).
 
 - **OpenAI, streaming** (Context7; https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create
   y https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events):
@@ -73,12 +73,11 @@ comprobado es **POR VERIFICAR** y está en §10.
   (https://opencode.ai/docs/zen/, agente):
   `https://opencode.ai/inference/openai/v1/chat/completions`. Los dos coinciden
   con `config.py`. (Context7 dio una URL `/zen/go/v1/...`: desfasada.) Las dos
-  páginas **no mencionan** streaming, `stream_options`, `usage` en el stream ni
-  razonamiento: lo resuelve la sonda.
+  páginas no mencionan streaming, `usage` ni razonamiento: se midió (§1.7).
 - **Dato propio, 2026-10-20** (Ubuntu de casa, `glm-5.3-flash`, OpenCode Go, sin
   streaming): "Hola, responde solo con la palabra OK." → "OK",
   `[tokens: 22 in · 67 out]`. En el hito 2, 142 de salida para una frase (spec 2,
-  §12.12). Causa desconocida (§1.7).
+  §12.12). Causa: razonamiento (§1.7).
 
 ### 1.2 `complete()` sale del puerto; se deriva de `stream()`
 
@@ -240,36 +239,32 @@ hito 2, spec 2 §12.2). Quien lo consume lo cierra con `contextlib.aclosing`.
     `stop_reason` real confunde al modelo, y la forma correcta es un diseño de
     sesiones.
 - `Chat.send()` (hito 2) se queda solo mientras la terminal lo use; se borra
-  en la misma pieza que cambia la terminal a `stream()` (§6, pieza 12).
+  en la misma pieza que cambia la terminal a `stream()` (§6, pieza 11).
 
-### 1.7 Tokens de salida altos de `glm-5.3-flash`: se mide aquí, se resuelve en el hito 7
+### 1.7 Tokens de salida altos de `glm-5.3-flash`: medido; el desglose, en el hito 7
 
-**Se sabe:** 67 tokens de salida para "OK", 142 para una frase (§1.1). **No se
-sabe por qué.** "Probablemente razonamiento" (spec 2 §12.12) es una hipótesis.
+**Medido por el agente con la sonda, 2026-10-20** (fase de spec, antes del PR):
+5 llamadas a OpenCode Go, `glm-5.3-flash`, `max_tokens` 256, HTTP/1.1, httpx
+`AsyncClient.stream` + `aiter_bytes`; prompts inventados; sin ids ni claves.
 
-**Se mide en este hito** con una sonda manual, fuera del repositorio (pieza 1;
-prompt inventado, nunca la clave en la salida):
-1. Petición con `stream: true` y `stream_options.include_usage`; volcado de los
-   trozos crudos.
-2. Claves de `delta` además de `content` y `role`. Z.ai documenta
-   `delta.reasoning_content` (https://docs.z.ai/guides/capabilities/thinking-mode,
-   agente, 2026-10-20) y otros hosts usan `reasoning`; **qué usa OpenCode Go
-   no está verificado**. Cuántos trozos de razonamiento hay y cuánto tarda el
-   primer `content`.
-3. El `usage` completo del último trozo, con `completion_tokens_details`.
-4. Si acepta `stream_options` (400, o lo ignora y no manda `usage`).
-5. `Content-Type`, `Content-Encoding`, terminador de línea (`\n` o `\r\n`), si
-   hay `[DONE]`, el orden `finish_reason` → `usage` → `[DONE]`, si el último
-   evento acaba con línea en blanco y si hay comentarios `:` de *keep-alive*.
-6. Un error en mitad del stream, si se puede provocar.
-7. La misma pregunta **sin** streaming, para comparar `completion_tokens`.
-
-El resultado va a §12, con fecha, sin ids ni claves.
+| Dato | Resultado |
+|---|---|
+| Causa de los tokens altos | **Razonamiento.** `completion_tokens` incluye `reasoning_tokens`: "OK" 16/13, 21/18 y 46/43 (total/razonamiento); frase 47/12. Varía mucho con el mismo prompt (12 a 43), lo que explica los 67 del hito 2. Una muestra por caso: no se puede decir si el streaming razona menos |
+| Dónde viene el razonamiento | Con stream, `delta.reasoning_content` (trozos sin clave `content`). Sin stream, `message.reasoning` (otro nombre) |
+| Forma del stream | 1.º `{"role":"assistant","content":""}`; luego 7 a 9 trozos solo con `reasoning_content`; luego el contenido; luego un trozo con `choices: []` y `usage` completo (`prompt_tokens_details.cached_tokens`, `completion_tokens_details.reasoning_tokens`); luego `data: [DONE]`. El cuerpo acaba en línea en blanco |
+| `finish_reason` | A veces **en el mismo trozo** que el último `content`, a veces en un trozo propio con `delta: {}` |
+| `stream_options` | Aceptado. **Sin él, OpenCode manda `usage` igualmente** (`choices` vacío, antes de `[DONE]`) |
+| Cabeceras del stream | `content-type: text/event-stream` (sin charset), `transfer-encoding: chunked`, sin `Content-Encoding` (sin stream, sí gzip) |
+| Formato | Terminador solo `\n`. Solo líneas `data:` y en blanco: sin comentarios `:`, `event`, `id` ni `retry`. Claves por trozo: `id`, `object`, `created`, `model`, `choices`; sin `obfuscation` |
+| Los eventos se parten | Entre lecturas de `aiter_bytes`, a mitad del JSON (2 a 5 veces por respuesta): el búfer de §1.3 hace falta |
+| Tiempos | ~5 s de silencio hasta el primer byte (cabeceras y primer trozo llegan juntos); después, razonamiento y contenido en 0,2 a 0,7 s. Sin stream: 0,72 s. Causa de los 5 s: no atribuible (una muestra) |
+| Modelo inexistente | 400 **antes** del stream, `application/json`, `{"error":{"type":"server_error","message":"Upstream request failed: Model is unavailable."}}` |
+| Error a mitad de stream | No provocado: **sin datos** |
 
 **En el código:** `Usage` no cambia (`output_tokens` = `completion_tokens`, lo
-que se factura). Los campos de razonamiento se ignoran. Si la sonda muestra
-razonamiento visible o un silencio largo, el mantenedor decide (§11, duda 2).
-**Hito 7:** `Usage.reasoning_tokens`, su coste y el catálogo de precios.
+que se factura). `reasoning_content` se ignora. **Hito 7:**
+`Usage.reasoning_tokens`, su coste y el catálogo de precios. El silencio de
+~5 s y el indicador de espera: §11, duda 2.
 
 ### 1.8 Errores, tiempos límite
 
@@ -278,7 +273,7 @@ errores del hito 2 (spec 2, §1.7).
 
 | Situación | Error |
 |---|---|
-| HTTP no 2xx antes del primer trozo | Como en el hito 2 (401/403 auth, 429 límite, otro 4xx petición, 5xx no disponible). Se lee el cuerpo (`aread()`) para sacar `error.message` |
+| HTTP no 2xx antes del primer trozo | Como en el hito 2 (401/403 auth, 429 límite, otro 4xx petición, 5xx no disponible). Se lee el cuerpo (`aread()`) para sacar `error.message`. El mapeo usa solo el código HTTP, no `error.type`: el 400 de "Model is unavailable" (con `type: "server_error"`) da `ModelRequestError("HTTP 400: Upstream request failed: Model is unavailable.")`. No engaña: es un error de petición (modelo mal escrito en la configuración) y el mensaje del proveedor se muestra. No se cambia |
 | 200 con `Content-Type` JSON | Se intenta leer `error.message` (tapado y recortado como en el hito 2); `ModelResponseError` con ese mensaje, o "the provider did not stream" si no hay |
 | 200 con otro `Content-Type` que no empieza por `text/event-stream` | `ModelResponseError` ("the provider did not stream") |
 | `data:` que no es JSON ni `[DONE]`, o trozo que no valida | `ModelResponseError`, sin copiar el cuerpo (entrada no confiable) |
@@ -327,8 +322,8 @@ Otro chiste, que se corta aq^C
 
 - Cada `TextDelta` se escribe en `out` con `flush`. Con `MessageEnd`, un salto
   de línea y la línea de tokens.
-- **Si `usage` es todo ceros, no se imprime la línea de tokens** (0 no es un
-  dato: es "desconocido"). Enlaza con la duda 5 de §11.
+- **Si `usage` es todo ceros, no se imprime la línea de tokens.** Solo es una
+  defensa: OpenCode manda `usage` siempre (§1.7). Ver la duda 5 de §11.
 - **Error a mitad de stream:** se escribe `\n` en `out` (si ya se imprimió
   texto), luego `error: …` en stderr; el texto impreso se queda.
 - **Ctrl+C con respuesta en curso:** corta la petición HTTP, escribe un salto
@@ -360,8 +355,9 @@ Otro chiste, que se corta aq^C
  "stream_options": {"include_usage": true}}
 ```
 
-- `include_usage` porque sin él no llega `usage` en el stream (§1.1). Si
-  OpenCode no lo acepta: §10.
+- `include_usage` se sigue enviando: es el contrato de OpenAI (§1.1) y
+  OpenCode lo acepta. Medido: OpenCode manda `usage` aunque no se pida
+  (§1.7); enviarlo protege frente a otros servidores compatibles.
 - Las cabeceras no cambian. No se añade `Accept`: ningún hecho comprobado lo
   pide.
 - Se usa `client.stream("POST", "chat/completions", json=...)`.
@@ -438,7 +434,7 @@ gate.release()  # from the test
   stream. `HANG` espera para siempre, hasta que lo cancelan.
 - `reply(text, chunks=2)` parte el texto en `TextDelta` y añade el
   `MessageEnd`. Guion agotado → `AssertionError`.
-- Mientras convivan `complete()` y `stream()` (§6, piezas 10 a 13), un paso
+- Mientras convivan `complete()` y `stream()` (§6, piezas 9 a 12), un paso
   `ModelResponse` también vale para `stream()` (se emite como eventos).
 
 ### 3.3 Configuración nueva
@@ -477,41 +473,52 @@ de `MessageEnd`. 3. Sin texto: mensaje sin bloques. 4. Sin `MessageEnd` →
 11. Una línea sin terminar o un evento de más de 1 MiB → `ModelResponseError`.
 
 **4.4 Adaptador, stream** (`tests/adapters/test_openai_chat.py`), con respx y
-`tests/fixtures/openai_chat/`
+`tests/fixtures/openai_chat/`, que imitan la **forma medida** (§1.7, con datos
+inventados): 1.er trozo `{"role":"assistant","content":""}`; trozos solo con
+`reasoning_content`; `finish_reason` en el mismo trozo que el último `content`
+(fixture A) o en un trozo propio con `delta: {}` (fixture B); trozo con
+`choices: []` y `usage`; `[DONE]`; terminador `\n`; el cuerpo se parte en
+trozos de bytes a mitad del JSON.
 1. El JSON lleva `stream: true` y `stream_options.include_usage`, con y sin
    `system` (**migra el test de `_to_openai` del hito 2**). Fija §1.11.
 2. Cabeceras: `Authorization`, `User-Agent`, la de sesión; sin clave no hay
    `Authorization` (**migra el del hito 2**).
-3. Un stream normal: `TextDelta` en orden y un solo `MessageEnd` al final.
-4. El trozo de `usage` con `choices: []` llega después del `finish_reason`, y
+3. Un stream normal (fixtures A y B): `TextDelta` en orden y un solo
+   `MessageEnd` al final.
+4. `finish_reason` en el mismo trozo que el último `content` (A) y en un
+   trozo propio con `delta: {}` (B): en los dos casos no se pierde el texto y
+   `stop_reason` es correcto.
+5. El trozo de `usage` con `choices: []` llega después del `finish_reason`, y
    `MessageEnd` lleva los dos. Fija §1.4.
-5. `content` vacío o null, `role`, `obfuscation` y campos desconocidos
-   (`reasoning_content`…) se ignoran.
-6. Sin `usage` → `Usage()`. Sin `model` → el de la petición.
-7. Cada `finish_reason`: `stop`, `length`, `tool_calls`, `content_filter`, otro.
-8. Un BOM inicial se ignora, y un carácter UTF-8 de varios bytes repartido
+6. **Los trozos con solo `reasoning_content` no producen `TextDelta`** (ni
+   rompen el análisis). Tampoco `content` vacío o null, `role` ni campos
+   desconocidos.
+7. Sin `usage` → `Usage()`. Sin `model` → el de la petición.
+8. Cada `finish_reason`: `stop`, `length`, `tool_calls`, `content_filter`, otro.
+9. Un BOM inicial se ignora, y un carácter UTF-8 de varios bytes repartido
    entre dos trozos de bytes llega entero.
-9. `[DONE]` sin ningún `finish_reason` → `ModelResponseError`.
-10. Sin `[DONE]` y con `finish_reason`: correcto. Sin `[DONE]` ni
+10. `[DONE]` sin ningún `finish_reason` → `ModelResponseError`.
+11. Sin `[DONE]` y con `finish_reason`: correcto. Sin `[DONE]` ni
     `finish_reason`: `ModelResponseError`.
-11. Datos después de `[DONE]`: se ignoran y se cierra la conexión.
-12. 401, 403, 429, 400, 404, 500 y 503 antes del stream → su error, con el
+12. Datos después de `[DONE]`: se ignoran y se cierra la conexión.
+13. 401, 403, 429, 400, 404, 500 y 503 antes del stream → su error, con el
     `message` del proveedor, la clave tapada y el recorte a 300 (**migra los
-    del hito 2**).
-13. 200 con `Content-Type` JSON y `error.message` → `ModelResponseError` con
+    del hito 2**). Caso medido: 400 con `type: "server_error"` y "Model is
+    unavailable." → `ModelRequestError`.
+14. 200 con `Content-Type` JSON y `error.message` → `ModelResponseError` con
     ese mensaje (tapado y recortado); sin mensaje, o con otro tipo,
     "did not stream".
-14. Trozo que no es JSON o no valida → `ModelResponseError`, sin copiar el
+15. Trozo que no es JSON o no valida → `ModelResponseError`, sin copiar el
     cuerpo.
-15. Trozo con objeto `error` → `ModelUnavailableError`, mensaje tapado y
+16. Trozo con objeto `error` → `ModelUnavailableError`, mensaje tapado y
     recortado.
-16. Corte a mitad de cuerpo, `ReadTimeout` y `DecodingError` →
+17. Corte a mitad de cuerpo, `ReadTimeout` y `DecodingError` →
     `ModelUnavailableError`, también si ya llegó el `finish_reason`.
-17. La clave nunca aparece en un error del stream.
-18. Al cancelar o cerrar el consumidor, la respuesta HTTP se cierra: el cuerpo
+18. La clave nunca aparece en un error del stream.
+19. Al cancelar o cerrar el consumidor, la respuesta HTTP se cierra: el cuerpo
     del test es un `httpx.AsyncByteStream` propio con una bandera `closed` que
     se comprueba al final (**POR VERIFICAR** que respx lo admite; mismo
-    hallazgo que el de la pieza 7, §10).
+    hallazgo que el de la pieza 6, §10).
 
 **4.5 `FakeModelClient`** (`tests/unit/test_fake_model.py`)
 1. Emite el guion en orden. 2. Lanza el error en su sitio, tras los eventos
@@ -549,7 +556,7 @@ el adaptador); `domain/events.py` solo usa la biblioteca estándar y Pydantic.
 **Cómo se simula un stream con respx.** Un cuerpo SSE en bytes basta para
 casi todo (`httpx.Response(200, headers={"content-type": "text/event-stream"},
 content=b"data: ...\n\n...")`). Los cortes a mitad de cuerpo son **POR
-VERIFICAR**. **Hipótesis (no hecho) a probar primero en la pieza 7:**
+VERIFICAR**. **Hipótesis (no hecho) a probar primero en la pieza 6:**
 `httpx.Response(200, content=<generador asíncrono que entrega trozos y luego
 lanza httpx.ReadError>)`. Plan B, comprobado en la documentación de httpx: un
 `httpx.MockTransport` con manejador `async`, inyectado por un parámetro
@@ -568,58 +575,57 @@ adaptador gana `stream()` **antes** de que el puerto lo exija (PR 2), para que
 cada commit pase mypy.
 
 **PR 1** (`feature/hito-3-eventos`): núcleo y analizador, sin red.
-1. **Sonda** (§1.7), fuera del repositorio, con la clave del `.env`. El
-   resultado se pega en §12. Si contradice §1.8 o §1.11, se corrige la spec y
-   se avisa al mantenedor **antes de seguir**.
-   *Commit:* "Anotar en la spec el resultado de la sonda de streaming"
-2. **Eventos.** `domain/events.py`; tests 4.1.
+La sonda (§1.7) ya se hizo en la fase de spec: no es una pieza.
+
+1. **Eventos.** `domain/events.py`; tests 4.1.
    *Commit:* "Añadir los eventos del modelo"
-3. **Respuesta desde eventos.** `application/collect.py`; tests 4.2.
+2. **Respuesta desde eventos.** `application/collect.py`; tests 4.2.
    *Commit:* "Añadir collect(), que construye la respuesta desde los eventos"
-4. **SSE.** `adapters/models/sse.py`; tests 4.3.
+3. **SSE.** `adapters/models/sse.py`; tests 4.3.
    *Commit:* "Añadir el analizador de eventos SSE"
-5. **Mapa.** *Commit:* "Actualizar el mapa con los eventos y el analizador SSE"
+4. **Mapa.** *Commit:* "Actualizar el mapa con los eventos y el analizador SSE"
 
 **PR 2** (`feature/hito-3-adaptador`): `stream()` en el adaptador.
-6. **Petición y texto.** Petición de §1.11, decodificador, traducción de
-   `content`, `finish_reason`, `usage` y `model`; fixtures; tests 4.4.1 a 4.4.8.
+5. **Petición y texto.** Petición de §1.11, decodificador, traducción de
+   `content`, `finish_reason`, `usage` y `model`; fixtures (§4.4); tests 4.4.1
+   a 4.4.9.
    *Commit:* "Emitir el texto de la respuesta en streaming"
-7. **Errores.** Tabla de §1.8; tests 4.4.9 a 4.4.17. Empieza por el hallazgo de
-   respx de §4.
+6. **Errores.** Tabla de §1.8; tests 4.4.10 a 4.4.18. Empieza por el hallazgo
+   de respx de §4.
    *Commit:* "Traducir los errores del stream a errores del modelo"
-8. **Cierre de la conexión.** Test 4.4.18.
+7. **Cierre de la conexión.** Test 4.4.19.
    *Commit:* "Cerrar la conexión al cancelar el stream"
-9. **Mapa.** *Commit:* "Actualizar el mapa con el streaming del adaptador"
+8. **Mapa.** *Commit:* "Actualizar el mapa con el streaming del adaptador"
 
 **PR 3** (`feature/hito-3-terminal`): puerto, `Chat`, terminal, limpieza.
-10. **Puerto y fake.** `stream()` entra en el `Protocol` junto a `complete()`;
-    el fake emite eventos (`Gate`, `HANG`); tests 4.5.
-    *Commit:* "Añadir stream() al puerto ModelClient y al fake"
-11. **`Chat.stream()`.** `Chat.send()` sigue; tests 4.6.
+9. **Puerto y fake.** `stream()` entra en el `Protocol` junto a `complete()`;
+   el fake emite eventos (`Gate`, `HANG`); tests 4.5.
+   *Commit:* "Añadir stream() al puerto ModelClient y al fake"
+10. **`Chat.stream()`.** `Chat.send()` sigue; tests 4.6.
     *Commit:* "Añadir Chat.stream(), que guarda el turno al terminar"
-12. **Terminal en directo.** `converse()` usa `Chat.stream()`; se borra
+11. **Terminal en directo.** `converse()` usa `Chat.stream()`; se borra
     `Chat.send()` (la producción ya no lo usa) y sus tests se adaptan aquí;
     tests 4.7.1 a 4.7.3.
     *Commit:* "Mostrar la respuesta según llega"
-13. **Ctrl+C por respuesta.** §1.10; tests 4.7.4 y 4.7.5.
+12. **Ctrl+C por respuesta.** §1.10; tests 4.7.4 y 4.7.5.
     *Commit:* "Cancelar solo la respuesta con Ctrl+C"
-14. **Quitar `complete()`** del puerto, del fake y del adaptador. Los tests del
+13. **Quitar `complete()`** del puerto, del fake y del adaptador. Los tests del
     hito 2 de `complete()` **ya están migrados a `stream()`** (4.4.1, 4.4.2 y
-    4.4.12); solo se borran los que no tienen equivalente en streaming (la
+    4.4.13); solo se borran los que no tienen equivalente en streaming (la
     traducción de una respuesta entera).
     *Commit:* "Quitar complete(), ya derivado de stream()"
-15. **Punta a punta.** Tests 4.8; `bootstrap` no cambia salvo que haga falta.
+14. **Punta a punta.** Tests 4.8; `bootstrap` no cambia salvo que haga falta.
     *Commit:* "Probar el streaming de punta a punta"
-16. **Mapa.** *Commit:* "Actualizar el mapa con la terminal en streaming"
+15. **Mapa.** *Commit:* "Actualizar el mapa con la terminal en streaming"
 
 **PR 4** (`feature/hito-3-cierre`): cierre.
-17. **Versión.** `uv version --bump minor` → `0.3.0`.
+16. **Versión.** `uv version --bump minor` → `0.3.0`.
     *Commit:* "Subir la versión a 0.3.0"
-18. **Guía.** `docs/guia/03-streaming.md` y su fila en el índice.
+17. **Guía.** `docs/guia/03-streaming.md` y su fila en el índice.
     *Commit:* "Añadir la nota de la guía sobre streaming"
-19. **Cierre de la spec.** IMPLEMENTADA y §12.
+18. **Cierre de la spec.** IMPLEMENTADA y §12.
     *Commit:* "Cerrar la spec del hito 3"
-20. **Documentación al día.** README, MAPA y ESTADO.
+19. **Documentación al día.** README, MAPA y ESTADO.
     *Commit:* "Actualizar la documentación al cerrar el hito 3"
 
 **Tras el PR 4:** tag `v0.3.0` sobre el merge commit y push del tag.
@@ -631,8 +637,8 @@ Con `opencode-go` y `glm-5.3-flash`.
 1. `uv run maha --version` → `maha 0.3.0`.
 2. `uv run --env-file .env maha` con una pregunta de respuesta larga: el texto
    **aparece mientras se escribe**. Se anota el tiempo hasta el primer trozo.
-3. La línea de tokens coincide con la de la sonda para el mismo prompt. Si no
-   sale línea (ceros), `stream_options` no funciona (§10).
+3. Sale la línea de tokens, y con "OK" la salida es de ~16 a 46 tokens (§1.7:
+   cuenta el razonamiento).
 4. Dos turnos: el segundo recuerda al primero y los tokens de entrada crecen.
 5. Ctrl+C a mitad de una respuesta larga: `[interrupted]`, vuelve el prompt, el
    proceso sigue. Un turno nuevo funciona; el modelo **no** recuerda la
@@ -665,31 +671,25 @@ se cancela":
    se pide.
 3. Qué puede salir mal a mitad, y qué queda en la conversación (§1.6, §1.8).
 4. Cancelar con Ctrl+C: `CancelledError` y el cierre de la conexión.
-5. Los tokens de más: el dato de §1.1 y qué reveló la sonda.
+5. Los tokens de más: el razonamiento (§1.7).
 
 "En la industria": la tabla de §2.
 
 ## 10. Riesgos
 
-**POR VERIFICAR** (lo demás de §1.1 está comprobado):
-- **OpenCode Go y Zen, streaming:** si aceptan `stream: true` y
-  `stream_options`, si devuelven `usage` en el último trozo, `Content-Type`,
-  formato de un error a mitad de stream. https://opencode.ai/docs/go/ y
-  https://opencode.ai/docs/zen/ no lo dicen. Lo resuelve la sonda.
-- **Razonamiento de `glm-5.3-flash` en OpenCode Go:** campo de `delta`
-  (`reasoning_content` o `reasoning`) y `reasoning_tokens` en `usage`. Sonda.
+**POR VERIFICAR** (lo demás está comprobado o medido, §1.1 y §1.7):
+- **Error a mitad de stream en OpenCode:** formato y si existe. No se pudo
+  provocar: sin datos. La fila "objeto `error`" de §1.8 es defensiva.
 - **respx 0.23.1:** servir un cuerpo que falle a mitad, y si admite un
   `httpx.AsyncByteStream` propio (https://lundberg.github.io/respx/guide/ no lo
-  documenta). Pieza 7, con el plan B de §4.
+  documenta). Pieza 6, con el plan B de §4.
 - **`aiter_text()` de httpx 0.28.1:** solo si se prefiere a §1.3. No bloquea.
 
 **Riesgos y contingencias:**
-- **`stream_options` rechazado (400) o sin `usage`.** Lo detecta la sonda. Se
-  deja de enviar o se acepta el `usage` en ceros: la terminal no imprime la
-  línea (§1.10). `Usage` a `None` cambiaría §1.4 (duda 5).
-- **Silencio largo antes del primer token** (modelos que razonan): `read=120`
-  no corta, pero la terminal parece colgada. Si la sonda lo muestra, el
-  mantenedor decide un indicador "pensando…" (duda 2).
+- **Otro servidor sin `usage` en el stream:** `Usage()` en ceros y la terminal
+  no imprime la línea (§1.10). Con OpenCode no pasa (§1.7).
+- **Silencio de ~5 s antes del primer byte** (§1.7): `read=120` no corta, pero
+  la terminal parece colgada. Opciones en la duda 2.
 - **Texto cancelado en pantalla que el modelo no recuerda** (§1.6): se explica
   en la guía; se corrige en el hito 6.
 - **Ctrl+C y `CancelledError` mezclados:** ya falló en el hito 2. Se cubre con
@@ -709,15 +709,27 @@ Propuestas del agente (2026-10-20), pendientes de aprobación: **todas las de
 
 **Por decidir por el mantenedor:**
 1. ¿`complete()` fuera del puerto (propuesta, §1.2) o junto a `stream()`?
-2. Si la sonda muestra razonamiento: ¿ignorarlo (propuesta), o añadir
-   `ReasoningDelta` y/o un indicador "pensando…" ya en este hito?
+2. Razonamiento y silencio (datos de §1.7: el silencio de ~5 s es **antes**
+   del primer byte; el razonamiento llega en menos de 1 s después). Opciones:
+   - **A (propuesta):** ignorar `reasoning_content`; sin indicador. Más simple;
+     5 s en blanco.
+   - **B:** indicador "esperando…" (p. ej. `…` en `out`) desde el envío hasta
+     el primer `TextDelta`. Cubre los 5 s, no necesita tipos nuevos (la
+     terminal sabe cuándo envió y cuándo llega el primer evento). Pequeño
+     añadido a la pieza 11.
+   - **C:** `ReasoningDelta` + mostrarlo atenuado. Apenas se vería (<1 s) y
+     ata el dominio a un campo no estándar (`reasoning_content` / `reasoning`).
+     Mejor en el hito 7 o 19.
+
+   **Recomendación: B**, porque es lo que arregla el síntoma medido. A es
+   válida si el mantenedor prefiere no tocar la terminal.
 3. ¿Ctrl+C a mitad de respuesta vuelve al prompt (propuesta, §1.10) o sale con
    130 como en el hito 2?
 4. *(Cerrada: los endpoints de Go y Zen coinciden con `config.py`.)*
-5. Si OpenCode no manda `usage`: ¿`Usage` admite `None` o se queda en ceros y
-   la terminal omite la línea (propuesta)? Se decide con la sonda.
+5. `usage` llega siempre en OpenCode (§1.7). **Propuesta de cierre:** `Usage`
+   sigue sin `None`; omitir la línea si todo es cero queda solo como defensa
+   (§1.10). Pendiente de que el mantenedor lo acepte.
 
 ## 12. Aprendido al implementar (fecha)
 
-*(Se rellena al implementar. La sonda de la pieza 1 anota aquí, con fecha, los
-puntos de §1.7.)*
+*(Se rellena al implementar.)* La sonda se hizo en la fase de spec (§1.7).
