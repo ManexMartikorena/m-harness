@@ -631,7 +631,8 @@ el modelo no recuerda":
 ## 10. Riesgos
 
 - **La autenticación de Go no está documentada.** Se supone
-  `Authorization: Bearer`, como en Zen. Si falla, se comprueba a mano y se
+  `Authorization: Bearer`, como en Zen. *(Comprobado al implementarlo, el
+  2026-10-20: funciona. Ver §12.10.)* Si falla, se comprueba a mano y se
   corrige en el adaptador (el proveedor tendría su propio esquema). Ver §7.5.
 - **Formato de errores de OpenCode sin documentar.** El adaptador lee
   `error.message` si está y, si no, usa el código HTTP. Nunca falla por no
@@ -723,3 +724,29 @@ Propuestas del agente, aprobadas por el humano (2026-10-20):
 9. **`fail()` en la terminal** (PR 3, pieza 16): los errores de arranque los
    escribe el adaptador `cli`, no `bootstrap`, para que toda la E/S de la
    terminal esté en su adaptador.
+10. **Verificación a mano (§7), 2026-10-20**, en el WSL del PC de Windows,
+    con OpenCode Go y `glm-5.3-flash`, en una terminal simulada (pty). Los 9
+    puntos, en verde:
+    - 1 a 3: `--version` sin configuración; sin `config.toml`, explica qué
+      escribir; sin la clave, nombra `OPENCODE_API_KEY`. Los dos últimos
+      salen con 1;
+    - 4: dos turnos reales; en el segundo, el modelo recuerda el nombre, y
+      los tokens de entrada pasan de 25 a 62;
+    - 5: **Go acepta `Authorization: Bearer`** (riesgo de §10, cerrado);
+    - 6: clave inventada → `error: HTTP 401: Upstream request failed:
+      Invalid credential`, y la conversación sigue;
+    - 7: modelo que no existe → `error: HTTP 400: Upstream request failed:
+      Model is unavailable.` (400, no 404), y la conversación sigue;
+    - 8: `/exit` y Ctrl+D salen con 0; Ctrl+C, con 130;
+    - 9: un `.maha/config.toml` con `[providers]` en un directorio desechable
+      → `maha` se niega a arrancar.
+
+    Fuera de la lista: Ctrl+C con la petición HTTP en curso corta la llamada
+    y sale con 130 al momento.
+11. **Formato de errores de OpenCode** (riesgo de §10): el cuerpo trae
+    `error.message`, que el adaptador lee bien. El texto empieza por
+    "Upstream request failed:".
+12. **Tokens de salida altos para respuestas cortas** con `glm-5.3-flash`
+    (por ejemplo, 142 para una frase). Probablemente cuenta el razonamiento,
+    que el adaptador ignora (§10). Se mira en el hito 3 (streaming) o en el 7
+    (coste).
