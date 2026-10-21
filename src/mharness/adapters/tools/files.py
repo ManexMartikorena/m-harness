@@ -1,14 +1,20 @@
-"""Read-only tools over the working directory (spec hito 4, §1.6).
+"""File tools over the working directory (spec hito 4, §1.6, and spec hito
+5, §1.6 and §1.7).
 
 Every path is resolved (following symbolic links). Reading outside the
 working directory, or a secret file, asks the user first, one call at a time
-(spec hito 5, §1.6). No threads: a thread blocked on the disk would keep
-`maha` from exiting on Ctrl+C (spec hito 2, §12).
+(spec hito 5, §1.6). Writing always asks. No threads: a thread blocked on the
+disk would keep `maha` from exiting on Ctrl+C (spec hito 2, §12).
 """
 
 import asyncio
+import difflib
+import errno
+import io
 import os
 import re
+import secrets
+import stat
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
@@ -540,3 +546,208 @@ def _grep_result(matches: list[str], *, stopped_early: bool) -> str:
     if stopped_early:
         lines.append(f"… [stopped after {WALK_MAX_FILES} files; narrow the path]")
     return "\n".join(lines) if lines else "(no matches)"
+
+
+# Writing (spec hito 5, §1.7).
+
+WRITE_PREVIEW_LINES = 20
+# The diff shown before an overwrite or an edit (spec hito 5, §1.8).
+DIFF_CONTEXT = 3
+DIFF_MAX_LINES = 60
+# Random names tried for the temporary file before giving up.
+TEMP_TRIES = 100
+
+
+def _split(text: str) -> list[str]:
+    """The lines of `text` without their endings, split as `read_file`
+    numbers them: at "\n", "\r" or "\r\n"."""
+    lines = []
+    for line in io.StringIO(text, newline="").readlines():
+        if line.endswith("\r\n"):
+            line = line[:-2]
+        elif line.endswith(("\n", "\r")):
+            line = line[:-1]
+        lines.append(line)
+    return lines
+
+
+def _preview(text: str) -> str:
+    """The first lines of a new file, as the user reads them."""
+    lines = _split(text)
+    if not lines:
+        return "(empty file)"
+    shown = lines[:WRITE_PREVIEW_LINES]
+    if len(lines) > WRITE_PREVIEW_LINES:
+        shown.append(f"… [{len(lines) - WRITE_PREVIEW_LINES} more lines]")
+    return "\n".join(shown)
+
+
+def _diff(old: str, new: str) -> str:
+    """A unified diff from `old` to `new`, without the "---"/"+++" header:
+    the path is in the title of the question."""
+    lines = list(
+        difflib.unified_diff(_split(old), _split(new), n=DIFF_CONTEXT, lineterm="")
+    )[2:]
+    if not lines:
+        # Same lines, different bytes: only the line endings change.
+        return "(only line endings change)"
+    shown = lines[:DIFF_MAX_LINES]
+    if len(lines) > DIFF_MAX_LINES:
+        shown.append(f"… [{len(lines) - DIFF_MAX_LINES} more diff lines]")
+    return "\n".join(shown)
+
+
+def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
+    """What would make writing `path` fail, found before asking."""
+    if path.is_dir():
+        raise ToolError(f"is a directory: {raw}")
+    if path.exists() and not path.is_file():
+        raise ToolError(f"not a regular file: {raw}")
+    for parent in path.parents:
+        if parent.exists():
+            if not parent.is_dir():
+                raise ToolError(f"not a directory: {workspace.shown(parent)}")
+            return
+
+
+def _current_text(path: Path, raw: str) -> str | None:
+    """The text of the file to overwrite, or None if it does not exist."""
+    if not path.exists():
+        return None
+    if is_binary(path):
+        raise ToolError(f"binary file, not writable: {raw}")
+    try:
+        with path.open(encoding="utf-8", newline="") as file:
+            return file.read()
+    except UnicodeDecodeError:
+        raise ToolError(f"not a UTF-8 text file: {raw}") from None
+
+
+def _create_temporary(path: Path) -> tuple[int, Path]:
+    """A new hidden file next to `path`, so the rename stays on the same
+    file system.
+
+    Created like `open("w")` does, with mode 0o666 and the umask applied by
+    the system, not with the 0o600 of `tempfile.mkstemp`. O_EXCL makes the
+    name ours; O_NOFOLLOW refuses a link planted with that name.
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
+    for _ in range(TEMP_TRIES):
+        temporary = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
+        try:
+            return os.open(temporary, flags, 0o666), temporary
+        except FileExistsError:
+            continue
+    raise FileExistsError(errno.EEXIST, "no free temporary file name")
+
+
+def _write_atomically(path: Path, text: str) -> None:
+    """Write `text` to `path` in UTF-8, as is: a reader sees the old file or
+    the new one, never half of it.
+
+    Written to a temporary file in the same folder, flushed to the disk and
+    renamed over `path`. An existing file keeps its mode. On any failure, or
+    a cancellation, the temporary file is removed and `path` is untouched.
+    """
+    try:
+        mode: int | None = stat.S_IMODE(path.stat().st_mode)
+    except FileNotFoundError:
+        mode = None
+    descriptor, temporary = _create_temporary(path)
+    try:
+        with open(descriptor, "w", encoding="utf-8", newline="") as file:
+            if mode is not None:
+                os.fchmod(file.fileno(), mode)
+            file.write(text)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+@dataclass(frozen=True)
+class _Shown:
+    """What the question showed: the path, and the text it would replace
+    (None: the file did not exist)."""
+
+    raw: str
+    path: Path
+    old: str | None
+
+
+class WriteFileParams(BaseModel):
+    path: str = Field(description="Path relative to the working directory")
+    content: str = Field(description="The whole new content of the file")
+
+
+class WriteFile:
+    name = "write_file"
+    description = (
+        "Create or overwrite a text file in the working directory. The user "
+        'approves it first. Example: {"path": "notes.txt", "content": "…"}'
+    )
+    params = WriteFileParams
+    permission: Permission = "effect"
+
+    def __init__(self, workspace: Workspace) -> None:
+        self._workspace = workspace
+        # What the last question showed; run() writes only that (decision
+        # D1). One slot is enough because calls run one at a time; with
+        # parallel calls (hito 15) it must keep one per call.
+        self._shown: _Shown | None = None
+
+    def approval(self, params: WriteFileParams) -> ApprovalRequest | None:
+        self._shown = None
+        workspace = self._workspace
+        path = workspace.resolve(params.path)
+        _check_target(workspace, path, params.path)
+        try:
+            params.content.encode("utf-8")
+        except UnicodeEncodeError:
+            raise ToolError("content is not valid UTF-8") from None
+        old = _current_text(path, params.path)
+        if old == params.content:
+            raise ToolError("nothing to change")
+        shown = workspace.shown(path)
+        if old is None:
+            lines = _count(len(_split(params.content)), "line")
+            title = f"create {shown} ({lines})"
+            body = _preview(params.content)
+        else:
+            title = f"overwrite {shown}"
+            body = _diff(old, params.content)
+        detail = body if params.path == shown else f"(asked: {params.path})\n{body}"
+        warning = workspace.warning(path, SECRET_FILE)
+        self._shown = _Shown(params.path, path, old)
+        return ApprovalRequest(
+            tool=self.name,
+            title=title,
+            detail=detail,
+            scope=self.name if warning is None else None,
+            warning=warning,
+        )
+
+    async def run(self, params: WriteFileParams) -> str:
+        workspace = self._workspace
+        path = workspace.resolve(params.path)
+        shown = self._shown
+        changed = ToolError(f"{params.path} changed after the question; ask again")
+        if shown is None or (shown.raw, shown.path) != (params.path, path):
+            raise changed
+        _check_target(workspace, path, params.path)
+        if _current_text(path, params.path) != shown.old:
+            raise changed
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _write_atomically(path, params.content)
+        except OSError as exc:
+            reason = exc.strerror or str(exc)
+            raise ToolError(f"cannot write {workspace.shown(path)}: {reason}") from None
+        lines = _count(len(_split(params.content)), "line")
+        return f"wrote {workspace.shown(path)} ({lines})"
+
+    def summary(self, result: str) -> str:
+        # "wrote notas.txt (3 lines)" → "3 lines".
+        return result[result.rfind("(") + 1 : -1]

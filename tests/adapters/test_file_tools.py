@@ -1,17 +1,29 @@
-"""The read-only file tools (spec hito 4, §1.6 and §4.6, and spec hito 5,
-§1.6 and §4.3), in `tmp_path`."""
+"""The file tools (spec hito 4, §1.6 and §4.6, and spec hito 5, §1.6, §1.7,
+§4.3 and §4.4), in `tmp_path`."""
 
+import asyncio
+import os
+import stat
 from pathlib import Path
 
 import pytest
 
-from mharness.adapters.tools import Glob, Grep, ListDir, ReadFile, Workspace, files
+from mharness.adapters.tools import (
+    Glob,
+    Grep,
+    ListDir,
+    ReadFile,
+    Workspace,
+    WriteFile,
+    files,
+)
 from mharness.adapters.tools.files import (
     READ_MAX_LINE,
     GlobParams,
     GrepParams,
     ListDirParams,
     ReadFileParams,
+    WriteFileParams,
 )
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.tools import ToolError
@@ -703,3 +715,347 @@ async def test_each_question_replaces_the_last_one(root: Path) -> None:
         await Glob(workspace).run(GlobParams(pattern="*", path=".."))
     with pytest.raises(ToolError, match="changed after the question"):
         await Grep(workspace).run(GrepParams(pattern="x", path=".."))
+
+
+# write_file (spec hito 5, §1.7 and §4.4.1)
+
+
+def write_tool(root: Path) -> WriteFile:
+    return WriteFile(Workspace(root))
+
+
+def ask_write(tool: WriteFile, path: str, content: str) -> ApprovalRequest:
+    request = tool.approval(WriteFileParams(path=path, content=content))
+    assert request is not None
+    return request
+
+
+def test_write_file_satisfies_the_port(root: Path) -> None:
+    # mypy checks this assignment against the Protocol.
+    tool: Tool[WriteFileParams] = write_tool(root)
+
+    assert (tool.name, tool.permission) == ("write_file", "effect")
+    # The exact description of spec hito 5, §3.2.
+    assert tool.description == (
+        "Create or overwrite a text file in the working directory. The user "
+        'approves it first. Example: {"path": "notes.txt", "content": "…"}'
+    )
+
+
+async def test_creating_asks_with_a_preview_and_writes(root: Path) -> None:
+    tool = write_tool(root)
+    params = WriteFileParams(path="notas.txt", content="uno\ndos\ntres\n")
+
+    request = tool.approval(params)
+    result = await tool.run(params)
+
+    assert request == ApprovalRequest(
+        tool="write_file",
+        title="create notas.txt (3 lines)",
+        detail="uno\ndos\ntres",
+        scope="write_file",
+    )
+    assert result == "wrote notas.txt (3 lines)"
+    assert tool.summary(result) == "3 lines"
+    assert (root / "notas.txt").read_bytes() == b"uno\ndos\ntres\n"
+
+
+async def test_the_preview_shows_the_first_20_lines(root: Path) -> None:
+    tool = write_tool(root)
+    content = "".join(f"línea {i}\n" for i in range(1, 26))
+
+    detail = ask_write(tool, "long.txt", content).detail
+
+    assert detail.splitlines() == [
+        *(f"línea {i}" for i in range(1, 21)),
+        "… [5 more lines]",
+    ]
+    assert ask_write(tool, "empty.txt", "") == ApprovalRequest(
+        tool="write_file",
+        title="create empty.txt (0 lines)",
+        detail="(empty file)",
+        scope="write_file",
+    )
+
+
+@pytest.mark.parametrize(
+    ("content", "lines"),
+    [
+        ("a\nb\nc", "3 lines"),
+        ("a\nb\nc\n", "3 lines"),
+        ("", "0 lines"),
+        ("a\n\n", "2 lines"),
+        ("a\r\nb\rc", "3 lines"),
+        ("x", "1 line"),
+    ],
+)
+async def test_lines_are_counted_as_read_file_numbers_them(
+    root: Path, content: str, lines: str
+) -> None:
+    # Decision W3.
+    tool = write_tool(root)
+    params = WriteFileParams(path="n.txt", content=content)
+
+    assert tool.approval(params) is not None
+    assert await tool.run(params) == f"wrote n.txt ({lines})"
+
+
+async def test_overwriting_asks_with_a_diff(root: Path) -> None:
+    write(root, "notas.txt", "a\nb\nc\n")
+    tool = write_tool(root)
+    params = WriteFileParams(path="notas.txt", content="a\nB\nc\n")
+
+    request = tool.approval(params)
+    result = await tool.run(params)
+
+    # Decision W4: no "---"/"+++" header; the path is in the title.
+    assert request == ApprovalRequest(
+        tool="write_file",
+        title="overwrite notas.txt",
+        detail="@@ -1,3 +1,3 @@\n a\n-b\n+B\n c",
+        scope="write_file",
+    )
+    assert result == "wrote notas.txt (3 lines)"
+    assert (root / "notas.txt").read_text(encoding="utf-8") == "a\nB\nc\n"
+
+
+async def test_a_long_diff_is_cut_at_60_lines(root: Path) -> None:
+    # Decision W1: as edit_file (spec hito 5, §1.8).
+    write(root, "big.txt", "".join(f"old {i}\n" for i in range(100)))
+    content = "".join(f"new {i}\n" for i in range(100))
+
+    lines = ask_write(write_tool(root), "big.txt", content).detail.splitlines()
+
+    # 1 hunk header + 100 removed + 100 added = 201 lines.
+    assert len(lines) == 61
+    assert lines[0] == "@@ -1,100 +1,100 @@"
+    assert lines[-1] == "… [141 more diff lines]"
+
+
+async def test_writing_creates_the_folders(root: Path) -> None:
+    tool = write_tool(root)
+    params = WriteFileParams(path="a/b/c.txt", content="hola\n")
+
+    assert ask_write(tool, "a/b/c.txt", "hola\n").title == "create a/b/c.txt (1 line)"
+    await tool.run(params)
+
+    assert (root / "a/b/c.txt").read_text(encoding="utf-8") == "hola\n"
+
+
+async def test_content_is_written_as_is(root: Path) -> None:
+    tool = write_tool(root)
+    params = WriteFileParams(path="w.txt", content="año\r\ndos\r\n")
+
+    tool.approval(params)
+    await tool.run(params)
+
+    assert (root / "w.txt").read_bytes() == "año\r\ndos\r\n".encode()
+
+
+@pytest.mark.parametrize(
+    ("path", "scope", "warning"),
+    [
+        ("notas.txt", "write_file", None),
+        ("../fuera.txt", None, OUTSIDE),
+        (".env", None, SECRET_FILE),
+        ("../.env", None, f"{OUTSIDE}; {SECRET_FILE}"),
+    ],
+)
+def test_write_scope_inside_and_none_outside_or_secret(
+    root: Path, path: str, scope: str | None, warning: str | None
+) -> None:
+    request = ask_write(write_tool(root), path, "x\n")
+
+    assert (request.scope, request.warning) == (scope, warning)
+
+
+def test_writing_over_a_directory_fails_before_asking(root: Path) -> None:
+    (root / "src").mkdir()
+
+    with pytest.raises(ToolError, match="is a directory: src"):
+        write_tool(root).approval(WriteFileParams(path="src", content="x"))
+
+
+def test_an_existing_file_must_be_utf8_text(root: Path) -> None:
+    # Decision W2.
+    (root / "img.bin").write_bytes(b"\x89PNG\0\0")
+    (root / "latin1.txt").write_bytes(b"caf\xe9\n")
+    tool = write_tool(root)
+
+    with pytest.raises(ToolError, match=r"binary file, not writable: img\.bin"):
+        tool.approval(WriteFileParams(path="img.bin", content="x"))
+    with pytest.raises(ToolError, match=r"not a UTF-8 text file: latin1\.txt"):
+        tool.approval(WriteFileParams(path="latin1.txt", content="x"))
+
+
+def test_the_same_content_is_nothing_to_change(root: Path) -> None:
+    # Decision W5.
+    write(root, "notas.txt", "a\nb\n")
+    tool = write_tool(root)
+
+    with pytest.raises(ToolError, match="nothing to change"):
+        tool.approval(WriteFileParams(path="notas.txt", content="a\nb\n"))
+    request = ask_write(tool, "notas.txt", "a\r\nb\r\n")
+    assert request.detail == "(only line endings change)"
+
+
+async def test_a_link_shows_its_target_and_is_kept(root: Path) -> None:
+    # Decision W7, and the link survives the atomic write.
+    write(root, "real.txt", "uno\n")
+    (root / "notes.txt").symlink_to(root / "real.txt")
+    tool = write_tool(root)
+    params = WriteFileParams(path="notes.txt", content="dos\n")
+
+    request = tool.approval(params)
+    await tool.run(params)
+
+    assert request is not None
+    assert request.title == "overwrite real.txt"
+    assert request.detail == "(asked: notes.txt)\n@@ -1 +1 @@\n-uno\n+dos"
+    assert (root / "notes.txt").is_symlink()
+    assert (root / "real.txt").read_text(encoding="utf-8") == "dos\n"
+
+
+def test_cheap_write_failures_come_before_the_question(root: Path) -> None:
+    # Decisions W8 and A3.
+    write(root, "notas.txt", "")
+    os.mkfifo(root / "pipe")
+    tool = write_tool(root)
+
+    with pytest.raises(ToolError, match=r"not a directory: notas\.txt"):
+        tool.approval(WriteFileParams(path="notas.txt/x.txt", content="x"))
+    with pytest.raises(ToolError, match="content is not valid UTF-8"):
+        tool.approval(WriteFileParams(path="x.txt", content="\ud800"))
+    with pytest.raises(ToolError, match="not a regular file: pipe"):
+        tool.approval(WriteFileParams(path="pipe", content="x"))
+
+
+# write_file: what was shown is what is written (decisions D1 and W6)
+
+
+async def test_a_file_created_after_the_question_is_not_overwritten(
+    root: Path,
+) -> None:
+    tool = write_tool(root)
+    params = WriteFileParams(path="notas.txt", content="mío\n")
+
+    tool.approval(params)
+    write(root, "notas.txt", "de otro\n")
+
+    with pytest.raises(ToolError, match=r"notas\.txt changed after the question"):
+        await tool.run(params)
+    assert (root / "notas.txt").read_text(encoding="utf-8") == "de otro\n"
+
+
+async def test_a_file_changed_after_the_question_is_not_overwritten(
+    root: Path,
+) -> None:
+    write(root, "notas.txt", "uno\n")
+    tool = write_tool(root)
+    params = WriteFileParams(path="notas.txt", content="dos\n")
+
+    tool.approval(params)
+    write(root, "notas.txt", "tres\n")
+
+    with pytest.raises(ToolError, match=r"notas\.txt changed after the question"):
+        await tool.run(params)
+    assert (root / "notas.txt").read_text(encoding="utf-8") == "tres\n"
+
+
+async def test_a_write_link_changed_after_the_question_is_not_followed(
+    root: Path,
+) -> None:
+    write(root, "a.txt", "uno\n")
+    write(root, "b.txt", "uno\n")
+    link = root / "link.txt"
+    link.symlink_to(root / "a.txt")
+    tool = write_tool(root)
+    params = WriteFileParams(path="link.txt", content="dos\n")
+
+    tool.approval(params)
+    link.unlink()
+    link.symlink_to(root / "b.txt")
+
+    with pytest.raises(ToolError, match=r"link\.txt changed after the question"):
+        await tool.run(params)
+    assert (root / "b.txt").read_text(encoding="utf-8") == "uno\n"
+
+
+async def test_writing_without_a_question_is_refused(root: Path) -> None:
+    tool = write_tool(root)
+    params = WriteFileParams(path="notas.txt", content="x")
+
+    with pytest.raises(ToolError, match="changed after the question"):
+        await tool.run(params)
+    tool.approval(params)
+    tool.approval(WriteFileParams(path="otra.txt", content="x"))
+    with pytest.raises(ToolError, match="changed after the question"):
+        await tool.run(params)
+    assert not (root / "notas.txt").exists()
+
+
+# write_file: the atomic write (decision of the maintainer, and A1, A2)
+
+
+def temporaries(folder: Path) -> list[str]:
+    return [p.name for p in folder.iterdir() if p.name.endswith(".tmp")]
+
+
+@pytest.mark.parametrize(
+    ("broken", "failure"),
+    [("fsync", OSError), ("replace", OSError), ("fsync", asyncio.CancelledError)],
+)
+async def test_a_failed_write_keeps_the_original_and_no_temporary(
+    root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    broken: str,
+    failure: type[BaseException],
+) -> None:
+    write(root, "notas.txt", "uno\n")
+    tool = write_tool(root)
+    params = WriteFileParams(path="notas.txt", content="dos\n")
+    tool.approval(params)
+
+    def fail(*args: object) -> None:
+        if failure is OSError:
+            raise OSError(28, "No space left on device")
+        raise failure
+
+    monkeypatch.setattr(os, broken, fail)
+    expected = ToolError if failure is OSError else failure
+    with pytest.raises(expected) as caught:
+        await tool.run(params)
+    monkeypatch.undo()
+
+    if failure is OSError:
+        # Decision A2.
+        assert str(caught.value) == ("cannot write notas.txt: No space left on device")
+    assert (root / "notas.txt").read_text(encoding="utf-8") == "uno\n"
+    assert temporaries(root) == []
+
+
+async def test_an_overwrite_keeps_the_mode(root: Path) -> None:
+    script = write(root, "run.sh", "echo uno\n")
+    script.chmod(0o755)
+    tool = write_tool(root)
+    params = WriteFileParams(path="run.sh", content="echo dos\n")
+
+    tool.approval(params)
+    await tool.run(params)
+
+    assert stat.S_IMODE(script.stat().st_mode) == 0o755
+    assert temporaries(root) == []
+
+
+async def test_a_new_file_gets_the_mode_of_the_umask(root: Path) -> None:
+    # As open("w") would create it, not the 0600 of mkstemp (decision A1).
+    reference = write(root, "reference.txt", "")
+    tool = write_tool(root)
+    params = WriteFileParams(path="nuevo.txt", content="x\n")
+
+    tool.approval(params)
+    await tool.run(params)
+
+    mode = stat.S_IMODE((root / "nuevo.txt").stat().st_mode)
+    assert mode == stat.S_IMODE(reference.stat().st_mode)
+    assert mode != 0o600
