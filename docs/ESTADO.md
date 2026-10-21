@@ -1,21 +1,20 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-21. **Hito 3 (streaming) implementado:** PRs
-#14, #15 y #16 integrados; PR 4 de cierre (`feature/hito-3-cierre`) en
-revisión. Falta el tag `v0.3.0`. Última versión publicada: `v0.2.0`.
+Última actualización: 2026-10-21. **Hito 3 (streaming) cerrado y publicado
+como `v0.3.0`.** Siguiente: la spec del hito 4 (tool calling y bucle
+agéntico).
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 3 (streaming) implementado: spec IMPLEMENTADA, PRs #14,
-#15 y #16 integrados y PR 4 de cierre en `feature/hito-3-cierre`. Falta el
-tag `v0.3.0`.**
+**Desarrollo. Hito 3 cerrado (`v0.3.0`). Hito 4 (tool calling y bucle
+agéntico): sin empezar; lo primero es su spec.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.2.0` — Primera conversación** (2026-10-20):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.2.0
-- Ramas abiertas: `feature/hito-3-cierre` (PR 4 del hito 3). Las integradas se
+- Última versión: **`v0.3.0` — Streaming** (2026-10-21):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.3.0
+- Ramas abiertas: `docs/cierre-hito-3` (este cierre de documentación). Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -23,14 +22,20 @@ tag `v0.3.0`.**
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
 
-- Nada pendiente. `v0.2.0` salió sin pasos fuera de lo normal.
+- Nada pendiente. `v0.3.0` salió sin pasos fuera de lo normal.
 
 ## Hecho
 
 Lo más reciente primero.
 
-- **Hito 3, PR 4 (cierre), 2026-10-21** (rama `feature/hito-3-cierre`;
-  piezas 16 a 19): versión 0.3.0, nota `docs/guia/03-streaming.md`, spec en
+- **`v0.3.0` publicada, 2026-10-21.** Tag anotado sobre el merge del PR #17
+  (`1caebec`), creado y publicado por el agente a petición del mantenedor.
+  `release.yml` creó la release en 12 s: título "v0.3.0 — Streaming", las
+  notas del tag y la lista de PRs #12 a #17. `uvx --from
+  git+https://github.com/ManexMartikorena/m-harness@v0.3.0 maha --version`
+  → `maha 0.3.0`. El CI del merge del #17 en `main`, en verde.
+- **Hito 3, PR 4 (#17) integrado, 2026-10-21** (merge `1caebec`; piezas
+  16 a 19 de la spec §6): versión 0.3.0, nota `docs/guia/03-streaming.md`, spec en
   IMPLEMENTADA y README, MAPA y ESTADO al día. Verificación a mano de la spec
   §7 por el agente en pty con el modelo real: 9 de 10 puntos en verde; el 9
   (cortar la red) no se pudo provocar en WSL y lo cubren los tests (spec
@@ -217,17 +222,17 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente:** push de `feature/hito-3-cierre` y PR con la plantilla.
-   **Humano:** decir si el agente lo integra (merge commit, CI en verde).
-2. **Humano, o agente si se le pide:** tag anotado `v0.3.0` sobre el merge
-   del PR 4 y push del tag. El workflow crea la release; comprobar con
-   `uvx --from git+https://github.com/ManexMartikorena/m-harness@v0.3.0
-   maha --version` → `maha 0.3.0`.
-3. **Agente:** PR de docs tras la release (como el #12): ESTADO con
-   `v0.3.0` publicada, la casilla del hito 3 en "Versiones" y el siguiente
-   paso: la spec del hito 4 (tool calling y bucle agéntico).
+1. **Agente o humano:** integrar el PR de `docs/cierre-hito-3` (este cierre
+   de documentación) con merge commit, con el CI en verde.
+2. **Humano o agente, en cada PC:** `git switch main && git pull` y borrar la
+   rama local `docs/cierre-hito-3` si existe. No hay dependencias nuevas: no
+   hace falta `uv sync`.
+3. **Agente:** proponer la spec del hito 4 (tool calling y bucle agéntico) en
+   `docs/spec-hito-4-<slug>`, en su propio PR, leyendo antes DESIGN §4, §5,
+   §6 y §14.
 
-**Sesión del 2026-10-21 en el PC de Windows (WSL).**
+**Sesión del 2026-10-21 en el PC de Windows (WSL).** Hito 3 cerrado y
+publicado.
 
 ### Al abrir el agente en otro PC
 
@@ -280,6 +285,26 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 - proveedor de búsqueda web (hito 17);
 - tratamiento de PDFs (hito 18).
 
+**Pendientes del hito 3** (anotados en su spec; cada uno con el hito que lo
+resuelve):
+- **Tokens de razonamiento:** "OK" cuesta de 16 a 99 tokens de salida
+  porque `glm-5.3-flash` razona; varía mucho con el mismo prompt.
+  `reasoning_content` se ignora. Desglose y coste: hito 7 (spec 3, §1.7 y
+  §12.9.3).
+- **`refusal` y `tool_calls` del stream se ignoran:** una negativa del
+  modelo se perdería en silencio. Hito 4 (spec 3, §10).
+- **Respuesta cortada con Ctrl+C:** queda en pantalla, pero el modelo no la
+  recuerda. Guardarla marcada como cortada: hito 6 (spec 3, §1.6).
+- **Sin reintentos** ante 429 o 5xx: se valoran en el hito 7 o el 8 (spec 3,
+  §1.9).
+- **Lo que se teclea mientras gira el spinner se mezcla con él** en pantalla
+  (solo visual). Hito 19, con prompt_toolkit (spec 3, §12.10).
+- **POR VERIFICAR:** el formato de un error a mitad de stream en OpenCode
+  (no se pudo provocar; el código lo lee de forma defensiva) y cortar la red
+  a mitad de respuesta a mano (punto 9 de la verificación, no provocado en
+  WSL; lo cubren los tests). Se miran si aparecen, o en la verificación del
+  hito 4 desde el Ubuntu de casa.
+
 **Por medir:**
 - Línea base de las evals (hito 8).
 - Ahorro de tokens de la memoria (hito 13).
@@ -290,7 +315,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 
 - [x] 1. Esqueleto. `v0.1.0` (2026-10-20)
 - [x] 2. Primera conversación. `v0.2.0` (2026-10-20)
-- [ ] 3. Streaming. `v0.3.0`
+- [x] 3. Streaming. `v0.3.0` (2026-10-21)
 - [ ] 4. Tool calling y bucle agéntico. `v0.4.0`
 - [ ] 5. Permisos y herramientas con efecto. `v0.5.0`
 - [ ] 6. Sesiones e historial. `v0.6.0`
