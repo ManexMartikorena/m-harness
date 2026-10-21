@@ -27,6 +27,12 @@ READ_MAX_CHARS = 100_000
 READ_MAX_LINE = 2000
 
 
+def _count(number: int, singular: str, plural: str | None = None) -> str:
+    """ "1 line", "3 lines": the summaries the terminal shows."""
+    word = singular if number == 1 else plural or f"{singular}s"
+    return f"{number} {word}"
+
+
 class Workspace:
     """The working directory: the only place the tools can see."""
 
@@ -94,7 +100,7 @@ class ReadFile:
     def summary(self, result: str) -> str:
         lines = sum(1 for line in result.splitlines() if _NUMBERED.match(line))
         cut = " (truncated)" if result.endswith("]") and "[truncated" in result else ""
-        return f"{lines} lines{cut}"
+        return _count(lines, "line") + cut
 
 
 _NUMBERED = re.compile(r"^ *\d+\t")
@@ -122,7 +128,7 @@ def _numbered_lines(file: IO[str], offset: int, limit: int) -> str:
     if not shown:
         if number == 0:
             return "(empty file)"
-        return f"(no lines from offset {offset}: the file has {number} lines)"
+        return f"(no lines from offset {offset}: the file has {_count(number, 'line')})"
     return "\n".join(shown)
 
 
@@ -186,9 +192,9 @@ class ListDir:
 
     def summary(self, result: str) -> str:
         if result == "(empty directory)":
-            return "0 entries"
+            return _count(0, "entry", "entries")
         entries = sum(1 for line in result.splitlines() if not line.startswith("… ["))
-        return f"{entries} entries"
+        return _count(entries, "entry", "entries")
 
 
 # Searching walks at most this many files; it yields control every few files,
@@ -293,9 +299,9 @@ class Glob:
 
     def summary(self, result: str) -> str:
         if result == "(no files match)":
-            return "0 files"
+            return _count(0, "file")
         files = sum(1 for line in result.splitlines() if not line.startswith("… ["))
-        return f"{files} files"
+        return _count(files, "file")
 
 
 GREP_MAX_MATCHES = 100
@@ -355,9 +361,9 @@ class Grep:
 
     def summary(self, result: str) -> str:
         if result == "(no matches)":
-            return "0 matches"
+            return _count(0, "match", "matches")
         found = sum(1 for line in result.splitlines() if not line.startswith("… ["))
-        return f"{found} matches" if found != 1 else "1 match"
+        return _count(found, "match", "matches")
 
 
 def _glob_matches(in_base: PurePath, pattern: str) -> bool:
