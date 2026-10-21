@@ -562,6 +562,10 @@ DIFF_CONTEXT = 3
 DIFF_MAX_LINES = 60
 # Random names tried for the temporary file before giving up.
 TEMP_TRIES = 100
+# A larger file is not overwritten or edited: reading it and computing its
+# diff would block the loop (review of PR 2, fix 2).
+MIB = 1024 * 1024
+CHANGE_MAX_FILE_BYTES = 2 * MIB
 
 
 def _split(text: str) -> list[str]:
@@ -616,8 +620,8 @@ def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
             return
 
 
-def _current_bytes(path: Path) -> bytes | None:
-    """The bytes of the file to change, or None if it does not exist.
+def _current_bytes(path: Path, verb: str) -> bytes | None:
+    """The bytes of the file to `verb`, or None if it does not exist.
 
     Bytes, not text: a question about a secret or a file outside must not
     tell the model whether it is text before the user approves (review of
@@ -625,6 +629,12 @@ def _current_bytes(path: Path) -> bytes | None:
     """
     if not path.exists():
         return None
+    size = path.stat().st_size
+    if size > CHANGE_MAX_FILE_BYTES:
+        raise ToolError(
+            f"file too large to {verb} ({size / MIB:.1f} MiB, "
+            f"max {CHANGE_MAX_FILE_BYTES // MIB} MiB); use run_command"
+        )
     return path.read_bytes()
 
 
@@ -741,7 +751,7 @@ class WriteFile:
         except UnicodeEncodeError:
             raise ToolError("content is not valid UTF-8") from None
         warning = workspace.warning(path, SECRET_FILE)
-        data = _current_bytes(path)
+        data = _current_bytes(path, "overwrite")
         shown = workspace.shown(path)
         if data is None:
             lines = _count(len(_split(params.content)), "line")
@@ -775,7 +785,7 @@ class WriteFile:
         if shown is None or (shown.raw, shown.path) != (params.path, path):
             raise changed
         _check_target(workspace, path, params.path)
-        data = _current_bytes(path)
+        data = _current_bytes(path, "overwrite")
         if data != shown.old:
             raise changed
         if data is not None:
@@ -903,7 +913,7 @@ class EditFile:
         workspace = self._workspace
         path = workspace.resolve(params.path)
         _check_target(workspace, path, params.path)
-        data = _current_bytes(path)
+        data = _current_bytes(path, "edit")
         if data is None:
             raise ToolError(f"file not found: {params.path}")
         warning = workspace.warning(path, SECRET_FILE)
@@ -935,7 +945,7 @@ class EditFile:
         if shown is None or (shown.raw, shown.path) != (params.path, path):
             raise changed
         _check_target(workspace, path, params.path)
-        data = _current_bytes(path)
+        data = _current_bytes(path, "edit")
         if data is None or data != shown.old:
             raise changed
         _, new, found = _edited(data, params)

@@ -1726,3 +1726,52 @@ async def test_a_binary_file_outside_asks_before_read_file_says_so(
     assert tool.approval(params) is not None
     with pytest.raises(ToolError, match=r"binary file, not readable: \.\./img"):
         await tool.run(params)
+
+
+# The size of the file to change (review of PR 2, fix 2)
+
+
+def big_file(root: Path, name: str) -> Path:
+    """3 MiB without writing them: a sparse file."""
+    path = root / name
+    path.touch()
+    os.truncate(path, 3 * 1024 * 1024)
+    return path
+
+
+@pytest.mark.parametrize("name", ["big.txt", ".env"])
+def test_a_file_too_large_is_refused_before_reading(
+    root: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    # The size is metadata: also with a warning, before asking.
+    big_file(root, name)
+
+    def no_reading(*args: object) -> bytes:
+        raise AssertionError("read a file too large")
+
+    monkeypatch.setattr(Path, "read_bytes", no_reading)
+    with pytest.raises(ToolError) as edited:
+        edit_tool(root).approval(edit_params(name, "a", "b"))
+    with pytest.raises(ToolError) as written:
+        write_tool(root).approval(WriteFileParams(path=name, content="x"))
+
+    assert str(edited.value) == (
+        "file too large to edit (3.0 MiB, max 2 MiB); use run_command"
+    )
+    assert str(written.value) == (
+        "file too large to overwrite (3.0 MiB, max 2 MiB); use run_command"
+    )
+
+
+async def test_a_file_grown_after_the_question_is_not_read(
+    root: Path,
+) -> None:
+    path = write(root, "app.py", "return 1\n")
+    tool = edit_tool(root)
+    params = edit_params("app.py", "1", "2")
+    tool.approval(params)
+
+    os.truncate(path, 3 * 1024 * 1024)
+
+    with pytest.raises(ToolError, match="file too large to edit"):
+        await tool.run(params)
