@@ -12,7 +12,8 @@ from pathlib import Path
 from mharness import config
 from mharness.adapters import cli
 from mharness.adapters.models import OpenAIChatClient
-from mharness.application.chat import Chat
+from mharness.application.agent import Agent
+from mharness.application.tools import ToolRegistry
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -34,7 +35,7 @@ async def _converse(settings: config.Settings) -> int:
         api_key=settings.api_key,
         session_header=provider.session_header,
     ) as client:
-        chat = Chat(client, model=settings.model)
+        agent = Agent(client, ToolRegistry(), model=settings.model)
         return await cli.converse(
-            chat, provider=settings.provider_name, model=settings.model
+            agent, provider=settings.provider_name, model=settings.model
         )
