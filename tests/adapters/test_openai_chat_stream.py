@@ -10,6 +10,14 @@ import pytest
 import respx
 
 from mharness.adapters.models import OpenAIChatClient
+from mharness.domain.errors import (
+    ModelAuthError,
+    ModelError,
+    ModelRateLimitError,
+    ModelRequestError,
+    ModelResponseError,
+    ModelUnavailableError,
+)
 from mharness.domain.events import MessageEnd, ModelEvent, TextDelta
 from mharness.domain.messages import Message, TextBlock
 from mharness.domain.model import ModelRequest, StopReason, Usage
@@ -54,18 +62,24 @@ def usage_chunk(prompt: int = 18, completion: int = 31) -> dict[str, Any]:
     }
 
 
-async def pieces(body: bytes, size: int) -> AsyncIterator[bytes]:
+async def pieces(
+    body: bytes, size: int, then: Exception | None = None
+) -> AsyncIterator[bytes]:
     for start in range(0, len(body), size):
         yield body[start : start + size]
+    if then is not None:
+        raise then
 
 
-def serve(body: bytes, size: int = CHUNK_SIZE) -> respx.Route:
-    """Answer the endpoint with `body`, sent in pieces of `size` bytes."""
+def serve(
+    body: bytes, size: int = CHUNK_SIZE, then: Exception | None = None
+) -> respx.Route:
+    """Answer with `body` in pieces of `size` bytes; then raise `then`, if any."""
     return respx.post(ENDPOINT).mock(
         return_value=httpx.Response(
             200,
             headers={"content-type": "text/event-stream"},
-            content=pieces(body, size),
+            content=pieces(body, size, then),
         )
     )
 
@@ -214,3 +228,177 @@ async def test_bom_and_split_characters(client: OpenAIChatClient) -> None:
     first, *_ = await events(client)
 
     assert first == TextDelta(text="Año: 5 €")
+
+
+# Errors (spec hito 3, §1.8).
+
+
+@respx.mock
+async def test_done_without_finish_reason_fails(client: OpenAIChatClient) -> None:
+    serve(sse(chunk("Hola"), usage_chunk(), "[DONE]"))
+
+    with pytest.raises(ModelResponseError, match="before the answer was complete"):
+        await events(client)
+
+
+@respx.mock
+async def test_clean_end_without_finish_reason_fails(client: OpenAIChatClient) -> None:
+    serve(sse(chunk("Hola")))
+
+    with pytest.raises(ModelResponseError, match="before the answer was complete"):
+        await events(client)
+
+
+@respx.mock
+async def test_data_after_done_is_not_read(client: OpenAIChatClient) -> None:
+    serve(sse(chunk("Hola", finish_reason="stop"), "[DONE]", "not json"))
+
+    *_, end = await events(client)
+
+    assert isinstance(end, MessageEnd)
+
+
+def error_body(message: str) -> dict[str, Any]:
+    return {"error": {"message": message, "type": "invalid_request_error"}}
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("status", "error"),
+    [
+        (401, ModelAuthError),
+        (403, ModelAuthError),
+        (429, ModelRateLimitError),
+        (400, ModelRequestError),
+        (404, ModelRequestError),
+        (500, ModelUnavailableError),
+        (503, ModelUnavailableError),
+    ],
+)
+async def test_http_errors_before_the_stream(
+    client: OpenAIChatClient, status: int, error: type[ModelError]
+) -> None:
+    respx.post(ENDPOINT).respond(status, json=error_body("Algo falló."))
+
+    with pytest.raises(error, match=f"HTTP {status}: Algo falló."):
+        await events(client)
+
+
+@respx.mock
+async def test_measured_unknown_model_is_a_request_error(
+    client: OpenAIChatClient,
+) -> None:
+    # Measured with OpenCode Go (spec §1.7): 400 with type "server_error".
+    body = {
+        "error": {
+            "type": "server_error",
+            "message": "Upstream request failed: Model is unavailable.",
+        }
+    }
+    respx.post(ENDPOINT).respond(400, json=body)
+
+    with pytest.raises(ModelRequestError, match="Model is unavailable"):
+        await events(client)
+
+
+@respx.mock
+async def test_http_error_message_is_redacted_and_cut(
+    client: OpenAIChatClient,
+) -> None:
+    respx.post(ENDPOINT).respond(401, json=error_body(f"Bad key {API_KEY}" + "x" * 400))
+
+    with pytest.raises(ModelAuthError) as raised:
+        await events(client)
+
+    assert API_KEY not in str(raised.value)
+    assert "[redacted]" in str(raised.value)
+    assert len(str(raised.value)) <= len("HTTP 401: ") + 300
+
+
+@respx.mock
+async def test_json_200_with_a_message(client: OpenAIChatClient) -> None:
+    respx.post(ENDPOINT).respond(200, json=error_body(f"No stream for {API_KEY}"))
+
+    with pytest.raises(ModelResponseError, match="No stream for") as raised:
+        await events(client)
+
+    assert API_KEY not in str(raised.value)
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, json={"choices": []}),
+        httpx.Response(200, text="<html>Hola</html>"),
+    ],
+)
+async def test_200_that_is_not_a_stream(
+    client: OpenAIChatClient, response: httpx.Response
+) -> None:
+    respx.post(ENDPOINT).mock(return_value=response)
+
+    with pytest.raises(ModelResponseError, match="did not stream"):
+        await events(client)
+
+
+@respx.mock
+@pytest.mark.parametrize("data", ["<secret-body>", '{"choices": "<secret-body>"}'])
+async def test_unreadable_chunk_is_a_response_error(
+    client: OpenAIChatClient, data: str
+) -> None:
+    serve(sse(chunk("Hola"), data))
+
+    with pytest.raises(ModelResponseError) as raised:
+        await events(client)
+
+    assert "secret-body" not in str(raised.value)
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "error",
+    [
+        {"message": f"Upstream broke near {API_KEY}" + "x" * 400},
+        f"Upstream broke near {API_KEY}" + "x" * 400,
+    ],
+)
+async def test_chunk_with_an_error(client: OpenAIChatClient, error: Any) -> None:
+    serve(sse(chunk("Hola"), {"error": error}))
+
+    with pytest.raises(ModelUnavailableError, match="Upstream broke") as raised:
+        await events(client)
+
+    message = str(raised.value)
+    assert API_KEY not in message
+    assert len(message) <= len("the provider failed while answering: ") + 300
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "failure",
+    [
+        httpx.ReadError("connection reset"),
+        httpx.ReadTimeout("silence"),
+        httpx.DecodingError("bad gzip"),
+    ],
+)
+async def test_a_cut_fails_even_after_the_finish_reason(
+    client: OpenAIChatClient, failure: Exception
+) -> None:
+    serve(sse(chunk("Hola", finish_reason="stop"), usage_chunk()), then=failure)
+
+    with pytest.raises(ModelUnavailableError):
+        await events(client)
+
+
+@respx.mock
+async def test_network_error_does_not_contain_the_key(
+    client: OpenAIChatClient,
+) -> None:
+    serve(sse(chunk("Hola")), then=httpx.ReadError(f"reset with {API_KEY}"))
+
+    with pytest.raises(ModelUnavailableError) as raised:
+        await events(client)
+
+    assert API_KEY not in str(raised.value)
