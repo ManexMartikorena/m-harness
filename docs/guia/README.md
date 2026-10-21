@@ -13,7 +13,7 @@ Cada nota se escribe en el mismo PR que cierra su hito.
 | 01 | [La arquitectura hexagonal de un agente](01-arquitectura-hexagonal.md) | Escrita (hito 1, `v0.1.0`) |
 | 02 | [Qué es una llamada a un LLM y por qué el modelo no recuerda](02-llamada-a-un-llm.md) | Escrita (hito 2, `v0.2.0`) |
 | 03 | [Streaming: el texto que llega a trozos](03-streaming.md) | Escrita (hito 3, `v0.3.0`) |
-| 04 | Tool calling y el bucle agéntico | Pendiente (hito 4) |
+| 04 | [Tool calling y el bucle agéntico](04-tool-calling.md) | Escrita (hito 4, `v0.4.0`) |
 | 05 | Permisos: el modelo propone, el código decide | Pendiente (hito 5) |
 | 06 | Historial y sesiones | Pendiente (hito 6) |
 | 07 | Trazas y coste | Pendiente (hito 7) |

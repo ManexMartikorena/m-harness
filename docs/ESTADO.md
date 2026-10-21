@@ -1,21 +1,22 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-21. **Hito 3 (streaming) cerrado y publicado
-como `v0.3.0`.** Hito 4 (tool calling y bucle agéntico): spec APROBADA (PR #19); PRs 1 a 4
-(#20 a #23) integrados; PR 5 de 6 en revisión. `maha` ya usa herramientas.
+Última actualización: 2026-10-21. **Hito 4 (tool calling y bucle agéntico)
+implementado:** PRs #20 a #24 integrados; PR 6 de cierre
+(`feature/hito-4-cierre`) en revisión. Falta el tag `v0.4.0`. Última versión
+publicada: `v0.3.0`.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 3 cerrado (`v0.3.0`). Hito 4 (tool calling y bucle
-agéntico): spec APROBADA (PR #19); PRs #20 a #23 integrados; PR 5
-(`feature/hito-4-terminal`) en revisión.**
+**Desarrollo. Hito 4 implementado: spec IMPLEMENTADA, PRs #20 a #24
+integrados y PR 6 de cierre en `feature/hito-4-cierre`. Falta el tag
+`v0.4.0`.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.3.0` — Streaming** (2026-10-21):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.3.0
-- Ramas abiertas: `feature/hito-4-terminal` (PR 5 del hito 4). Las integradas se
+- Ramas abiertas: `feature/hito-4-cierre` (PR 6 del hito 4). Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -29,7 +30,11 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
-- **Hito 4, PR 5, 2026-10-21** (rama `feature/hito-4-terminal`; piezas
+- **Hito 4, PR 6 (cierre), 2026-10-21** (rama `feature/hito-4-cierre`):
+  versión 0.4.0, nota `docs/guia/04-tool-calling.md`, spec en IMPLEMENTADA
+  y README, MAPA y ESTADO al día. Verificación a mano de la spec §7 por el
+  agente en pty con el modelo real: los 9 puntos en verde (spec §12.12).
+- **Hito 4, PR 5 (#24) integrado, 2026-10-21** (merge `c903c65`; piezas
   22 a 25): la terminal usa `Agent` (se borra `Chat`) y muestra cada
   llamada; `bootstrap` da las cuatro herramientas a `maha`; prueba de punta
   a punta con un fichero real. Probado en pty con el modelo real (spec
@@ -271,15 +276,14 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-El mantenedor autorizó el 2026-10-21 que el agente haga push e integre cada
-PR del hito 4 con el CI en verde.
-
-1. **Agente:** push de `feature/hito-4-terminal`, PR e integración.
-2. **Agente:** PR 6 del hito 4 (cierre) en `feature/hito-4-cierre`:
-   versión 0.4.0, verificación a mano de la spec §7, nota
-   `docs/guia/04-tool-calling.md`, spec en IMPLEMENTADA y docs.
-3. **Humano o agente con permiso:** tag `v0.4.0` y PR de docs tras la
-   release.
+1. **Agente:** push de `feature/hito-4-cierre`, PR e integración (permiso
+   del mantenedor para los PRs del hito 4).
+2. **Humano, o agente si se le pide:** tag anotado `v0.4.0` sobre el merge
+   del PR 6 y push del tag; comprobar la release y `uvx --from
+   git+https://github.com/ManexMartikorena/m-harness@v0.4.0 maha --version`
+   → `maha 0.4.0`.
+3. **Agente:** PR de docs tras la release: `v0.4.0` publicada, casilla del
+   hito 4, pendientes del hito 4 y siguiente paso (spec del hito 5).
 
 **Sesión del 2026-10-21 en el PC de Windows (WSL).**
 
