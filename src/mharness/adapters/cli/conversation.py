@@ -12,6 +12,7 @@ from contextlib import aclosing
 from importlib.metadata import version
 from typing import TextIO
 
+from mharness.adapters.cli.spinner import Spinner, use_color
 from mharness.application.chat import Chat
 from mharness.domain.errors import ModelError
 from mharness.domain.events import MessageEnd, TextDelta
@@ -131,9 +132,13 @@ async def _turns(
 async def _answer(chat: Chat, line: str, out: TextIO, err: TextIO) -> None:
     """Show one answer as it arrives; a model error ends only this turn."""
     wrote = False
+    # Covers the silence before the first token (spec hito 3, §1.12).
+    spinner = Spinner(out, color=use_color())
+    spinner.start()
     try:
         async with aclosing(chat.stream(line)) as events:
             async for event in events:
+                await spinner.stop()
                 match event:
                     case TextDelta(text=text):
                         out.write(text)
@@ -143,10 +148,13 @@ async def _answer(chat: Chat, line: str, out: TextIO, err: TextIO) -> None:
                         print(file=out)
                         _show_tokens(usage, out)
     except ModelError as exc:
+        await spinner.stop()
         # The text already shown stays; the error starts on a new line.
         if wrote:
             print(file=out)
         print(f"error: {exc}", file=err, flush=True)
+    finally:
+        await spinner.stop()
 
 
 def _show_tokens(usage: Usage, out: TextIO) -> None:
