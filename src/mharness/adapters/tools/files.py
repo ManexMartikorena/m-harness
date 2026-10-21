@@ -156,8 +156,9 @@ class ReadFile:
         warning = self._workspace.warning(path, SECRET_FILE)
         if warning is None:
             return None
-        # Before asking: no useless question (spec hito 5, §1.2).
-        _check_file(path, params.path)
+        # Before asking: no useless question (spec hito 5, §1.2). Only what
+        # the metadata tells: whether it is binary waits for the approval.
+        _check_exists(path, params.path)
         self._asked.remember(params.path, path)
         shown = self._workspace.shown(path)
         return _request(
@@ -182,11 +183,15 @@ class ReadFile:
 _NUMBERED = re.compile(r"^ *\d+\t")
 
 
-def _check_file(path: Path, raw: str) -> None:
+def _check_exists(path: Path, raw: str) -> None:
     if not path.exists():
         raise ToolError(f"file not found: {raw}")
     if path.is_dir():
         raise ToolError(f"is a directory, use list_dir: {raw}")
+
+
+def _check_file(path: Path, raw: str) -> None:
+    _check_exists(path, raw)
     if is_binary(path):
         raise ToolError(f"binary file, not readable: {raw}")
 
@@ -611,15 +616,24 @@ def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
             return
 
 
-def _current_text(path: Path, raw: str) -> str | None:
-    """The text of the file to overwrite, or None if it does not exist."""
+def _current_bytes(path: Path) -> bytes | None:
+    """The bytes of the file to change, or None if it does not exist.
+
+    Bytes, not text: a question about a secret or a file outside must not
+    tell the model whether it is text before the user approves (review of
+    PR 2, fix 1); the bytes still let `run()` see a change (decision W6).
+    """
     if not path.exists():
         return None
-    if is_binary(path):
+    return path.read_bytes()
+
+
+def _decode(data: bytes, raw: str) -> str:
+    """The text of `data`, read as `newline=""` does: endings as they are."""
+    if b"\0" in data[:BINARY_PROBE]:
         raise ToolError(f"binary file, not writable: {raw}")
     try:
-        with path.open(encoding="utf-8", newline="") as file:
-            return file.read()
+        return data.decode("utf-8")
     except UnicodeDecodeError:
         raise ToolError(f"not a UTF-8 text file: {raw}") from None
 
@@ -688,12 +702,12 @@ def _sync_folder(folder: Path) -> None:
 
 @dataclass(frozen=True)
 class _Shown:
-    """What the question showed: the path, and the text it would replace
+    """What the question showed: the path, and the bytes it would replace
     (None: the file did not exist)."""
 
     raw: str
     path: Path
-    old: str | None
+    old: bytes | None
 
 
 class WriteFileParams(BaseModel):
@@ -726,20 +740,25 @@ class WriteFile:
             params.content.encode("utf-8")
         except UnicodeEncodeError:
             raise ToolError("content is not valid UTF-8") from None
-        old = _current_text(path, params.path)
-        if old == params.content:
-            raise ToolError("nothing to change")
+        warning = workspace.warning(path, SECRET_FILE)
+        data = _current_bytes(path)
         shown = workspace.shown(path)
-        if old is None:
+        if data is None:
             lines = _count(len(_split(params.content)), "line")
             title = f"create {shown} ({lines})"
             body = _preview(params.content)
         else:
             title = f"overwrite {shown}"
-            body = _diff(old, params.content)
+            try:
+                body = _diff(_old_text(data, params), params.content)
+            except ToolError:
+                # With a warning, what depends on the content waits for the
+                # approval (review of PR 2, fix 1).
+                if warning is None:
+                    raise
+                body = _preview(params.content)
         detail = body if params.path == shown else f"(asked: {params.path})\n{body}"
-        warning = workspace.warning(path, SECRET_FILE)
-        self._shown = _Shown(params.path, path, old)
+        self._shown = _Shown(params.path, path, data)
         return ApprovalRequest(
             tool=self.name,
             title=title,
@@ -756,8 +775,11 @@ class WriteFile:
         if shown is None or (shown.raw, shown.path) != (params.path, path):
             raise changed
         _check_target(workspace, path, params.path)
-        if _current_text(path, params.path) != shown.old:
+        data = _current_bytes(path)
+        if data != shown.old:
             raise changed
+        if data is not None:
+            _old_text(data, params)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             _write_atomically(path, params.content)
@@ -770,6 +792,14 @@ class WriteFile:
     def summary(self, result: str) -> str:
         # "wrote notas.txt (3 lines)" → "3 lines".
         return result[result.rfind("(") + 1 : -1]
+
+
+def _old_text(data: bytes, params: WriteFileParams) -> str:
+    """The text that `params` overwrites; the errors that depend on it."""
+    old = _decode(data, params.path)
+    if old == params.content:
+        raise ToolError("nothing to change")
+    return old
 
 
 # Editing (spec hito 5, §1.8).
@@ -825,6 +855,30 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
     return text.replace(old, new), found
 
 
+def _edited(data: bytes, params: EditFileParams) -> tuple[str, str, int]:
+    """The text before and after the edit, and how many replacements; the
+    errors that depend on the content."""
+    old = _decode(data, params.path)
+    new, found = _replaced(old, params)
+    if new == old:
+        # Possible after adapting to CRLF: "a\n" for "a\r\n" (decision C).
+        raise ToolError("nothing to change")
+    return old, new, found
+
+
+def _strings(params: EditFileParams) -> str:
+    """The strings of the call, for a question that cannot derive anything
+    from the content (review of PR 2, fix 1)."""
+    lines = ["old_string:", *_split(params.old_string)]
+    lines += ["new_string:", *_split(params.new_string)]
+    if params.replace_all:
+        lines.append("replace_all: true")
+    shown = lines[:DIFF_MAX_LINES]
+    if len(lines) > DIFF_MAX_LINES:
+        shown.append(f"… [{len(lines) - DIFF_MAX_LINES} more lines]")
+    return "\n".join(shown)
+
+
 class EditFile:
     name = "edit_file"
     description = (
@@ -849,18 +903,22 @@ class EditFile:
         workspace = self._workspace
         path = workspace.resolve(params.path)
         _check_target(workspace, path, params.path)
-        old = _current_text(path, params.path)
-        if old is None:
+        data = _current_bytes(path)
+        if data is None:
             raise ToolError(f"file not found: {params.path}")
-        new, _ = _replaced(old, params)
-        if new == old:
-            # Possible after adapting to CRLF: "a\n" for "a\r\n" (decision C).
-            raise ToolError("nothing to change")
-        shown = workspace.shown(path)
-        body = _diff(old, new)
-        detail = body if params.path == shown else f"(asked: {params.path})\n{body}"
         warning = workspace.warning(path, SECRET_FILE)
-        self._shown = _Shown(params.path, path, old)
+        try:
+            old, new, _ = _edited(data, params)
+            body = _diff(old, new)
+        except ToolError:
+            # With a warning, what depends on the content waits for the
+            # approval (review of PR 2, fix 1).
+            if warning is None:
+                raise
+            body = _strings(params)
+        shown = workspace.shown(path)
+        detail = body if params.path == shown else f"(asked: {params.path})\n{body}"
+        self._shown = _Shown(params.path, path, data)
         return ApprovalRequest(
             tool=self.name,
             title=f"edit {shown}",
@@ -877,10 +935,10 @@ class EditFile:
         if shown is None or (shown.raw, shown.path) != (params.path, path):
             raise changed
         _check_target(workspace, path, params.path)
-        old = _current_text(path, params.path)
-        if old is None or old != shown.old:
+        data = _current_bytes(path)
+        if data is None or data != shown.old:
             raise changed
-        new, found = _replaced(old, params)
+        _, new, found = _edited(data, params)
         try:
             _write_atomically(path, new)
         except OSError as exc:

@@ -627,16 +627,15 @@ async def test_searching_skips_secrets_and_links_out_without_asking(
 
 
 async def test_cheap_failures_come_before_the_question(root: Path, other: Path) -> None:
-    # Decision D8: what run() would refuse is refused before asking.
-    (other / "img.bin").write_bytes(b"\x89PNG\0\0")
+    # Decision D8: what run() would refuse is refused before asking, if the
+    # metadata tells it; a binary file waits for the approval (review of
+    # PR 2, fix 1).
     workspace = Workspace(root)
 
     with pytest.raises(ToolError, match="file not found"):
         ReadFile(workspace).approval(ReadFileParams(path="../missing"))
     with pytest.raises(ToolError, match="is a directory"):
         ReadFile(workspace).approval(ReadFileParams(path="../other"))
-    with pytest.raises(ToolError, match="binary file"):
-        ReadFile(workspace).approval(ReadFileParams(path="../other/img.bin"))
     with pytest.raises(ToolError, match="directory not found"):
         ListDir(workspace).approval(ListDirParams(path="../missing"))
     with pytest.raises(ToolError, match="not a directory"):
@@ -1598,3 +1597,132 @@ async def test_an_old_string_with_crlf_and_lone_lf_is_adapted(root: Path) -> Non
 
     assert result == "edited win.txt (1 replacement)"
     assert path.read_bytes() == b"x\r\ny\r\n"
+
+
+# With a warning, nothing that depends on the content is told to the model
+# before the user approves (review of PR 2, fix 1).
+
+
+@pytest.mark.parametrize("path", [".env", "../x.txt"])
+async def test_an_edit_with_a_warning_asks_before_saying_not_found(
+    root: Path, path: str
+) -> None:
+    write(root, path, "uno\n")
+    tool = edit_tool(root)
+    params = edit_params(path, "tres", "cuatro")
+
+    request = ask_edit(tool, params)
+
+    assert request.scope is None
+    strings = "old_string:\ntres\nnew_string:\ncuatro"
+    asked = "" if path == ".env" else f"(asked: {path})\n"
+    assert request.detail == f"{asked}{strings}"
+    with pytest.raises(ToolError) as caught:
+        await tool.run(params)
+    assert str(caught.value) == NOT_FOUND.format(path)
+    assert (root / path).read_text(encoding="utf-8") == "uno\n"
+
+
+@pytest.mark.parametrize(
+    ("text", "old", "new", "error"),
+    [
+        ("a\na\n", "a", "b", "old_string appears 2 times in .env"),
+        ("a\r\nb\r\n", "a\n", "a\r\n", "nothing to change"),
+    ],
+)
+async def test_other_content_errors_of_an_edit_wait_for_the_approval(
+    root: Path, text: str, old: str, new: str, error: str
+) -> None:
+    path = crlf(root, ".env", text.encode())
+    tool = edit_tool(root)
+    params = edit_params(".env", old, new)
+
+    assert ask_edit(tool, params).warning == SECRET_FILE
+    with pytest.raises(ToolError, match=error):
+        await tool.run(params)
+    assert path.read_bytes() == text.encode()
+
+
+async def test_replace_all_shows_in_the_strings_of_an_edit(root: Path) -> None:
+    write(root, ".env", "uno\n")
+    params = edit_params(".env", "a\nb", "c", replace_all=True)
+
+    detail = ask_edit(edit_tool(root), params).detail
+
+    assert detail == "old_string:\na\nb\nnew_string:\nc\nreplace_all: true"
+
+
+async def test_a_write_with_a_warning_asks_before_nothing_to_change(
+    root: Path,
+) -> None:
+    write(root, ".env", "KEY=1\n")
+    tool = write_tool(root)
+    params = WriteFileParams(path=".env", content="KEY=1\n")
+
+    request = ask_write(tool, ".env", "KEY=1\n")
+
+    assert (request.title, request.detail) == ("overwrite .env", "KEY=1")
+    with pytest.raises(ToolError, match="nothing to change"):
+        await tool.run(params)
+
+
+@pytest.mark.parametrize(
+    ("data", "error"),
+    [
+        (b"\x89PNG\0\0", r"binary file, not writable: \.\./img"),
+        (b"caf\xe9\n", r"not a UTF-8 text file: \.\./img"),
+    ],
+)
+async def test_a_file_that_is_not_text_outside_asks_first(
+    root: Path, data: bytes, error: str
+) -> None:
+    (root.parent / "img").write_bytes(data)
+    write_params = WriteFileParams(path="../img", content="x\n")
+    edit_call = edit_params("../img", "caf", "té")
+    writer, editor = write_tool(root), edit_tool(root)
+
+    asked = "(asked: ../img)\n"
+    assert ask_write(writer, "../img", "x\n").detail == f"{asked}x"
+    assert ask_edit(editor, edit_call).detail == (
+        f"{asked}old_string:\ncaf\nnew_string:\nté"
+    )
+    with pytest.raises(ToolError, match=error):
+        await writer.run(write_params)
+    with pytest.raises(ToolError, match=error):
+        await editor.run(edit_call)
+    assert (root.parent / "img").read_bytes() == data
+
+
+async def test_a_valid_edit_with_a_warning_still_shows_the_diff(root: Path) -> None:
+    # The diff goes to the user, not to the model.
+    write(root, ".env", "KEY=1\n")
+
+    request, _ = await edit(root, edit_params(".env", "1", "2"))
+
+    assert request.detail == "@@ -1 +1 @@\n-KEY=1\n+KEY=2"
+
+
+def test_metadata_errors_with_a_warning_still_come_first(root: Path) -> None:
+    (root.parent / "dir").mkdir()
+    tool = edit_tool(root)
+
+    with pytest.raises(ToolError, match=r"file not found: \.env"):
+        tool.approval(edit_params(".env", "a", "b"))
+    with pytest.raises(ToolError, match=r"is a directory: \.\./dir"):
+        tool.approval(edit_params("../dir", "a", "b"))
+    with pytest.raises(ToolError, match="old_string is empty"):
+        tool.approval(edit_params(".env", "", "b"))
+    with pytest.raises(ToolError, match="content is not valid UTF-8"):
+        write_tool(root).approval(WriteFileParams(path=".env", content="\ud800"))
+
+
+async def test_a_binary_file_outside_asks_before_read_file_says_so(
+    root: Path,
+) -> None:
+    (root.parent / "img").write_bytes(b"\x89PNG\0\0")
+    tool = ReadFile(Workspace(root))
+    params = ReadFileParams(path="../img")
+
+    assert tool.approval(params) is not None
+    with pytest.raises(ToolError, match=r"binary file, not readable: \.\./img"):
+        await tool.run(params)
