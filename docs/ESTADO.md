@@ -1,22 +1,21 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-21. **Hito 2 (primera conversación) cerrado y
-publicado como `v0.2.0`.** Hito 3 (streaming): spec APROBADA (PR #13),
-PRs 1 (#14) y 2 (#15) integrados, PR 3 (`feature/hito-3-terminal`) en
-revisión.
+Última actualización: 2026-10-21. **Hito 3 (streaming) implementado:** PRs
+#14, #15 y #16 integrados; PR 4 de cierre (`feature/hito-3-cierre`) en
+revisión. Falta el tag `v0.3.0`. Última versión publicada: `v0.2.0`.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 2 cerrado (`v0.2.0`). Hito 3 (streaming): spec APROBADA
-(PR #13). Implementación: PRs 1 (#14) y 2 (#15) integrados; PR 3 en
-`feature/hito-3-terminal`.**
+**Desarrollo. Hito 3 (streaming) implementado: spec IMPLEMENTADA, PRs #14,
+#15 y #16 integrados y PR 4 de cierre en `feature/hito-3-cierre`. Falta el
+tag `v0.3.0`.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.2.0` — Primera conversación** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.2.0
-- Ramas abiertas: `feature/hito-3-terminal` (PR 3 del hito 3). Las integradas se
+- Ramas abiertas: `feature/hito-3-cierre` (PR 4 del hito 3). Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -30,7 +29,13 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
-- **Hito 3, PR 3, 2026-10-21** (rama `feature/hito-3-terminal`; piezas 9
+- **Hito 3, PR 4 (cierre), 2026-10-21** (rama `feature/hito-3-cierre`;
+  piezas 16 a 19): versión 0.3.0, nota `docs/guia/03-streaming.md`, spec en
+  IMPLEMENTADA y README, MAPA y ESTADO al día. Verificación a mano de la spec
+  §7 por el agente en pty con el modelo real: 9 de 10 puntos en verde; el 9
+  (cortar la red) no se pudo provocar en WSL y lo cubren los tests (spec
+  §12.9).
+- **Hito 3, PR 3 (#16) integrado, 2026-10-21** (merge `3e03407`; piezas 9
   a 15 de la spec §6): `stream()` en el puerto y el fake (`Gate`, `HANG`),
   `Chat.stream()`, terminal en directo, spinner con "maha" en colores y
   Ctrl+C que corta solo la respuesta. En verde: 216 tests, ruff, mypy e
@@ -212,14 +217,15 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente:** push de `feature/hito-3-terminal` y PR con la plantilla.
+1. **Agente:** push de `feature/hito-3-cierre` y PR con la plantilla.
    **Humano:** decir si el agente lo integra (merge commit, CI en verde).
-2. **Agente:** PR 4 del hito 3 (spec §6, piezas 16 a 19) en
-   `feature/hito-3-cierre`, desde `main` actualizado: versión 0.3.0, nota
-   `docs/guia/03-streaming.md`, spec en IMPLEMENTADA y docs al día. Antes,
-   la verificación a mano de la spec §7 (parte ya hecha en pty, §12.8).
-3. **Humano o agente con permiso:** tag `v0.3.0` sobre el merge del PR 4 y
-   push del tag.
+2. **Humano, o agente si se le pide:** tag anotado `v0.3.0` sobre el merge
+   del PR 4 y push del tag. El workflow crea la release; comprobar con
+   `uvx --from git+https://github.com/ManexMartikorena/m-harness@v0.3.0
+   maha --version` → `maha 0.3.0`.
+3. **Agente:** PR de docs tras la release (como el #12): ESTADO con
+   `v0.3.0` publicada, la casilla del hito 3 en "Versiones" y el siguiente
+   paso: la spec del hito 4 (tool calling y bucle agéntico).
 
 **Sesión del 2026-10-21 en el PC de Windows (WSL).**
 

@@ -1,4 +1,4 @@
-Estado: APROBADA (2026-10-21)
+Estado: IMPLEMENTADA (2026-10-21)
 
 # Spec — Hito 3: Streaming
 
@@ -833,9 +833,10 @@ como registro.
    sigue sin `None`; omitir la línea si todo es cero queda solo como defensa
    (§1.10). Pendiente de que el mantenedor lo acepte.
 
-## 12. Aprendido al implementar (fecha)
+## 12. Aprendido al implementar (2026-10-21)
 
-*(Se completa al cerrar el hito.)* La sonda se hizo en la fase de spec (§1.7).
+La sonda se hizo en la fase de spec (§1.7). Cuatro PRs: #14, #15, #16 y el
+de cierre.
 
 1. **respx 0.23.1 (POR VERIFICAR de §4 y §10), comprobado el 2026-10-21 por
    el agente con una prueba local:**
@@ -877,3 +878,27 @@ como registro.
    - el turno siguiente ("OK") contó 20 tokens de entrada: el turno cortado
      no se guardó;
    - Ctrl+D sale con 0.
+9. **Verificación a mano (§7), 2026-10-21** (agente, PC de Windows en WSL;
+   OpenCode Go, `glm-5.3-flash`; `maha` conducido en una pty; prompts
+   inventados):
+   1. `maha --version` → `maha 0.3.0`.
+   2. Spinner en color hasta el primer trozo (4,6 s) y borrado sin restos;
+      texto en directo. Con `NO_COLOR=1`, gira sin códigos de color.
+   3. Línea de tokens correcta. "OK" contó 48 y 99 de salida: más que los 16 a
+      46 de la sonda. El razonamiento varía mucho (§1.7); se mira en el
+      hito 7.
+   4. Dos turnos: el segundo recuerda el nombre; entrada de 26 a 53 tokens.
+   5. Ctrl+C a mitad: `[interrupted]`, el prompt vuelve y el turno no se
+      guarda (§12.8).
+   6. Ctrl+C en el prompt, `/exit` y Ctrl+D: 130, 0 y 0.
+   7. Clave inventada: `error: HTTP 401: Upstream request failed: Invalid
+      credential`, tras borrar el spinner; la conversación sigue.
+   8. Modelo inexistente: `error: HTTP 400: Upstream request failed: Model
+      is unavailable.`; la conversación sigue.
+   9. Cortar la red a mitad: **no provocado** (en WSL hace falta ser
+      administrador para cortarla). Lo cubren los tests 4.4.17 y 4.8.
+   10. `maha < notas.txt > salida.txt`: sale con 0 y `salida.txt` no tiene
+       ningún código de escape.
+10. **Lo que se escribe mientras gira el spinner se mezcla con él** (eco de
+    la terminal: `⠴ maha/exit`). Es solo visual: la línea se lee bien en el
+    siguiente prompt. Se arregla con prompt_toolkit en el hito 19.
