@@ -4,6 +4,7 @@
 import asyncio
 from collections.abc import Callable
 from contextlib import aclosing
+from typing import cast
 
 import pytest
 
@@ -666,3 +667,32 @@ async def test_a_crash_in_approval_is_an_internal_error() -> None:
     assert done.result.content == 'error: internal error in tool "echo"'
     assert done.internal_error == "KeyError: 'boom'"
     assert echo.calls == []
+
+
+@pytest.mark.parametrize("answer", [None, "y", ""])
+async def test_an_invalid_decision_does_not_run_the_tool(answer: object) -> None:
+    # Fails closed: only "once" or "session" run a call that asked. The cast
+    # stands for a broken gate, which the type checker cannot rule out at
+    # run time.
+    fake = FakeModelClient(
+        [tool_calls(call("c1")), tool_calls(call("c2")), reply("Ok")]
+    )
+    gate = FakeApproval(cast(list[Decision], [answer, "once"]))
+    echo = FakeTool(permission="effect", requests=[ask(), ask()])
+
+    events = await run(agent(fake, echo, gate=gate))
+
+    first, second = finished(events)
+    assert first.result == ToolResultBlock(
+        call_id="c1", content='error: internal error in tool "echo"', is_error=True
+    )
+    assert first.internal_error == f"invalid approval decision: {answer!r}"
+    assert first.decision is None
+    # Nothing was kept for the session: the next call asks again.
+    assert second.decision == "once"
+    assert len(gate.requests) == 2
+    assert echo.calls == [EchoParams(text="Hola")]
+    # The turn goes on as usual.
+    assert events[-1] == TurnFinished(
+        reason="end_turn", usage=Usage(), tool_calls=2, steps=3
+    )

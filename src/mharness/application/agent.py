@@ -41,6 +41,9 @@ MAX_STEPS = 25
 
 NOT_RUN_DENIED = "not run: a previous call was denied"
 
+# The only answers that run a call that asked, or deny it.
+DECISIONS: tuple[Decision, ...] = ("once", "session", "deny")
+
 
 class Agent:
     """A conversation with a model that can use tools, kept in memory.
@@ -136,7 +139,9 @@ class Agent:
                         )
                         continue
                     started = time.monotonic()
+                    # None: nobody was asked, or the answer was not valid.
                     decision: Decision | None = None
+                    asked = False
                     prepared = self._prepare(call)
                     if isinstance(prepared, _Outcome):
                         outcome = prepared
@@ -146,14 +151,23 @@ class Agent:
                             question
                         ):
                             yield ApprovalRequested(call=call, request=question)
-                            decision = await self._gate.decide(question)
-                            self._approvals.record(question, decision)
+                            asked = True
+                            answer: object = await self._gate.decide(question)
                             # The time spent deciding is not the tool's.
                             started = time.monotonic()
-                        if decision == "deny":
+                            if answer in DECISIONS:
+                                decision = answer
+                                self._approvals.record(question, decision)
+                        if asked and decision is None:
+                            # Fails closed: a broken gate never runs a call.
+                            outcome = _crash(
+                                call, f"invalid approval decision: {answer!r}"
+                            )
+                        elif decision == "deny":
                             denied = True
                             outcome = _error(call, "the user denied this call")
                         else:
+                            # Nobody was asked, or "once" or "session".
                             executed = True
                             outcome = await self._run(call, prepared)
                     calls_run += 1
