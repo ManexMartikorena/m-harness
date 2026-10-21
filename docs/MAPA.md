@@ -3,7 +3,7 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-21 (hito 4, PR 2: herramientas en el adaptador).
+Última actualización: 2026-10-21 (hito 4, PR 3: puerto, registro y bucle).
 
 ## Raíz
 
@@ -57,9 +57,14 @@ import-linter (`pyproject.toml`).
 | `domain/messages.py` | domain | `TextBlock`, `ToolCallBlock`, `ToolResultBlock` y `Message`: mensajes hechos de bloques, validados por `type` |
 | `domain/model.py` | domain | `ModelRequest` (con `tools`), `ToolSpec`, `ModelResponse`, `Usage` y `StopReason` |
 | `domain/events.py` | domain | `TextDelta`, `ToolCallDelta`, `MessageEnd` y `ModelEvent`: lo que llega mientras el modelo responde |
+| `domain/tools.py` | domain | `Permission` (`read` o `effect`) y `ToolError`, el fallo esperado que se explica al modelo |
+| `domain/agent_events.py` | domain | `ToolCallProposed`, `ToolFinished`, `ModelCallFinished`, `TurnFinished` y `AgentEvent`: lo que el bucle cuenta a la terminal |
 | `domain/errors.py` | domain | `ModelError` y sus cinco tipos (autenticación, límite, petición, no disponible, respuesta) |
+| `ports/tools.py` | ports | `Tool`: nombre, descripción, modelo Pydantic de parámetros, permiso, `run()` y `summary()` |
 | `ports/model.py` | ports | `ModelClient`: `complete(request) -> response` y `stream(request) -> eventos` |
 | `application/collect.py` | application | `Accumulator` y `collect()`: la respuesta entera a partir de los eventos, con las llamadas a herramientas juntadas por `index` |
+| `application/tools.py` | application | `ToolRegistry`: herramientas por nombre y sus `ToolSpec`; rechaza las de efecto hasta el hito 5 |
+| `application/agent.py` | application | `Agent`: el bucle agéntico (modelo → herramientas → resultados, hasta 25 pasos), con los errores devueltos al modelo |
 | `application/chat.py` | application | `Chat`: la conversación en memoria, reenviada entera en cada llamada. `send()` (entera) y `stream()` (eventos; guarda el turno al llegar `MessageEnd`) |
 | `adapters/models/sse.py` | adapters | `parse_sse()`: el dato de cada evento SSE, con las líneas partidas solo en CRLF, LF o CR |
 | `adapters/models/openai_chat.py` | adapters | `OpenAIChatClient`: la conversación en formato OpenAI Chat Completions, con httpx. `complete()` (respuesta entera) y `stream()` (eventos SSE); envía herramientas, llamadas y resultados; traduce respuesta, trozos (también `tool_calls`) y errores |
@@ -87,6 +92,10 @@ import-linter (`pyproject.toml`).
 | `unit/test_errors.py` | Todos los errores del modelo heredan de `ModelError` |
 | `unit/test_fake_model.py` | El fake cumple el puerto, sigue el guion (también en stream, con `Gate` y `HANG`) y falla al agotarse |
 | `unit/test_config.py` | Combinación de niveles, `[providers]` prohibido en el proyecto, errores con mensaje y la clave |
+| `unit/test_agent.py` | El bucle: sin llamadas, una, dos en orden, límite de pasos, historial, uso sumado, errores devueltos al modelo, fallo y cancelación |
+| `unit/test_tools_registry.py` | `ToolSpec` desde Pydantic, búsqueda, nombre repetido y herramienta con efecto rechazados |
+| `unit/test_fake_tool.py` | `FakeTool` cumple el puerto y sigue su guion |
 | `unit/test_chat.py` | `Chat` reenvía el historial y deshace el turno si la llamada falla o se cancela; `stream()` guarda el turno al llegar `MessageEnd` |
-| `fakes/model.py` | `FakeModelClient` guionizado (`complete()` y `stream()`), `reply()`, `END`, `Gate` y `HANG` (no es un test: lo usan los tests) |
+| `fakes/model.py` | `FakeModelClient` guionizado (`complete()` y `stream()`), `reply()`, `tool_calls()`, `END`, `Gate` y `HANG` (no es un test: lo usan los tests) |
+| `fakes/tools.py` | `FakeTool`: una herramienta guionizada, con `gate` para probar la cancelación |
 | `architecture/test_core_imports.py` | `domain`, `ports` y `application` solo usan la biblioteca estándar y Pydantic |

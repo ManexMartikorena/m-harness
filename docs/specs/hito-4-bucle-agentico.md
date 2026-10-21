@@ -730,4 +730,18 @@ Propuestas del agente (2026-10-21), aprobadas por el humano con la spec:
 
 ## 12. Aprendido al implementar (fecha)
 
-*(Se rellena al implementar.)*
+*(Se completa al cerrar el hito.)*
+
+1. **`ToolFinished` lleva además `summary` e `internal_error`, y
+   `TurnFinished` lleva `tool_calls`** (amplía §1.7). La terminal muestra el
+   resumen, el fallo interno y el número de llamadas sin conocer el
+   registro de herramientas: todo lo que necesita viaja en el evento.
+2. **Argumentos vacíos (`""`) cuentan como `{}`** (amplía §1.8). Algunos
+   modelos mandan un string vacío para una herramienta sin parámetros; así
+   no se trata como JSON inválido. Si faltan parámetros obligatorios, la
+   validación lo dice.
+3. **La pieza 14 solo añade tests** (§6): el turno ya era una lista local
+   que solo se guarda al final, así que deshacerlo ante un fallo o Ctrl+C no
+   necesitó código. El commit se llama "Probar que el turno se deshace…".
+4. **El fake del modelo responde con llamadas:** `tool_calls(*calls)` da un
+   `ModelResponse` que `stream()` emite como `ToolCallDelta`.
