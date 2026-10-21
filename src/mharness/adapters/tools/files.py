@@ -16,7 +16,7 @@ import os
 import re
 import secrets
 import stat
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePath
@@ -124,6 +124,17 @@ def _request(
     )
 
 
+@contextlib.contextmanager
+def _reading(raw: str) -> Iterator[None]:
+    """A failure to read `raw` (no rights, a disk error) as a clean error,
+    not an internal one (review of PR 2, fix 3)."""
+    try:
+        yield
+    except OSError as exc:
+        reason = exc.strerror or str(exc)
+        raise ToolError(f"cannot read {raw}: {reason}") from None
+
+
 def is_binary(path: Path) -> bool:
     with path.open("rb") as file:
         return b"\0" in file.read(BINARY_PROBE)
@@ -169,10 +180,11 @@ class ReadFile:
         path = self._workspace.resolve(params.path)
         warning = self._workspace.warning(path, SECRET_FILE)
         self._asked.check(params.path, path, warning)
-        _check_file(path, params.path)
         limit = min(params.limit or READ_MAX_LINES, READ_MAX_LINES)
-        with path.open(encoding="utf-8", errors="replace", newline="") as file:
-            return _numbered_lines(file, params.offset, limit)
+        with _reading(params.path):
+            _check_file(path, params.path)
+            with path.open(encoding="utf-8", errors="replace", newline="") as file:
+                return _numbered_lines(file, params.offset, limit)
 
     def summary(self, result: str) -> str:
         lines = sum(1 for line in result.splitlines() if _NUMBERED.match(line))
@@ -275,7 +287,8 @@ class ListDir:
         warning = self._workspace.warning(path, SECRET_DIR)
         self._asked.check(params.path, path, warning)
         _check_dir(path, params.path)
-        entries = sorted(path.iterdir(), key=lambda entry: entry.name)
+        with _reading(params.path):
+            entries = sorted(path.iterdir(), key=lambda entry: entry.name)
         if not entries:
             return "(empty directory)"
         lines = [self._entry(entry) for entry in entries[:LIST_MAX_ENTRIES]]
@@ -491,14 +504,16 @@ class Grep:
         self._asked.check(params.path, base, self._warning(base))
         regex = _check_grep(params, base)
         if base.is_file():
-            found = _search(base, self._workspace.shown(base), regex)
+            with _reading(params.path):
+                found = _search(base, self._workspace.shown(base), regex)
             return _grep_result(found, stopped_early=False)
         walk = _Walk(self._workspace, base)
         matches: list[str] = []
         async for file in walk.files():
             if params.glob and not _glob_matches(file.in_base, params.glob):
                 continue
-            matches.extend(_search(file.real, file.shown, regex))
+            with _reading(file.shown):
+                matches.extend(_search(file.real, file.shown, regex))
             # One more than shown: it tells whether something was left out.
             if len(matches) > GREP_MAX_MATCHES:
                 break
@@ -620,7 +635,7 @@ def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
             return
 
 
-def _current_bytes(path: Path, verb: str) -> bytes | None:
+def _current_bytes(path: Path, raw: str, verb: str) -> bytes | None:
     """The bytes of the file to `verb`, or None if it does not exist.
 
     Bytes, not text: a question about a secret or a file outside must not
@@ -635,7 +650,8 @@ def _current_bytes(path: Path, verb: str) -> bytes | None:
             f"file too large to {verb} ({size / MIB:.1f} MiB, "
             f"max {CHANGE_MAX_FILE_BYTES // MIB} MiB); use run_command"
         )
-    return path.read_bytes()
+    with _reading(raw):
+        return path.read_bytes()
 
 
 def _decode(data: bytes, raw: str) -> str:
@@ -751,7 +767,7 @@ class WriteFile:
         except UnicodeEncodeError:
             raise ToolError("content is not valid UTF-8") from None
         warning = workspace.warning(path, SECRET_FILE)
-        data = _current_bytes(path, "overwrite")
+        data = _current_bytes(path, params.path, "overwrite")
         shown = workspace.shown(path)
         if data is None:
             lines = _count(len(_split(params.content)), "line")
@@ -785,7 +801,7 @@ class WriteFile:
         if shown is None or (shown.raw, shown.path) != (params.path, path):
             raise changed
         _check_target(workspace, path, params.path)
-        data = _current_bytes(path, "overwrite")
+        data = _current_bytes(path, params.path, "overwrite")
         if data != shown.old:
             raise changed
         if data is not None:
@@ -913,7 +929,7 @@ class EditFile:
         workspace = self._workspace
         path = workspace.resolve(params.path)
         _check_target(workspace, path, params.path)
-        data = _current_bytes(path, "edit")
+        data = _current_bytes(path, params.path, "edit")
         if data is None:
             raise ToolError(f"file not found: {params.path}")
         warning = workspace.warning(path, SECRET_FILE)
@@ -945,7 +961,7 @@ class EditFile:
         if shown is None or (shown.raw, shown.path) != (params.path, path):
             raise changed
         _check_target(workspace, path, params.path)
-        data = _current_bytes(path, "edit")
+        data = _current_bytes(path, params.path, "edit")
         if data is None or data != shown.old:
             raise changed
         _, new, found = _edited(data, params)

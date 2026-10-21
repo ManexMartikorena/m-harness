@@ -4,6 +4,7 @@
 import asyncio
 import os
 import stat
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -1775,3 +1776,69 @@ async def test_a_file_grown_after_the_question_is_not_read(
 
     with pytest.raises(ToolError, match="file too large to edit"):
         await tool.run(params)
+
+
+# A file that cannot be read (review of PR 2, fix 3)
+
+not_root = pytest.mark.skipif(os.geteuid() == 0, reason="root reads any file")
+
+
+@pytest.fixture
+def locked(root: Path) -> Iterator[Path]:
+    """A file and a folder without read rights; restored at the end."""
+    file = write(root, "locked.txt", "x\n")
+    folder = root / "closed"
+    folder.mkdir()
+    file.chmod(0)
+    folder.chmod(0)
+    yield root
+    file.chmod(0o644)
+    folder.chmod(0o755)
+
+
+DENIED = "Permission denied"
+
+
+@not_root
+async def test_reading_tools_say_cannot_read(locked: Path) -> None:
+    workspace = Workspace(locked)
+
+    with pytest.raises(ToolError) as read_error:
+        await ReadFile(workspace).run(ReadFileParams(path="locked.txt"))
+    with pytest.raises(ToolError) as list_error:
+        await ListDir(workspace).run(ListDirParams(path="closed"))
+    with pytest.raises(ToolError) as grep_file:
+        await Grep(workspace).run(GrepParams(pattern="x", path="locked.txt"))
+    with pytest.raises(ToolError) as grep_walk:
+        await Grep(workspace).run(GrepParams(pattern="x"))
+
+    assert str(read_error.value) == f"cannot read locked.txt: {DENIED}"
+    assert str(list_error.value) == f"cannot read closed: {DENIED}"
+    assert str(grep_file.value) == f"cannot read locked.txt: {DENIED}"
+    assert str(grep_walk.value) == f"cannot read locked.txt: {DENIED}"
+
+
+@not_root
+def test_changing_tools_say_cannot_read(locked: Path) -> None:
+    with pytest.raises(ToolError) as edited:
+        edit_tool(locked).approval(edit_params("locked.txt", "x", "y"))
+    with pytest.raises(ToolError) as written:
+        write_tool(locked).approval(WriteFileParams(path="locked.txt", content="y"))
+
+    assert str(edited.value) == f"cannot read locked.txt: {DENIED}"
+    assert str(written.value) == f"cannot read locked.txt: {DENIED}"
+
+
+@not_root
+async def test_a_file_locked_after_the_question_cannot_be_read(root: Path) -> None:
+    path = write(root, "app.py", "return 1\n")
+    tool = edit_tool(root)
+    params = edit_params("app.py", "1", "2")
+    tool.approval(params)
+
+    path.chmod(0)
+    try:
+        with pytest.raises(ToolError, match=f"cannot read app.py: {DENIED}"):
+            await tool.run(params)
+    finally:
+        path.chmod(0o644)
