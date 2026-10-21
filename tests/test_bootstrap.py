@@ -140,6 +140,74 @@ def test_a_cut_stream_shows_the_error_and_the_next_turn_works(
     assert second["messages"] == [{"role": "user", "content": "Hola otra vez"}]
 
 
+@respx.mock
+def test_maha_offers_the_read_only_tools(
+    workspace: Path, stdin: Callable[[str], None]
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Hola.", 1, 1))
+    )
+    stdin("Hola\n")
+
+    main([])
+
+    tools = json.loads(route.calls.last.request.content)["tools"]
+    assert [tool["function"]["name"] for tool in tools] == [
+        "read_file",
+        "list_dir",
+        "glob",
+        "grep",
+    ]
+
+
+def tool_call_stream(name: str, arguments: str) -> bytes:
+    """An SSE body where the model asks for one tool call."""
+    call = {
+        "index": 0,
+        "id": "call_e2e",
+        "type": "function",
+        "function": {"name": name, "arguments": arguments},
+    }
+    chunks = [
+        {"choices": [{"delta": {"tool_calls": [call]}}]},
+        {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]},
+        {"choices": [], "usage": {"prompt_tokens": 200, "completion_tokens": 20}},
+    ]
+    events = [f"data: {json.dumps(chunk)}\n\n" for chunk in chunks]
+    return ("".join(events) + "data: [DONE]\n\n").encode()
+
+
+@respx.mock
+def test_a_tool_call_reads_a_real_file(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    (Path.cwd() / "notas.txt").write_text("Comprar pan\n", encoding="utf-8")
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            sse_response(tool_call_stream("read_file", '{"path": "notas.txt"}')),
+            sse_response(streamed("Dice: comprar pan.", 230, 9)),
+        ]
+    )
+    stdin("¿Qué dice notas.txt?\n/exit\n")
+
+    code = main([])
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert '  → read_file(path="notas.txt")\n  ✓ 1 line\n' in out
+    assert "Dice: comprar pan.\n  [tokens: 430 in · 29 out · 1 call]" in out
+    second = json.loads(route.calls.last.request.content)["messages"]
+    assert second[-1] == {
+        "role": "tool",
+        "tool_call_id": "call_e2e",
+        "content": "     1\tComprar pan",
+    }
+
+
 def test_without_configuration_explains_what_is_missing(
     workspace: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

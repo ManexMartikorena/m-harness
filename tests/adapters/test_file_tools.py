@@ -98,7 +98,7 @@ async def test_empty_file_and_offset_past_the_end(root: Path) -> None:
 
     assert await read(root, "empty.txt") == "(empty file)"
     assert await read(root, "short.txt", offset=5) == (
-        "(no lines from offset 5: the file has 1 lines)"
+        "(no lines from offset 5: the file has 1 line)"
     )
 
 
@@ -386,3 +386,19 @@ async def test_grep_exactly_at_the_limit_has_no_notice(root: Path) -> None:
 
     assert len(result.splitlines()) == 100
     assert "stopped" not in result
+
+
+async def test_summaries_use_the_singular_for_one(root: Path) -> None:
+    write(root, "a.txt", "Ane\n")
+    workspace = Workspace(root)
+
+    read_one = await ReadFile(workspace).run(ReadFileParams(path="a.txt"))
+    listed = await ListDir(workspace).run(ListDirParams())
+    globbed = await Glob(workspace).run(GlobParams(pattern="*.txt"))
+    grepped = await Grep(workspace).run(GrepParams(pattern="Ane"))
+
+    assert ReadFile(workspace).summary(read_one) == "1 line"
+    assert ListDir(workspace).summary(listed) == "1 entry"
+    assert Glob(workspace).summary(globbed) == "1 file"
+    assert Grep(workspace).summary(grepped) == "1 match"
+    assert Grep(workspace).summary("(no matches)") == "0 matches"

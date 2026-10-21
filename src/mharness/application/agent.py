@@ -66,7 +66,7 @@ class Agent:
         turn = [Message(role="user", blocks=[TextBlock(text=text)])]
         usage = Usage()
         calls_run = 0
-        for _ in range(self._max_steps):
+        for step in range(1, self._max_steps + 1):
             accumulator = Accumulator()
             request = self._request(turn)
             async with aclosing(self._client.stream(request)) as events:
@@ -81,7 +81,9 @@ class Agent:
             calls = [b for b in response.message.blocks if isinstance(b, ToolCallBlock)]
             if not calls:
                 self._messages.extend(turn)
-                yield TurnFinished(reason="end_turn", usage=usage, tool_calls=calls_run)
+                yield TurnFinished(
+                    reason="end_turn", usage=usage, tool_calls=calls_run, steps=step
+                )
                 return
             results: list[ToolResultBlock] = []
             # In order, not in parallel, until hito 15 (spec hito 4, §1.7).
@@ -101,7 +103,12 @@ class Agent:
             turn.append(Message(role="tool", blocks=list(results)))
         # The turn ends on tool results; the user can still go on.
         self._messages.extend(turn)
-        yield TurnFinished(reason="max_steps", usage=usage, tool_calls=calls_run)
+        yield TurnFinished(
+            reason="max_steps",
+            usage=usage,
+            tool_calls=calls_run,
+            steps=self._max_steps,
+        )
 
     def _request(self, turn: list[Message]) -> ModelRequest:
         # No system prompt until hito 10 (spec hito 2, §1.5).

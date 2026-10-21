@@ -1,21 +1,21 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-21. **Hito 3 (streaming) cerrado y publicado
-como `v0.3.0`.** Hito 4 (tool calling y bucle agéntico): spec APROBADA (PR #19); PRs 1 a 3
-(#20 a #22) integrados; PR 4 de 6 en revisión.
+como `v0.3.0`.** Hito 4 (tool calling y bucle agéntico): spec APROBADA (PR #19); PRs 1 a 4
+(#20 a #23) integrados; PR 5 de 6 en revisión. `maha` ya usa herramientas.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 3 cerrado (`v0.3.0`). Hito 4 (tool calling y bucle
-agéntico): spec APROBADA (PR #19); PRs #20 a #22 integrados; PR 4
-(`feature/hito-4-herramientas`) en revisión.**
+agéntico): spec APROBADA (PR #19); PRs #20 a #23 integrados; PR 5
+(`feature/hito-4-terminal`) en revisión.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.3.0` — Streaming** (2026-10-21):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.3.0
-- Ramas abiertas: `feature/hito-4-herramientas` (PR 4 del hito 4). Las integradas se
+- Ramas abiertas: `feature/hito-4-terminal` (PR 5 del hito 4). Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -29,8 +29,13 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
-- **Hito 4, PR 4, 2026-10-21** (rama `feature/hito-4-herramientas`;
-  piezas 16 a 21): `is_secret()` y las herramientas `read_file`,
+- **Hito 4, PR 5, 2026-10-21** (rama `feature/hito-4-terminal`; piezas
+  22 a 25): la terminal usa `Agent` (se borra `Chat`) y muestra cada
+  llamada; `bootstrap` da las cuatro herramientas a `maha`; prueba de punta
+  a punta con un fichero real. Probado en pty con el modelo real (spec
+  §12.11). En verde: 327 tests.
+- **Hito 4, PR 4 (#23) integrado, 2026-10-21** (merge `eec3d5a`; piezas 16
+  a 21): `is_secret()` y las herramientas `read_file`,
   `list_dir`, `glob` y `grep`, dentro del directorio de trabajo, sin
   secretos, con topes y sin hilos. Dos fallos encontrados y fijados con
   test (spec §12.6). En verde: 324 tests.
@@ -269,10 +274,12 @@ Lo más reciente primero.
 El mantenedor autorizó el 2026-10-21 que el agente haga push e integre cada
 PR del hito 4 con el CI en verde.
 
-1. **Agente:** push de `feature/hito-4-herramientas`, PR e integración.
-2. **Agente:** PR 5 del hito 4 (spec §6, piezas 22 a 25) en
-   `feature/hito-4-terminal`: la terminal usa `Agent` y muestra cada
-   llamada; `bootstrap` da las herramientas a `maha`.
+1. **Agente:** push de `feature/hito-4-terminal`, PR e integración.
+2. **Agente:** PR 6 del hito 4 (cierre) en `feature/hito-4-cierre`:
+   versión 0.4.0, verificación a mano de la spec §7, nota
+   `docs/guia/04-tool-calling.md`, spec en IMPLEMENTADA y docs.
+3. **Humano o agente con permiso:** tag `v0.4.0` y PR de docs tras la
+   release.
 
 **Sesión del 2026-10-21 en el PC de Windows (WSL).**
 

@@ -50,6 +50,8 @@ class TurnFinished(BaseModel, frozen=True):
     # Summed over every call to the model in the turn.
     usage: Usage
     tool_calls: int
+    # Calls to the model in the turn.
+    steps: int
 
 
 type AgentEvent = (

@@ -11,11 +11,14 @@ import pytest
 
 from mharness.adapters.cli.conversation import EXIT_INTERRUPTED, StdinLines, converse
 from mharness.adapters.cli.spinner import CLEAR_LINE
-from mharness.application.chat import Chat
+from mharness.application.agent import Agent
+from mharness.application.tools import ToolRegistry
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import TextDelta
+from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import Usage
-from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply
+from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply, tool_calls
+from tests.fakes.tools import FakeTool
 
 HEADER = f"maha {version('m-harness')} · opencode-go · glm-5.3-flash · /exit to quit"
 
@@ -35,7 +38,7 @@ class ScriptedInput:
 async def run(fake: FakeModelClient, *lines: str) -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
     code = await converse(
-        Chat(fake, model="glm-5.3-flash"),
+        Agent(fake, ToolRegistry(), model="glm-5.3-flash"),
         provider="opencode-go",
         model="glm-5.3-flash",
         read_line=ScriptedInput(*lines),
@@ -107,7 +110,7 @@ async def test_ctrl_c_ends_with_130() -> None:
 
     out = io.StringIO()
     code = await converse(
-        Chat(FakeModelClient([]), model="m"),
+        Agent(FakeModelClient([]), ToolRegistry(), model="m"),
         provider="p",
         model="m",
         read_line=interrupt,
@@ -128,7 +131,7 @@ async def test_other_cancellations_propagate() -> None:
 
     task = asyncio.create_task(
         converse(
-            Chat(FakeModelClient([]), model="m"),
+            Agent(FakeModelClient([]), ToolRegistry(), model="m"),
             provider="p",
             model="m",
             read_line=wait_forever,
@@ -203,7 +206,7 @@ async def test_text_is_shown_before_the_stream_ends() -> None:
     out = io.StringIO()
     task = asyncio.ensure_future(
         converse(
-            Chat(fake, model="m"),
+            Agent(fake, ToolRegistry(), model="m"),
             provider="p",
             model="m",
             read_line=ScriptedInput("Hola"),
@@ -256,7 +259,7 @@ async def converse_until_spinning(
 ) -> int:
     task = asyncio.ensure_future(
         converse(
-            Chat(fake, model="m"),
+            Agent(fake, ToolRegistry(), model="m"),
             provider="p",
             model="m",
             read_line=ScriptedInput("Hola"),
@@ -335,7 +338,7 @@ async def test_ctrl_c_during_an_answer_goes_back_to_the_prompt() -> None:
     pressing = asyncio.ensure_future(interrupt_when(out, "Esperando"))
 
     code = await converse(
-        Chat(fake, model="m"),
+        Agent(fake, ToolRegistry(), model="m"),
         provider="p",
         model="m",
         read_line=ScriptedInput("Cuéntame algo", "Hola", "/exit"),
@@ -356,7 +359,7 @@ async def test_ctrl_c_while_the_spinner_spins() -> None:
     pressing = asyncio.ensure_future(interrupt_when(out, "⠋"))
 
     code = await converse(
-        Chat(fake, model="m"),
+        Agent(fake, ToolRegistry(), model="m"),
         provider="p",
         model="m",
         read_line=ScriptedInput("Hola"),
@@ -367,3 +370,133 @@ async def test_ctrl_c_while_the_spinner_spins() -> None:
 
     assert code == 0
     assert out.getvalue().endswith(f"{CLEAR_LINE}  [interrupted]\n> \n")
+
+
+# Tool calls in the terminal (spec hito 4, §1.9).
+
+
+def call(id: str, arguments: str = '{"text": "Hola"}') -> ToolCallBlock:
+    return ToolCallBlock(id=id, name="echo", arguments=arguments)
+
+
+async def run_with_tools(
+    fake: FakeModelClient, *lines: str, tool: FakeTool | None = None, steps: int = 25
+) -> tuple[int, str, str]:
+    out, err = io.StringIO(), io.StringIO()
+    registry = ToolRegistry([tool or FakeTool()])
+    code = await converse(
+        Agent(fake, registry, model="m", max_steps=steps),
+        provider="p",
+        model="m",
+        read_line=ScriptedInput(*lines),
+        out=out,
+        err=err,
+    )
+    return code, out.getvalue(), err.getvalue()
+
+
+async def test_shows_each_call_and_the_answer() -> None:
+    fake = FakeModelClient(
+        [
+            tool_calls(
+                call("c1"),
+                text="Voy a mirarlo.",
+                usage=Usage(input_tokens=200, output_tokens=30),
+            ),
+            reply("Dice Hola.", usage=Usage(input_tokens=274, output_tokens=92)),
+        ]
+    )
+
+    code, out, err = await run_with_tools(fake, "¿Qué dice?", "/exit")
+
+    assert code == 0
+    assert err == ""
+    assert out.endswith(
+        "> Voy a mirarlo.\n"
+        '  → echo(text="Hola")\n'
+        "  ✓ 10 chars\n"
+        "Dice Hola.\n"
+        "  [tokens: 474 in · 122 out · 1 call]\n"
+        "> "
+    )
+
+
+async def test_a_failed_call_is_marked() -> None:
+    fake = FakeModelClient([tool_calls(call("c1", '{"text": 3}')), reply("Vaya.")])
+
+    _, out, _ = await run_with_tools(fake, "Hola", "/exit")
+
+    assert "  → echo(text=3)\n  ✗ error: invalid arguments: text:" in out
+
+
+async def test_invalid_json_arguments_are_shown_as_written() -> None:
+    fake = FakeModelClient([tool_calls(call("c1", '{"text": ')), reply("Vaya.")])
+
+    _, out, _ = await run_with_tools(fake, "Hola", "/exit")
+
+    assert '  → echo({"text": )\n' in out
+
+
+async def test_long_calls_are_cut() -> None:
+    long_text = "x" * 300
+    arguments = f'{{"text": "{long_text}"}}'
+    fake = FakeModelClient([tool_calls(call("c1", arguments)), reply("Ok.")])
+
+    _, out, _ = await run_with_tools(fake, "Hola", "/exit")
+
+    shown = next(line for line in out.splitlines() if "→" in line).split("→ ")[1]
+    assert len(shown) == 100
+    assert shown.endswith("…")
+
+
+async def test_calls_are_counted_in_plural() -> None:
+    usage = Usage(input_tokens=1, output_tokens=1)
+    fake = FakeModelClient(
+        [tool_calls(call("c1"), call("c2"), usage=usage), reply("Ok.", usage=usage)]
+    )
+
+    _, out, _ = await run_with_tools(fake, "Hola", "/exit")
+
+    assert "  [tokens: 2 in · 2 out · 2 calls]\n" in out
+
+
+async def test_step_limit_is_shown() -> None:
+    usage = Usage(input_tokens=1, output_tokens=1)
+    fake = FakeModelClient([tool_calls(call(f"c{i}"), usage=usage) for i in range(2)])
+
+    _, out, _ = await run_with_tools(fake, "Hola", "/exit", steps=2)
+
+    assert "  [step limit reached: 2]\n  [tokens: 2 in · 2 out · 2 calls]\n" in out
+
+
+async def test_internal_tool_error_goes_to_stderr() -> None:
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Vaya.")])
+
+    _, out, err = await run_with_tools(
+        fake, "Hola", "/exit", tool=FakeTool(results=[KeyError("boom")])
+    )
+
+    assert '  ✗ error: internal error in tool "echo"\n' in out
+    assert err == "warning: tool \"echo\" failed: KeyError: 'boom'\n"
+
+
+async def test_ctrl_c_during_a_tool_goes_back_to_the_prompt() -> None:
+    gate = asyncio.Event()  # never set: the tool waits
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Hola.")])
+    out = io.StringIO()
+    pressing = asyncio.ensure_future(interrupt_when(out, "→ echo"))
+    agent = Agent(fake, ToolRegistry([FakeTool(gate=gate)]), model="m")
+
+    code = await converse(
+        agent,
+        provider="p",
+        model="m",
+        read_line=ScriptedInput("Usa la herramienta", "/exit"),
+        out=out,
+        err=io.StringIO(),
+    )
+    await pressing
+
+    assert code == 0
+    assert out.getvalue().endswith('  → echo(text="Hola")\n  [interrupted]\n> ')
+    assert agent.messages == ()

@@ -1,6 +1,7 @@
 """The agent loop (spec hito 4, §1.7 and §4.4), with fakes."""
 
 import asyncio
+from contextlib import aclosing
 
 import pytest
 
@@ -52,7 +53,7 @@ async def test_without_calls_the_turn_ends() -> None:
         TextDelta(text="Hola,"),
         TextDelta(text=" Ane."),
         ModelCallFinished(usage=usage, model=FAKE_MODEL),
-        TurnFinished(reason="end_turn", usage=usage, tool_calls=0),
+        TurnFinished(reason="end_turn", usage=usage, tool_calls=0, steps=1),
     ]
     assert subject.messages[0] == user("Hola")
     assert subject.messages[1].text == "Hola, Ane."
@@ -120,7 +121,9 @@ async def test_the_step_limit_ends_the_turn_and_keeps_it() -> None:
 
     events = await run(subject)
 
-    assert events[-1] == TurnFinished(reason="max_steps", usage=Usage(), tool_calls=3)
+    assert events[-1] == TurnFinished(
+        reason="max_steps", usage=Usage(), tool_calls=3, steps=3
+    )
     assert len(fake.requests) == 3
     assert subject.messages[-1].role == "tool"
     assert len(subject.messages) == 7  # user, then 3 times assistant and tool
@@ -151,6 +154,7 @@ async def test_turn_usage_adds_every_step() -> None:
         reason="end_turn",
         usage=Usage(input_tokens=230, output_tokens=28),
         tool_calls=1,
+        steps=2,
     )
 
 
@@ -278,3 +282,16 @@ async def test_cancelling_during_a_tool_leaves_the_history_as_it_was() -> None:
         await task
     assert echo.calls  # the tool had started
     assert subject.messages == ()
+
+
+async def test_turn_is_kept_when_the_caller_stops_at_the_end() -> None:
+    # Fixes decision 1.7: kept before TurnFinished is handed over.
+    fake = FakeModelClient([reply("Hola, Ane.")])
+    subject = agent(fake)
+
+    async with aclosing(subject.run("Hola")) as events:
+        async for event in events:
+            if isinstance(event, TurnFinished):
+                break
+
+    assert len(subject.messages) == 2

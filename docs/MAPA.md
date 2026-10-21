@@ -3,7 +3,7 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-21 (hito 4, PR 4: herramientas de ficheros).
+Última actualización: 2026-10-21 (hito 4, PR 5: terminal y cableado).
 
 ## Raíz
 
@@ -52,7 +52,7 @@ import-linter (`pyproject.toml`).
 |---|---|---|
 | `__init__.py` | — | El paquete |
 | `__main__.py` | entrada | `python -m mharness`: igual que `maha` |
-| `bootstrap.py` | raíz de composición | `main()` del comando `maha`: lee la configuración, crea el adaptador y abre la conversación; el único que conoce todas las piezas |
+| `bootstrap.py` | raíz de composición | `main()` del comando `maha`: lee la configuración, crea el adaptador y las herramientas de solo lectura sobre el directorio de arranque, y abre la conversación con `Agent`; el único que conoce todas las piezas |
 | `config.py` | configuración (hermana de `adapters`) | `load()`: proveedores predefinidos, del usuario y del proyecto (este, solo `provider` y `model`); la clave, del entorno |
 | `domain/messages.py` | domain | `TextBlock`, `ToolCallBlock`, `ToolResultBlock` y `Message`: mensajes hechos de bloques, validados por `type` |
 | `domain/model.py` | domain | `ModelRequest` (con `tools`), `ToolSpec`, `ModelResponse`, `Usage` y `StopReason` |
@@ -66,12 +66,11 @@ import-linter (`pyproject.toml`).
 | `application/collect.py` | application | `Accumulator` y `collect()`: la respuesta entera a partir de los eventos, con las llamadas a herramientas juntadas por `index` |
 | `application/tools.py` | application | `ToolRegistry`: herramientas por nombre y sus `ToolSpec`; rechaza las de efecto hasta el hito 5 |
 | `application/agent.py` | application | `Agent`: el bucle agéntico (modelo → herramientas → resultados, hasta 25 pasos), con los errores devueltos al modelo |
-| `application/chat.py` | application | `Chat`: la conversación en memoria, reenviada entera en cada llamada. `send()` (entera) y `stream()` (eventos; guarda el turno al llegar `MessageEnd`) |
 | `adapters/models/sse.py` | adapters | `parse_sse()`: el dato de cada evento SSE, con las líneas partidas solo en CRLF, LF o CR |
 | `adapters/models/openai_chat.py` | adapters | `OpenAIChatClient`: la conversación en formato OpenAI Chat Completions, con httpx. `complete()` (respuesta entera) y `stream()` (eventos SSE); envía herramientas, llamadas y resultados; traduce respuesta, trozos (también `tool_calls`) y errores |
 | `adapters/tools/files.py` | adapters | `Workspace` (perímetro del directorio de trabajo) y las herramientas de solo lectura `read_file`, `list_dir`, `glob` y `grep`, con topes y sin hilos |
 | `adapters/cli/app.py` | adapters | Línea de comandos con argparse: `parse()` (`--version`, la ayuda) y `fail()` |
-| `adapters/cli/conversation.py` | adapters | `converse()`: leer, enviar y mostrar la respuesta según llega, con `/exit`, Ctrl+D y Ctrl+C (a mitad de respuesta, solo la corta); `StdinLines`, lectura de stdin sin hilos |
+| `adapters/cli/conversation.py` | adapters | `converse()`: leer, enviar al `Agent` y mostrar la respuesta según llega, cada llamada a herramienta (`→`, `✓`/`✗`) y la línea de tokens con las llamadas, con `/exit`, Ctrl+D y Ctrl+C (a mitad de respuesta, solo la corta); `StdinLines`, lectura de stdin sin hilos |
 | `adapters/cli/spinner.py` | adapters | `Spinner` y `frame()`: spinner braille con "maha" en colores ANSI mientras llega el primer token; solo en una terminal real, y `NO_COLOR` |
 
 ## Tests: `tests/`
@@ -79,9 +78,9 @@ import-linter (`pyproject.toml`).
 | Fichero | Qué comprueba |
 |---|---|
 | `test_entry_point.py` | El script `maha` entra por `bootstrap.main`; `python -m mharness --version` |
-| `test_bootstrap.py` | `maha` de punta a punta con respx (streams SSE) y un pipe como stdin: dos turnos, un stream cortado, y los errores de arranque |
+| `test_bootstrap.py` | `maha` de punta a punta con respx (streams SSE) y un pipe como stdin: dos turnos, un stream cortado, las herramientas ofrecidas, una llamada a `read_file` sobre un fichero real, y los errores de arranque |
 | `adapters/test_cli.py` | `--version`, la ayuda, sin argumentos devuelve las opciones, el error de uso y `fail()` |
-| `adapters/test_conversation.py` | Respuesta en directo y tokens, `/exit`, Ctrl+D, Ctrl+C en el prompt y a mitad de respuesta, errores a mitad, spinner y `StdinLines` |
+| `adapters/test_conversation.py` | Respuesta en directo y tokens, llamadas a herramientas (marcas, argumentos cortados, plural, límite de pasos, fallo interno, Ctrl+C durante una herramienta), `/exit`, Ctrl+D, Ctrl+C en el prompt y a mitad de respuesta, errores a mitad, spinner y `StdinLines` |
 | `adapters/test_spinner.py` | Fotogramas con y sin color, `NO_COLOR`, solo en terminal, borrado de la línea |
 | `adapters/test_sse.py` | Analizador SSE: eventos, comentarios, saltos de línea, trozos partidos, U+2028 y el tope de 1 MiB |
 | `adapters/test_file_tools.py` | Las cuatro herramientas en `tmp_path`: resultados, topes, perímetro (`..`, rutas absolutas, enlaces), secretos, binarios y errores |
@@ -99,7 +98,6 @@ import-linter (`pyproject.toml`).
 | `unit/test_agent.py` | El bucle: sin llamadas, una, dos en orden, límite de pasos, historial, uso sumado, errores devueltos al modelo, fallo y cancelación |
 | `unit/test_tools_registry.py` | `ToolSpec` desde Pydantic, búsqueda, nombre repetido y herramienta con efecto rechazados |
 | `unit/test_fake_tool.py` | `FakeTool` cumple el puerto y sigue su guion |
-| `unit/test_chat.py` | `Chat` reenvía el historial y deshace el turno si la llamada falla o se cancela; `stream()` guarda el turno al llegar `MessageEnd` |
 | `fakes/model.py` | `FakeModelClient` guionizado (`complete()` y `stream()`), `reply()`, `tool_calls()`, `END`, `Gate` y `HANG` (no es un test: lo usan los tests) |
 | `fakes/tools.py` | `FakeTool`: una herramienta guionizada, con `gate` para probar la cancelación |
 | `architecture/test_core_imports.py` | `domain`, `ports` y `application` solo usan la biblioteca estándar y Pydantic |

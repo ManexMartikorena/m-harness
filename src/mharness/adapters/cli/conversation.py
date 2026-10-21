@@ -1,9 +1,11 @@
 """The conversation in the terminal: read, send, show (spec hito 2, §1.11).
 
-The answer is shown as it arrives (spec hito 3, §1.10).
+The answer is shown as it arrives (spec hito 3, §1.10), with every tool
+call the agent makes (spec hito 4, §1.9).
 """
 
 import asyncio
+import json
 import os
 import signal
 import sys
@@ -13,14 +15,18 @@ from importlib.metadata import version
 from typing import TextIO
 
 from mharness.adapters.cli.spinner import Spinner, use_color
-from mharness.application.chat import Chat
+from mharness.application.agent import Agent
+from mharness.domain.agent_events import ToolCallProposed, ToolFinished, TurnFinished
 from mharness.domain.errors import ModelError
-from mharness.domain.events import MessageEnd, TextDelta
+from mharness.domain.events import TextDelta
+from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import Usage
 
 DISTRIBUTION = "m-harness"
 # Terminal convention for a program stopped by Ctrl+C: 128 + SIGINT.
 EXIT_INTERRUPTED = 130
+# A tool call is shown in one line, cut to this length.
+MAX_CALL = 100
 
 type ReadLine = Callable[[], Awaitable[str]]
 
@@ -80,7 +86,7 @@ class StdinLines:
 
 
 async def converse(
-    chat: Chat,
+    agent: Agent,
     *,
     provider: str,
     model: str,
@@ -104,7 +110,7 @@ async def converse(
 
     loop.add_signal_handler(signal.SIGINT, on_sigint)
     try:
-        return await _turns(chat, provider, model, read, out, err, sigint)
+        return await _turns(agent, provider, model, read, out, err, sigint)
     except asyncio.CancelledError:
         # Ctrl+C at the prompt ends `maha`; an answer handles its own.
         if not sigint.pending:
@@ -117,7 +123,7 @@ async def converse(
 
 
 async def _turns(
-    chat: Chat,
+    agent: Agent,
     provider: str,
     model: str,
     read: ReadLine,
@@ -140,33 +146,55 @@ async def _turns(
             continue
         if line == "/exit":
             return 0
-        await _answer(chat, line, out, err, sigint)
+        await _answer(agent, line, out, err, sigint)
 
 
 async def _answer(
-    chat: Chat, line: str, out: TextIO, err: TextIO, sigint: _Sigint
+    agent: Agent, line: str, out: TextIO, err: TextIO, sigint: _Sigint
 ) -> None:
     """Show one answer as it arrives.
 
     A model error or Ctrl+C ends only this answer, which is not kept (spec
     hito 3, §1.10).
     """
+    # True while the cursor is after text, not at the start of a line.
     wrote = False
-    # Covers the silence before the first token (spec hito 3, §1.12).
+    # Covers each wait for the model (spec hito 3, §1.12).
     spinner = Spinner(out, color=use_color())
     spinner.start()
     try:
-        async with aclosing(chat.stream(line)) as events:
+        async with aclosing(agent.run(line)) as events:
             async for event in events:
-                await spinner.stop()
                 match event:
                     case TextDelta(text=text):
+                        await spinner.stop()
                         out.write(text)
                         out.flush()
                         wrote = True
-                    case MessageEnd(usage=usage):
-                        print(file=out)
-                        _show_tokens(usage, out)
+                    case ToolCallProposed(call=call):
+                        await spinner.stop()
+                        if wrote:
+                            print(file=out)
+                            wrote = False
+                        print(f"  → {_call(call)}", file=out, flush=True)
+                    case ToolFinished():
+                        mark = "✗" if event.result.is_error else "✓"
+                        print(f"  {mark} {event.summary}", file=out, flush=True)
+                        if event.internal_error:
+                            print(
+                                f'warning: tool "{event.call.name}" failed: '
+                                f"{event.internal_error}",
+                                file=err,
+                                flush=True,
+                            )
+                        # The model is called again.
+                        spinner.start()
+                    case TurnFinished():
+                        await spinner.stop()
+                        if wrote:
+                            print(file=out)
+                            wrote = False
+                        _show_turn(event, out)
     except ModelError as exc:
         await spinner.stop()
         # The text already shown stays; the error starts on a new line.
@@ -189,12 +217,37 @@ async def _answer(
         await spinner.stop()
 
 
-def _show_tokens(usage: Usage, out: TextIO) -> None:
+def _call(call: ToolCallBlock) -> str:
+    """`name(arg="value", …)` in one line, at most 100 characters."""
+    try:
+        arguments = json.loads(call.arguments or "{}")
+    except ValueError:
+        arguments = None
+    if isinstance(arguments, dict):
+        shown = ", ".join(
+            f"{key}={json.dumps(value, ensure_ascii=False)}"
+            for key, value in arguments.items()
+        )
+    else:
+        # As the model wrote it: the loop answers it with an error.
+        shown = call.arguments
+    text = " ".join(f"{call.name}({shown})".split())
+    return text if len(text) <= MAX_CALL else text[: MAX_CALL - 1] + "…"
+
+
+def _show_turn(turn: TurnFinished, out: TextIO) -> None:
+    if turn.reason == "max_steps":
+        print(f"  [step limit reached: {turn.steps}]", file=out)
+    usage = turn.usage
     # All zeros means the provider did not report them: nothing to show.
     if usage == Usage():
+        out.flush()
         return
+    calls = ""
+    if turn.tool_calls:
+        calls = f" · {turn.tool_calls} call" + ("s" if turn.tool_calls > 1 else "")
     print(
-        f"  [tokens: {usage.input_tokens} in · {usage.output_tokens} out]",
+        f"  [tokens: {usage.input_tokens} in · {usage.output_tokens} out{calls}]",
         file=out,
         flush=True,
     )
