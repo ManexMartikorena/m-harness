@@ -1,21 +1,21 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-21. **Hito 3 (streaming) cerrado y publicado
-como `v0.3.0`.** Hito 4 (tool calling y bucle agéntico): spec APROBADA (PR #19); PR 1 integrado
-(#20) y PR 2 de 6 en revisión.
+como `v0.3.0`.** Hito 4 (tool calling y bucle agéntico): spec APROBADA (PR #19); PRs 1 (#20) y
+2 (#21) integrados; PR 3 de 6 en revisión.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 3 cerrado (`v0.3.0`). Hito 4 (tool calling y bucle
-agéntico): spec APROBADA (PR #19); PR 1 integrado (#20); PR 2
-(`feature/hito-4-adaptador`) en revisión.**
+agéntico): spec APROBADA (PR #19); PRs #20 y #21 integrados; PR 3
+(`feature/hito-4-bucle`) en revisión.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.3.0` — Streaming** (2026-10-21):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.3.0
-- Ramas abiertas: `feature/hito-4-adaptador` (PR 2 del hito 4). Las integradas se
+- Ramas abiertas: `feature/hito-4-bucle` (PR 3 del hito 4). Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -29,7 +29,12 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
-- **Hito 4, PR 2, 2026-10-21** (rama `feature/hito-4-adaptador`; piezas 5
+- **Hito 4, PR 3, 2026-10-21** (rama `feature/hito-4-bucle`; piezas 9 a
+  15): puerto `Tool`, `ToolRegistry` (rechaza las de efecto), eventos del
+  agente y el bucle `Agent` (25 pasos, en orden, errores devueltos al
+  modelo, turno atómico). Probado con fakes: 264 tests en verde. Lo
+  aprendido, en la spec §12.
+- **Hito 4, PR 2 (#21) integrado, 2026-10-21** (merge `a158037`; piezas 5
   a 8): el adaptador envía `tools`, las llamadas (`tool_calls`, `content`
   null sin texto) y un mensaje `tool` por resultado; traduce
   `delta.tool_calls` (con `null` explícito) y `message.tool_calls`. En
@@ -259,10 +264,10 @@ Lo más reciente primero.
 El mantenedor autorizó el 2026-10-21 que el agente haga push e integre cada
 PR del hito 4 con el CI en verde.
 
-1. **Agente:** push de `feature/hito-4-adaptador`, PR e integración.
-2. **Agente:** PR 3 del hito 4 (spec §6, piezas 9 a 15) en
-   `feature/hito-4-bucle`: puerto `Tool`, registro, eventos del agente y el
-   bucle, con fakes.
+1. **Agente:** push de `feature/hito-4-bucle`, PR e integración.
+2. **Agente:** PR 4 del hito 4 (spec §6, piezas 16 a 21) en
+   `feature/hito-4-herramientas`: reglas de ficheros secretos y las cuatro
+   herramientas de solo lectura.
 
 **Sesión del 2026-10-21 en el PC de Windows (WSL).**
 
