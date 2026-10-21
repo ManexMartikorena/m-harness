@@ -1842,3 +1842,52 @@ async def test_a_file_locked_after_the_question_cannot_be_read(root: Path) -> No
             await tool.run(params)
     finally:
         path.chmod(0o644)
+
+
+# run() runs only the exact call that was asked (review of PR 2, fix 5)
+
+
+async def test_a_write_with_other_content_than_asked_is_refused(root: Path) -> None:
+    tool = write_tool(root)
+    tool.approval(WriteFileParams(path="notas.txt", content="uno\n"))
+
+    with pytest.raises(ToolError, match=r"notas\.txt changed after the question"):
+        await tool.run(WriteFileParams(path="notas.txt", content="otro\n"))
+    assert not (root / "notas.txt").exists()
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        edit_params("app.py", "return 1", "return 3"),
+        edit_params("app.py", "1", "2"),
+        edit_params("app.py", "return 1", "return 2", replace_all=True),
+    ],
+)
+async def test_an_edit_with_other_strings_than_asked_is_refused(
+    root: Path, other: EditFileParams
+) -> None:
+    write(root, "app.py", "return 1\n")
+    tool = edit_tool(root)
+    tool.approval(edit_params("app.py", "return 1", "return 2"))
+
+    with pytest.raises(ToolError, match=r"app\.py changed after the question"):
+        await tool.run(other)
+    assert (root / "app.py").read_text(encoding="utf-8") == "return 1\n"
+
+
+async def test_a_search_with_other_parameters_than_asked_is_refused(
+    root: Path, other: Path
+) -> None:
+    workspace = Workspace(root)
+    grep, glob, read = Grep(workspace), Glob(workspace), ReadFile(workspace)
+    grep.approval(GrepParams(pattern="x", path="../other"))
+    glob.approval(GlobParams(pattern="*.py", path="../other"))
+    read.approval(ReadFileParams(path="../other/a.py"))
+
+    with pytest.raises(ToolError, match="changed after the question"):
+        await grep.run(GrepParams(pattern="password", path="../other"))
+    with pytest.raises(ToolError, match="changed after the question"):
+        await glob.run(GlobParams(pattern="*", path="../other"))
+    with pytest.raises(ToolError, match="changed after the question"):
+        await read.run(ReadFileParams(path="../other/a.py", offset=2))

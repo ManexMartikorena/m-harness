@@ -90,26 +90,29 @@ class Workspace:
 
 
 class _Asked:
-    """The last path a tool asked about, so `run()` reads only that one.
+    """The last call a tool asked about, so `run()` reads only that one.
 
     Between the question and `run()` a link can change (TOCTOU: time of
     check to time of use). `run()` resolves the path again: it reads without
     a question only what needs none, and otherwise only the exact resolved
-    path the user approved. One slot is enough because calls run one at a
-    time; with parallel calls (hito 15) it must keep one per call.
+    path the user approved, with the same parameters (review of PR 2, fix
+    5). One slot is enough because calls run one at a time; with parallel
+    calls (hito 15) it must keep one per call.
     """
 
     def __init__(self) -> None:
-        self._last: tuple[str, Path] | None = None
+        self._last: tuple[BaseModel, Path] | None = None
 
     def forget(self) -> None:
         self._last = None
 
-    def remember(self, raw: str, path: Path) -> None:
-        self._last = (raw, path)
+    def remember(self, params: BaseModel, path: Path) -> None:
+        self._last = (params, path)
 
-    def check(self, raw: str, path: Path, warning: str | None) -> None:
-        if warning is not None and self._last != (raw, path):
+    def check(
+        self, params: BaseModel, raw: str, path: Path, warning: str | None
+    ) -> None:
+        if warning is not None and self._last != (params, path):
             raise ToolError(f"{raw} changed after the question; ask again")
 
 
@@ -170,7 +173,7 @@ class ReadFile:
         # Before asking: no useless question (spec hito 5, §1.2). Only what
         # the metadata tells: whether it is binary waits for the approval.
         _check_exists(path, params.path)
-        self._asked.remember(params.path, path)
+        self._asked.remember(params, path)
         shown = self._workspace.shown(path)
         return _request(
             self.name, f"read {shown}", self._workspace, path, params.path, warning
@@ -179,7 +182,7 @@ class ReadFile:
     async def run(self, params: ReadFileParams) -> str:
         path = self._workspace.resolve(params.path)
         warning = self._workspace.warning(path, SECRET_FILE)
-        self._asked.check(params.path, path, warning)
+        self._asked.check(params, params.path, path, warning)
         limit = min(params.limit or READ_MAX_LINES, READ_MAX_LINES)
         with _reading(params.path):
             _check_file(path, params.path)
@@ -276,7 +279,7 @@ class ListDir:
         if warning is None:
             return None
         _check_dir(path, params.path)
-        self._asked.remember(params.path, path)
+        self._asked.remember(params, path)
         shown = self._workspace.shown(path)
         return _request(
             self.name, f"list {shown}", self._workspace, path, params.path, warning
@@ -285,7 +288,7 @@ class ListDir:
     async def run(self, params: ListDirParams) -> str:
         path = self._workspace.resolve(params.path)
         warning = self._workspace.warning(path, SECRET_DIR)
-        self._asked.check(params.path, path, warning)
+        self._asked.check(params, params.path, path, warning)
         _check_dir(path, params.path)
         with _reading(params.path):
             entries = sorted(path.iterdir(), key=lambda entry: entry.name)
@@ -419,13 +422,15 @@ class Glob:
         if warning is None:
             return None
         _check_glob(params.pattern, base, params.path)
-        self._asked.remember(params.path, base)
+        self._asked.remember(params, base)
         title = f"glob {params.pattern} in {self._workspace.shown(base)}"
         return _request(self.name, title, self._workspace, base, params.path, warning)
 
     async def run(self, params: GlobParams) -> str:
         base = self._workspace.resolve(params.path)
-        self._asked.check(params.path, base, self._workspace.warning(base, None))
+        self._asked.check(
+            params, params.path, base, self._workspace.warning(base, None)
+        )
         _check_glob(params.pattern, base, params.path)
         walk = _Walk(self._workspace, base)
         found = [
@@ -487,7 +492,7 @@ class Grep:
         if warning is None:
             return None
         _check_grep(params, base)
-        self._asked.remember(params.path, base)
+        self._asked.remember(params, base)
         title = f'grep "{params.pattern}" in {self._workspace.shown(base)}'
         if params.glob:
             title += f" (glob: {params.glob})"
@@ -501,7 +506,7 @@ class Grep:
 
     async def run(self, params: GrepParams) -> str:
         base = self._workspace.resolve(params.path)
-        self._asked.check(params.path, base, self._warning(base))
+        self._asked.check(params, params.path, base, self._warning(base))
         regex = _check_grep(params, base)
         if base.is_file():
             with _reading(params.path):
@@ -728,10 +733,10 @@ def _sync_folder(folder: Path) -> None:
 
 @dataclass(frozen=True)
 class _Shown:
-    """What the question showed: the path, and the bytes it would replace
-    (None: the file did not exist)."""
+    """What the question showed: the call, the resolved path, and the bytes
+    it would replace (None: the file did not exist)."""
 
-    raw: str
+    params: BaseModel
     path: Path
     old: bytes | None
 
@@ -784,7 +789,7 @@ class WriteFile:
                     raise
                 body = _preview(params.content)
         detail = body if params.path == shown else f"(asked: {params.path})\n{body}"
-        self._shown = _Shown(params.path, path, data)
+        self._shown = _Shown(params, path, data)
         return ApprovalRequest(
             tool=self.name,
             title=title,
@@ -798,7 +803,7 @@ class WriteFile:
         path = workspace.resolve(params.path)
         shown = self._shown
         changed = ToolError(f"{params.path} changed after the question; ask again")
-        if shown is None or (shown.raw, shown.path) != (params.path, path):
+        if shown is None or (shown.params, shown.path) != (params, path):
             raise changed
         _check_target(workspace, path, params.path)
         data = _current_bytes(path, params.path, "overwrite")
@@ -944,7 +949,7 @@ class EditFile:
             body = _strings(params)
         shown = workspace.shown(path)
         detail = body if params.path == shown else f"(asked: {params.path})\n{body}"
-        self._shown = _Shown(params.path, path, data)
+        self._shown = _Shown(params, path, data)
         return ApprovalRequest(
             tool=self.name,
             title=f"edit {shown}",
@@ -958,7 +963,7 @@ class EditFile:
         path = workspace.resolve(params.path)
         shown = self._shown
         changed = ToolError(f"{params.path} changed after the question; ask again")
-        if shown is None or (shown.raw, shown.path) != (params.path, path):
+        if shown is None or (shown.params, shown.path) != (params, path):
             raise changed
         _check_target(workspace, path, params.path)
         data = _current_bytes(path, params.path, "edit")
