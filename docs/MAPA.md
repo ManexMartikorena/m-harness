@@ -3,7 +3,7 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-21 (hito 3, PR 2: streaming en el adaptador).
+Última actualización: 2026-10-21 (hito 3, PR 3: puerto, `Chat` y terminal en streaming).
 
 ## Raíz
 
@@ -56,22 +56,24 @@ import-linter (`pyproject.toml`).
 | `domain/model.py` | domain | `ModelRequest`, `ModelResponse`, `Usage` y `StopReason` |
 | `domain/events.py` | domain | `TextDelta`, `MessageEnd` y `ModelEvent`: lo que llega mientras el modelo responde |
 | `domain/errors.py` | domain | `ModelError` y sus cinco tipos (autenticación, límite, petición, no disponible, respuesta) |
-| `ports/model.py` | ports | `ModelClient`: `complete(request) -> response` |
+| `ports/model.py` | ports | `ModelClient`: `complete(request) -> response` y `stream(request) -> eventos` |
 | `application/collect.py` | application | `Accumulator` y `collect()`: la respuesta entera a partir de los eventos |
-| `application/chat.py` | application | `Chat`: la conversación en memoria, reenviada entera en cada llamada |
+| `application/chat.py` | application | `Chat`: la conversación en memoria, reenviada entera en cada llamada. `send()` (entera) y `stream()` (eventos; guarda el turno al llegar `MessageEnd`) |
 | `adapters/models/sse.py` | adapters | `parse_sse()`: el dato de cada evento SSE, con las líneas partidas solo en CRLF, LF o CR |
 | `adapters/models/openai_chat.py` | adapters | `OpenAIChatClient`: la conversación en formato OpenAI Chat Completions, con httpx. `complete()` (respuesta entera) y `stream()` (eventos SSE); traduce respuesta, trozos y errores |
 | `adapters/cli/app.py` | adapters | Línea de comandos con argparse: `parse()` (`--version`, la ayuda) y `fail()` |
-| `adapters/cli/conversation.py` | adapters | `converse()`: leer, enviar y mostrar, con `/exit`, Ctrl+D y Ctrl+C; `StdinLines`, lectura de stdin sin hilos |
+| `adapters/cli/conversation.py` | adapters | `converse()`: leer, enviar y mostrar la respuesta según llega, con `/exit`, Ctrl+D y Ctrl+C (a mitad de respuesta, solo la corta); `StdinLines`, lectura de stdin sin hilos |
+| `adapters/cli/spinner.py` | adapters | `Spinner` y `frame()`: spinner braille con "maha" en colores ANSI mientras llega el primer token; solo en una terminal real, y `NO_COLOR` |
 
 ## Tests: `tests/`
 
 | Fichero | Qué comprueba |
 |---|---|
 | `test_entry_point.py` | El script `maha` entra por `bootstrap.main`; `python -m mharness --version` |
-| `test_bootstrap.py` | `maha` de punta a punta con respx y un pipe como stdin: dos turnos, y los errores de arranque |
+| `test_bootstrap.py` | `maha` de punta a punta con respx (streams SSE) y un pipe como stdin: dos turnos, un stream cortado, y los errores de arranque |
 | `adapters/test_cli.py` | `--version`, la ayuda, sin argumentos devuelve las opciones, el error de uso y `fail()` |
-| `adapters/test_conversation.py` | Respuesta y tokens, `/exit`, Ctrl+D, Ctrl+C, errores del modelo y `StdinLines` |
+| `adapters/test_conversation.py` | Respuesta en directo y tokens, `/exit`, Ctrl+D, Ctrl+C en el prompt y a mitad de respuesta, errores a mitad, spinner y `StdinLines` |
+| `adapters/test_spinner.py` | Fotogramas con y sin color, `NO_COLOR`, solo en terminal, borrado de la línea |
 | `adapters/test_sse.py` | Analizador SSE: eventos, comentarios, saltos de línea, trozos partidos, U+2028 y el tope de 1 MiB |
 | `adapters/test_openai_chat.py` | `complete()`: JSON y cabeceras enviados, traducción de la respuesta y de cada error, y que la clave nunca sale en un error (con respx) |
 | `adapters/test_openai_chat_stream.py` | `stream()`: petición con `stream`, traducción de los trozos medidos, errores antes y a mitad del stream, y cierre de la conexión al cancelar (con respx) |
@@ -81,8 +83,8 @@ import-linter (`pyproject.toml`).
 | `unit/test_events.py` | Eventos inmutables, `type` por defecto y `StopReason` válido |
 | `unit/test_collect.py` | `collect()` junta el texto, toma el final de `MessageEnd` y falla sin él |
 | `unit/test_errors.py` | Todos los errores del modelo heredan de `ModelError` |
-| `unit/test_fake_model.py` | El fake cumple el puerto, sigue el guion y falla al agotarse |
+| `unit/test_fake_model.py` | El fake cumple el puerto, sigue el guion (también en stream, con `Gate` y `HANG`) y falla al agotarse |
 | `unit/test_config.py` | Combinación de niveles, `[providers]` prohibido en el proyecto, errores con mensaje y la clave |
-| `unit/test_chat.py` | `Chat` reenvía el historial y deshace el turno si la llamada falla |
-| `fakes/model.py` | `FakeModelClient` guionizado y `reply()` (no es un test: lo usan los tests) |
+| `unit/test_chat.py` | `Chat` reenvía el historial y deshace el turno si la llamada falla o se cancela; `stream()` guarda el turno al llegar `MessageEnd` |
+| `fakes/model.py` | `FakeModelClient` guionizado (`complete()` y `stream()`), `reply()`, `END`, `Gate` y `HANG` (no es un test: lo usan los tests) |
 | `architecture/test_core_imports.py` | `domain`, `ports` y `application` solo usan la biblioteca estándar y Pydantic |
