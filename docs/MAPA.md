@@ -3,7 +3,7 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-21 (hito 3, PR 1: eventos y analizador SSE).
+Última actualización: 2026-10-21 (hito 3, PR 2: streaming en el adaptador).
 
 ## Raíz
 
@@ -60,7 +60,7 @@ import-linter (`pyproject.toml`).
 | `application/collect.py` | application | `Accumulator` y `collect()`: la respuesta entera a partir de los eventos |
 | `application/chat.py` | application | `Chat`: la conversación en memoria, reenviada entera en cada llamada |
 | `adapters/models/sse.py` | adapters | `parse_sse()`: el dato de cada evento SSE, con las líneas partidas solo en CRLF, LF o CR |
-| `adapters/models/openai_chat.py` | adapters | `OpenAIChatClient`: la conversación en formato OpenAI Chat Completions, con httpx; traduce respuesta y errores |
+| `adapters/models/openai_chat.py` | adapters | `OpenAIChatClient`: la conversación en formato OpenAI Chat Completions, con httpx. `complete()` (respuesta entera) y `stream()` (eventos SSE); traduce respuesta, trozos y errores |
 | `adapters/cli/app.py` | adapters | Línea de comandos con argparse: `parse()` (`--version`, la ayuda) y `fail()` |
 | `adapters/cli/conversation.py` | adapters | `converse()`: leer, enviar y mostrar, con `/exit`, Ctrl+D y Ctrl+C; `StdinLines`, lectura de stdin sin hilos |
 
@@ -73,8 +73,9 @@ import-linter (`pyproject.toml`).
 | `adapters/test_cli.py` | `--version`, la ayuda, sin argumentos devuelve las opciones, el error de uso y `fail()` |
 | `adapters/test_conversation.py` | Respuesta y tokens, `/exit`, Ctrl+D, Ctrl+C, errores del modelo y `StdinLines` |
 | `adapters/test_sse.py` | Analizador SSE: eventos, comentarios, saltos de línea, trozos partidos, U+2028 y el tope de 1 MiB |
-| `adapters/test_openai_chat.py` | JSON y cabeceras enviados, traducción de la respuesta y de cada error, y que la clave nunca sale en un error (con respx) |
-| `fixtures/openai_chat/` | Respuestas de ejemplo de Chat Completions, con datos inventados |
+| `adapters/test_openai_chat.py` | `complete()`: JSON y cabeceras enviados, traducción de la respuesta y de cada error, y que la clave nunca sale en un error (con respx) |
+| `adapters/test_openai_chat_stream.py` | `stream()`: petición con `stream`, traducción de los trozos medidos, errores antes y a mitad del stream, y cierre de la conexión al cancelar (con respx) |
+| `fixtures/openai_chat/` | Respuestas de ejemplo de Chat Completions (JSON) y streams SSE (`.sse`) con la forma medida en OpenCode Go, con datos inventados |
 | `unit/test_messages.py` | `Message.text` une los bloques; mensajes inmutables |
 | `unit/test_model.py` | `Usage` a 0 por defecto; petición sin `system`; `StopReason` válido |
 | `unit/test_events.py` | Eventos inmutables, `type` por defecto y `StopReason` válido |
