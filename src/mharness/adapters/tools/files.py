@@ -10,6 +10,7 @@ import os
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from pathlib import Path, PurePath
 from typing import IO
 
@@ -295,3 +296,96 @@ class Glob:
             return "0 files"
         files = sum(1 for line in result.splitlines() if not line.startswith("… ["))
         return f"{files} files"
+
+
+GREP_MAX_MATCHES = 100
+GREP_MAX_LINE = 300
+# Larger files are skipped: a huge log would block the loop while read.
+GREP_MAX_FILE_BYTES = 2 * 1024 * 1024
+
+
+class GrepParams(BaseModel):
+    pattern: str = Field(description="Python regular expression")
+    path: str = Field(
+        default=".",
+        description="File or directory to search, relative to the working directory",
+    )
+    glob: str | None = Field(
+        default=None,
+        description='Only files that match, like "*.py" (by name) or "src/**/*.py"',
+    )
+
+
+class Grep:
+    name = "grep"
+    description = (
+        "Search file contents with a Python regular expression. Gives "
+        '"path:line: text". Example: {"pattern": "def main", "glob": "*.py"}'
+    )
+    params = GrepParams
+    permission: Permission = "read"
+
+    def __init__(self, workspace: Workspace) -> None:
+        self._workspace = workspace
+
+    async def run(self, params: GrepParams) -> str:
+        try:
+            regex = re.compile(params.pattern)
+        except re.error as exc:
+            raise ToolError(f"invalid regular expression: {exc}") from None
+        if params.glob:
+            _check_pattern(params.glob)
+        base = self._workspace.resolve(params.path)
+        if not base.exists():
+            raise ToolError(f"not found: {params.path}")
+        if base.is_file():
+            self._workspace.check_not_secret(base, params.path)
+            found = _search(base, self._workspace.relative(base), regex)
+            return _grep_result(found, stopped_early=False)
+        walk = _Walk(self._workspace, base)
+        matches: list[str] = []
+        async for file in walk.files():
+            if params.glob and not _glob_matches(file.in_base, params.glob):
+                continue
+            matches.extend(_search(file.real, file.relative, regex))
+            # One more than shown: it tells whether something was left out.
+            if len(matches) > GREP_MAX_MATCHES:
+                break
+        return _grep_result(matches, stopped_early=walk.stopped_early)
+
+    def summary(self, result: str) -> str:
+        if result == "(no matches)":
+            return "0 matches"
+        found = sum(1 for line in result.splitlines() if not line.startswith("… ["))
+        return f"{found} matches" if found != 1 else "1 match"
+
+
+def _glob_matches(in_base: PurePath, pattern: str) -> bool:
+    # Without "/", by file name, as ripgrep does: "*.py" anywhere.
+    if "/" not in pattern:
+        return fnmatchcase(in_base.name, pattern)
+    return in_base.full_match(pattern)
+
+
+def _search(path: Path, relative: PurePath, regex: re.Pattern[str]) -> list[str]:
+    """The matching lines of one text file, as "path:line: text"."""
+    if path.stat().st_size > GREP_MAX_FILE_BYTES or is_binary(path):
+        return []
+    found = []
+    with path.open(encoding="utf-8", errors="replace", newline="") as file:
+        for number, line in enumerate(file, start=1):
+            text = line.rstrip("\r\n")
+            if regex.search(text):
+                found.append(f"{relative}:{number}: {text[:GREP_MAX_LINE]}")
+                if len(found) > GREP_MAX_MATCHES:
+                    break
+    return found
+
+
+def _grep_result(matches: list[str], *, stopped_early: bool) -> str:
+    lines = matches[:GREP_MAX_MATCHES]
+    if len(matches) > GREP_MAX_MATCHES:
+        lines.append(f"… [stopped at {GREP_MAX_MATCHES} matches; narrow the search]")
+    if stopped_early:
+        lines.append(f"… [stopped after {WALK_MAX_FILES} files; narrow the path]")
+    return "\n".join(lines) if lines else "(no matches)"

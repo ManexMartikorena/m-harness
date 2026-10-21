@@ -4,10 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from mharness.adapters.tools import Glob, ListDir, ReadFile, Workspace, files
+from mharness.adapters.tools import Glob, Grep, ListDir, ReadFile, Workspace, files
 from mharness.adapters.tools.files import (
     READ_MAX_LINE,
     GlobParams,
+    GrepParams,
     ListDirParams,
     ReadFileParams,
 )
@@ -300,3 +301,88 @@ async def test_glob_stops_on_huge_trees(
 async def test_glob_refuses_patterns_that_escape(root: Path, pattern: str) -> None:
     with pytest.raises(ToolError, match="must be relative"):
         await glob(root, pattern)
+
+
+# grep
+
+
+async def grep(root: Path, pattern: str, **params: str) -> str:
+    return await Grep(Workspace(root)).run(GrepParams(pattern=pattern, **params))
+
+
+async def test_grep_gives_path_line_and_text(root: Path) -> None:
+    write(root, "src/sse.py", "import re\n\nasync def parse_sse(chunks):\n")
+    write(root, "main.py", "def main():\n    parse_sse(x)\n")
+
+    assert await grep(root, r"parse_sse") == (
+        "main.py:2:     parse_sse(x)\nsrc/sse.py:3: async def parse_sse(chunks):"
+    )
+
+
+async def test_grep_filters_by_glob(root: Path) -> None:
+    write(root, "a.py", "Ane\n")
+    write(root, "src/b.py", "Ane\n")
+    write(root, "c.md", "Ane\n")
+
+    assert await grep(root, "Ane", glob="*.py") == "a.py:1: Ane\nsrc/b.py:1: Ane"
+    assert await grep(root, "Ane", glob="src/*.py") == "src/b.py:1: Ane"
+
+
+async def test_grep_in_one_file(root: Path) -> None:
+    write(root, "a.txt", "uno\ndos\n")
+    write(root, ".env", "dos=sk-inventada\n")
+
+    assert await grep(root, "dos", path="a.txt") == "a.txt:2: dos"
+    with pytest.raises(ToolError, match="secret file"):
+        await grep(root, "dos", path=".env")
+
+
+async def test_grep_skips_secrets_binaries_and_heavy_dirs(root: Path) -> None:
+    write(root, ".env", "OPENCODE_API_KEY=sk-inventada\n")
+    write(root, ".ssh/config", "KEY\n")
+    write(root, ".git/config", "KEY\n")
+    (root / "img.bin").write_bytes(b"KEY\0\0")
+    write(root, "notes.txt", "no key here\n")
+
+    assert await grep(root, "KEY") == "(no matches)"
+
+
+async def test_grep_skips_large_files(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(files, "GREP_MAX_FILE_BYTES", 10)
+    write(root, "big.txt", "Ane\n" * 10)
+    write(root, "small.txt", "Ane\n")
+
+    assert await grep(root, "Ane") == "small.txt:1: Ane"
+
+
+async def test_grep_cuts_lines_and_results(root: Path) -> None:
+    write(root, "long.txt", "x" * 1000 + "\n")
+    write(root, "many.txt", "Ane\n" * 150)
+    tool = Grep(Workspace(root))
+
+    long_line = await tool.run(GrepParams(pattern="x", path="long.txt"))
+    many = await tool.run(GrepParams(pattern="Ane", path="many.txt"))
+
+    assert len(long_line) == len("long.txt:1: ") + 300
+    assert many.splitlines()[-1] == "… [stopped at 100 matches; narrow the search]"
+    assert tool.summary(many) == "100 matches"
+
+
+async def test_grep_errors(root: Path) -> None:
+    with pytest.raises(ToolError, match="invalid regular expression"):
+        await grep(root, "(unclosed")
+    with pytest.raises(ToolError, match="not found"):
+        await grep(root, "x", path="missing")
+    with pytest.raises(ToolError, match="must be relative"):
+        await grep(root, "x", glob="../*.py")
+
+
+async def test_grep_exactly_at_the_limit_has_no_notice(root: Path) -> None:
+    write(root, "many.txt", "Ane\n" * 100)
+
+    result = await grep(root, "Ane")
+
+    assert len(result.splitlines()) == 100
+    assert "stopped" not in result
