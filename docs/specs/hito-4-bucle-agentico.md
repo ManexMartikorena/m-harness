@@ -745,3 +745,24 @@ Propuestas del agente (2026-10-21), aprobadas por el humano con la spec:
    necesitó código. El commit se llama "Probar que el turno se deshace…".
 4. **El fake del modelo responde con llamadas:** `tool_calls(*calls)` da un
    `ModelResponse` que `stream()` emite como `ToolCallDelta`.
+5. **Detalles de las herramientas que la spec no fijaba** (§1.6):
+   - el aviso de `read_file` dice en qué línea paró (`truncated at line
+     2000; use offset=2001`), no el total: contarlo obligaría a leer el
+     fichero entero;
+   - `grep` salta los ficheros de más de 2 MiB, para que un log enorme no
+     bloquee el bucle mientras se lee;
+   - el filtro `glob` de `grep` sin `/` se compara con el nombre del fichero
+     (`*.py` en cualquier carpeta), como en ripgrep; con `/`, con la ruta;
+   - `glob` y `grep` rechazan patrones absolutos o con `..`;
+   - `list_dir` deniega listar una carpeta secreta (`.ssh`), además de
+     marcar los secretos con `[secret]`;
+   - un enlace dentro del directorio que apunta a un secreto también se
+     deniega: se comprueba la ruta real.
+6. **Dos fallos encontrados al escribir las herramientas, con su test:**
+   - `while line := …` paraba en la primera línea vacía (`""` es falso);
+     ahora compara con `None`;
+   - `grep` avisaba de "stopped at 100 matches" con exactamente 100; ahora
+     lee una más para saber si falta algo.
+7. **Ruff ASYNC240** marca operaciones de `pathlib` dentro de funciones
+   `async`. En vez de silenciarla, el recorrido entrega ya las rutas
+   relativas y la lectura de cada fichero va en funciones normales.
