@@ -5,8 +5,8 @@ from collections.abc import AsyncGenerator, Iterable
 
 from mharness.application.collect import collect
 from mharness.domain.errors import ModelError
-from mharness.domain.events import MessageEnd, ModelEvent, TextDelta
-from mharness.domain.messages import Message, TextBlock
+from mharness.domain.events import MessageEnd, ModelEvent, TextDelta, ToolCallDelta
+from mharness.domain.messages import Block, Message, TextBlock, ToolCallBlock
 from mharness.domain.model import ModelRequest, ModelResponse, StopReason, Usage
 
 FAKE_MODEL = "fake-model"
@@ -47,6 +47,19 @@ def reply(
     return ModelResponse(
         message=Message(role="assistant", blocks=[TextBlock(text=text)]),
         stop_reason=stop_reason,
+        usage=usage or Usage(),
+        model=FAKE_MODEL,
+    )
+
+
+def tool_calls(
+    *calls: ToolCallBlock, text: str = "", usage: Usage | None = None
+) -> ModelResponse:
+    """An assistant answer that asks for tool calls, after optional text."""
+    blocks: list[Block] = [TextBlock(text=text)] if text else []
+    return ModelResponse(
+        message=Message(role="assistant", blocks=[*blocks, *calls]),
+        stop_reason="tool_use",
         usage=usage or Usage(),
         model=FAKE_MODEL,
     )
@@ -97,6 +110,11 @@ def _as_events(response: ModelResponse) -> list[StreamItem]:
     deltas: list[StreamItem] = [
         TextDelta(text=piece) for piece in (text[:half], text[half:]) if piece
     ]
+    calls = [b for b in response.message.blocks if isinstance(b, ToolCallBlock)]
+    deltas.extend(
+        ToolCallDelta(index=i, id=call.id, name=call.name, arguments=call.arguments)
+        for i, call in enumerate(calls)
+    )
     end = MessageEnd(
         stop_reason=response.stop_reason, usage=response.usage, model=response.model
     )
