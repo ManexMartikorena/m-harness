@@ -3,7 +3,7 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-21 (spec del hito 4).
+Última actualización: 2026-10-21 (hito 4, PR 1: contrato de herramientas).
 
 ## Raíz
 
@@ -40,7 +40,7 @@ ficheros.
 | `specs/PLANTILLA.md` | Formato de las specs de hito y de mejora |
 | `specs/hito-1-esqueleto.md` | Spec del hito 1 (IMPLEMENTADA): paquete, capas, calidad, CI y release |
 | `specs/hito-2-primera-conversacion.md` | Spec del hito 2 (IMPLEMENTADA): dominio, puerto `ModelClient`, adaptador de OpenAI, configuración y conversación en la terminal |
-| `specs/hito-4-bucle-agentico.md` | Spec del hito 4 (PROPUESTA): bloques de llamada y resultado, `ToolCallDelta`, puerto `Tool`, cuatro herramientas de solo lectura, el bucle `Agent` y la terminal con llamadas |
+| `specs/hito-4-bucle-agentico.md` | Spec del hito 4 (APROBADA): bloques de llamada y resultado, `ToolCallDelta`, puerto `Tool`, cuatro herramientas de solo lectura, el bucle `Agent` y la terminal con llamadas |
 | `specs/hito-3-streaming.md` | Spec del hito 3 (IMPLEMENTADA): eventos del modelo, `stream()` en el puerto junto a `complete()`, `collect()`, SSE a mano, spinner de espera y Ctrl+C por respuesta |
 
 ## Código: `src/mharness/`
@@ -54,12 +54,12 @@ import-linter (`pyproject.toml`).
 | `__main__.py` | entrada | `python -m mharness`: igual que `maha` |
 | `bootstrap.py` | raíz de composición | `main()` del comando `maha`: lee la configuración, crea el adaptador y abre la conversación; el único que conoce todas las piezas |
 | `config.py` | configuración (hermana de `adapters`) | `load()`: proveedores predefinidos, del usuario y del proyecto (este, solo `provider` y `model`); la clave, del entorno |
-| `domain/messages.py` | domain | `TextBlock` y `Message`: mensajes hechos de bloques |
-| `domain/model.py` | domain | `ModelRequest`, `ModelResponse`, `Usage` y `StopReason` |
-| `domain/events.py` | domain | `TextDelta`, `MessageEnd` y `ModelEvent`: lo que llega mientras el modelo responde |
+| `domain/messages.py` | domain | `TextBlock`, `ToolCallBlock`, `ToolResultBlock` y `Message`: mensajes hechos de bloques, validados por `type` |
+| `domain/model.py` | domain | `ModelRequest` (con `tools`), `ToolSpec`, `ModelResponse`, `Usage` y `StopReason` |
+| `domain/events.py` | domain | `TextDelta`, `ToolCallDelta`, `MessageEnd` y `ModelEvent`: lo que llega mientras el modelo responde |
 | `domain/errors.py` | domain | `ModelError` y sus cinco tipos (autenticación, límite, petición, no disponible, respuesta) |
 | `ports/model.py` | ports | `ModelClient`: `complete(request) -> response` y `stream(request) -> eventos` |
-| `application/collect.py` | application | `Accumulator` y `collect()`: la respuesta entera a partir de los eventos |
+| `application/collect.py` | application | `Accumulator` y `collect()`: la respuesta entera a partir de los eventos, con las llamadas a herramientas juntadas por `index` |
 | `application/chat.py` | application | `Chat`: la conversación en memoria, reenviada entera en cada llamada. `send()` (entera) y `stream()` (eventos; guarda el turno al llegar `MessageEnd`) |
 | `adapters/models/sse.py` | adapters | `parse_sse()`: el dato de cada evento SSE, con las líneas partidas solo en CRLF, LF o CR |
 | `adapters/models/openai_chat.py` | adapters | `OpenAIChatClient`: la conversación en formato OpenAI Chat Completions, con httpx. `complete()` (respuesta entera) y `stream()` (eventos SSE); traduce respuesta, trozos y errores |
@@ -80,10 +80,10 @@ import-linter (`pyproject.toml`).
 | `adapters/test_openai_chat.py` | `complete()`: JSON y cabeceras enviados, traducción de la respuesta y de cada error, y que la clave nunca sale en un error (con respx) |
 | `adapters/test_openai_chat_stream.py` | `stream()`: petición con `stream`, traducción de los trozos medidos, errores antes y a mitad del stream, y cierre de la conexión al cancelar (con respx) |
 | `fixtures/openai_chat/` | Respuestas de ejemplo de Chat Completions (JSON) y streams SSE (`.sse`) con la forma medida en OpenCode Go, con datos inventados |
-| `unit/test_messages.py` | `Message.text` une los bloques; mensajes inmutables |
-| `unit/test_model.py` | `Usage` a 0 por defecto; petición sin `system`; `StopReason` válido |
-| `unit/test_events.py` | Eventos inmutables, `type` por defecto y `StopReason` válido |
-| `unit/test_collect.py` | `collect()` junta el texto, toma el final de `MessageEnd` y falla sin él |
+| `unit/test_messages.py` | `Message.text` une los bloques de texto; bloques de llamada y resultado; validación por `type`; mensajes inmutables |
+| `unit/test_model.py` | `Usage` a 0 por defecto; petición sin `system` y sin herramientas; `ToolSpec`; `StopReason` válido |
+| `unit/test_events.py` | Eventos inmutables (también `ToolCallDelta`), `type` por defecto y `StopReason` válido |
+| `unit/test_collect.py` | `collect()` junta el texto y las llamadas (argumentos partidos, varios `index`), toma el final de `MessageEnd` y falla sin él |
 | `unit/test_errors.py` | Todos los errores del modelo heredan de `ModelError` |
 | `unit/test_fake_model.py` | El fake cumple el puerto, sigue el guion (también en stream, con `Gate` y `HANG`) y falla al agotarse |
 | `unit/test_config.py` | Combinación de niveles, `[providers]` prohibido en el proyecto, errores con mensaje y la clave |

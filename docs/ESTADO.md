@@ -1,19 +1,21 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-21. **Hito 3 (streaming) cerrado y publicado
-como `v0.3.0`.** Hito 4 (tool calling y bucle agéntico): spec APROBADA (PR #19).
+como `v0.3.0`.** Hito 4 (tool calling y bucle agéntico): spec APROBADA (PR #19); PR 1 de 6
+en revisión.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 3 cerrado (`v0.3.0`). Hito 4 (tool calling y bucle
-agéntico): spec APROBADA (PR #19); implementación sin empezar.**
+agéntico): spec APROBADA (PR #19); PR 1 (`feature/hito-4-contrato`) en
+revisión.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.3.0` — Streaming** (2026-10-21):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.3.0
-- Ramas abiertas: `docs/spec-hito-4-bucle-agentico` (spec del hito 4). Las integradas se
+- Ramas abiertas: `feature/hito-4-contrato` (PR 1 del hito 4). Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -27,6 +29,13 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Hito 4, PR 1, 2026-10-21** (rama `feature/hito-4-contrato`; piezas 1
+  a 4 de la spec §6): `ToolCallBlock` (argumentos como texto JSON),
+  `ToolResultBlock`, `Message` validado por `type`, `ToolSpec` en la
+  petición y `ToolCallDelta` juntado por `index` en el `Accumulator`. En
+  verde: 230 tests, ruff, mypy e import-linter.
+- **PR #19 integrado, 2026-10-21** (merge `b34bd60`): spec del hito 4
+  APROBADA.
 - **Spec del hito 4 aprobada, 2026-10-21** (PR #19): el mantenedor acepta
   las cinco recomendaciones de §11 sin cambios.
 - **Spec del hito 4 propuesta, 2026-10-21** (rama
@@ -242,11 +251,13 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente:** integrar el PR #19 con merge commit, con el CI en verde, y
-   `git switch main && git pull`.
-2. **Agente:** implementar el hito 4 por piezas (spec §6) en
-   `feature/hito-4-contrato`, desde la pieza 1 (bloques de llamada y de
-   resultado).
+El mantenedor autorizó el 2026-10-21 que el agente haga push e integre cada
+PR del hito 4 con el CI en verde.
+
+1. **Agente:** push de `feature/hito-4-contrato`, PR e integración.
+2. **Agente:** PR 2 del hito 4 (spec §6, piezas 5 a 8) en
+   `feature/hito-4-adaptador`: herramientas, llamadas y resultados en el
+   adaptador de OpenAI.
 
 **Sesión del 2026-10-21 en el PC de Windows (WSL).**
 
