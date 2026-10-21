@@ -1891,3 +1891,47 @@ async def test_a_search_with_other_parameters_than_asked_is_refused(
         await glob.run(GlobParams(pattern="*", path="../other"))
     with pytest.raises(ToolError, match="changed after the question"):
         await read.run(ReadFileParams(path="../other/a.py", offset=2))
+
+
+# Changing .git always asks (review of PR 2, fix 6)
+
+GIT_DIR = "git directory: hooks and config here can run code"
+
+
+@pytest.mark.parametrize(
+    ("path", "for_session", "warning"),
+    [
+        (".git/hooks/pre-commit", False, GIT_DIR),
+        (".git/config", False, GIT_DIR),
+        ("src/x.py", True, None),
+        ("../repo/.git/config", False, f"{OUTSIDE}; {GIT_DIR}"),
+    ],
+)
+def test_changing_git_is_never_for_the_session(
+    root: Path, path: str, for_session: bool, warning: str | None
+) -> None:
+    write(root, path, "uno\n")
+
+    written = ask_write(write_tool(root), path, "dos\n")
+    edited = ask_edit(edit_tool(root), edit_params(path, "uno", "dos"))
+
+    assert written.scope == ("write_file" if for_session else None)
+    assert edited.scope == ("edit_file" if for_session else None)
+    assert written.warning == edited.warning == warning
+
+
+def test_a_link_into_git_is_never_for_the_session(root: Path) -> None:
+    write(root, ".git/hooks/pre-commit", "uno\n")
+    (root / "hook").symlink_to(root / ".git/hooks/pre-commit")
+
+    request = ask_write(write_tool(root), "hook", "dos\n")
+
+    assert (request.scope, request.warning) == (None, GIT_DIR)
+
+
+def test_reading_git_does_not_ask(root: Path) -> None:
+    write(root, ".git/config", "[core]\n")
+
+    assert (
+        ReadFile(Workspace(root)).approval(ReadFileParams(path=".git/config")) is None
+    )

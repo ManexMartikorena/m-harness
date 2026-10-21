@@ -39,6 +39,9 @@ READ_MAX_LINE = 2000
 OUTSIDE = "outside the working directory"
 SECRET_FILE = "secret file: its content goes to the model provider"
 SECRET_DIR = "secret directory: its file names go to the model provider"
+# Writing in .git always asks: a hook or the config can run code (review of
+# PR 2, fix 6). Reading it does not.
+GIT_DIR = "git directory: hooks and config here can run code"
 
 
 def _count(number: int, singular: str, plural: str | None = None) -> str:
@@ -627,6 +630,15 @@ def _diff(old: str, new: str) -> str:
     return "\n".join(shown)
 
 
+def _change_warning(workspace: Workspace, path: Path) -> str | None:
+    """Why changing `path` cannot be approved for the whole session: the
+    warnings of reading it, and .git anywhere in its resolved path."""
+    found = [workspace.warning(path, SECRET_FILE)]
+    if ".git" in path.parts:
+        found.append(GIT_DIR)
+    return "; ".join(warning for warning in found if warning) or None
+
+
 def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
     """What would make writing `path` fail, found before asking."""
     if path.is_dir():
@@ -771,7 +783,7 @@ class WriteFile:
             params.content.encode("utf-8")
         except UnicodeEncodeError:
             raise ToolError("content is not valid UTF-8") from None
-        warning = workspace.warning(path, SECRET_FILE)
+        warning = _change_warning(workspace, path)
         data = _current_bytes(path, params.path, "overwrite")
         shown = workspace.shown(path)
         if data is None:
@@ -937,7 +949,7 @@ class EditFile:
         data = _current_bytes(path, params.path, "edit")
         if data is None:
             raise ToolError(f"file not found: {params.path}")
-        warning = workspace.warning(path, SECRET_FILE)
+        warning = _change_warning(workspace, path)
         try:
             old, new, _ = _edited(data, params)
             body = _diff(old, new)
