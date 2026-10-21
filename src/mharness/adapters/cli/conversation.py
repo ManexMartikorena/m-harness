@@ -1,15 +1,21 @@
-"""The conversation in the terminal: read, send, show (spec hito 2, §1.11)."""
+"""The conversation in the terminal: read, send, show (spec hito 2, §1.11).
+
+The answer is shown as it arrives (spec hito 3, §1.10).
+"""
 
 import asyncio
 import os
 import signal
 import sys
 from collections.abc import Awaitable, Callable
+from contextlib import aclosing
 from importlib.metadata import version
 from typing import TextIO
 
 from mharness.application.chat import Chat
 from mharness.domain.errors import ModelError
+from mharness.domain.events import MessageEnd, TextDelta
+from mharness.domain.model import Usage
 
 DISTRIBUTION = "m-harness"
 # Terminal convention for a program stopped by Ctrl+C: 128 + SIGINT.
@@ -119,15 +125,36 @@ async def _turns(
             continue
         if line == "/exit":
             return 0
-        try:
-            response = await chat.send(line)
-        except ModelError as exc:
-            print(f"error: {exc}", file=err, flush=True)
-            continue
-        usage = response.usage
-        print(response.message.text, file=out)
-        print(
-            f"  [tokens: {usage.input_tokens} in · {usage.output_tokens} out]",
-            file=out,
-            flush=True,
-        )
+        await _answer(chat, line, out, err)
+
+
+async def _answer(chat: Chat, line: str, out: TextIO, err: TextIO) -> None:
+    """Show one answer as it arrives; a model error ends only this turn."""
+    wrote = False
+    try:
+        async with aclosing(chat.stream(line)) as events:
+            async for event in events:
+                match event:
+                    case TextDelta(text=text):
+                        out.write(text)
+                        out.flush()
+                        wrote = True
+                    case MessageEnd(usage=usage):
+                        print(file=out)
+                        _show_tokens(usage, out)
+    except ModelError as exc:
+        # The text already shown stays; the error starts on a new line.
+        if wrote:
+            print(file=out)
+        print(f"error: {exc}", file=err, flush=True)
+
+
+def _show_tokens(usage: Usage, out: TextIO) -> None:
+    # All zeros means the provider did not report them: nothing to show.
+    if usage == Usage():
+        return
+    print(
+        f"  [tokens: {usage.input_tokens} in · {usage.output_tokens} out]",
+        file=out,
+        flush=True,
+    )

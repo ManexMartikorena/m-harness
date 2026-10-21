@@ -11,9 +11,10 @@ import pytest
 
 from mharness.adapters.cli.conversation import EXIT_INTERRUPTED, StdinLines, converse
 from mharness.application.chat import Chat
-from mharness.domain.errors import ModelAuthError
+from mharness.domain.errors import ModelAuthError, ModelUnavailableError
+from mharness.domain.events import TextDelta
 from mharness.domain.model import Usage
-from tests.fakes.model import FakeModelClient, reply
+from tests.fakes.model import END, FakeModelClient, Gate, reply
 
 HEADER = f"maha {version('m-harness')} · opencode-go · glm-5.3-flash · /exit to quit"
 
@@ -188,3 +189,52 @@ async def test_stdin_lines_reads_a_regular_file(tmp_path: Path) -> None:
             await lines.readline()
     finally:
         os.close(fd)
+
+
+# Streaming (spec hito 3, §1.10).
+
+
+async def test_text_is_shown_before_the_stream_ends() -> None:
+    gate = Gate()
+    fake = FakeModelClient(
+        [[TextDelta(text="Hola, "), gate, TextDelta(text="Ane."), END]]
+    )
+    out = io.StringIO()
+    task = asyncio.ensure_future(
+        converse(
+            Chat(fake, model="m"),
+            provider="p",
+            model="m",
+            read_line=ScriptedInput("Hola"),
+            out=out,
+            err=io.StringIO(),
+        )
+    )
+    for _ in range(100):
+        if out.getvalue().endswith("Hola, "):
+            break
+        await asyncio.sleep(0)
+
+    assert out.getvalue().endswith("> Hola, ")
+    gate.release()
+    assert await task == 0
+    assert out.getvalue().endswith("> Hola, Ane.\n> \n")
+
+
+async def test_no_token_line_when_usage_is_all_zeros() -> None:
+    code, out, _ = await run(FakeModelClient([reply("Hola.")]), "Hola", "/exit")
+
+    assert code == 0
+    assert out == f"{HEADER}\n> Hola.\n> "
+
+
+async def test_error_mid_stream_keeps_the_text_and_goes_on() -> None:
+    fake = FakeModelClient(
+        [[TextDelta(text="Hol"), ModelUnavailableError("cut")], reply("Hola.")]
+    )
+
+    code, out, err = await run(fake, "Hola", "Hola otra vez", "/exit")
+
+    assert code == 0
+    assert out == f"{HEADER}\n> Hol\n> Hola.\n> "
+    assert err == "error: cut\n"

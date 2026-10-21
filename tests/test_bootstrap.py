@@ -48,19 +48,27 @@ def stdin() -> Iterator[Callable[[str], None]]:
     os.close(saved)
 
 
-def completion(
-    text: str, prompt_tokens: int, completion_tokens: int
-) -> dict[str, object]:
-    return {
-        "model": "glm-5.3-flash",
-        "choices": [
-            {"message": {"role": "assistant", "content": text}, "finish_reason": "stop"}
-        ],
-        "usage": {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
+def streamed(text: str, prompt_tokens: int, completion_tokens: int) -> bytes:
+    """An SSE body: the text, the finish reason, the usage and [DONE]."""
+    chunks = [
+        {"choices": [{"delta": {"content": text}, "finish_reason": "stop"}]},
+        {
+            "model": "glm-5.3-flash",
+            "choices": [],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+            },
         },
-    }
+    ]
+    events = [f"data: {json.dumps(chunk)}\n\n" for chunk in chunks]
+    return ("".join(events) + "data: [DONE]\n\n").encode()
+
+
+def sse_response(body: bytes) -> respx.MockResponse:
+    return respx.MockResponse(
+        headers={"content-type": "text/event-stream"}, content=body
+    )
 
 
 @respx.mock
@@ -72,8 +80,8 @@ def test_two_turns_resend_the_history(
     write_user_config(workspace, 'provider = "opencode-go"\nmodel = "glm-5.3-flash"\n')
     route = respx.post(GO_ENDPOINT).mock(
         side_effect=[
-            respx.MockResponse(json=completion("Hola, Ane.", 12, 9)),
-            respx.MockResponse(json=completion("Te llamas Ane.", 31, 5)),
+            sse_response(streamed("Hola, Ane.", 12, 9)),
+            sse_response(streamed("Te llamas Ane.", 31, 5)),
         ]
     )
     stdin("Hola, soy Ane\n¿Cómo me llamo?\n/exit\n")
