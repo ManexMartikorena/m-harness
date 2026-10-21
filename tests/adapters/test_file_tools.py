@@ -1,4 +1,4 @@
-"""The file tools (spec hito 4, §1.6 and §4.6, and spec hito 5, §1.6, §1.7,
+"""The file tools (spec hito 4, §1.6 and §4.6, and spec hito 5, §1.6 to §1.8,
 §4.3 and §4.4), in `tmp_path`."""
 
 import asyncio
@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from mharness.adapters.tools import (
+    EditFile,
     Glob,
     Grep,
     ListDir,
@@ -19,6 +20,7 @@ from mharness.adapters.tools import (
 )
 from mharness.adapters.tools.files import (
     READ_MAX_LINE,
+    EditFileParams,
     GlobParams,
     GrepParams,
     ListDirParams,
@@ -1135,3 +1137,464 @@ async def test_a_folder_that_cannot_be_opened_still_counts_as_written(
 
     assert result == "wrote dropbox/notas.txt (1 line)"
     assert (folder / "notas.txt").read_text(encoding="utf-8") == "dos\n"
+
+
+# edit_file (spec hito 5, §1.8 and §4.4.2)
+
+NOT_FOUND = "old_string not found in {}; read the file and copy the text exactly"
+
+
+def edit_tool(root: Path) -> EditFile:
+    return EditFile(Workspace(root))
+
+
+def edit_params(path: str, old: str, new: str, **flags: bool) -> EditFileParams:
+    return EditFileParams(path=path, old_string=old, new_string=new, **flags)
+
+
+def ask_edit(tool: EditFile, params: EditFileParams) -> ApprovalRequest:
+    request = tool.approval(params)
+    assert request is not None
+    return request
+
+
+async def edit(root: Path, params: EditFileParams) -> tuple[ApprovalRequest, str]:
+    """Ask and run, as the loop does after a "yes"."""
+    tool = edit_tool(root)
+    request = ask_edit(tool, params)
+    return request, await tool.run(params)
+
+
+def test_edit_file_satisfies_the_port(root: Path) -> None:
+    # mypy checks this assignment against the Protocol.
+    tool: Tool[EditFileParams] = edit_tool(root)
+
+    assert (tool.name, tool.permission) == ("edit_file", "effect")
+    # The exact description of spec hito 5, §3.2.
+    assert tool.description == (
+        "Replace an exact text in a file. old_string must appear exactly once "
+        "(or use replace_all). Read the file first. The user approves it. "
+        'Example: {"path": "app.py", "old_string": "return 1", '
+        '"new_string": "return 2"}'
+    )
+
+
+def test_edit_file_params_describe_each_field() -> None:
+    # Decision 12.
+    fields = EditFileParams.model_fields
+
+    assert {name: field.description for name, field in fields.items()} == {
+        "path": "Path relative to the working directory",
+        "old_string": "The exact text to replace",
+        "new_string": "The text to put in its place",
+        "replace_all": "Replace every occurrence of old_string",
+    }
+    assert fields["replace_all"].default is False
+
+
+async def test_editing_asks_with_a_diff_and_edits(root: Path) -> None:
+    # No read_file before: the exact old_string is enough (spec §1.8).
+    write(root, "src/app.py", "def f():\n    x = 0\n    return 1\n")
+    params = edit_params("src/app.py", "return 1", "return 2")
+
+    request, result = await edit(root, params)
+
+    assert request == ApprovalRequest(
+        tool="edit_file",
+        title="edit src/app.py",
+        detail="@@ -1,3 +1,3 @@\n def f():\n     x = 0\n-    return 1\n+    return 2",
+        scope="edit_file",
+    )
+    assert result == "edited src/app.py (1 replacement)"
+    assert edit_tool(root).summary(result) == "1 replacement"
+    assert (root / "src/app.py").read_text(encoding="utf-8") == (
+        "def f():\n    x = 0\n    return 2\n"
+    )
+
+
+def test_old_string_not_found_fails_before_asking(root: Path) -> None:
+    # Decision 1.
+    write(root, "app.py", "return 1\n")
+
+    with pytest.raises(ToolError) as caught:
+        edit_tool(root).approval(edit_params("app.py", "return 3", "return 2"))
+    assert str(caught.value) == NOT_FOUND.format("app.py")
+
+
+def test_old_string_twice_fails_before_asking(root: Path) -> None:
+    # Decision 2.
+    write(root, "app.py", "x = 1\ny = 1\nz = 1\n")
+
+    with pytest.raises(ToolError) as caught:
+        edit_tool(root).approval(edit_params("app.py", "= 1", "= 2"))
+    assert str(caught.value) == (
+        "old_string appears 3 times in app.py; "
+        "add context to make it unique or use replace_all"
+    )
+
+
+async def test_replace_all_replaces_every_occurrence(root: Path) -> None:
+    # Decision 3: the plural of _count.
+    write(root, "app.py", "x = 1\ny = 1\nz = 1\n")
+    params = edit_params("app.py", "= 1", "= 2", replace_all=True)
+
+    request, result = await edit(root, params)
+
+    assert request.detail == (
+        "@@ -1,3 +1,3 @@\n-x = 1\n-y = 1\n-z = 1\n+x = 2\n+y = 2\n+z = 2"
+    )
+    assert result == "edited app.py (3 replacements)"
+    assert edit_tool(root).summary(result) == "3 replacements"
+    assert (root / "app.py").read_text(encoding="utf-8") == "x = 2\ny = 2\nz = 2\n"
+
+
+async def test_replace_all_with_one_occurrence(root: Path) -> None:
+    write(root, "app.py", "x = 1\n")
+
+    _, result = await edit(root, edit_params("app.py", "1", "2", replace_all=True))
+
+    assert result == "edited app.py (1 replacement)"
+
+
+def test_replace_all_with_no_occurrence_fails(root: Path) -> None:
+    # Decision 5.
+    write(root, "app.py", "x = 1\n")
+
+    with pytest.raises(ToolError) as caught:
+        edit_tool(root).approval(edit_params("app.py", "9", "2", replace_all=True))
+    assert str(caught.value) == NOT_FOUND.format("app.py")
+
+
+async def test_occurrences_do_not_overlap(root: Path) -> None:
+    # Decision 10: counted as str.count does, the same as str.replace.
+    write(root, "a.txt", "aaa\n")
+
+    _, result = await edit(root, edit_params("a.txt", "aa", "b"))
+
+    assert result == "edited a.txt (1 replacement)"
+    assert (root / "a.txt").read_text(encoding="utf-8") == "ba\n"
+
+
+async def test_crlf_is_kept(root: Path) -> None:
+    write(root, "win.txt", "")
+    (root / "win.txt").write_bytes(b"uno\r\ndos\r\ntres\r\n")
+
+    request, _ = await edit(root, edit_params("win.txt", "dos", "DOS"))
+
+    assert request.detail == "@@ -1,3 +1,3 @@\n uno\n-dos\n+DOS\n tres"
+    assert (root / "win.txt").read_bytes() == b"uno\r\nDOS\r\ntres\r\n"
+
+
+def test_an_edited_file_must_be_utf8_text(root: Path) -> None:
+    # Decision 7, as write_file (W2).
+    (root / "img.bin").write_bytes(b"\x89PNG\0\0")
+    (root / "latin1.txt").write_bytes(b"caf\xe9\n")
+    tool = edit_tool(root)
+
+    with pytest.raises(ToolError, match=r"binary file, not writable: img\.bin"):
+        tool.approval(edit_params("img.bin", "PNG", "png"))
+    with pytest.raises(ToolError, match=r"not a UTF-8 text file: latin1\.txt"):
+        tool.approval(edit_params("latin1.txt", "caf", "té"))
+    assert (root / "latin1.txt").read_bytes() == b"caf\xe9\n"
+
+
+def test_the_same_strings_are_nothing_to_change(root: Path) -> None:
+    write(root, "app.py", "return 1\n")
+
+    with pytest.raises(ToolError, match="nothing to change"):
+        edit_tool(root).approval(edit_params("app.py", "return 1", "return 1"))
+
+
+def test_an_empty_old_string_fails(root: Path) -> None:
+    # Decision 4: creating a file is for write_file.
+    write(root, "app.py", "return 1\n")
+
+    with pytest.raises(ToolError, match="old_string is empty"):
+        edit_tool(root).approval(edit_params("app.py", "", "x"))
+
+
+def test_a_missing_file_is_not_found(root: Path) -> None:
+    # Decision 6.
+    with pytest.raises(ToolError, match=r"file not found: nada\.py"):
+        edit_tool(root).approval(edit_params("nada.py", "a", "b"))
+
+
+def test_new_string_must_be_valid_utf8(root: Path) -> None:
+    # Decision 8.
+    write(root, "app.py", "return 1\n")
+
+    with pytest.raises(ToolError, match="new_string is not valid UTF-8"):
+        edit_tool(root).approval(edit_params("app.py", "1", "\ud800"))
+
+
+def test_the_strings_are_checked_before_the_disk(root: Path) -> None:
+    # Decision 11: the parameters first, then the file, then the question.
+    (root / "src").mkdir()
+    tool = edit_tool(root)
+
+    with pytest.raises(ToolError, match="old_string is empty"):
+        tool.approval(edit_params("nada.py", "", ""))
+    with pytest.raises(ToolError, match="nothing to change"):
+        tool.approval(edit_params("nada.py", "a", "a"))
+    with pytest.raises(ToolError, match="new_string is not valid UTF-8"):
+        tool.approval(edit_params("nada.py", "a", "\ud800"))
+    with pytest.raises(ToolError, match="is a directory: src"):
+        tool.approval(edit_params("src", "a", "b"))
+    write(root, "notas.txt", "")
+    with pytest.raises(ToolError, match=r"not a directory: notas\.txt"):
+        tool.approval(edit_params("notas.txt/x.py", "a", "b"))
+
+
+@pytest.mark.parametrize(
+    ("path", "scope", "warning"),
+    [
+        ("notas.txt", "edit_file", None),
+        ("../fuera.txt", None, OUTSIDE),
+        (".env", None, SECRET_FILE),
+        ("../.env", None, f"{OUTSIDE}; {SECRET_FILE}"),
+    ],
+)
+def test_edit_scope_inside_and_none_outside_or_secret(
+    root: Path, path: str, scope: str | None, warning: str | None
+) -> None:
+    write(root, path, "uno\n")
+
+    request = ask_edit(edit_tool(root), edit_params(path, "uno", "dos"))
+
+    assert (request.scope, request.warning) == (scope, warning)
+
+
+async def test_an_edit_link_shows_its_target_and_is_kept(root: Path) -> None:
+    # Decision W7, as write_file.
+    write(root, "real.txt", "uno\n")
+    (root / "notes.txt").symlink_to(root / "real.txt")
+
+    request, result = await edit(root, edit_params("notes.txt", "uno", "dos"))
+
+    assert request.title == "edit real.txt"
+    assert request.detail == "(asked: notes.txt)\n@@ -1 +1 @@\n-uno\n+dos"
+    assert result == "edited real.txt (1 replacement)"
+    assert (root / "notes.txt").is_symlink()
+    assert (root / "real.txt").read_text(encoding="utf-8") == "dos\n"
+
+
+async def test_a_long_edit_diff_is_cut_at_60_lines(root: Path) -> None:
+    write(root, "big.txt", "".join(f"old {i}\n" for i in range(100)))
+    params = edit_params("big.txt", "old", "new", replace_all=True)
+
+    lines = ask_edit(edit_tool(root), params).detail.splitlines()
+
+    assert len(lines) == 61
+    assert lines[0] == "@@ -1,100 +1,100 @@"
+    assert lines[-1] == "… [141 more diff lines]"
+
+
+async def test_a_failed_edit_cannot_write(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Decision A2, as write_file.
+    write(root, "app.py", "return 1\n")
+    tool = edit_tool(root)
+    params = edit_params("app.py", "1", "2")
+    tool.approval(params)
+
+    def fail(*args: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "replace", fail)
+    with pytest.raises(ToolError) as caught:
+        await tool.run(params)
+    monkeypatch.undo()
+
+    assert str(caught.value) == "cannot write app.py: No space left on device"
+    assert (root / "app.py").read_text(encoding="utf-8") == "return 1\n"
+    assert temporaries(root) == []
+
+
+# edit_file: what was shown is what is written (spec §10; decisions D1, W6)
+
+
+async def test_a_file_changed_after_the_question_is_not_edited(root: Path) -> None:
+    write(root, "app.py", "return 1\n")
+    tool = edit_tool(root)
+    params = edit_params("app.py", "return 1", "return 2")
+
+    tool.approval(params)
+    write(root, "app.py", "# yours\nreturn 1\n")
+
+    with pytest.raises(ToolError, match=r"app\.py changed after the question"):
+        await tool.run(params)
+    assert (root / "app.py").read_text(encoding="utf-8") == "# yours\nreturn 1\n"
+
+
+async def test_a_file_removed_after_the_question_is_not_edited(root: Path) -> None:
+    write(root, "app.py", "return 1\n")
+    tool = edit_tool(root)
+    params = edit_params("app.py", "return 1", "return 2")
+
+    tool.approval(params)
+    (root / "app.py").unlink()
+
+    with pytest.raises(ToolError, match=r"app\.py changed after the question"):
+        await tool.run(params)
+    assert not (root / "app.py").exists()
+
+
+async def test_an_edit_link_changed_after_the_question_is_not_followed(
+    root: Path,
+) -> None:
+    write(root, "a.txt", "uno\n")
+    write(root, "b.txt", "uno\n")
+    link = root / "link.txt"
+    link.symlink_to(root / "a.txt")
+    tool = edit_tool(root)
+    params = edit_params("link.txt", "uno", "dos")
+
+    tool.approval(params)
+    link.unlink()
+    link.symlink_to(root / "b.txt")
+
+    with pytest.raises(ToolError, match=r"link\.txt changed after the question"):
+        await tool.run(params)
+    assert (root / "b.txt").read_text(encoding="utf-8") == "uno\n"
+
+
+async def test_editing_without_a_question_is_refused(root: Path) -> None:
+    write(root, "app.py", "return 1\n")
+    tool = edit_tool(root)
+    params = edit_params("app.py", "1", "2")
+
+    with pytest.raises(ToolError, match="changed after the question"):
+        await tool.run(params)
+    tool.approval(params)
+    write(root, "otro.py", "return 1\n")
+    tool.approval(edit_params("otro.py", "1", "2"))
+    with pytest.raises(ToolError, match="changed after the question"):
+        await tool.run(params)
+    assert (root / "app.py").read_text(encoding="utf-8") == "return 1\n"
+
+
+# edit_file: an old_string with "\n" in a CRLF file (decision 9b)
+
+
+def crlf(root: Path, name: str, text: bytes) -> Path:
+    path = root / name
+    path.write_bytes(text)
+    return path
+
+
+async def test_a_multiline_old_string_is_adapted_to_crlf(root: Path) -> None:
+    path = crlf(root, "win.txt", b"uno\r\ndos\r\ntres\r\n")
+    params = edit_params("win.txt", "uno\ndos\n", "UNO\nDOS\nmas\n")
+
+    request, result = await edit(root, params)
+
+    # The diff and the result show what is written.
+    assert request.detail == "@@ -1,3 +1,4 @@\n-uno\n-dos\n+UNO\n+DOS\n+mas\n tres"
+    assert result == "edited win.txt (1 replacement)"
+    assert path.read_bytes() == b"UNO\r\nDOS\r\nmas\r\ntres\r\n"
+
+
+async def test_an_exact_match_comes_before_the_crlf_one(root: Path) -> None:
+    # One "a\nb" exact, one "a\r\nb": the exact one alone, with no
+    # "appears 2 times".
+    path = crlf(root, "mixed.txt", b"a\nb\r\na\r\nb\r\n")
+
+    _, result = await edit(root, edit_params("mixed.txt", "a\nb", "x\ny"))
+
+    assert result == "edited mixed.txt (1 replacement)"
+    assert path.read_bytes() == b"x\ny\r\na\r\nb\r\n"
+
+
+async def test_an_lf_file_is_not_adapted(root: Path) -> None:
+    path = write(root, "unix.txt", "uno\ndos\n")
+    tool = edit_tool(root)
+
+    with pytest.raises(ToolError) as caught:
+        tool.approval(edit_params("unix.txt", "uno\r\ndos", "x"))
+    assert str(caught.value) == NOT_FOUND.format("unix.txt")
+    _, result = await edit(root, edit_params("unix.txt", "uno\ndos", "UNO\nDOS"))
+    assert result == "edited unix.txt (1 replacement)"
+    assert path.read_bytes() == b"UNO\nDOS\n"
+
+
+def test_uniqueness_counts_the_crlf_matches(root: Path) -> None:
+    crlf(root, "win.txt", b"a\r\nb\r\na\r\nb\r\n")
+
+    with pytest.raises(ToolError) as caught:
+        edit_tool(root).approval(edit_params("win.txt", "a\nb", "x\ny"))
+    assert str(caught.value) == (
+        "old_string appears 2 times in win.txt; "
+        "add context to make it unique or use replace_all"
+    )
+
+
+async def test_replace_all_counts_the_crlf_matches(root: Path) -> None:
+    path = crlf(root, "win.txt", b"a\r\nb\r\na\r\nb\r\n")
+    params = edit_params("win.txt", "a\nb", "x\ny", replace_all=True)
+
+    _, result = await edit(root, params)
+
+    assert result == "edited win.txt (2 replacements)"
+    assert path.read_bytes() == b"x\r\ny\r\nx\r\ny\r\n"
+
+
+async def test_only_the_lone_lf_of_new_string_change(root: Path) -> None:
+    # "\r\n" in new_string stays as it is; a lone "\n" becomes "\r\n".
+    path = crlf(root, "win.txt", b"uno\r\ndos\r\n")
+    params = edit_params("win.txt", "uno\ndos", "a\r\nb\nc")
+
+    await edit(root, params)
+
+    assert path.read_bytes() == b"a\r\nb\r\nc\r\n"
+
+
+def test_a_crlf_old_string_still_not_found_fails(root: Path) -> None:
+    crlf(root, "win.txt", b"uno\r\ndos\r\n")
+
+    with pytest.raises(ToolError) as caught:
+        edit_tool(root).approval(edit_params("win.txt", "uno\ntres", "x"))
+    assert str(caught.value) == NOT_FOUND.format("win.txt")
+
+
+def test_an_edit_that_leaves_the_text_equal_is_nothing_to_change(
+    root: Path,
+) -> None:
+    # Decision C: "a\n" adapted is "a\r\n", the same as new_string; the text
+    # would not change, so there is nothing to ask.
+    path = crlf(root, "win.txt", b"a\r\nb\r\n")
+
+    with pytest.raises(ToolError, match="nothing to change"):
+        edit_tool(root).approval(edit_params("win.txt", "a\n", "a\r\n"))
+    assert path.read_bytes() == b"a\r\nb\r\n"
+
+
+def test_a_mixed_file_old_string_across_lf_and_crlf_is_not_found(
+    root: Path,
+) -> None:
+    # Case A1: neither exact ("b\n" is "b\r\n") nor adapted ("a\r\n" is "a\n").
+    crlf(root, "mixed.txt", b"a\nb\r\nc\r\n")
+
+    with pytest.raises(ToolError) as caught:
+        edit_tool(root).approval(edit_params("mixed.txt", "a\nb\n", "X\n"))
+    assert str(caught.value) == NOT_FOUND.format("mixed.txt")
+
+
+async def test_a_mixed_file_edits_only_its_crlf_part(root: Path) -> None:
+    # Case A2: the LF part keeps its "\n".
+    path = crlf(root, "mixed.txt", b"a\nb\r\nc\r\n")
+
+    _, result = await edit(root, edit_params("mixed.txt", "b\nc", "B\nC"))
+
+    assert result == "edited mixed.txt (1 replacement)"
+    assert path.read_bytes() == b"a\nB\r\nC\r\n"
+
+
+async def test_an_old_string_with_crlf_and_lone_lf_is_adapted(root: Path) -> None:
+    # Case B: only the lone "\n" changes; its "\r\n" stays.
+    path = crlf(root, "win.txt", b"a\r\nb\r\nc\r\n")
+
+    _, result = await edit(root, edit_params("win.txt", "a\r\nb\nc", "x\ny"))
+
+    assert result == "edited win.txt (1 replacement)"
+    assert path.read_bytes() == b"x\r\ny\r\n"

@@ -1,5 +1,5 @@
 """File tools over the working directory (spec hito 4, §1.6, and spec hito
-5, §1.6 and §1.7).
+5, §1.6 to §1.8).
 
 Every path is resolved (following symbolic links). Reading outside the
 working directory, or a secret file, asks the user first, one call at a time
@@ -769,4 +769,125 @@ class WriteFile:
 
     def summary(self, result: str) -> str:
         # "wrote notas.txt (3 lines)" → "3 lines".
+        return result[result.rfind("(") + 1 : -1]
+
+
+# Editing (spec hito 5, §1.8).
+
+# A "\n" with no "\r" before it.
+_LONE_LF = re.compile(r"(?<!\r)\n")
+
+
+class EditFileParams(BaseModel):
+    path: str = Field(description="Path relative to the working directory")
+    old_string: str = Field(description="The exact text to replace")
+    new_string: str = Field(description="The text to put in its place")
+    replace_all: bool = Field(
+        default=False, description="Replace every occurrence of old_string"
+    )
+
+
+def _check_strings(params: EditFileParams) -> None:
+    """What is wrong with the strings alone, found before the disk."""
+    if not params.old_string:
+        raise ToolError("old_string is empty")
+    if params.old_string == params.new_string:
+        raise ToolError("nothing to change")
+    try:
+        params.new_string.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ToolError("new_string is not valid UTF-8") from None
+
+
+def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
+    """`text` after the edit, and how many replacements it makes.
+
+    Exact matches first. With none, in a file with CRLF, the lone "\\n" of
+    both strings become "\\r\\n": the model sees the lines without their
+    endings (decision 9b).
+    """
+    old, new = params.old_string, params.new_string
+    found = text.count(old)
+    if found == 0 and "\r\n" in text and _LONE_LF.search(old):
+        old = _LONE_LF.sub("\r\n", old)
+        new = _LONE_LF.sub("\r\n", new)
+        found = text.count(old)
+    if found == 0:
+        raise ToolError(
+            f"old_string not found in {params.path}; "
+            "read the file and copy the text exactly"
+        )
+    if found > 1 and not params.replace_all:
+        raise ToolError(
+            f"old_string appears {found} times in {params.path}; "
+            "add context to make it unique or use replace_all"
+        )
+    return text.replace(old, new), found
+
+
+class EditFile:
+    name = "edit_file"
+    description = (
+        "Replace an exact text in a file. old_string must appear exactly once "
+        "(or use replace_all). Read the file first. The user approves it. "
+        'Example: {"path": "app.py", "old_string": "return 1", '
+        '"new_string": "return 2"}'
+    )
+    params = EditFileParams
+    permission: Permission = "effect"
+
+    def __init__(self, workspace: Workspace) -> None:
+        self._workspace = workspace
+        # What the last question showed; run() edits only that (decisions
+        # D1 and W6). One slot is enough because calls run one at a time;
+        # with parallel calls (hito 15) it must keep one per call.
+        self._shown: _Shown | None = None
+
+    def approval(self, params: EditFileParams) -> ApprovalRequest | None:
+        self._shown = None
+        _check_strings(params)
+        workspace = self._workspace
+        path = workspace.resolve(params.path)
+        _check_target(workspace, path, params.path)
+        old = _current_text(path, params.path)
+        if old is None:
+            raise ToolError(f"file not found: {params.path}")
+        new, _ = _replaced(old, params)
+        if new == old:
+            # Possible after adapting to CRLF: "a\n" for "a\r\n" (decision C).
+            raise ToolError("nothing to change")
+        shown = workspace.shown(path)
+        body = _diff(old, new)
+        detail = body if params.path == shown else f"(asked: {params.path})\n{body}"
+        warning = workspace.warning(path, SECRET_FILE)
+        self._shown = _Shown(params.path, path, old)
+        return ApprovalRequest(
+            tool=self.name,
+            title=f"edit {shown}",
+            detail=detail,
+            scope=self.name if warning is None else None,
+            warning=warning,
+        )
+
+    async def run(self, params: EditFileParams) -> str:
+        workspace = self._workspace
+        path = workspace.resolve(params.path)
+        shown = self._shown
+        changed = ToolError(f"{params.path} changed after the question; ask again")
+        if shown is None or (shown.raw, shown.path) != (params.path, path):
+            raise changed
+        _check_target(workspace, path, params.path)
+        old = _current_text(path, params.path)
+        if old is None or old != shown.old:
+            raise changed
+        new, found = _replaced(old, params)
+        try:
+            _write_atomically(path, new)
+        except OSError as exc:
+            reason = exc.strerror or str(exc)
+            raise ToolError(f"cannot write {workspace.shown(path)}: {reason}") from None
+        return f"edited {workspace.shown(path)} ({_count(found, 'replacement')})"
+
+    def summary(self, result: str) -> str:
+        # "edited app.py (1 replacement)" → "1 replacement".
         return result[result.rfind("(") + 1 : -1]
