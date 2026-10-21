@@ -1,23 +1,22 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-21. **Hito 2 (primera conversación) cerrado y
-publicado como `v0.2.0`.** Hito 3 (streaming): spec APROBADA en la rama del
-PR #13 (https://github.com/ManexMartikorena/m-harness/pull/13), pendiente de
-push e integración.
+publicado como `v0.2.0`.** Hito 3 (streaming): spec APROBADA (PR #13
+integrado). PR 1 (`feature/hito-3-eventos`, piezas 1 a 4) commiteado, sin
+push.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 2 cerrado (`v0.2.0`). Hito 3 (streaming): spec APROBADA
-en la rama `docs/spec-hito-3-streaming`, PR #13 abierto
-(https://github.com/ManexMartikorena/m-harness/pull/13), pendiente de push e
-integración.**
+(PR #13 integrado). Implementación: PR 1 commiteado en
+`feature/hito-3-eventos`, sin push.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.2.0` — Primera conversación** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.2.0
-- Ramas abiertas: `docs/spec-hito-3-streaming` (PR #13). Las integradas se
+- Ramas abiertas: `feature/hito-3-eventos` (solo en local). Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -31,6 +30,13 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Hito 3, PR 1 commiteado, 2026-10-21** (rama `feature/hito-3-eventos`,
+  sin push; piezas 1 a 4 de la spec §6): eventos del dominio
+  (`domain/events.py`), `collect()` (`application/collect.py`), analizador
+  SSE (`adapters/models/sse.py`) y mapa. En verde: 142 tests, ruff, mypy e
+  import-linter.
+- **PR #13 integrado, 2026-10-21** (merge `2f7d6a5`): spec del hito 3
+  APROBADA. Push e integración por el agente, a petición del mantenedor.
 - **Spec del hito 3 aprobada, 2026-10-21** (PC de Windows, WSL; rama
   `docs/spec-hito-3-streaming`). Decisiones del mantenedor (spec §11):
   - duda 1: `complete()` se queda en el puerto, junto a `stream()` (contra
@@ -194,18 +200,14 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** revisar los commits de la spec aprobada (`git log -3`,
-   `git diff origin/docs/spec-hito-3-streaming`) y hacer push de la rama, o
-   pedírselo al agente.
-2. **Humano:** integrar el PR #13 con merge commit desde GitHub, con el CI en
-   verde.
-3. **Humano o agente, en cada PC:** `git switch main && git pull` y borrar la
-   rama local de la spec (`git branch -d docs/spec-hito-3-streaming`).
-4. **Agente:** implementar el hito 3 por piezas (spec §6) en
-   `feature/hito-3-eventos`, desde la pieza 1 (eventos del dominio).
+1. **Humano (o agente si se lo pide):** revisar los commits del PR 1
+   (`git log main..feature/hito-3-eventos`), push de la rama, abrir el PR con
+   la plantilla e integrarlo con merge commit, con el CI en verde.
+2. **Agente:** PR 2 del hito 3 (spec §6, piezas 5 a 8) en
+   `feature/hito-3-adaptador`, desde `main` actualizado: `stream()` en
+   `OpenAIChatClient`. Empieza por la pieza 5 (petición y texto).
 
-**Sesión del 2026-10-21 en el PC de Windows (WSL).** Spec aprobada y
-commiteada en la rama del PR #13; falta el push. Se sigue desde el punto 1.
+**Sesión del 2026-10-21 en el PC de Windows (WSL).**
 
 ### Al abrir el agente en otro PC
 
