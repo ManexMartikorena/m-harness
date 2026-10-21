@@ -1,22 +1,21 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-21. **Hito 4 (tool calling y bucle agéntico)
-implementado:** PRs #20 a #24 integrados; PR 6 de cierre
-(`feature/hito-4-cierre`) en revisión. Falta el tag `v0.4.0`. Última versión
-publicada: `v0.3.0`.
+cerrado y publicado como `v0.4.0`.** Antes del hito 5, el mantenedor quiere
+una parada para entender el código.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 4 implementado: spec IMPLEMENTADA, PRs #20 a #24
-integrados y PR 6 de cierre en `feature/hito-4-cierre`. Falta el tag
-`v0.4.0`.**
+**Desarrollo. Hito 4 cerrado (`v0.4.0`). Antes del hito 5 (permisos y
+herramientas con efecto): parada para que el mantenedor entienda el código.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.3.0` — Streaming** (2026-10-21):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.3.0
-- Ramas abiertas: `feature/hito-4-cierre` (PR 6 del hito 4). Las integradas se
+- Última versión: **`v0.4.0` — Tool calling y bucle agéntico**
+  (2026-10-21):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.4.0
+- Ramas abiertas: `docs/cierre-hito-4` (este cierre de documentación). Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -24,13 +23,21 @@ integrados y PR 6 de cierre en `feature/hito-4-cierre`. Falta el tag
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
 
-- Nada pendiente. `v0.3.0` salió sin pasos fuera de lo normal.
+- Nada pendiente. `v0.4.0` salió sin pasos fuera de lo normal.
 
 ## Hecho
 
 Lo más reciente primero.
 
-- **Hito 4, PR 6 (cierre), 2026-10-21** (rama `feature/hito-4-cierre`):
+- **`v0.4.0` publicada, 2026-10-21.** Tag anotado sobre el merge del PR #25
+  (`ee632f9`), con el CI de `main` en verde; creado y publicado por el
+  agente a petición del mantenedor. `release.yml` creó la release en 11 s:
+  título "v0.4.0 — Tool calling y bucle agéntico", las notas del tag y la
+  lista de PRs #18 a #25. `uvx --from
+  git+https://github.com/ManexMartikorena/m-harness@v0.4.0 maha --version`
+  → `maha 0.4.0`.
+- **Hito 4, PR 6 (#25) integrado, 2026-10-21** (merge `ee632f9`).
+- **Hito 4, PR 6 (cierre), 2026-10-21** (#25):
   versión 0.4.0, nota `docs/guia/04-tool-calling.md`, spec en IMPLEMENTADA
   y README, MAPA y ESTADO al día. Verificación a mano de la spec §7 por el
   agente en pty con el modelo real: los 9 puntos en verde (spec §12.12).
@@ -276,16 +283,19 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente:** push de `feature/hito-4-cierre`, PR e integración (permiso
-   del mantenedor para los PRs del hito 4).
-2. **Humano, o agente si se le pide:** tag anotado `v0.4.0` sobre el merge
-   del PR 6 y push del tag; comprobar la release y `uvx --from
-   git+https://github.com/ManexMartikorena/m-harness@v0.4.0 maha --version`
-   → `maha 0.4.0`.
-3. **Agente:** PR de docs tras la release: `v0.4.0` publicada, casilla del
-   hito 4, pendientes del hito 4 y siguiente paso (spec del hito 5).
+1. **Agente:** integrar el PR de `docs/cierre-hito-4` con merge commit, con
+   el CI en verde, y `git switch main && git pull`.
+2. **Humano y agente: parada para entender el código** antes del hito 5,
+   a petición del mantenedor (2026-10-21). El agente explica el recorrido de
+   un turno por las capas y responde dudas; no se escribe código. Si de la
+   parada sale algo que cambiar, va a su propia spec o arreglo.
+3. **Agente, después:** proponer la spec del hito 5 (permisos y
+   herramientas con efecto) en su propio PR, leyendo antes DESIGN §4, §8,
+   §10 y §14. Debe decidir: revisar el turno atómico, aprobar la lectura
+   fuera del directorio, y a qué hito va `refusal`.
 
-**Sesión del 2026-10-21 en el PC de Windows (WSL).**
+**Sesión del 2026-10-21 en el PC de Windows (WSL).** Hito 4 cerrado y
+publicado.
 
 ### Al abrir el agente en otro PC
 
@@ -344,8 +354,10 @@ resuelve):
   porque `glm-5.3-flash` razona; varía mucho con el mismo prompt.
   `reasoning_content` se ignora. Desglose y coste: hito 7 (spec 3, §1.7 y
   §12.9.3).
-- **`refusal` y `tool_calls` del stream se ignoran:** una negativa del
-  modelo se perdería en silencio. Hito 4 (spec 3, §10).
+- **`refusal` del stream se ignora:** una negativa del modelo se perdería
+  en silencio (spec 3, §10). `tool_calls` quedó resuelto en el hito 4, pero
+  `refusal` no entró en su spec: **sin hito asignado**; se asigna en la spec
+  del hito 5.
 - **Respuesta cortada con Ctrl+C:** queda en pantalla, pero el modelo no la
   recuerda. Guardarla marcada como cortada: hito 6 (spec 3, §1.6).
 - **Sin reintentos** ante 429 o 5xx: se valoran en el hito 7 o el 8 (spec 3,
@@ -355,8 +367,33 @@ resuelve):
 - **POR VERIFICAR:** el formato de un error a mitad de stream en OpenCode
   (no se pudo provocar; el código lo lee de forma defensiva) y cortar la red
   a mitad de respuesta a mano (punto 9 de la verificación, no provocado en
-  WSL; lo cubren los tests). Se miran si aparecen, o en la verificación del
-  hito 4 desde el Ubuntu de casa.
+  WSL; lo cubren los tests). Siguen POR VERIFICAR: la verificación del
+  hito 4 se hizo también desde el PC de Windows. Se miran si aparecen, o
+  desde el Ubuntu de casa.
+
+**Pendientes del hito 4** (anotados en su spec; cada uno con el hito que lo
+resuelve):
+- **Turno atómico:** un fallo o Ctrl+C no guarda nada del turno. Vale porque
+  ninguna herramienta tiene efecto; **el hito 5 lo revisa**, porque una
+  edición ya hecha sí debe constar (spec 4, §1.7).
+- **Leer fuera del directorio de trabajo y secretos con otro nombre**
+  (`credenciales.txt`): hoy se deniega, o no se detecta. Aprobación en el
+  hito 5 (spec 4, §1.6 y §10).
+- **Tokens:** cada llamada al modelo cuesta ~700 tokens de entrada solo por
+  las cuatro herramientas; un turno de dos pasos llegó a 4111. Coste: hito
+  7; compactación: hito 11 (spec 4, §12.14).
+- **Límites de tokens y de tiempo por turno:** hito 8, con el modo no
+  interactivo (spec 4, §11, duda 3).
+- **Las descripciones de las herramientas son prompts:** primeras candidatas
+  a la batería de evals del hito 8 (spec 4, §5).
+- **Llamadas en paralelo:** hito 15 (spec 4, §11, duda 5).
+- **`.gitignore`:** `glob` y `grep` saltan carpetas fijas, no leen
+  `.gitignore`. Sin hito; se valora si molesta (spec 4, §0).
+- **POR VERIFICAR:** si OpenCode llega a partir los argumentos de una
+  llamada o a mandar JSON inválido (el código y los tests cubren los dos
+  casos; spec 4, §10).
+- **Detalles visuales:** el eco de `^C` y lo que se teclea durante un turno
+  se mezclan con la salida. Hito 19 (spec 4, §12.13).
 
 **Por medir:**
 - Línea base de las evals (hito 8).
@@ -369,7 +406,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 1. Esqueleto. `v0.1.0` (2026-10-20)
 - [x] 2. Primera conversación. `v0.2.0` (2026-10-20)
 - [x] 3. Streaming. `v0.3.0` (2026-10-21)
-- [ ] 4. Tool calling y bucle agéntico. `v0.4.0`
+- [x] 4. Tool calling y bucle agéntico. `v0.4.0` (2026-10-21)
 - [ ] 5. Permisos y herramientas con efecto. `v0.5.0`
 - [ ] 6. Sesiones e historial. `v0.6.0`
 - [ ] 7. Trazas y coste. `v0.7.0`
