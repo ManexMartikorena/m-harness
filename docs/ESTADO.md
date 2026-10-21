@@ -1,16 +1,18 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-20. **Hito 2 (primera conversación) cerrado y
-publicado como `v0.2.0`.** Hito 3 (streaming): spec PROPUESTA, PR #13 abierto
-(https://github.com/ManexMartikorena/m-harness/pull/13), CI en verde.
+Última actualización: 2026-10-21. **Hito 2 (primera conversación) cerrado y
+publicado como `v0.2.0`.** Hito 3 (streaming): spec APROBADA en la rama del
+PR #13 (https://github.com/ManexMartikorena/m-harness/pull/13), pendiente de
+push e integración.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 2 cerrado (`v0.2.0`). Hito 3 (streaming): spec PROPUESTA
+**Desarrollo. Hito 2 cerrado (`v0.2.0`). Hito 3 (streaming): spec APROBADA
 en la rama `docs/spec-hito-3-streaming`, PR #13 abierto
-(https://github.com/ManexMartikorena/m-harness/pull/13), CI en verde.**
+(https://github.com/ManexMartikorena/m-harness/pull/13), pendiente de push e
+integración.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.2.0` — Primera conversación** (2026-10-20):
@@ -29,6 +31,16 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Spec del hito 3 aprobada, 2026-10-21** (PC de Windows, WSL; rama
+  `docs/spec-hito-3-streaming`). Decisiones del mantenedor (spec §11):
+  - duda 1: `complete()` se queda en el puerto, junto a `stream()` (contra
+    la propuesta del agente). Corrige DESIGN §6. Sale la pieza que lo
+    quitaba;
+  - duda 2: spinner braille con "maha", cada letra en un color y los
+    colores rotando (spec §1.12, nueva pieza 12). Solo en una terminal real
+    y sin color con `NO_COLOR` (https://no-color.org, comprobado ese día);
+  - duda 3: Ctrl+C a mitad de respuesta vuelve al prompt;
+  - duda 5: `Usage` sigue sin `None`.
 - **Spec del hito 3 propuesta, 2026-10-20** (rama
   `docs/spec-hito-3-streaming`, PR #13 abierto
   (https://github.com/ManexMartikorena/m-harness/pull/13), CI en verde):
@@ -182,32 +194,18 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** decidir las dudas de la spec §11 y decírselas al agente. Las
-   dudas, con su número en §11:
-   - 1: `complete()` fuera del puerto;
-   - 2: indicador "esperando…" durante el silencio inicial (recomendada la
-     opción B);
-   - 3: Ctrl+C a mitad de respuesta vuelve al prompt;
-   - 5: `Usage` sin `None`.
-2. **Agente, en la rama del PR** (`git fetch && git switch
-   docs/spec-hito-3-streaming && git pull`):
-   - anotar las decisiones en §11, "Del humano", con fecha;
-   - pasar la primera línea de la spec a "Estado: APROBADA (fecha)" (AGENTS:
-     en ese PR la spec pasa a APROBADA);
-   - ajustar la spec si alguna decisión cambia lo propuesto;
-   - actualizar ESTADO, commit, y push si el humano lo pide.
-3. **Humano:** integrar el PR #13 con merge commit desde GitHub, con el CI en
+1. **Humano:** revisar los commits de la spec aprobada (`git log -3`,
+   `git diff origin/docs/spec-hito-3-streaming`) y hacer push de la rama, o
+   pedírselo al agente.
+2. **Humano:** integrar el PR #13 con merge commit desde GitHub, con el CI en
    verde.
-4. **Humano o agente, en cada PC:** `git switch main && git pull` y borrar la
-   rama local de la spec si existe (`git branch -d
-   docs/spec-hito-3-streaming`). En el PC de Windows, borrar también las
-   ramas locales ya integradas que queden (p. ej. `docs/cierre-hito-2`).
-5. **Agente:** implementar el hito 3 por piezas (spec §6) en
+3. **Humano o agente, en cada PC:** `git switch main && git pull` y borrar la
+   rama local de la spec (`git branch -d docs/spec-hito-3-streaming`).
+4. **Agente:** implementar el hito 3 por piezas (spec §6) en
    `feature/hito-3-eventos`, desde la pieza 1 (eventos del dominio).
 
-**Sesión cerrada el 2026-10-20 en el Ubuntu de casa.** PR #13 abierto con la
-spec PROPUESTA y el CI en verde; nada sin push. Se sigue desde el punto 1, en
-cualquier PC.
+**Sesión del 2026-10-21 en el PC de Windows (WSL).** Spec aprobada y
+commiteada en la rama del PR #13; falta el push. Se sigue desde el punto 1.
 
 ### Al abrir el agente en otro PC
 
