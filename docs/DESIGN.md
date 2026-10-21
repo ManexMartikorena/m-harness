@@ -198,7 +198,12 @@ AgentEvent = TurnStarted | TextDelta | ToolCallProposed | ApprovalRequested
 # Herramientas
 Permission = READ | EFFECT                      # lo prohibido no se registra
 Tool: name, description, Params (modelo Pydantic), permission,
-      async run(params) -> ToolResultBlock
+      approval(params) -> ApprovalRequest | None, async run(params) -> str
+# (Corregido el 21/10/2026, spec del hito 4, §1.5, y spec del hito 5, §1.2:
+#  `run` devuelve texto y el bucle construye el ToolResultBlock; `approval`
+#  dice qué preguntar antes de ejecutar, con el diff o el comando.)
+ApprovalRequest(tool, title, detail, scope, warning)  # scope: lo que cubre "toda la sesión"
+Decision = "once" | "session" | "deny"
 
 # Sesión
 Session(id, created_at, cwd, model, messages, usage)
@@ -357,6 +362,12 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   contenido no acabe en el modelo.
 - **Terminal:** cada comando es `EFFECT`. Desde el hito 14 corre además en un
   entorno aislado.
+  *(Añadido el 21/10/2026, spec del hito 5, §1.9: el comando corre en su propio
+  grupo de procesos, con tiempo límite, y sin las variables de entorno con
+  credenciales; "toda la sesión" cubre solo ese comando exacto.)*
+- **Sin terminal:** si la entrada no es una terminal (`maha < fichero`), toda
+  petición de aprobación se deniega sin preguntar. *(Añadido el 21/10/2026, spec
+  del hito 5, §1.10: la siguiente línea del fichero podría "aprobar".)*
 - **Entrada no confiable:** los resultados de herramientas, webs, MCP y
   subagentes se delimitan en el prompt y nunca cambian permisos. La defensa
   real es el permiso en código; el prompt solo avisa.

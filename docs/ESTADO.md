@@ -1,21 +1,21 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-21. **Hito 4 (tool calling y bucle agéntico)
-cerrado y publicado como `v0.4.0`.** Antes del hito 5, el mantenedor quiere
-una parada para entender el código.
+cerrado y publicado como `v0.4.0`.** Hito 5 (permisos y herramientas con
+efecto): spec APROBADA (PR #27).
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 4 cerrado (`v0.4.0`). Antes del hito 5 (permisos y
-herramientas con efecto): parada para que el mantenedor entienda el código.**
+**Desarrollo. Hito 4 cerrado (`v0.4.0`). Hito 5 (permisos y herramientas con
+efecto): spec APROBADA (PR #27); implementación sin empezar.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.4.0` — Tool calling y bucle agéntico**
   (2026-10-21):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.4.0
-- Ramas abiertas: `docs/cierre-hito-4` (este cierre de documentación). Las integradas se
+- Ramas abiertas: `docs/spec-hito-5-permisos` (spec del hito 5). Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -29,6 +29,33 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Spec del hito 5 aprobada, 2026-10-21** (PR #27): el mantenedor acepta
+  las cinco recomendaciones de §11 sin cambios; se anota como mejora futura
+  aprobar comandos por prefijo (spec §1.3).
+- **Spec del hito 5 propuesta, 2026-10-21** (rama
+  `docs/spec-hito-5-permisos`):
+  - contrato de aprobación: `ApprovalRequest`, `Decision`, puerto
+    `ApprovalGate` y `Tool.approval()`; una herramienta `effect` siempre
+    pregunta;
+  - "toda la sesión" por ámbito: todas las escrituras, todas las ediciones
+    o cada comando exacto; fuera del directorio y secretos, siempre uno a
+    uno;
+  - una negativa termina el turno; lo ejecutado consta en el historial
+    aunque falle o se cancele (revisa el turno atómico del hito 4);
+  - `write_file`, `edit_file` (texto exacto, con diff) y `run_command`
+    (grupo de procesos propio, tiempo límite, salida acotada y sin
+    credenciales en el entorno);
+  - sin terminal, se deniega todo; `refusal` entra como texto;
+  - corrige DESIGN §5 y §10.
+
+  Hechos comprobados ese día en la documentación de Python 3.14
+  (`asyncio` subprocess, `process_group`, `os.killpg`, `difflib`) y con una
+  prueba local de grupos de procesos.
+- **Parada del mantenedor para entender el código, 2026-10-21:** el agente
+  le señaló dónde están las herramientas (`adapters/tools/files.py`, puerto
+  `ports/tools.py`, registro `application/tools.py`) y el bucle
+  (`application/agent.py`, `Agent.run()` y `_execute()`); el mantenedor los
+  leyó y dio paso al hito 5.
 - **`v0.4.0` publicada, 2026-10-21.** Tag anotado sobre el merge del PR #25
   (`ee632f9`), con el CI de `main` en verde; creado y publicado por el
   agente a petición del mantenedor. `release.yml` creó la release en 11 s:
@@ -283,19 +310,14 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente:** integrar el PR de `docs/cierre-hito-4` con merge commit, con
-   el CI en verde, y `git switch main && git pull`.
-2. **Humano y agente: parada para entender el código** antes del hito 5,
-   a petición del mantenedor (2026-10-21). El agente explica el recorrido de
-   un turno por las capas y responde dudas; no se escribe código. Si de la
-   parada sale algo que cambiar, va a su propia spec o arreglo.
-3. **Agente, después:** proponer la spec del hito 5 (permisos y
-   herramientas con efecto) en su propio PR, leyendo antes DESIGN §4, §8,
-   §10 y §14. Debe decidir: revisar el turno atómico, aprobar la lectura
-   fuera del directorio, y a qué hito va `refusal`.
+1. **Agente:** integrar el PR #27 con merge commit, con el CI en verde, y
+   `git switch main && git pull`.
+2. **Agente:** implementar el hito 5 por piezas (spec §6) en
+   `feature/hito-5-aprobacion`, desde la pieza 1 (contrato de aprobación).
+   Push e integración de cada PR: preguntar al mantenedor si mantiene el
+   permiso que dio para el hito 4.
 
-**Sesión del 2026-10-21 en el PC de Windows (WSL).** Hito 4 cerrado y
-publicado.
+**Sesión del 2026-10-21 en el PC de Windows (WSL).**
 
 ### Al abrir el agente en otro PC
 
@@ -356,8 +378,8 @@ resuelve):
   §12.9.3).
 - **`refusal` del stream se ignora:** una negativa del modelo se perdería
   en silencio (spec 3, §10). `tool_calls` quedó resuelto en el hito 4, pero
-  `refusal` no entró en su spec: **sin hito asignado**; se asigna en la spec
-  del hito 5.
+  `refusal` no entró en su spec: se trata en el hito 5 (spec 5, §1.11),
+  aprobado por el mantenedor.
 - **Respuesta cortada con Ctrl+C:** queda en pantalla, pero el modelo no la
   recuerda. Guardarla marcada como cortada: hito 6 (spec 3, §1.6).
 - **Sin reintentos** ante 429 o 5xx: se valoran en el hito 7 o el 8 (spec 3,
