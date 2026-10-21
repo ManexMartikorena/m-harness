@@ -3,7 +3,8 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-21 (spec del hito 5).
+Última actualización: 2026-10-21 (hito 5, PR 1: contrato de aprobación y el
+bucle que pregunta).
 
 ## Raíz
 
@@ -41,7 +42,7 @@ ficheros.
 | `specs/PLANTILLA.md` | Formato de las specs de hito y de mejora |
 | `specs/hito-1-esqueleto.md` | Spec del hito 1 (IMPLEMENTADA): paquete, capas, calidad, CI y release |
 | `specs/hito-2-primera-conversacion.md` | Spec del hito 2 (IMPLEMENTADA): dominio, puerto `ModelClient`, adaptador de OpenAI, configuración y conversación en la terminal |
-| `specs/hito-5-permisos.md` | Spec del hito 5 (PROPUESTA): contrato de aprobación, ámbitos de sesión, `write_file`, `edit_file`, `run_command` con `CommandRunner`, lo ejecutado consta y `refusal` |
+| `specs/hito-5-permisos.md` | Spec del hito 5 (APROBADA): contrato de aprobación, ámbitos de sesión, `write_file`, `edit_file`, `run_command` con `CommandRunner`, lo ejecutado consta y `refusal` |
 | `specs/hito-4-bucle-agentico.md` | Spec del hito 4 (IMPLEMENTADA): bloques de llamada y resultado, `ToolCallDelta`, puerto `Tool`, cuatro herramientas de solo lectura, el bucle `Agent` y la terminal con llamadas |
 | `specs/hito-3-streaming.md` | Spec del hito 3 (IMPLEMENTADA): eventos del modelo, `stream()` en el puerto junto a `complete()`, `collect()`, SSE a mano, spinner de espera y Ctrl+C por respuesta |
 
@@ -54,23 +55,26 @@ import-linter (`pyproject.toml`).
 |---|---|---|
 | `__init__.py` | — | El paquete |
 | `__main__.py` | entrada | `python -m mharness`: igual que `maha` |
-| `bootstrap.py` | raíz de composición | `main()` del comando `maha`: lee la configuración, crea el adaptador y las herramientas de solo lectura sobre el directorio de arranque, y abre la conversación con `Agent`; el único que conoce todas las piezas |
+| `bootstrap.py` | raíz de composición | `main()` del comando `maha`: lee la configuración, crea el adaptador y las herramientas de solo lectura sobre el directorio de arranque, y abre la conversación con `Agent`; el único que conoce todas las piezas. `_DenyEverything`: gate provisional que lo deniega todo sin preguntar, hasta la pieza 17 del hito 5 (hoy ninguna herramienta pregunta) |
 | `config.py` | configuración (hermana de `adapters`) | `load()`: proveedores predefinidos, del usuario y del proyecto (este, solo `provider` y `model`); la clave, del entorno |
 | `domain/messages.py` | domain | `TextBlock`, `ToolCallBlock`, `ToolResultBlock` y `Message`: mensajes hechos de bloques, validados por `type` |
 | `domain/model.py` | domain | `ModelRequest` (con `tools`), `ToolSpec`, `ModelResponse`, `Usage` y `StopReason` |
 | `domain/events.py` | domain | `TextDelta`, `ToolCallDelta`, `MessageEnd` y `ModelEvent`: lo que llega mientras el modelo responde |
 | `domain/tools.py` | domain | `Permission` (`read` o `effect`) y `ToolError`, el fallo esperado que se explica al modelo |
-| `domain/agent_events.py` | domain | `ToolCallProposed`, `ToolFinished`, `ModelCallFinished`, `TurnFinished` y `AgentEvent`: lo que el bucle cuenta a la terminal |
+| `domain/approval.py` | domain | `Decision` (`once`, `session` o `deny`) y `ApprovalRequest` (`tool`, `title`, `detail`, `scope`, `warning`): la pregunta antes de ejecutar y la respuesta |
+| `domain/agent_events.py` | domain | `ToolCallProposed`, `ApprovalRequested`, `ToolFinished` (con `decision`), `ModelCallFinished`, `TurnFinished` (`end_turn`, `max_steps` o `denied`) y `AgentEvent`: lo que el bucle cuenta a la terminal |
 | `domain/paths.py` | domain | `is_secret()` y `SKIPPED_DIRS`: qué ficheros no ve el modelo y qué carpetas no se recorren, sin tocar el disco |
 | `domain/errors.py` | domain | `ModelError` y sus cinco tipos (autenticación, límite, petición, no disponible, respuesta) |
-| `ports/tools.py` | ports | `Tool`: nombre, descripción, modelo Pydantic de parámetros, permiso, `run()` y `summary()` |
+| `ports/tools.py` | ports | `Tool`: nombre, descripción, modelo Pydantic de parámetros, permiso, `approval()` (qué preguntar antes, o `None`), `run()` y `summary()` |
+| `ports/approval.py` | ports | `ApprovalGate`: `decide(request) -> Decision`; quien aprueba una llamada |
 | `ports/model.py` | ports | `ModelClient`: `complete(request) -> response` y `stream(request) -> eventos` |
 | `application/collect.py` | application | `Accumulator` y `collect()`: la respuesta entera a partir de los eventos, con las llamadas a herramientas juntadas por `index` |
-| `application/tools.py` | application | `ToolRegistry`: herramientas por nombre y sus `ToolSpec`; rechaza las de efecto hasta el hito 5 |
-| `application/agent.py` | application | `Agent`: el bucle agéntico (modelo → herramientas → resultados, hasta 25 pasos), con los errores devueltos al modelo |
+| `application/tools.py` | application | `ToolRegistry`: herramientas por nombre y sus `ToolSpec`; acepta las de efecto (el bucle pregunta antes) |
+| `application/approvals.py` | application | `SessionApprovals`: los `scope` aprobados para toda la sesión, en memoria (`covers()` y `record()`); un `scope` `None` nunca se guarda |
+| `application/agent.py` | application | `Agent`: el bucle agéntico (modelo → herramientas → resultados, hasta 25 pasos), con los errores devueltos al modelo. Pregunta al `gate` antes de ejecutar y solo ejecuta con una respuesta de `DECISIONS`; una negativa termina el turno; lo ejecutado consta aunque falle el modelo o se cancele |
 | `adapters/models/sse.py` | adapters | `parse_sse()`: el dato de cada evento SSE, con las líneas partidas solo en CRLF, LF o CR |
 | `adapters/models/openai_chat.py` | adapters | `OpenAIChatClient`: la conversación en formato OpenAI Chat Completions, con httpx. `complete()` (respuesta entera) y `stream()` (eventos SSE); envía herramientas, llamadas y resultados; traduce respuesta, trozos (también `tool_calls`) y errores |
-| `adapters/tools/files.py` | adapters | `Workspace` (perímetro del directorio de trabajo) y las herramientas de solo lectura `read_file`, `list_dir`, `glob` y `grep`, con topes y sin hilos |
+| `adapters/tools/files.py` | adapters | `Workspace` (perímetro del directorio de trabajo) y las herramientas de solo lectura `read_file`, `list_dir`, `glob` y `grep`, con topes y sin hilos; su `approval()` devuelve `None` de momento |
 | `adapters/cli/app.py` | adapters | Línea de comandos con argparse: `parse()` (`--version`, la ayuda) y `fail()` |
 | `adapters/cli/conversation.py` | adapters | `converse()`: leer, enviar al `Agent` y mostrar la respuesta según llega, cada llamada a herramienta (`→`, `✓`/`✗`) y la línea de tokens con las llamadas, con `/exit`, Ctrl+D y Ctrl+C (a mitad de respuesta, solo la corta); `StdinLines`, lectura de stdin sin hilos |
 | `adapters/cli/spinner.py` | adapters | `Spinner` y `frame()`: spinner braille con "maha" en colores ANSI mientras llega el primer token; solo en una terminal real, y `NO_COLOR` |
@@ -82,10 +86,10 @@ import-linter (`pyproject.toml`).
 | `test_entry_point.py` | El script `maha` entra por `bootstrap.main`; `python -m mharness --version` |
 | `test_bootstrap.py` | `maha` de punta a punta con respx (streams SSE) y un pipe como stdin: dos turnos, un stream cortado, las herramientas ofrecidas, una llamada a `read_file` sobre un fichero real, y los errores de arranque |
 | `adapters/test_cli.py` | `--version`, la ayuda, sin argumentos devuelve las opciones, el error de uso y `fail()` |
-| `adapters/test_conversation.py` | Respuesta en directo y tokens, llamadas a herramientas (marcas, argumentos cortados, plural, límite de pasos, fallo interno, Ctrl+C durante una herramienta), `/exit`, Ctrl+D, Ctrl+C en el prompt y a mitad de respuesta, errores a mitad, spinner y `StdinLines` |
+| `adapters/test_conversation.py` | Respuesta en directo y tokens, llamadas a herramientas (marcas, argumentos cortados, plural, límite de pasos, fallo interno, Ctrl+C durante una herramienta, que guarda el turno con la llamada cancelada), `/exit`, Ctrl+D, Ctrl+C en el prompt y a mitad de respuesta, errores a mitad, spinner y `StdinLines` |
 | `adapters/test_spinner.py` | Fotogramas con y sin color, `NO_COLOR`, solo en terminal, borrado de la línea |
 | `adapters/test_sse.py` | Analizador SSE: eventos, comentarios, saltos de línea, trozos partidos, U+2028 y el tope de 1 MiB |
-| `adapters/test_file_tools.py` | Las cuatro herramientas en `tmp_path`: resultados, topes, perímetro (`..`, rutas absolutas, enlaces), secretos, binarios y errores |
+| `adapters/test_file_tools.py` | Las cuatro herramientas en `tmp_path`: resultados, topes, perímetro (`..`, rutas absolutas, enlaces), secretos, binarios y errores; leer no pide aprobación |
 | `adapters/test_openai_chat.py` | `complete()`: JSON y cabeceras enviados, herramientas e historial con llamadas y resultados, traducción de la respuesta y de cada error, y que la clave nunca sale en un error (con respx) |
 | `adapters/test_openai_chat_stream.py` | `stream()`: petición con `stream` y herramientas, traducción de los trozos medidos (también `tool_calls`), errores antes y a mitad del stream, y cierre de la conexión al cancelar (con respx) |
 | `fixtures/openai_chat/` | Respuestas de ejemplo de Chat Completions (JSON) y streams SSE (`.sse`), también con llamadas a herramientas, con la forma medida en OpenCode Go, con datos inventados |
@@ -97,9 +101,12 @@ import-linter (`pyproject.toml`).
 | `unit/test_errors.py` | Todos los errores del modelo heredan de `ModelError` |
 | `unit/test_fake_model.py` | El fake cumple el puerto, sigue el guion (también en stream, con `Gate` y `HANG`) y falla al agotarse |
 | `unit/test_config.py` | Combinación de niveles, `[providers]` prohibido en el proyecto, errores con mensaje y la clave |
-| `unit/test_agent.py` | El bucle: sin llamadas, una, dos en orden, límite de pasos, historial, uso sumado, errores devueltos al modelo, fallo y cancelación |
-| `unit/test_tools_registry.py` | `ToolSpec` desde Pydantic, búsqueda, nombre repetido y herramienta con efecto rechazados |
-| `unit/test_fake_tool.py` | `FakeTool` cumple el puerto y sigue su guion |
+| `unit/test_agent.py` | El bucle: sin llamadas, una, dos en orden, límite de pasos, historial, uso sumado, errores devueltos al modelo; aprobación (`once`, `session` por `scope`, sin `scope`, `deny` termina el turno, `once` y luego `deny`, decisión no válida, efecto sin petición, `ToolError` y fallo en `approval()`); fallo en `summary()` y JSON demasiado anidado; lo ejecutado consta ante fallo del modelo, Ctrl+C durante una llamada, la pregunta o el stream, y el bucle cerrado (`GeneratorExit`) |
+| `unit/test_approvals.py` | `SessionApprovals`: `session` guarda el `scope`, cada `scope` cubre solo el suyo, `once` y `deny` no guardan nada, sin `scope` nunca se guarda |
+| `unit/test_fake_approval.py` | `FakeApproval` cumple el puerto, sigue el guion y falla al agotarse; `ApprovalRequest` sin aviso por defecto e inmutable |
+| `unit/test_tools_registry.py` | `ToolSpec` desde Pydantic, búsqueda, nombre repetido rechazado y herramienta con efecto aceptada |
+| `unit/test_fake_tool.py` | `FakeTool` cumple el puerto y sigue su guion, también en `approval()` |
 | `fakes/model.py` | `FakeModelClient` guionizado (`complete()` y `stream()`), `reply()`, `tool_calls()`, `END`, `Gate` y `HANG` (no es un test: lo usan los tests) |
-| `fakes/tools.py` | `FakeTool`: una herramienta guionizada, con `gate` para probar la cancelación |
+| `fakes/tools.py` | `FakeTool`: una herramienta guionizada, con `permission`, `requests` (lo que devuelve `approval()`: petición, `None` o error) y `gate` para probar la cancelación |
+| `fakes/approval.py` | `FakeApproval`: un `ApprovalGate` que responde con un guion de decisiones, guarda las peticiones en `requests` y falla si se agota. `HangingApproval`: nunca responde, para probar Ctrl+C durante la pregunta |
 | `architecture/test_core_imports.py` | `domain`, `ports` y `application` solo usan la biblioteca estándar y Pydantic |
