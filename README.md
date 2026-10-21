@@ -15,13 +15,13 @@ Lo que lo diferencia es cómo se construye:
   explica el concepto;
 - el historial del repositorio es la guía.
 
-> 🚧 **En construcción.** Hito 3 (streaming) terminado: `maha` conversa en la
-> terminal con un modelo y muestra la respuesta según llega, todavía sin
-> herramientas. El estado
-> al día está en [`docs/ESTADO.md`](docs/ESTADO.md).
+> 🚧 **En construcción.** Hito 4 (tool calling y bucle agéntico) terminado:
+> `maha` ya es un agente que lee, lista y busca en tu directorio de trabajo,
+> todavía sin herramientas que cambien nada. El estado al día está en
+> [`docs/ESTADO.md`](docs/ESTADO.md).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.3.0
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.4.0
 ```
 
 Necesita un proveedor con formato OpenAI (de serie, OpenCode Go o Zen) y su
@@ -36,11 +36,17 @@ model = "glm-5.3-flash"
 ```
 $ export OPENCODE_API_KEY=...
 $ maha
-maha 0.3.0 · opencode-go · glm-5.3-flash · /exit to quit
-> Hola, soy Ane
-Hola, Ane. ¿En qué te ayudo?
-  [tokens: 25 in · 9 out]
+maha 0.4.0 · opencode-go · glm-5.3-flash · /exit to quit
+> ¿En qué fichero y línea se define la función parse_sse?
+  → grep(pattern="def parse_sse")
+  ✓ 5 matches
+La función `parse_sse` se define en `src/mharness/adapters/models/sse.py`, línea 21.
+  [tokens: 1638 in · 121 out · 1 call]
 ```
+
+Herramientas: `read_file`, `list_dir`, `glob` y `grep`, solo de lectura, solo
+dentro del directorio de trabajo y sin acceso a ficheros secretos (`.env`,
+claves, `.ssh`…).
 
 Mientras espera el primer token, gira un spinner con "maha". Ctrl+C a mitad
 de una respuesta la corta y vuelve al prompt; en el prompt, sale.
@@ -93,7 +99,7 @@ detalle está en [`docs/DESIGN.md`](docs/DESIGN.md).
 | 1 | Esqueleto del proyecto y CI | ✅ `v0.1.0` |
 | 2 | Primera conversación con un modelo | ✅ `v0.2.0` |
 | 3 | Streaming | ✅ `v0.3.0` |
-| 4 | Tool calling y bucle agéntico | ⬜ |
+| 4 | Tool calling y bucle agéntico | ✅ `v0.4.0` |
 | 5 | Permisos y herramientas con efecto | ⬜ |
 | 6 | Sesiones e historial | ⬜ |
 | 7 | Trazas y coste | ⬜ |
