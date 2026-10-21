@@ -20,9 +20,9 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
-from mharness.domain.events import MessageEnd, ModelEvent, TextDelta
+from mharness.domain.events import MessageEnd, ModelEvent, TextDelta, ToolCallDelta
 from mharness.domain.messages import Message, TextBlock
-from mharness.domain.model import ModelRequest, StopReason, Usage
+from mharness.domain.model import ModelRequest, StopReason, ToolSpec, Usage
 
 BASE_URL = "https://models.example.test/v1"
 ENDPOINT = f"{BASE_URL}/chat/completions"
@@ -463,3 +463,85 @@ async def test_cancelling_closes_the_connection(client: OpenAIChatClient) -> Non
     with pytest.raises(asyncio.CancelledError):
         await task
     assert body.closed
+
+
+# Tool calls in the stream (spec hito 4, §1.4).
+
+
+@respx.mock
+async def test_stream_request_carries_the_tools(client: OpenAIChatClient) -> None:
+    route = serve(sse(chunk("Hola", finish_reason="stop"), "[DONE]"))
+    spec = ToolSpec(name="list_dir", description="List a directory.", input_schema={})
+
+    await events(client, REQUEST.model_copy(update={"tools": [spec]}))
+
+    assert sent_json(route)["tools"][0]["function"]["name"] == "list_dir"
+
+
+@respx.mock
+async def test_translates_measured_tool_calls(client: OpenAIChatClient) -> None:
+    # Shape measured on OpenCode Go (spec hito 4, §1.1): text first, each call
+    # whole in one chunk, the finish reason in a chunk of its own.
+    serve((FIXTURES / "stream_tool_calls.sse").read_bytes())
+
+    assert await events(client) == [
+        TextDelta(text="Voy a leer ambos ficheros:"),
+        ToolCallDelta(
+            index=0,
+            id="call_test_000000000000000a",
+            name="read_file",
+            arguments='{"path": "a.txt"}',
+        ),
+        ToolCallDelta(
+            index=1,
+            id="call_test_000000000000000b",
+            name="read_file",
+            arguments='{"path": "b.txt"}',
+        ),
+        MessageEnd(
+            stop_reason="tool_use",
+            usage=Usage(input_tokens=231, output_tokens=62),
+            model=MODEL,
+        ),
+    ]
+
+
+@respx.mock
+async def test_explicit_null_tool_calls_are_ignored(client: OpenAIChatClient) -> None:
+    serve(
+        sse(
+            chunk("Hola", tool_calls=None),
+            chunk(", Ane.", tool_calls=[]),
+            chunk(finish_reason="stop", tool_calls=None),
+            "[DONE]",
+        )
+    )
+
+    assert [type(e).__name__ for e in await events(client)] == [
+        "TextDelta",
+        "TextDelta",
+        "MessageEnd",
+    ]
+
+
+@respx.mock
+async def test_split_arguments_give_several_deltas(client: OpenAIChatClient) -> None:
+    # OpenAI's documented shape: the id and name first, then fragments.
+    first = {"index": 0, "id": "call_1", "type": "function"}
+    serve(
+        sse(
+            chunk(tool_calls=[{**first, "function": {"name": "read_file"}}]),
+            chunk(tool_calls=[{"index": 0, "function": {"arguments": '{"pa'}}]),
+            chunk(tool_calls=[{"index": 0, "function": {"arguments": 'th": "x"}'}}]),
+            chunk(finish_reason="tool_calls"),
+            "[DONE]",
+        )
+    )
+
+    deltas = [e for e in await events(client) if isinstance(e, ToolCallDelta)]
+
+    assert deltas == [
+        ToolCallDelta(index=0, id="call_1", name="read_file"),
+        ToolCallDelta(index=0, arguments='{"pa'),
+        ToolCallDelta(index=0, arguments='th": "x"}'),
+    ]

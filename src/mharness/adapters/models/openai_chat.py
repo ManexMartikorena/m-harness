@@ -26,7 +26,7 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
-from mharness.domain.events import MessageEnd, ModelEvent, TextDelta
+from mharness.domain.events import MessageEnd, ModelEvent, TextDelta, ToolCallDelta
 from mharness.domain.messages import (
     Block,
     Message,
@@ -185,6 +185,15 @@ class OpenAIChatClient:
             choice = chunk.choices[0]
             if choice.delta.content:
                 yield TextDelta(text=choice.delta.content)
+            # `tool_calls` may come as an explicit null (spec hito 4, §1.1).
+            for call in choice.delta.tool_calls or []:
+                function = call.function or _DeltaFunction()
+                yield ToolCallDelta(
+                    index=call.index,
+                    id=call.id,
+                    name=function.name,
+                    arguments=function.arguments or "",
+                )
             finish_reason = choice.finish_reason or finish_reason
         if finish_reason is None:
             raise ModelResponseError("stream ended before the answer was complete")
@@ -335,8 +344,20 @@ def _to_domain(completion: _Completion, request: ModelRequest) -> ModelResponse:
 # last, with `choices` empty.
 
 
+class _DeltaFunction(BaseModel):
+    name: str | None = None
+    arguments: str | None = None
+
+
+class _DeltaToolCall(BaseModel):
+    index: int
+    id: str | None = None
+    function: _DeltaFunction | None = None
+
+
 class _Delta(BaseModel):
     content: str | None = None
+    tool_calls: list[_DeltaToolCall] | None = None
 
 
 class _ChunkChoice(BaseModel):
