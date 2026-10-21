@@ -1,4 +1,4 @@
-Estado: PROPUESTA (2026-10-21)
+Estado: PROPUESTA (2026-10-21) → APROBADA (2026-10-21, sin cambios)
 
 # Spec — Hito 4: Tool calling y bucle agéntico
 
@@ -703,12 +703,17 @@ Con `opencode-go` y `glm-5.3-flash`, en una copia desechable de un proyecto
 
 ## 11. Decisiones
 
-Del humano (fecha): *ninguna todavía.*
+Del humano (2026-10-21): **acepta las cinco recomendaciones del agente**:
+1. `Agent` sustituye a `Chat`; `complete()` sigue en el puerto.
+2. Leer fuera del directorio de trabajo, denegado hasta el hito 5.
+3. Solo límite de pasos (25) en el hito 4; tokens y tiempo en el hito 8.
+4. Resumen de cada resultado en la terminal (`✓ 3 lines`).
+5. Llamadas en orden hasta el hito 15.
 
-Propuestas del agente (2026-10-21), pendientes de aprobación: **todas las de
-§1.2 a §1.9 y los seis PRs de §6**.
+Propuestas del agente (2026-10-21), aprobadas por el humano con la spec:
+**todas las de §1.2 a §1.9 y los seis PRs de §6**.
 
-**Por decidir por el mantenedor:**
+**Dudas que se plantearon al mantenedor** (registro):
 1. **`Chat` desaparece y lo sustituye `Agent`** (propuesta, §1.7). `complete()`
    sigue en el puerto y en el adaptador (spec 3, §1.2), aunque nada de
    `maha` lo use hasta el hito 8. ¿O se mantiene `Chat` para la conversación

@@ -1,15 +1,14 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-21. **Hito 3 (streaming) cerrado y publicado
-como `v0.3.0`.** Hito 4 (tool calling y bucle agéntico): spec PROPUESTA en
-`docs/spec-hito-4-bucle-agentico`.
+como `v0.3.0`.** Hito 4 (tool calling y bucle agéntico): spec APROBADA (PR #19).
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 3 cerrado (`v0.3.0`). Hito 4 (tool calling y bucle
-agéntico): spec PROPUESTA en la rama `docs/spec-hito-4-bucle-agentico`.**
+agéntico): spec APROBADA (PR #19); implementación sin empezar.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.3.0` — Streaming** (2026-10-21):
@@ -28,6 +27,8 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Spec del hito 4 aprobada, 2026-10-21** (PR #19): el mantenedor acepta
+  las cinco recomendaciones de §11 sin cambios.
 - **Spec del hito 4 propuesta, 2026-10-21** (rama
   `docs/spec-hito-4-bucle-agentico`):
   - bloques `ToolCallBlock` (argumentos como texto JSON) y
@@ -241,19 +242,11 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente:** push de `docs/spec-hito-4-bucle-agentico` y PR (si el
-   mantenedor lo pide).
-2. **Humano:** decidir las dudas de la spec §11 y decírselas al agente:
-   1. `Agent` sustituye a `Chat`;
-   2. leer fuera del directorio de trabajo, denegado hasta el hito 5;
-   3. solo límite de pasos en el hito 4;
-   4. resumen de cada resultado en la terminal;
-   5. llamadas en orden.
-3. **Agente, en la rama del PR:** anotar las decisiones en §11, spec a
-   APROBADA, ajustar lo que cambie, ESTADO, commit y push.
-4. **Humano o agente:** integrar el PR con merge commit, con el CI en verde.
-5. **Agente:** implementar el hito 4 por piezas (spec §6) en
-   `feature/hito-4-contrato`, desde la pieza 1.
+1. **Agente:** integrar el PR #19 con merge commit, con el CI en verde, y
+   `git switch main && git pull`.
+2. **Agente:** implementar el hito 4 por piezas (spec §6) en
+   `feature/hito-4-contrato`, desde la pieza 1 (bloques de llamada y de
+   resultado).
 
 **Sesión del 2026-10-21 en el PC de Windows (WSL).**
 
