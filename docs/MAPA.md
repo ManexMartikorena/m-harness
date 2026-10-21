@@ -3,7 +3,7 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-21 (cierre del hito 4).
+Última actualización: 2026-10-21 (spec del hito 5).
 
 ## Raíz
 
@@ -41,6 +41,7 @@ ficheros.
 | `specs/PLANTILLA.md` | Formato de las specs de hito y de mejora |
 | `specs/hito-1-esqueleto.md` | Spec del hito 1 (IMPLEMENTADA): paquete, capas, calidad, CI y release |
 | `specs/hito-2-primera-conversacion.md` | Spec del hito 2 (IMPLEMENTADA): dominio, puerto `ModelClient`, adaptador de OpenAI, configuración y conversación en la terminal |
+| `specs/hito-5-permisos.md` | Spec del hito 5 (PROPUESTA): contrato de aprobación, ámbitos de sesión, `write_file`, `edit_file`, `run_command` con `CommandRunner`, lo ejecutado consta y `refusal` |
 | `specs/hito-4-bucle-agentico.md` | Spec del hito 4 (IMPLEMENTADA): bloques de llamada y resultado, `ToolCallDelta`, puerto `Tool`, cuatro herramientas de solo lectura, el bucle `Agent` y la terminal con llamadas |
 | `specs/hito-3-streaming.md` | Spec del hito 3 (IMPLEMENTADA): eventos del modelo, `stream()` en el puerto junto a `complete()`, `collect()`, SSE a mano, spinner de espera y Ctrl+C por respuesta |
 
