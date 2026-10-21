@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from mharness.domain.messages import Message, TextBlock
-from mharness.domain.model import ModelRequest, ModelResponse, Usage
+from mharness.domain.model import ModelRequest, ModelResponse, ToolSpec, Usage
 
 
 def test_usage_defaults_to_zero() -> None:
@@ -35,3 +35,21 @@ def test_request_is_immutable() -> None:
 
     with pytest.raises(ValidationError):
         request.model = "kimi-k3"  # type: ignore[misc]
+
+
+def test_request_has_no_tools_by_default() -> None:
+    assert ModelRequest(model="glm-5.3-flash", messages=[]).tools == []
+
+
+def test_request_carries_the_tool_specs() -> None:
+    spec = ToolSpec(
+        name="read_file",
+        description="Read a text file.",
+        input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
+    )
+
+    request = ModelRequest(model="glm-5.3-flash", messages=[], tools=[spec])
+
+    assert request.tools == [spec]
+    with pytest.raises(ValidationError):
+        spec.name = "grep"  # type: ignore[misc]

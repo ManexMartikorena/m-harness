@@ -1,6 +1,6 @@
 """What the core sends to a model and what it gets back (DESIGN §5)."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -12,6 +12,15 @@ type StopReason = Literal[
 ]
 
 
+class ToolSpec(BaseModel, frozen=True):
+    """A tool as the model sees it (spec hito 4, §1.5)."""
+
+    name: str
+    description: str
+    # JSON Schema of the parameters, generated from the tool's Pydantic model.
+    input_schema: dict[str, Any]
+
+
 class ModelRequest(BaseModel, frozen=True):
     """One call to the model: the whole conversation, every time."""
 
@@ -19,6 +28,8 @@ class ModelRequest(BaseModel, frozen=True):
     # Not a message: each adapter places it where its API expects it.
     system: str | None = None
     messages: list[Message]
+    # The tools the model may ask to call; none means plain conversation.
+    tools: list[ToolSpec] = []
 
 
 class Usage(BaseModel, frozen=True):
