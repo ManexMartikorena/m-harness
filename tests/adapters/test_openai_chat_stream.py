@@ -1,5 +1,7 @@
 """`OpenAIChatClient.stream()` (spec hito 3, §4.4), with respx."""
 
+import asyncio
+import contextlib
 import json
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -402,3 +404,62 @@ async def test_network_error_does_not_contain_the_key(
         await events(client)
 
     assert API_KEY not in str(raised.value)
+
+
+# Closing the connection (spec hito 3, §4.4.19).
+
+
+class HangingBody(httpx.AsyncByteStream):
+    """Sends one chunk and then waits forever; remembers if it was closed."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield sse(chunk("Hola"))
+        await asyncio.Event().wait()
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def serve_hanging() -> HangingBody:
+    body = HangingBody()
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, stream=body
+        )
+    )
+    return body
+
+
+@respx.mock
+async def test_closing_the_consumer_closes_the_connection(
+    client: OpenAIChatClient,
+) -> None:
+    body = serve_hanging()
+
+    async with contextlib.aclosing(client.stream(REQUEST)) as stream:
+        first = await anext(stream)
+
+    assert first == TextDelta(text="Hola")
+    assert body.closed
+
+
+@respx.mock
+async def test_cancelling_closes_the_connection(client: OpenAIChatClient) -> None:
+    body = serve_hanging()
+    first_arrived = asyncio.Event()
+
+    async def consume() -> None:
+        async with contextlib.aclosing(client.stream(REQUEST)) as stream:
+            async for _ in stream:
+                first_arrived.set()
+
+    task = asyncio.create_task(consume())
+    await first_arrived.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert body.closed

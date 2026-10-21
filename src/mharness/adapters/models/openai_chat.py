@@ -9,7 +9,7 @@ about the agent.
 
 import codecs
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from importlib.metadata import version
 from types import TracebackType
 from typing import Any, Self
@@ -108,7 +108,7 @@ class OpenAIChatClient:
             ) from None
         return _to_domain(completion, request)
 
-    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+    async def stream(self, request: ModelRequest) -> AsyncGenerator[ModelEvent]:
         """Yield the answer as it arrives; raise a `ModelError` on failure."""
         body = {
             **_to_openai(request),
