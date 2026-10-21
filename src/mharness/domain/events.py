@@ -1,6 +1,7 @@
 """What a model sends while it answers, piece by piece (DESIGN §5).
 
-Hito 3 implements only `TextDelta` and `MessageEnd` (spec hito 3, §1.4).
+Hito 3 adds `TextDelta` and `MessageEnd` (spec hito 3, §1.4); hito 4,
+`ToolCallDelta` (spec hito 4, §1.3).
 """
 
 from typing import Literal
@@ -18,6 +19,21 @@ class TextDelta(BaseModel, frozen=True):
     text: str
 
 
+class ToolCallDelta(BaseModel, frozen=True):
+    """A piece of a tool call. The pieces of one call share its `index`.
+
+    Some servers send a whole call at once; others split the arguments over
+    many deltas. The accumulator joins them.
+    """
+
+    type: Literal["tool_call_delta"] = "tool_call_delta"
+    index: int
+    id: str | None = None
+    name: str | None = None
+    # A fragment of the JSON text, to append.
+    arguments: str = ""
+
+
 class MessageEnd(BaseModel, frozen=True):
     """The answer is complete. Sent once, after the last delta."""
 
@@ -28,4 +44,4 @@ class MessageEnd(BaseModel, frozen=True):
     model: str
 
 
-type ModelEvent = TextDelta | MessageEnd
+type ModelEvent = TextDelta | ToolCallDelta | MessageEnd
