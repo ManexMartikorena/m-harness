@@ -3,7 +3,7 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-20 (cierre del hito 2).
+Última actualización: 2026-10-21 (spec del hito 3 aprobada).
 
 ## Raíz
 
@@ -39,6 +39,7 @@ ficheros.
 | `specs/PLANTILLA.md` | Formato de las specs de hito y de mejora |
 | `specs/hito-1-esqueleto.md` | Spec del hito 1 (IMPLEMENTADA): paquete, capas, calidad, CI y release |
 | `specs/hito-2-primera-conversacion.md` | Spec del hito 2 (IMPLEMENTADA): dominio, puerto `ModelClient`, adaptador de OpenAI, configuración y conversación en la terminal |
+| `specs/hito-3-streaming.md` | Spec del hito 3 (APROBADA): eventos del modelo, `stream()` en el puerto junto a `complete()`, `collect()`, SSE a mano, spinner de espera y Ctrl+C por respuesta |
 
 ## Código: `src/mharness/`
 

@@ -177,7 +177,10 @@ ModelRequest(model, system, messages, tools: list[ToolSpec], max_tokens)
 ToolSpec(name, description, input_schema)       # JSON Schema generado por Pydantic
 
 # Respuesta del modelo, en streaming             (adaptador → bucle)
-ModelEvent = TextDelta | ReasoningDelta | ToolCallDelta | MessageEnd(stop_reason, usage)
+ModelEvent = TextDelta | ReasoningDelta | ToolCallDelta | MessageEnd(stop_reason, usage, model)
+# (Corregido el 20/10/2026, spec del hito 3, §1.4: MessageEnd lleva `model`, que
+#  ModelResponse exige y solo llega en los trozos. El hito 3 solo implementa
+#  TextDelta y MessageEnd.)
 Usage(input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
 
 # Lo que cuenta el núcleo                        (bucle → interfaz y trazas)
@@ -212,7 +215,7 @@ Session(id, created_at, cwd, model, messages, usage)
 ## 6. Integraciones
 | Puerto | Qué ofrece | Implementaciones (real · falsa) |
 |---|---|---|
-| `ModelClient` | `stream(ModelRequest)` → eventos `ModelEvent` asíncronos | `OpenAIChatClient` (hito 2), `AnthropicClient` (hito 9) · `FakeModelClient` guionizado |
+| `ModelClient` | `stream(ModelRequest)` → eventos `ModelEvent` asíncronos; `complete(ModelRequest)` → `ModelResponse` entera. *(Corregido el 21/10/2026, spec del hito 3, §1.2: `complete()` se queda junto a `stream()`, por decisión del mantenedor.)* | `OpenAIChatClient` (hito 2), `AnthropicClient` (hito 9) · `FakeModelClient` guionizado |
 | `ModelCatalog` | Ventana de contexto, precios y capacidades de cada modelo | Fichero TOML propio (formato inspirado en models.dev) · catálogo en memoria |
 | `Tool` | Especificación y ejecución de una herramienta | Ficheros, búsqueda, terminal, web, memoria, subagente, herramientas MCP · `FakeTool` |
 | `ApprovalGate` | Decide sobre cada llamada con efecto: una vez, toda la sesión o denegar | Aviso en la terminal · política automática (evals) · `FakeApproval` |

@@ -1,19 +1,23 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-20. **Hito 2 (primera conversación) cerrado y
-publicado como `v0.2.0`.** Siguiente: la spec del hito 3 (streaming).
+Última actualización: 2026-10-21. **Hito 2 (primera conversación) cerrado y
+publicado como `v0.2.0`.** Hito 3 (streaming): spec APROBADA en la rama del
+PR #13 (https://github.com/ManexMartikorena/m-harness/pull/13), pendiente de
+push e integración.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 2 cerrado (`v0.2.0`). Hito 3 (streaming): spec por
-proponer.**
+**Desarrollo. Hito 2 cerrado (`v0.2.0`). Hito 3 (streaming): spec APROBADA
+en la rama `docs/spec-hito-3-streaming`, PR #13 abierto
+(https://github.com/ManexMartikorena/m-harness/pull/13), pendiente de push e
+integración.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.2.0` — Primera conversación** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.2.0
-- Ramas abiertas: `docs/cierre-hito-2` (este cierre). Las integradas se
+- Ramas abiertas: `docs/spec-hito-3-streaming` (PR #13). Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -27,6 +31,57 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Spec del hito 3 aprobada, 2026-10-21** (PC de Windows, WSL; rama
+  `docs/spec-hito-3-streaming`). Decisiones del mantenedor (spec §11):
+  - duda 1: `complete()` se queda en el puerto, junto a `stream()` (contra
+    la propuesta del agente). Corrige DESIGN §6. Sale la pieza que lo
+    quitaba;
+  - duda 2: spinner braille con "maha", cada letra en un color y los
+    colores rotando (spec §1.12, nueva pieza 12). Solo en una terminal real
+    y sin color con `NO_COLOR` (https://no-color.org, comprobado ese día);
+  - duda 3: Ctrl+C a mitad de respuesta vuelve al prompt;
+  - duda 5: `Usage` sigue sin `None`.
+- **Spec del hito 3 propuesta, 2026-10-20** (rama
+  `docs/spec-hito-3-streaming`, PR #13 abierto
+  (https://github.com/ManexMartikorena/m-harness/pull/13), CI en verde):
+  - `complete()` sale del puerto: queda `stream()`, y `collect()` (en
+    `application`) construye la respuesta entera a partir de los eventos;
+  - SSE (*Server-Sent Events*, el formato de streaming de las APIs) a mano,
+    sin dependencias nuevas. Las líneas se parten solo en CRLF, LF o CR:
+    `aiter_lines()` de httpx 0.28.1 parte también en U+2028 y otros, y
+    rompería un JSON válido;
+  - corrige DESIGN §5: `MessageEnd` lleva `model`;
+  - Ctrl+C a mitad de respuesta corta la respuesta y vuelve al prompt;
+  - sonda lanzada en la fase de spec, con permiso del mantenedor (spec
+    §1.7): los tokens de salida altos de `glm-5.3-flash` son razonamiento.
+    `completion_tokens` incluye `reasoning_tokens`: para "OK", 13 de 16,
+    18 de 21 y 43 de 46 (varía mucho). Llega en `delta.reasoning_content`
+    con stream y en `message.reasoning` sin él;
+  - OpenCode manda `usage` aunque no se pida `stream_options`; ~5 s de
+    silencio hasta el primer byte. En OpenCode solo queda POR VERIFICAR el
+    formato de un error a mitad de stream.
+
+  Hechos comprobados ese día por el agente en la documentación oficial: el
+  endpoint de Go, `https://opencode.ai/inference/go/openai/v1/chat/completions`,
+  coincide con el código; la URL que dio Context7 estaba desfasada.
+- **Ubuntu de casa preparado, 2026-10-20:**
+  - Ubuntu 24.04.5 LTS, no 26.04 como el CI. Funciona: 116 tests, mypy,
+    lint-imports y ruff en verde con el python3.14 del sistema (3.14.8), sin
+    Python gestionado por uv;
+  - uv 0.13.4, con el instalador oficial y `UV_NO_MODIFY_PATH=1`, en
+    `~/.local/bin` (ya estaba en el PATH; no se tocó ningún fichero de
+    shell). `uv sync` y `pre-commit install` hechos;
+  - `.env` con la clave de OpenCode Go y `~/.config/maha/config.toml`.
+    Prueba de dos turnos con `glm-5.3-flash` correcta;
+  - `gh auth status`: login en github.com como ManexMartikorena, con el scope
+    `workflow`;
+  - aviso: en ese PC hay otro uv 0.12.17 en `~/.hermes/bin/` (de hermes,
+    fuera del PATH) que comparte `~/.cache/uv`. Para quitar uv, no usar
+    `uv cache clean` ni `rm -r "$(uv tool dir)"`;
+  - dato: "OK" contó `22 in · 67 out` (spec 2 §12.12; se investiga en la
+    spec 3, §1.7).
+- **PR #12 integrado, 2026-10-20** (merge `80d958d`): cierre de la
+  documentación del hito 2.
 - **`v0.2.0` publicada, 2026-10-20.** Tag anotado sobre el merge del PR #11
   (`9480b1d`). `release.yml` creó la release en 12 s: título
   "v0.2.0 — Primera conversación", las notas del tag y la lista de PRs #6 a
@@ -139,24 +194,29 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano:** integrar el PR de este cierre (`docs/cierre-hito-2`) con merge
-   commit, antes de cambiar de PC.
-2. **Humano, en el Ubuntu de casa:** preparar el PC (ver "Al abrir el agente
-   en otro PC", más abajo), con la clave de OpenCode Go en el `.env` y
-   `~/.config/maha/config.toml`.
-3. **Agente:** proponer la spec del hito 3 (streaming) en su propio PR
-   (`docs/spec-hito-3-streaming`), con los hechos de SSE (*Server-Sent
-   Events*, el formato de streaming de las APIs) comprobados ese día en la
-   documentación oficial. Arrastra dos puntos del hito 2: si `complete()` se
-   queda junto a `stream()` (spec 2, §1.3) y los tokens de salida altos de
-   `glm-5.3-flash` (spec 2, §12.12).
+1. **Humano:** revisar los commits de la spec aprobada (`git log -3`,
+   `git diff origin/docs/spec-hito-3-streaming`) y hacer push de la rama, o
+   pedírselo al agente.
+2. **Humano:** integrar el PR #13 con merge commit desde GitHub, con el CI en
+   verde.
+3. **Humano o agente, en cada PC:** `git switch main && git pull` y borrar la
+   rama local de la spec (`git branch -d docs/spec-hito-3-streaming`).
+4. **Agente:** implementar el hito 3 por piezas (spec §6) en
+   `feature/hito-3-eventos`, desde la pieza 1 (eventos del dominio).
 
-**Sesión cerrada el 2026-10-20 en el WSL del PC de Windows**, con el hito 2
-publicado (`v0.2.0`) y este cierre en su PR. Se sigue desde el punto 1.
+**Sesión del 2026-10-21 en el PC de Windows (WSL).** Spec aprobada y
+commiteada en la rama del PR #13; falta el push. Se sigue desde el punto 1.
 
-### Al abrir el agente en otro PC (por ejemplo, el Ubuntu de casa)
+### Al abrir el agente en otro PC
 
-Una vez, la primera vez tras este hito:
+Los dos PCs ya están preparados: el WSL del PC de Windows y el Ubuntu de
+casa. No hace falta repetir la puesta a punto. Si un pull cambia
+dependencias, basta con `uv sync`.
+
+Lo primero, en cualquiera de los dos: `cd` al clon, `git fetch` y contrastar
+con GitHub (`gh pr list`) en qué punto de "Siguiente paso" se está.
+
+**Solo para un PC nuevo o tras un pull que toque dependencias:**
 1. `cd` al clon y `git switch main && git pull`.
 2. `uv --version`: tiene que ser 0.13.1 o posterior (si no,
    `uv self update`).
@@ -183,11 +243,9 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 ## Pendientes / decisiones abiertas
 
 **Puestos de trabajo:**
-- Ubuntu de casa: uv ≥ 0.13.1, `gh` con el scope `workflow`, `uv sync` y
-  `pre-commit install` (ver "Al abrir el agente en otro PC"). Para conversar
-  con `maha`, además: el `.env` con `OPENCODE_API_KEY` y
-  `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). El WSL del PC
-  de Windows ya está listo, con clave y configuración.
+- Los dos listos, con clave y configuración: el WSL del PC de Windows
+  (Ubuntu 26.04.1) y el Ubuntu de casa (24.04.5, no 26.04; ver "Hecho",
+  2026-10-20).
 
 **Externas, con el hito en que bloquean:**
 - **Proveedor de modelos: OpenCode Go**, funcionando desde el 2026-10-20
