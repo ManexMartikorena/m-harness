@@ -27,7 +27,7 @@ from mharness.domain.errors import (
     ModelUnavailableError,
 )
 from mharness.domain.events import MessageEnd, ModelEvent, TextDelta
-from mharness.domain.messages import Message, TextBlock
+from mharness.domain.messages import Block, Message, TextBlock
 from mharness.domain.model import ModelRequest, ModelResponse, StopReason, Usage
 
 USER_AGENT = (
@@ -272,7 +272,7 @@ class _Completion(BaseModel):
 def _to_domain(completion: _Completion, request: ModelRequest) -> ModelResponse:
     choice = completion.choices[0]
     content = choice.message.content
-    blocks = [TextBlock(text=content)] if content else []
+    blocks: list[Block] = [TextBlock(text=content)] if content else []
     return ModelResponse(
         message=Message(role="assistant", blocks=blocks),
         stop_reason=STOP_REASONS.get(choice.finish_reason or "", "other"),

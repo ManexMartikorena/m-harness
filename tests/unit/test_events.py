@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from mharness.domain.events import MessageEnd, TextDelta
+from mharness.domain.events import MessageEnd, TextDelta, ToolCallDelta
 from mharness.domain.model import Usage
 
 
@@ -33,3 +33,16 @@ def test_message_end_rejects_an_unknown_stop_reason() -> None:
             usage=Usage(),
             model="glm-5.3-flash",
         )
+
+
+def test_tool_call_delta_defaults_and_is_immutable() -> None:
+    delta = ToolCallDelta(index=0)
+
+    assert (delta.type, delta.id, delta.name, delta.arguments) == (
+        "tool_call_delta",
+        None,
+        None,
+        "",
+    )
+    with pytest.raises(ValidationError):
+        delta.arguments = "{}"  # type: ignore[misc]
