@@ -685,7 +685,8 @@ def _current_bytes(path: Path, raw: str, verb: str) -> bytes | None:
     """
     if not path.exists():
         return None
-    size = path.stat().st_size
+    with _reading(raw):
+        size = path.stat().st_size
     if size > CHANGE_MAX_FILE_BYTES:
         raise ToolError(
             f"file too large to {verb} ({size / MIB:.1f} MiB, "

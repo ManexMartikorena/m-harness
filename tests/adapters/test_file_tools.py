@@ -2017,3 +2017,28 @@ def test_the_fallback_detail_has_no_note(root: Path) -> None:
     request = ask_edit(edit_tool(root), edit_params(".env", "nada", "x\r\n"))
 
     assert request.detail == "old_string:\nnada\nnew_string:\nx"
+
+
+def test_a_failed_stat_of_the_file_to_change_cannot_be_read(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Fix 3 also covers the size check (second review of PR 2).
+    write(root, "app.py", "return 1\n")
+    edit = edit_tool(root)
+    overwrite = write_tool(root)
+    real_stat = Path.stat
+
+    def failing_stat(self: Path, **kwargs: bool) -> os.stat_result:
+        if self.name == "app.py" and not kwargs:
+            raise OSError(5, "Input/output error")
+        return real_stat(self, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", failing_stat)
+    with pytest.raises(ToolError) as edited:
+        edit.approval(edit_params("app.py", "1", "2"))
+    with pytest.raises(ToolError) as written:
+        overwrite.approval(WriteFileParams(path="app.py", content="x"))
+    monkeypatch.undo()
+
+    assert str(edited.value) == "cannot read app.py: Input/output error"
+    assert str(written.value) == "cannot read app.py: Input/output error"
