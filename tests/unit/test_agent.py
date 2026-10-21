@@ -24,8 +24,8 @@ from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from mharness.domain.tools import ToolError
-from tests.fakes.approval import FakeApproval
-from tests.fakes.model import FAKE_MODEL, FakeModelClient, reply, tool_calls
+from tests.fakes.approval import FakeApproval, HangingApproval
+from tests.fakes.model import FAKE_MODEL, HANG, FakeModelClient, reply, tool_calls
 from tests.fakes.tools import EchoParams, FakeTool
 
 MODEL = "glm-5.3-flash"
@@ -187,10 +187,10 @@ async def test_the_request_carries_the_tool_specs() -> None:
 
 
 async def first_result(
-    model_call: ToolCallBlock, *tools: FakeTool
+    model_call: ToolCallBlock, *tools: FakeTool, gate: FakeApproval | None = None
 ) -> tuple[ToolFinished, FakeModelClient]:
     fake = FakeModelClient([tool_calls(model_call), reply("Lo siento.")])
-    events = await run(agent(fake, *tools))
+    events = await run(agent(fake, *tools, gate=gate))
     finished = next(e for e in events if isinstance(e, ToolFinished))
     # The loop went on: the model was called again, with the error.
     assert fake.requests[1].messages[-1] == Message(
@@ -276,18 +276,6 @@ async def until(condition: Callable[[], bool]) -> None:
             return
         await asyncio.sleep(0)
     raise AssertionError("the condition never held")
-
-
-class HangingApproval:
-    """An `ApprovalGate` that never answers: the user is still reading."""
-
-    def __init__(self) -> None:
-        self.requests: list[ApprovalRequest] = []
-
-    async def decide(self, request: ApprovalRequest) -> Decision:
-        self.requests.append(request)
-        await asyncio.Event().wait()
-        raise AssertionError("unreachable")
 
 
 async def test_a_model_error_after_a_tool_keeps_the_turn_up_to_its_result() -> None:
@@ -635,14 +623,16 @@ async def test_an_effect_tool_without_a_request_does_not_run() -> None:
     # 4.2.5 and §1.2: an effect always asks; without a request it is a bug
     # of ours.
     echo = FakeTool(permission="effect")
+    gate = FakeApproval()
 
-    done, _ = await first_result(call("c1"), echo)
+    done, _ = await first_result(call("c1"), echo, gate=gate)
 
     assert done.result == ToolResultBlock(
         call_id="c1", content='error: internal error in tool "echo"', is_error=True
     )
     assert done.internal_error == "effect tool without an approval request"
     assert done.decision is None
+    assert gate.requests == []
     assert echo.calls == []
 
 
@@ -728,4 +718,57 @@ async def test_too_deeply_nested_arguments_are_not_valid_json() -> None:
         call_id="c1",
         content="error: arguments are not a valid JSON object",
         is_error=True,
+    )
+
+
+async def test_once_then_deny_in_one_answer_keeps_every_call_paired() -> None:
+    calls = [call(f"c{i}") for i in range(1, 5)]
+    fake = FakeModelClient([tool_calls(*calls)])
+    gate = FakeApproval(["once", "deny"])
+    echo = FakeTool(permission="effect", requests=[ask(None), ask(None)])
+    subject = agent(fake, echo, gate=gate)
+
+    events = await run(subject)
+
+    results = [
+        ToolResultBlock(call_id="c1", content="echo: Hola"),
+        failed("c2", "the user denied this call"),
+        failed("c3", "not run: a previous call was denied"),
+        failed("c4", "not run: a previous call was denied"),
+    ]
+    assert [(f.result, f.decision) for f in finished(events)] == list(
+        zip(results, ["once", "deny", None, None], strict=True)
+    )
+    assert echo.calls == [EchoParams(text="Hola")]
+    assert events[-1] == TurnFinished(
+        reason="denied", usage=Usage(), tool_calls=2, steps=1
+    )
+    assert subject.messages == (
+        user("Hola"),
+        Message(role="assistant", blocks=[*calls]),
+        Message(role="tool", blocks=[*results]),
+    )
+
+
+async def test_cancelling_mid_stream_after_a_run_drops_the_half_answer() -> None:
+    fake = FakeModelClient([tool_calls(call("c1")), [TextDelta(text="Ya est"), HANG]])
+    subject = agent(fake)
+    events: list[AgentEvent] = []
+
+    async def consume() -> None:
+        async for event in subject.run("Hola"):
+            events.append(event)
+
+    task = asyncio.ensure_future(consume())
+    await until(lambda: TextDelta(text="Ya est") in events)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert subject.messages == (
+        user("Hola"),
+        Message(role="assistant", blocks=[call("c1")]),
+        Message(
+            role="tool", blocks=[ToolResultBlock(call_id="c1", content="echo: Hola")]
+        ),
     )
