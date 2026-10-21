@@ -589,6 +589,78 @@ Propuestas del agente (2026-10-21), aprobadas por el humano con la spec:
    atómico del hito 4 (más simple, pero el modelo olvidaría ediciones
    hechas).
 
-## 12. Aprendido al implementar (fecha)
+## 12. Aprendido al implementar (2026-10-21)
 
-*(Se rellena al implementar.)*
+PR 1 (`feature/hito-5-aprobacion`, piezas 1 a 5). Lo que la spec no fijaba,
+decidido al implementar; en las piezas 3 y 4, por el mantenedor.
+
+1. **Pieza 1, contrato:**
+   - `FakeTool` gana `approval()`, que devuelve `None`; sin él, `FakeTool`
+     ya no cumplía el puerto `Tool` y mypy no cerraba;
+   - `FakeApproval` sigue la forma de `FakeModelClient`: un guion de
+     decisiones en orden, guarda las peticiones y falla si se agota;
+   - §4 no asignaba tests a la pieza 1: se añaden unos mínimos propios
+     (`tests/unit/test_fake_approval.py`).
+2. **Pieza 2, sesión:** `SessionApprovals` tiene `covers(request)` y
+   `record(request, decision)`. La regla de `scope=None` (nunca se guarda ni
+   se cubre) vive dentro de `SessionApprovals`, no en el bucle.
+3. **Pieza 3, el bucle pregunta** (decisiones del mantenedor):
+   - `gate` es obligatorio: `Agent(..., gate=...)`;
+   - en `bootstrap`, `_DenyEverything` provisional hasta la pieza 17 (opción
+     A, frente a adelantar `DenyAll` o hacer el `gate` opcional). Hoy ninguna
+     herramienta pregunta, así que no se llama;
+   - `SessionApprovals` se crea dentro de `Agent`;
+   - `FakeTool` gana el guion `requests` para `approval()` (petición, `None`
+     o error), para los tests de §4.2;
+   - `ToolFinished.decision` es `None` si el `scope` ya estaba aprobado para
+     la sesión (no se preguntó);
+   - tras una negativa, las llamadas "not run" emiten `ToolCallProposed` y
+     `ToolFinished`, y no cuentan en `TurnFinished.tool_calls`; la denegada
+     sí cuenta;
+   - herramienta `effect` cuyo `approval()` devuelve `None` → `error:
+     internal error in tool "<name>"`, con `internal_error="effect tool
+     without an approval request"`;
+   - una excepción que no es `ToolError` en `approval()` es un error
+     interno, como en `run()`;
+   - `test_an_effect_tool_is_refused` pasa a `test_an_effect_tool_is_accepted`;
+   - el tiempo de decidir no cuenta en `ToolFinished.duration`; las "not run"
+     llevan `duration=0.0`.
+4. **Pieza 4, lo ejecutado consta** (decisiones del mantenedor; concreta
+   §1.5):
+   - D1: una llamada cuenta como ejecutada si se llegó a llamar a `run()`,
+     también si Ctrl+C la cortó;
+   - D2: Ctrl+C durante la única llamada guarda el turno con `error:
+     cancelled by the user`. Cambian dos tests del hito 4 (`test_agent.py` y
+     `test_conversation.py::test_ctrl_c_during_a_tool_goes_back_to_the_prompt`);
+   - D3: Ctrl+C durante la pregunta, tras una llamada ya ejecutada → la
+     llamada en aprobación queda `cancelled by the user` y las siguientes,
+     `not run`. Sin nada ejecutado, no se guarda nada;
+   - D4: solo `ModelError` y `CancelledError` guardan el turno, y además
+     `GeneratorExit`: Ctrl+C que llega a la terminal mientras ella espera
+     (p. ej., al parar el spinner) cierra el generador con `aclosing`, y el
+     bucle recibe `GeneratorExit`. Aceptado por el mantenedor;
+   - tras una negativa, si el turno se corta, las llamadas restantes llevan
+     `not run: a previous call was denied`.
+5. **Revisión del PR 1** (arreglos aprobados por el mantenedor):
+   - **Solo una decisión válida ejecuta** (`d3953b0`). Antes, cualquier valor
+     del `gate` distinto de `deny` ejecutaba la herramienta: fallaba en
+     abierto. Ahora se ejecuta solo sin pregunta, con el `scope` ya cubierto,
+     o con `once` o `session` (constante `DECISIONS` de
+     `application/agent.py`). Otro valor → `internal error`, con
+     `internal_error="invalid approval decision: <repr>"`; no se ejecuta, no
+     se guarda nada en la sesión y el turno sigue;
+   - **un fallo de `summary()` no oculta el resultado** (`56d7909`): el
+     modelo recibe el contenido real, la terminal ve `(no summary)` y
+     `internal_error="summary: <Tipo>: <msg>"`. Por qué: el efecto ya
+     ocurrió; si llegara como error, el modelo lo repetiría;
+   - **JSON demasiado anidado** (`56d7909`): el `RecursionError` de
+     `json.loads` da `arguments are not a valid JSON object`, como un JSON
+     inválido;
+   - **más tests del bucle** (`bf643a6`): `once` y luego `deny` en la misma
+     respuesta, Ctrl+C a mitad del stream del paso 2 tras una herramienta y
+     `gate.requests == []` cuando no se pregunta. `HangingApproval` pasa a
+     `tests/fakes/approval.py`;
+   - **queda para el hito 6** (por D4): si, tras una ejecución, salta una
+     excepción no prevista (p. ej., el `gate` falla con `OSError`), el turno
+     no se guarda. Hoy eso tumba `maha` y el historial en memoria se pierde
+     igual. Se revisa cuando las sesiones se guarden en disco.
