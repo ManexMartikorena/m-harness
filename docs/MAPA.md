@@ -3,7 +3,7 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-21 (hito 4, PR 1: contrato de herramientas).
+Última actualización: 2026-10-21 (hito 4, PR 2: herramientas en el adaptador).
 
 ## Raíz
 
@@ -62,7 +62,7 @@ import-linter (`pyproject.toml`).
 | `application/collect.py` | application | `Accumulator` y `collect()`: la respuesta entera a partir de los eventos, con las llamadas a herramientas juntadas por `index` |
 | `application/chat.py` | application | `Chat`: la conversación en memoria, reenviada entera en cada llamada. `send()` (entera) y `stream()` (eventos; guarda el turno al llegar `MessageEnd`) |
 | `adapters/models/sse.py` | adapters | `parse_sse()`: el dato de cada evento SSE, con las líneas partidas solo en CRLF, LF o CR |
-| `adapters/models/openai_chat.py` | adapters | `OpenAIChatClient`: la conversación en formato OpenAI Chat Completions, con httpx. `complete()` (respuesta entera) y `stream()` (eventos SSE); traduce respuesta, trozos y errores |
+| `adapters/models/openai_chat.py` | adapters | `OpenAIChatClient`: la conversación en formato OpenAI Chat Completions, con httpx. `complete()` (respuesta entera) y `stream()` (eventos SSE); envía herramientas, llamadas y resultados; traduce respuesta, trozos (también `tool_calls`) y errores |
 | `adapters/cli/app.py` | adapters | Línea de comandos con argparse: `parse()` (`--version`, la ayuda) y `fail()` |
 | `adapters/cli/conversation.py` | adapters | `converse()`: leer, enviar y mostrar la respuesta según llega, con `/exit`, Ctrl+D y Ctrl+C (a mitad de respuesta, solo la corta); `StdinLines`, lectura de stdin sin hilos |
 | `adapters/cli/spinner.py` | adapters | `Spinner` y `frame()`: spinner braille con "maha" en colores ANSI mientras llega el primer token; solo en una terminal real, y `NO_COLOR` |
@@ -77,9 +77,9 @@ import-linter (`pyproject.toml`).
 | `adapters/test_conversation.py` | Respuesta en directo y tokens, `/exit`, Ctrl+D, Ctrl+C en el prompt y a mitad de respuesta, errores a mitad, spinner y `StdinLines` |
 | `adapters/test_spinner.py` | Fotogramas con y sin color, `NO_COLOR`, solo en terminal, borrado de la línea |
 | `adapters/test_sse.py` | Analizador SSE: eventos, comentarios, saltos de línea, trozos partidos, U+2028 y el tope de 1 MiB |
-| `adapters/test_openai_chat.py` | `complete()`: JSON y cabeceras enviados, traducción de la respuesta y de cada error, y que la clave nunca sale en un error (con respx) |
-| `adapters/test_openai_chat_stream.py` | `stream()`: petición con `stream`, traducción de los trozos medidos, errores antes y a mitad del stream, y cierre de la conexión al cancelar (con respx) |
-| `fixtures/openai_chat/` | Respuestas de ejemplo de Chat Completions (JSON) y streams SSE (`.sse`) con la forma medida en OpenCode Go, con datos inventados |
+| `adapters/test_openai_chat.py` | `complete()`: JSON y cabeceras enviados, herramientas e historial con llamadas y resultados, traducción de la respuesta y de cada error, y que la clave nunca sale en un error (con respx) |
+| `adapters/test_openai_chat_stream.py` | `stream()`: petición con `stream` y herramientas, traducción de los trozos medidos (también `tool_calls`), errores antes y a mitad del stream, y cierre de la conexión al cancelar (con respx) |
+| `fixtures/openai_chat/` | Respuestas de ejemplo de Chat Completions (JSON) y streams SSE (`.sse`), también con llamadas a herramientas, con la forma medida en OpenCode Go, con datos inventados |
 | `unit/test_messages.py` | `Message.text` une los bloques de texto; bloques de llamada y resultado; validación por `type`; mensajes inmutables |
 | `unit/test_model.py` | `Usage` a 0 por defecto; petición sin `system` y sin herramientas; `ToolSpec`; `StopReason` válido |
 | `unit/test_events.py` | Eventos inmutables (también `ToolCallDelta`), `type` por defecto y `StopReason` válido |
