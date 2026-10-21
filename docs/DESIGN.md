@@ -167,8 +167,11 @@ proveedor.
 TextBlock(text)
 ImageBlock(media_type, data)
 ReasoningBlock(text, signature)          # razonamiento del modelo, si lo devuelve
-ToolCallBlock(id, name, arguments: dict)
-ToolResultBlock(call_id, content: list[TextBlock | ImageBlock], is_error)
+ToolCallBlock(id, name, arguments: str)
+ToolResultBlock(call_id, content: str, is_error)
+# (Corregido el 21/10/2026, spec del hito 4, §1.2: `arguments` es el texto JSON
+#  tal como lo escribió el modelo, que puede ser inválido y tiene que quedar en
+#  el historial; `content` es texto hasta que lleguen las imágenes, hito 18.)
 
 Message(role: "user" | "assistant" | "tool", blocks: list[Block])
 
@@ -187,6 +190,10 @@ Usage(input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
 AgentEvent = TurnStarted | TextDelta | ToolCallProposed | ApprovalRequested
            | ToolFinished(result, duration) | ModelCallFinished(usage, cost)
            | TurnFinished | AgentError
+# (Anotado el 21/10/2026, spec del hito 4, §1.7: el hito 4 implementa TextDelta,
+#  ToolCallProposed, ToolFinished, ModelCallFinished (sin coste) y TurnFinished.
+#  ApprovalRequested llega en el hito 5; TurnStarted, AgentError y el coste, en
+#  el 7. Hasta entonces, los errores son excepciones.)
 
 # Herramientas
 Permission = READ | EFFECT                      # lo prohibido no se registra

@@ -1,20 +1,19 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-21. **Hito 3 (streaming) cerrado y publicado
-como `v0.3.0`.** Siguiente: la spec del hito 4 (tool calling y bucle
-agéntico).
+como `v0.3.0`.** Hito 4 (tool calling y bucle agéntico): spec APROBADA (PR #19).
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 3 cerrado (`v0.3.0`). Hito 4 (tool calling y bucle
-agéntico): sin empezar; lo primero es su spec.**
+agéntico): spec APROBADA (PR #19); implementación sin empezar.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.3.0` — Streaming** (2026-10-21):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.3.0
-- Ramas abiertas: `docs/cierre-hito-3` (este cierre de documentación). Las integradas se
+- Ramas abiertas: `docs/spec-hito-4-bucle-agentico` (spec del hito 4). Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -28,6 +27,27 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Spec del hito 4 aprobada, 2026-10-21** (PR #19): el mantenedor acepta
+  las cinco recomendaciones de §11 sin cambios.
+- **Spec del hito 4 propuesta, 2026-10-21** (rama
+  `docs/spec-hito-4-bucle-agentico`):
+  - bloques `ToolCallBlock` (argumentos como texto JSON) y
+    `ToolResultBlock`; `ToolCallDelta` que junta el `Accumulator`;
+  - puerto `Tool` con modelo Pydantic; el registro rechaza herramientas con
+    efecto hasta el hito 5;
+  - `read_file`, `list_dir`, `glob` y `grep`, sin hilos, dentro del
+    directorio de trabajo y sin ficheros secretos;
+  - `Agent` sustituye a `Chat`: límite de 25 pasos, llamadas en orden,
+    errores devueltos al modelo, turno atómico ante fallo o Ctrl+C;
+  - corrige DESIGN §5 (argumentos y resultado como texto; calendario de
+    `AgentEvent`).
+
+  Hechos comprobados ese día: la referencia de Chat Completions de OpenAI
+  (leída con `curl`; la URL citada en la spec 3 sigue viva) y una sonda de 9
+  llamadas a OpenCode Go con permiso del mantenedor: cada llamada llega
+  entera en un trozo, varias llamadas en una respuesta,
+  `parallel_tool_calls: false` ignorado y `"tool_calls": null` explícito en
+  los trozos de texto (spec §1.1).
 - **`v0.3.0` publicada, 2026-10-21.** Tag anotado sobre el merge del PR #17
   (`1caebec`), creado y publicado por el agente a petición del mantenedor.
   `release.yml` creó la release en 12 s: título "v0.3.0 — Streaming", las
@@ -222,17 +242,13 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente o humano:** integrar el PR de `docs/cierre-hito-3` (este cierre
-   de documentación) con merge commit, con el CI en verde.
-2. **Humano o agente, en cada PC:** `git switch main && git pull` y borrar la
-   rama local `docs/cierre-hito-3` si existe. No hay dependencias nuevas: no
-   hace falta `uv sync`.
-3. **Agente:** proponer la spec del hito 4 (tool calling y bucle agéntico) en
-   `docs/spec-hito-4-<slug>`, en su propio PR, leyendo antes DESIGN §4, §5,
-   §6 y §14.
+1. **Agente:** integrar el PR #19 con merge commit, con el CI en verde, y
+   `git switch main && git pull`.
+2. **Agente:** implementar el hito 4 por piezas (spec §6) en
+   `feature/hito-4-contrato`, desde la pieza 1 (bloques de llamada y de
+   resultado).
 
-**Sesión del 2026-10-21 en el PC de Windows (WSL).** Hito 3 cerrado y
-publicado.
+**Sesión del 2026-10-21 en el PC de Windows (WSL).**
 
 ### Al abrir el agente en otro PC
 
