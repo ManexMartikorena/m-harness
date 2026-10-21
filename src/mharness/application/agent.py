@@ -1,7 +1,8 @@
 """The agent loop: call the model, run the tools it asks for, repeat
-(DESIGN §4, spec hito 4, §1.7).
+(DESIGN §4, spec hito 4, §1.7, and spec hito 5, §1.4).
 
-The model only proposes calls; this code validates and runs them.
+The model only proposes calls; this code validates them, asks the user when
+the tool needs it, and runs them.
 """
 
 import json
@@ -9,23 +10,29 @@ import time
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass
+from typing import Any
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
+from mharness.application.approvals import SessionApprovals
 from mharness.application.collect import Accumulator
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import (
     AgentEvent,
+    ApprovalRequested,
     ModelCallFinished,
     ToolCallProposed,
     ToolFinished,
     TurnFinished,
 )
+from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import ModelRequest, Usage
 from mharness.domain.tools import ToolError
+from mharness.ports.approval import ApprovalGate
 from mharness.ports.model import ModelClient
+from mharness.ports.tools import Tool
 
 # Calls to the model in one turn. A limit in code, not in the prompt.
 MAX_STEPS = 25
@@ -34,7 +41,9 @@ MAX_STEPS = 25
 class Agent:
     """A conversation with a model that can use tools, kept in memory.
 
-    Every step sends the whole history, the turn so far and the tools.
+    Every step sends the whole history, the turn so far and the tools. The
+    `gate` decides on the calls that need approval; what the user approves
+    for the whole session lives as long as the agent.
     """
 
     def __init__(
@@ -42,11 +51,14 @@ class Agent:
         client: ModelClient,
         tools: ToolRegistry,
         *,
+        gate: ApprovalGate,
         model: str,
         max_steps: int = MAX_STEPS,
     ) -> None:
         self._client = client
         self._tools = tools
+        self._gate = gate
+        self._approvals = SessionApprovals()
         self._model = model
         self._max_steps = max_steps
         self._messages: list[Message] = []
@@ -59,9 +71,9 @@ class Agent:
     async def run(self, text: str) -> AsyncGenerator[AgentEvent]:
         """Run one turn from a user message, yielding what happens.
 
-        The turn is kept when it ends, before `TurnFinished` is yielded. If a
-        call to the model fails, or the turn is cancelled, nothing is kept:
-        no tool has an effect yet (spec hito 4, §1.7).
+        The turn is kept when it ends, before `TurnFinished` is yielded, also
+        when the user denies a call. If a call to the model fails, or the
+        turn is cancelled, nothing is kept (spec hito 4, §1.7).
         """
         turn = [Message(role="user", blocks=[TextBlock(text=text)])]
         usage = Usage()
@@ -86,11 +98,40 @@ class Agent:
                 )
                 return
             results: list[ToolResultBlock] = []
+            denied = False
             # In order, not in parallel, until hito 15 (spec hito 4, §1.7).
             for call in calls:
                 yield ToolCallProposed(call=call)
+                if denied:
+                    # Every call gets a result (spec hito 4, §1.1); these do
+                    # not run, and do not count as handled.
+                    skipped = _error(call, "not run: a previous call was denied")
+                    results.append(skipped.result)
+                    yield ToolFinished(
+                        call=call,
+                        result=skipped.result,
+                        summary=skipped.summary,
+                        duration=0.0,
+                    )
+                    continue
                 started = time.monotonic()
-                outcome = await self._execute(call)
+                decision: Decision | None = None
+                prepared = self._prepare(call)
+                if isinstance(prepared, _Outcome):
+                    outcome = prepared
+                else:
+                    question = prepared.request
+                    if question is not None and not self._approvals.covers(question):
+                        yield ApprovalRequested(call=call, request=question)
+                        decision = await self._gate.decide(question)
+                        self._approvals.record(question, decision)
+                        # The time spent deciding is not the tool's.
+                        started = time.monotonic()
+                    if decision == "deny":
+                        denied = True
+                        outcome = _error(call, "the user denied this call")
+                    else:
+                        outcome = await self._run(call, prepared)
                 calls_run += 1
                 results.append(outcome.result)
                 yield ToolFinished(
@@ -99,8 +140,17 @@ class Agent:
                     summary=outcome.summary,
                     duration=time.monotonic() - started,
                     internal_error=outcome.internal_error,
+                    decision=decision,
                 )
             turn.append(Message(role="tool", blocks=list(results)))
+            if denied:
+                # Without calling the model again: the user writes next
+                # (spec hito 5, §1.4).
+                self._messages.extend(turn)
+                yield TurnFinished(
+                    reason="denied", usage=usage, tool_calls=calls_run, steps=step
+                )
+                return
         # The turn ends on tool results; the user can still go on.
         self._messages.extend(turn)
         yield TurnFinished(
@@ -118,8 +168,9 @@ class Agent:
             tools=self._tools.specs(),
         )
 
-    async def _execute(self, call: ToolCallBlock) -> _Outcome:
-        """Validate the arguments and run the tool.
+    def _prepare(self, call: ToolCallBlock) -> _Ready | _Outcome:
+        """Find the tool, validate the arguments and ask the tool what to
+        ask the user (spec hito 5, §1.2).
 
         Every failure becomes an error result, and the loop goes on: the
         model can correct itself (spec hito 4, §1.8).
@@ -140,19 +191,36 @@ class Agent:
         except ValidationError as exc:
             return _error(call, f"invalid arguments: {_describe(exc)}")
         try:
-            content = await tool.run(params)
+            request = tool.approval(params)
+        except ToolError as exc:
+            # Before asking: a useless question is not shown.
+            return _error(call, str(exc))
+        except Exception as exc:
+            return _crash(call, f"{type(exc).__name__}: {exc}")
+        if tool.permission == "effect" and request is None:
+            # An effect always asks: without a request, it does not run.
+            return _crash(call, "effect tool without an approval request")
+        return _Ready(tool=tool, params=params, request=request)
+
+    async def _run(self, call: ToolCallBlock, ready: _Ready) -> _Outcome:
+        """Run an allowed call. Every failure becomes an error result."""
+        try:
+            content = await ready.tool.run(ready.params)
         except ToolError as exc:
             return _error(call, str(exc))
         except Exception as exc:
-            # A bug of ours, not of the model: the model gets a generic
-            # message, and the terminal shows the exception.
-            return _error(
-                call,
-                f'internal error in tool "{call.name}"',
-                internal_error=f"{type(exc).__name__}: {exc}",
-            )
+            return _crash(call, f"{type(exc).__name__}: {exc}")
         result = ToolResultBlock(call_id=call.id, content=content)
-        return _Outcome(result=result, summary=tool.summary(content))
+        return _Outcome(result=result, summary=ready.tool.summary(content))
+
+
+@dataclass(frozen=True)
+class _Ready:
+    """A call that passed validation, with what to ask before running it."""
+
+    tool: Tool[Any]
+    params: BaseModel
+    request: ApprovalRequest | None
 
 
 @dataclass(frozen=True)
@@ -168,6 +236,12 @@ def _error(
     text = f"error: {message}"
     result = ToolResultBlock(call_id=call.id, content=text, is_error=True)
     return _Outcome(result=result, summary=text, internal_error=internal_error)
+
+
+def _crash(call: ToolCallBlock, detail: str) -> _Outcome:
+    """A bug of ours, not of the model: the model gets a generic message,
+    and the terminal shows the detail."""
+    return _error(call, f'internal error in tool "{call.name}"', internal_error=detail)
 
 
 def _describe(exc: ValidationError) -> str:

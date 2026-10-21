@@ -1,4 +1,5 @@
-"""The agent loop (spec hito 4, §1.7 and §4.4), with fakes."""
+"""The agent loop (spec hito 4, §1.7 and §4.4, and spec hito 5, §1.4 and
+§4.2), with fakes."""
 
 import asyncio
 from contextlib import aclosing
@@ -9,16 +10,19 @@ from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import (
     AgentEvent,
+    ApprovalRequested,
     ModelCallFinished,
     ToolCallProposed,
     ToolFinished,
     TurnFinished,
 )
+from mharness.domain.approval import ApprovalRequest
 from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from mharness.domain.tools import ToolError
+from tests.fakes.approval import FakeApproval
 from tests.fakes.model import FAKE_MODEL, FakeModelClient, reply, tool_calls
 from tests.fakes.tools import EchoParams, FakeTool
 
@@ -33,9 +37,17 @@ def user(text: str) -> Message:
     return Message(role="user", blocks=[TextBlock(text=text)])
 
 
-def agent(fake: FakeModelClient, *tools: FakeTool, max_steps: int = 25) -> Agent:
+def agent(
+    fake: FakeModelClient,
+    *tools: FakeTool,
+    max_steps: int = 25,
+    gate: FakeApproval | None = None,
+) -> Agent:
     registry = ToolRegistry(tools or [FakeTool()])
-    return Agent(fake, registry, model=MODEL, max_steps=max_steps)
+    # With no script, being asked fails the test.
+    return Agent(
+        fake, registry, gate=gate or FakeApproval(), model=MODEL, max_steps=max_steps
+    )
 
 
 async def run(subject: Agent, text: str = "Hola") -> list[AgentEvent]:
@@ -162,7 +174,7 @@ async def test_the_request_carries_the_tool_specs() -> None:
     fake = FakeModelClient([reply("Hola.")])
     registry = ToolRegistry([FakeTool("echo"), FakeTool("shout")])
 
-    await run(Agent(fake, registry, model=MODEL))
+    await run(Agent(fake, registry, gate=FakeApproval(), model=MODEL))
 
     assert fake.requests[0].tools == registry.specs()
     assert fake.requests[0].model == MODEL
@@ -295,3 +307,183 @@ async def test_turn_is_kept_when_the_caller_stops_at_the_end() -> None:
                 break
 
     assert len(subject.messages) == 2
+
+
+# The loop asks before running a call (spec hito 5, §1.2 and §1.4).
+
+
+def ask(scope: str | None = "echo") -> ApprovalRequest:
+    return ApprovalRequest(tool="echo", title="echo Hola", detail="", scope=scope)
+
+
+def finished(events: list[AgentEvent]) -> list[ToolFinished]:
+    return [e for e in events if isinstance(e, ToolFinished)]
+
+
+async def test_a_read_tool_without_a_request_does_not_ask() -> None:
+    # 4.2.1
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Ok")])
+    gate = FakeApproval()
+    echo = FakeTool()
+
+    events = await run(agent(fake, echo, gate=gate))
+
+    assert gate.requests == []
+    assert not any(isinstance(e, ApprovalRequested) for e in events)
+    assert finished(events)[0].decision is None
+    assert echo.calls == [EchoParams(text="Hola")]
+
+
+async def test_once_asks_first_and_runs() -> None:
+    # 4.2.2
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Ok")])
+    gate = FakeApproval(["once"])
+    echo = FakeTool(permission="effect", requests=[ask()])
+
+    events = await run(agent(fake, echo, gate=gate))
+
+    assert [type(e).__name__ for e in events[:4]] == [
+        "ModelCallFinished",
+        "ToolCallProposed",
+        "ApprovalRequested",
+        "ToolFinished",
+    ]
+    assert events[2] == ApprovalRequested(call=call("c1"), request=ask())
+    done = finished(events)[0]
+    assert done.decision == "once"
+    assert done.result == ToolResultBlock(call_id="c1", content="echo: Hola")
+    assert gate.requests == [ask()]
+    assert echo.calls == [EchoParams(text="Hola")]
+
+
+async def test_session_covers_the_same_scope_without_asking() -> None:
+    # 4.2.3, same scope: the second call runs with decision None.
+    fake = FakeModelClient(
+        [tool_calls(call("c1")), tool_calls(call("c2")), reply("Ok")]
+    )
+    gate = FakeApproval(["session"])
+    echo = FakeTool(permission="effect", requests=[ask(), ask()])
+
+    events = await run(agent(fake, echo, gate=gate))
+
+    assert [f.decision for f in finished(events)] == ["session", None]
+    assert sum(isinstance(e, ApprovalRequested) for e in events) == 1
+    assert len(echo.calls) == 2
+
+
+async def test_session_lasts_for_the_next_turns() -> None:
+    fake = FakeModelClient(
+        [tool_calls(call("c1")), reply("Ok"), tool_calls(call("c2")), reply("Ok")]
+    )
+    gate = FakeApproval(["session"])
+    echo = FakeTool(permission="effect", requests=[ask(), ask()])
+    subject = agent(fake, echo, gate=gate)
+    await run(subject, "Primero")
+
+    events = await run(subject, "Segundo")
+
+    assert finished(events)[0].decision is None
+    assert len(gate.requests) == 1
+    assert len(echo.calls) == 2
+
+
+async def test_session_does_not_cover_another_scope() -> None:
+    # 4.2.3, another scope.
+    fake = FakeModelClient([tool_calls(call("c1"), call("c2")), reply("Ok")])
+    gate = FakeApproval(["session", "once"])
+    echo = FakeTool(permission="effect", requests=[ask("write"), ask("edit")])
+
+    events = await run(agent(fake, echo, gate=gate))
+
+    assert [f.decision for f in finished(events)] == ["session", "once"]
+    assert gate.requests == [ask("write"), ask("edit")]
+
+
+async def test_without_a_scope_it_always_asks() -> None:
+    # 4.2.3, scope None: never kept for the session.
+    fake = FakeModelClient([tool_calls(call("c1"), call("c2")), reply("Ok")])
+    gate = FakeApproval(["session", "session"])
+    echo = FakeTool(permission="effect", requests=[ask(None), ask(None)])
+
+    events = await run(agent(fake, echo, gate=gate))
+
+    assert [f.decision for f in finished(events)] == ["session", "session"]
+    assert len(gate.requests) == 2
+
+
+async def test_deny_ends_the_turn_without_calling_the_model() -> None:
+    # 4.2.4. Only one answer is scripted: another call to the model fails.
+    fake = FakeModelClient([tool_calls(call("c1"), call("c2"), call("c3"))])
+    gate = FakeApproval(["deny"])
+    echo = FakeTool(permission="effect", requests=[ask(), ask(), ask()])
+    subject = agent(fake, echo, gate=gate)
+
+    events = await run(subject)
+
+    denied = ToolResultBlock(
+        call_id="c1", content="error: the user denied this call", is_error=True
+    )
+    not_run = "error: not run: a previous call was denied"
+    skipped = [
+        ToolResultBlock(call_id=id, content=not_run, is_error=True)
+        for id in ("c2", "c3")
+    ]
+    assert [(f.result, f.decision) for f in finished(events)] == [
+        (denied, "deny"),
+        (skipped[0], None),
+        (skipped[1], None),
+    ]
+    # Every call is proposed, so the terminal shows each one with its result.
+    proposed = [e.call.id for e in events if isinstance(e, ToolCallProposed)]
+    assert proposed == ["c1", "c2", "c3"]
+    assert len(gate.requests) == 1
+    assert echo.calls == []
+    # The calls skipped after the denial do not count.
+    assert events[-1] == TurnFinished(
+        reason="denied", usage=Usage(), tool_calls=1, steps=1
+    )
+    assert len(fake.requests) == 1
+    # The turn is kept: the next turn, the model knows it was denied.
+    assert subject.messages == (
+        user("Hola"),
+        Message(role="assistant", blocks=[call("c1"), call("c2"), call("c3")]),
+        Message(role="tool", blocks=[denied, *skipped]),
+    )
+
+
+async def test_an_effect_tool_without_a_request_does_not_run() -> None:
+    # 4.2.5 and §1.2: an effect always asks; without a request it is a bug
+    # of ours.
+    echo = FakeTool(permission="effect")
+
+    done, _ = await first_result(call("c1"), echo)
+
+    assert done.result == ToolResultBlock(
+        call_id="c1", content='error: internal error in tool "echo"', is_error=True
+    )
+    assert done.internal_error == "effect tool without an approval request"
+    assert done.decision is None
+    assert echo.calls == []
+
+
+async def test_a_tool_error_in_approval_is_an_error_result_without_asking() -> None:
+    # 4.2.6. The default gate fails the test if asked.
+    echo = FakeTool(permission="effect", requests=[ToolError("text not found")])
+
+    done, _ = await first_result(call("c1"), echo)
+
+    assert done.result == ToolResultBlock(
+        call_id="c1", content="error: text not found", is_error=True
+    )
+    assert done.internal_error is None
+    assert echo.calls == []
+
+
+async def test_a_crash_in_approval_is_an_internal_error() -> None:
+    echo = FakeTool(permission="effect", requests=[KeyError("boom")])
+
+    done, _ = await first_result(call("c1"), echo)
+
+    assert done.result.content == 'error: internal error in tool "echo"'
+    assert done.internal_error == "KeyError: 'boom'"
+    assert echo.calls == []

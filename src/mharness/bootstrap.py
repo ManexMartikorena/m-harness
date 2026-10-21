@@ -15,6 +15,7 @@ from mharness.adapters.models import OpenAIChatClient
 from mharness.adapters.tools import Glob, Grep, ListDir, ReadFile, Workspace
 from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
+from mharness.domain.approval import ApprovalRequest, Decision
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -27,6 +28,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     except config.ConfigError as exc:
         return cli.fail(str(exc))
     return asyncio.run(_converse(settings, Path.cwd()))
+
+
+class _DenyEverything:
+    """Denies every request, without asking nor writing anything.
+
+    Provisional until piece 17 of spec hito 5 (§6) wires the terminal gate.
+    No registered tool asks yet, so it is never called.
+    """
+
+    async def decide(self, request: ApprovalRequest) -> Decision:
+        return "deny"
 
 
 def _tools(cwd: Path) -> ToolRegistry:
@@ -44,7 +56,7 @@ async def _converse(settings: config.Settings, cwd: Path) -> int:
         api_key=settings.api_key,
         session_header=provider.session_header,
     ) as client:
-        agent = Agent(client, _tools(cwd), model=settings.model)
+        agent = Agent(client, _tools(cwd), gate=_DenyEverything(), model=settings.model)
         return await cli.converse(
             agent, provider=settings.provider_name, model=settings.model
         )

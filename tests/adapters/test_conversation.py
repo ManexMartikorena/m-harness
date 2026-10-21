@@ -17,6 +17,7 @@ from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import Usage
+from tests.fakes.approval import FakeApproval
 from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply, tool_calls
 from tests.fakes.tools import FakeTool
 
@@ -38,7 +39,7 @@ class ScriptedInput:
 async def run(fake: FakeModelClient, *lines: str) -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
     code = await converse(
-        Agent(fake, ToolRegistry(), model="glm-5.3-flash"),
+        Agent(fake, ToolRegistry(), gate=FakeApproval(), model="glm-5.3-flash"),
         provider="opencode-go",
         model="glm-5.3-flash",
         read_line=ScriptedInput(*lines),
@@ -110,7 +111,7 @@ async def test_ctrl_c_ends_with_130() -> None:
 
     out = io.StringIO()
     code = await converse(
-        Agent(FakeModelClient([]), ToolRegistry(), model="m"),
+        Agent(FakeModelClient([]), ToolRegistry(), gate=FakeApproval(), model="m"),
         provider="p",
         model="m",
         read_line=interrupt,
@@ -131,7 +132,7 @@ async def test_other_cancellations_propagate() -> None:
 
     task = asyncio.create_task(
         converse(
-            Agent(FakeModelClient([]), ToolRegistry(), model="m"),
+            Agent(FakeModelClient([]), ToolRegistry(), gate=FakeApproval(), model="m"),
             provider="p",
             model="m",
             read_line=wait_forever,
@@ -206,7 +207,7 @@ async def test_text_is_shown_before_the_stream_ends() -> None:
     out = io.StringIO()
     task = asyncio.ensure_future(
         converse(
-            Agent(fake, ToolRegistry(), model="m"),
+            Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m"),
             provider="p",
             model="m",
             read_line=ScriptedInput("Hola"),
@@ -259,7 +260,7 @@ async def converse_until_spinning(
 ) -> int:
     task = asyncio.ensure_future(
         converse(
-            Agent(fake, ToolRegistry(), model="m"),
+            Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m"),
             provider="p",
             model="m",
             read_line=ScriptedInput("Hola"),
@@ -338,7 +339,7 @@ async def test_ctrl_c_during_an_answer_goes_back_to_the_prompt() -> None:
     pressing = asyncio.ensure_future(interrupt_when(out, "Esperando"))
 
     code = await converse(
-        Agent(fake, ToolRegistry(), model="m"),
+        Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m"),
         provider="p",
         model="m",
         read_line=ScriptedInput("Cuéntame algo", "Hola", "/exit"),
@@ -359,7 +360,7 @@ async def test_ctrl_c_while_the_spinner_spins() -> None:
     pressing = asyncio.ensure_future(interrupt_when(out, "⠋"))
 
     code = await converse(
-        Agent(fake, ToolRegistry(), model="m"),
+        Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m"),
         provider="p",
         model="m",
         read_line=ScriptedInput("Hola"),
@@ -385,7 +386,7 @@ async def run_with_tools(
     out, err = io.StringIO(), io.StringIO()
     registry = ToolRegistry([tool or FakeTool()])
     code = await converse(
-        Agent(fake, registry, model="m", max_steps=steps),
+        Agent(fake, registry, gate=FakeApproval(), model="m", max_steps=steps),
         provider="p",
         model="m",
         read_line=ScriptedInput(*lines),
@@ -485,7 +486,9 @@ async def test_ctrl_c_during_a_tool_goes_back_to_the_prompt() -> None:
     fake = FakeModelClient([tool_calls(call("c1")), reply("Hola.")])
     out = io.StringIO()
     pressing = asyncio.ensure_future(interrupt_when(out, "→ echo"))
-    agent = Agent(fake, ToolRegistry([FakeTool(gate=gate)]), model="m")
+    agent = Agent(
+        fake, ToolRegistry([FakeTool(gate=gate)]), gate=FakeApproval(), model="m"
+    )
 
     code = await converse(
         agent,

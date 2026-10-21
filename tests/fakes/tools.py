@@ -15,8 +15,9 @@ class EchoParams(BaseModel):
 class FakeTool:
     """Returns `echo: <text>`, or the scripted results and errors in order.
 
-    Every call is kept in `calls`. With `gate`, each run waits until the test
-    sets it.
+    `approval` answers with the scripted `requests` in order (a request, None
+    or an error to raise), and None once they run out. Every call is kept in
+    `calls`. With `gate`, each run waits until the test sets it.
     """
 
     params = EchoParams
@@ -27,17 +28,24 @@ class FakeTool:
         *,
         results: list[str | Exception] | None = None,
         permission: Permission = "read",
+        requests: list[ApprovalRequest | Exception | None] | None = None,
         gate: asyncio.Event | None = None,
     ) -> None:
         self.name = name
         self.description = f"Echo a text ({name})."
         self.permission: Permission = permission
         self._results = list(results or [])
+        self._requests = list(requests or [])
         self._gate = gate
         self.calls: list[EchoParams] = []
 
     def approval(self, params: EchoParams) -> ApprovalRequest | None:
-        return None
+        if not self._requests:
+            return None
+        request = self._requests.pop(0)
+        if isinstance(request, Exception):
+            raise request
+        return request
 
     async def run(self, params: EchoParams) -> str:
         self.calls.append(params)
