@@ -1,11 +1,15 @@
 """Adapter for the OpenAI Chat Completions format (spec hito 2, §1.8).
 
+`stream()` reads the answer as Server-Sent Events (spec hito 3, §1.11).
+
 Translates between the domain types and the JSON of any server that speaks
 this format: OpenCode Go, OpenCode Zen, OpenRouter, Ollama… It decides nothing
 about the agent.
 """
 
+import codecs
 import uuid
+from collections.abc import AsyncIterator
 from importlib.metadata import version
 from types import TracebackType
 from typing import Any, Self
@@ -13,6 +17,7 @@ from typing import Any, Self
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
+from mharness.adapters.models.sse import parse_sse
 from mharness.domain.errors import (
     ModelAuthError,
     ModelError,
@@ -21,14 +26,16 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
+from mharness.domain.events import MessageEnd, ModelEvent, TextDelta
 from mharness.domain.messages import Message, TextBlock
 from mharness.domain.model import ModelRequest, ModelResponse, StopReason, Usage
 
 USER_AGENT = (
     f"maha/{version('m-harness')} (+https://github.com/ManexMartikorena/m-harness)"
 )
-# Without streaming, a long answer takes a while to arrive in full.
-TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+# `read` is the longest silence between two chunks, not the time of the whole
+# answer: a long answer that keeps arriving is never cut (spec hito 3, §1.8).
+TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0)
 
 STOP_REASONS: dict[str, StopReason] = {
     "stop": "end_turn",
@@ -100,6 +107,18 @@ class OpenAIChatClient:
                 "the provider's response could not be understood"
             ) from None
         return _to_domain(completion, request)
+
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+        """Yield the answer as it arrives; raise a `ModelError` on failure."""
+        body = {
+            **_to_openai(request),
+            "stream": True,
+            # OpenAI only sends usage if asked; OpenCode sends it anyway.
+            "stream_options": {"include_usage": True},
+        }
+        async with self._http.stream("POST", "chat/completions", json=body) as response:
+            async for event in _events(response, request):
+                yield event
 
     def _status_error(self, response: httpx.Response) -> ModelError:
         status = response.status_code
@@ -183,6 +202,64 @@ def _to_domain(completion: _Completion, request: ModelRequest) -> ModelResponse:
         usage=_usage(completion.usage),
         model=completion.model or request.model,
     )
+
+
+# What the adapter reads from each chunk of a stream. The usage chunk comes
+# last, with `choices` empty.
+
+
+class _Delta(BaseModel):
+    content: str | None = None
+
+
+class _ChunkChoice(BaseModel):
+    delta: _Delta = Field(default_factory=_Delta)
+    finish_reason: str | None = None
+
+
+class _Chunk(BaseModel):
+    model: str | None = None
+    choices: list[_ChunkChoice] = []
+    usage: _Usage | None = None
+
+
+async def _events(
+    response: httpx.Response, request: ModelRequest
+) -> AsyncIterator[ModelEvent]:
+    """Translate the chunks; `MessageEnd` goes last, when all is known."""
+    finish_reason: str | None = None
+    usage: _Usage | None = None
+    model: str | None = None
+    async for data in parse_sse(_text(response)):
+        if data == "[DONE]":
+            # Anything after it is not read; leaving closes the connection.
+            break
+        chunk = _Chunk.model_validate_json(data)
+        model = chunk.model or model
+        usage = chunk.usage or usage
+        if not chunk.choices:
+            continue
+        # `maha` never asks for several choices (`n`).
+        choice = chunk.choices[0]
+        if choice.delta.content:
+            yield TextDelta(text=choice.delta.content)
+        finish_reason = choice.finish_reason or finish_reason
+    yield MessageEnd(
+        stop_reason=STOP_REASONS.get(finish_reason or "", "other"),
+        usage=_usage(usage),
+        model=model or request.model,
+    )
+
+
+async def _text(response: httpx.Response) -> AsyncIterator[str]:
+    """The body as text. The incremental decoder never cuts a character split
+    between two network chunks, and drops a leading BOM."""
+    decoder = codecs.getincrementaldecoder("utf-8-sig")(errors="replace")
+    async for chunk in response.aiter_bytes():
+        if text := decoder.decode(chunk):
+            yield text
+    if text := decoder.decode(b"", final=True):
+        yield text
 
 
 def _usage(usage: _Usage | None) -> Usage:
