@@ -696,3 +696,36 @@ async def test_an_invalid_decision_does_not_run_the_tool(answer: object) -> None
     assert events[-1] == TurnFinished(
         reason="end_turn", usage=Usage(), tool_calls=2, steps=3
     )
+
+
+class BrokenSummary(FakeTool):
+    """A tool whose summary fails after it ran."""
+
+    def summary(self, result: str) -> str:
+        raise ValueError("bad summary")
+
+
+async def test_a_crash_in_summary_keeps_the_real_result() -> None:
+    # The tool already ran: the model gets its real result, so it does not
+    # run it again, and the terminal is told about the bug.
+    echo = BrokenSummary()
+
+    done, _ = await first_result(call("c1"), echo)
+
+    assert done.result == ToolResultBlock(call_id="c1", content="echo: Hola")
+    assert done.summary == "(no summary)"
+    assert done.internal_error == "summary: ValueError: bad summary"
+    assert echo.calls == [EchoParams(text="Hola")]
+
+
+async def test_too_deeply_nested_arguments_are_not_valid_json() -> None:
+    # json.loads raises RecursionError, not ValueError, on deep nesting.
+    deep = '{"text": ' + "[" * 100_000
+
+    done, _ = await first_result(ToolCallBlock(id="c1", name="echo", arguments=deep))
+
+    assert done.result == ToolResultBlock(
+        call_id="c1",
+        content="error: arguments are not a valid JSON object",
+        is_error=True,
+    )

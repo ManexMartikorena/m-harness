@@ -234,7 +234,8 @@ class Agent:
         try:
             # Some models send "" for a tool without parameters.
             arguments = json.loads(call.arguments.strip() or "{}")
-        except ValueError:
+        except ValueError, RecursionError:
+            # RecursionError: nested too deep to parse.
             arguments = None
         if not isinstance(arguments, dict):
             return _error(call, "arguments are not a valid JSON object")
@@ -263,7 +264,17 @@ class Agent:
         except Exception as exc:
             return _crash(call, f"{type(exc).__name__}: {exc}")
         result = ToolResultBlock(call_id=call.id, content=content)
-        return _Outcome(result=result, summary=ready.tool.summary(content))
+        try:
+            summary = ready.tool.summary(content)
+        except Exception as exc:
+            # The tool already ran: the model keeps its real result, and the
+            # terminal is told about the bug.
+            return _Outcome(
+                result=result,
+                summary="(no summary)",
+                internal_error=f"summary: {type(exc).__name__}: {exc}",
+            )
+        return _Outcome(result=result, summary=summary)
 
 
 @dataclass(frozen=True)
