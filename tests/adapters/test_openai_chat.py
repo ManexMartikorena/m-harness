@@ -161,7 +161,8 @@ async def test_closing_closes_the_http_client() -> None:
 
 
 def test_timeouts() -> None:
-    assert httpx.Timeout(120.0, connect=10.0) == TIMEOUT
+    # `read` bounds the silence between chunks, not the whole answer.
+    assert httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0) == TIMEOUT
 
 
 @respx.mock
