@@ -8,6 +8,9 @@ import json
 import time
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import aclosing
+from dataclasses import dataclass
+
+from pydantic import ValidationError
 
 from mharness.application.collect import Accumulator
 from mharness.application.tools import ToolRegistry
@@ -21,6 +24,7 @@ from mharness.domain.agent_events import (
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import ModelRequest, Usage
+from mharness.domain.tools import ToolError
 from mharness.ports.model import ModelClient
 
 # Calls to the model in one turn. A limit in code, not in the prompt.
@@ -84,14 +88,15 @@ class Agent:
             for call in calls:
                 yield ToolCallProposed(call=call)
                 started = time.monotonic()
-                result, summary = await self._execute(call)
+                outcome = await self._execute(call)
                 calls_run += 1
-                results.append(result)
+                results.append(outcome.result)
                 yield ToolFinished(
                     call=call,
-                    result=result,
-                    summary=summary,
+                    result=outcome.result,
+                    summary=outcome.summary,
                     duration=time.monotonic() - started,
+                    internal_error=outcome.internal_error,
                 )
             turn.append(Message(role="tool", blocks=list(results)))
         # The turn ends on tool results; the user can still go on.
@@ -106,15 +111,65 @@ class Agent:
             tools=self._tools.specs(),
         )
 
-    async def _execute(self, call: ToolCallBlock) -> tuple[ToolResultBlock, str]:
-        """Validate the arguments, run the tool; return the result and its
-        summary."""
+    async def _execute(self, call: ToolCallBlock) -> _Outcome:
+        """Validate the arguments and run the tool.
+
+        Every failure becomes an error result, and the loop goes on: the
+        model can correct itself (spec hito 4, §1.8).
+        """
         tool = self._tools.get(call.name)
-        assert tool is not None
-        params = tool.params.model_validate(json.loads(call.arguments))
-        content = await tool.run(params)
+        if tool is None:
+            available = ", ".join(self._tools.names())
+            return _error(call, f'unknown tool "{call.name}". Available: {available}')
+        try:
+            # Some models send "" for a tool without parameters.
+            arguments = json.loads(call.arguments.strip() or "{}")
+        except ValueError:
+            arguments = None
+        if not isinstance(arguments, dict):
+            return _error(call, "arguments are not a valid JSON object")
+        try:
+            params = tool.params.model_validate(arguments)
+        except ValidationError as exc:
+            return _error(call, f"invalid arguments: {_describe(exc)}")
+        try:
+            content = await tool.run(params)
+        except ToolError as exc:
+            return _error(call, str(exc))
+        except Exception as exc:
+            # A bug of ours, not of the model: the model gets a generic
+            # message, and the terminal shows the exception.
+            return _error(
+                call,
+                f'internal error in tool "{call.name}"',
+                internal_error=f"{type(exc).__name__}: {exc}",
+            )
         result = ToolResultBlock(call_id=call.id, content=content)
-        return result, tool.summary(content)
+        return _Outcome(result=result, summary=tool.summary(content))
+
+
+@dataclass(frozen=True)
+class _Outcome:
+    result: ToolResultBlock
+    summary: str
+    internal_error: str | None = None
+
+
+def _error(
+    call: ToolCallBlock, message: str, *, internal_error: str | None = None
+) -> _Outcome:
+    text = f"error: {message}"
+    result = ToolResultBlock(call_id=call.id, content=text, is_error=True)
+    return _Outcome(result=result, summary=text, internal_error=internal_error)
+
+
+def _describe(exc: ValidationError) -> str:
+    """Short messages, without echoing the input: "path: Field required"."""
+    parts = []
+    for error in exc.errors(include_url=False, include_input=False):
+        location = ".".join(str(part) for part in error["loc"]) or "arguments"
+        parts.append(f"{location}: {error['msg']}")
+    return "; ".join(parts)
 
 
 def _add(total: Usage, more: Usage) -> Usage:

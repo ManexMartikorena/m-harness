@@ -1,5 +1,7 @@
 """The agent loop (spec hito 4, §1.7 and §4.4), with fakes."""
 
+import pytest
+
 from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import (
@@ -12,6 +14,7 @@ from mharness.domain.agent_events import (
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
+from mharness.domain.tools import ToolError
 from tests.fakes.model import FAKE_MODEL, FakeModelClient, reply, tool_calls
 from tests.fakes.tools import EchoParams, FakeTool
 
@@ -157,3 +160,82 @@ async def test_the_request_carries_the_tool_specs() -> None:
     assert fake.requests[0].tools == registry.specs()
     assert fake.requests[0].model == MODEL
     assert fake.requests[0].system is None
+
+
+# Errors go back to the model (spec hito 4, §1.8).
+
+
+async def first_result(
+    model_call: ToolCallBlock, *tools: FakeTool
+) -> tuple[ToolFinished, FakeModelClient]:
+    fake = FakeModelClient([tool_calls(model_call), reply("Lo siento.")])
+    events = await run(agent(fake, *tools))
+    finished = next(e for e in events if isinstance(e, ToolFinished))
+    # The loop went on: the model was called again, with the error.
+    assert fake.requests[1].messages[-1] == Message(
+        role="tool", blocks=[finished.result]
+    )
+    return finished, fake
+
+
+@pytest.mark.parametrize(
+    ("model_call", "expected"),
+    [
+        (
+            ToolCallBlock(id="c1", name="read", arguments="{}"),
+            'error: unknown tool "read". Available: echo',
+        ),
+        (
+            ToolCallBlock(id="c1", name="echo", arguments='{"text": '),
+            "error: arguments are not a valid JSON object",
+        ),
+        (
+            ToolCallBlock(id="c1", name="echo", arguments='["Hola"]'),
+            "error: arguments are not a valid JSON object",
+        ),
+        (
+            ToolCallBlock(id="c1", name="echo", arguments='{"text": 3}'),
+            "error: invalid arguments: text: Input should be a valid string",
+        ),
+        (
+            ToolCallBlock(id="c1", name="echo", arguments=""),
+            "error: invalid arguments: text: Field required",
+        ),
+    ],
+)
+async def test_bad_calls_become_error_results(
+    model_call: ToolCallBlock, expected: str
+) -> None:
+    finished, _ = await first_result(model_call)
+
+    assert finished.result == ToolResultBlock(
+        call_id="c1", content=expected, is_error=True
+    )
+    assert finished.summary == expected
+    assert finished.internal_error is None
+
+
+async def test_a_tool_error_becomes_an_error_result() -> None:
+    echo = FakeTool(results=[ToolError("file not found: notas.txt")])
+
+    finished, _ = await first_result(call("c1"), echo)
+
+    assert finished.result.content == "error: file not found: notas.txt"
+    assert finished.result.is_error
+
+
+async def test_a_crash_is_hidden_from_the_model_but_reported() -> None:
+    echo = FakeTool(results=[KeyError("boom")])
+
+    finished, _ = await first_result(call("c1"), echo)
+
+    assert finished.result.content == 'error: internal error in tool "echo"'
+    assert finished.internal_error == "KeyError: 'boom'"
+
+
+async def test_validation_errors_do_not_echo_the_input() -> None:
+    finished, _ = await first_result(
+        ToolCallBlock(id="c1", name="echo", arguments='{"text": ["secret-value"]}')
+    )
+
+    assert "secret-value" not in finished.result.content
