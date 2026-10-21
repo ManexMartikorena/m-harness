@@ -2,7 +2,8 @@
 
 Última actualización: 2026-10-21. **Hito 4 (tool calling y bucle agéntico)
 cerrado y publicado como `v0.4.0`.** Hito 5 (permisos y herramientas con
-efecto): spec APROBADA (PR #27).
+efecto): spec APROBADA (PR #27); implementación sin empezar. **Sesión
+cerrada en el PC de Windows; se sigue en el Ubuntu de casa.**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
@@ -29,6 +30,14 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Cierre de sesión, 2026-10-21, PC de Windows (WSL).** Todo integrado y
+  con push: `main` en el merge del PR #27 más este cierre; sin ramas
+  abiertas ni cambios sin commitear. El mantenedor mantiene para el hito 5
+  el permiso que dio en el hito 4: **el agente hace push e integra cada PR
+  con el CI en verde** (merge commit). El tag sigue necesitando que el
+  mantenedor lo pida.
+- **PR #27 integrado, 2026-10-21** (merge `c64aef5`): spec del hito 5
+  APROBADA.
 - **Spec del hito 5 aprobada, 2026-10-21** (PR #27): el mantenedor acepta
   las cinco recomendaciones de §11 sin cambios; se anota como mejora futura
   aprobar comandos por prefijo (spec §1.3).
@@ -310,14 +319,34 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente:** integrar el PR #27 con merge commit, con el CI en verde, y
-   `git switch main && git pull`.
+1. **Humano, en el Ubuntu de casa:** ponerlo al día (ver "Para seguir en el
+   Ubuntu de casa", justo debajo) y lanzar el agente desde el clon.
 2. **Agente:** implementar el hito 5 por piezas (spec §6) en
-   `feature/hito-5-aprobacion`, desde la pieza 1 (contrato de aprobación).
-   Push e integración de cada PR: preguntar al mantenedor si mantiene el
-   permiso que dio para el hito 4.
+   `feature/hito-5-aprobacion`, desde `main` actualizado, empezando por la
+   pieza 1 (contrato de aprobación: `domain/approval.py`,
+   `ports/approval.py`, `Tool.approval()` y `FakeApproval`). Push e
+   integración de cada PR con el CI en verde, con permiso del mantenedor.
+3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+   VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
+   en la spec 3 §12.
 
-**Sesión del 2026-10-21 en el PC de Windows (WSL).**
+**Sesión del 2026-10-21 cerrada en el PC de Windows (WSL).** Nada sin push.
+
+### Para seguir en el Ubuntu de casa
+
+Desde el clon, en este orden:
+1. `git switch main && git pull`.
+2. Borrar las ramas locales ya integradas (en ese PC puede quedar
+   `docs/spec-hito-3-streaming`): `git fetch --prune` y después
+   `git branch --merged main | grep -v '^\*\|main' | xargs -r git branch -d`.
+   Las ramas de GitHub se conservan.
+3. `uv sync`: las dependencias no han cambiado desde `v0.2.0`, pero
+   `uv.lock` lleva la versión nueva.
+4. Comprobar: `uv run pytest` (327 tests), `uv run mypy` y
+   `uv run lint-imports` en verde, y `uv run maha --version` →
+   `maha 0.4.0`.
+5. Probar las herramientas: `uv run --env-file .env maha` y "¿Qué hay en
+   este directorio?" → `list_dir` y una lista.
 
 ### Al abrir el agente en otro PC
 
@@ -338,7 +367,8 @@ con GitHub (`gh pr list`) en qué punto de "Siguiente paso" se está.
 4. `uv sync` y `uv run pre-commit install` (`PUESTA_EN_MARCHA` §0). La
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
-   verde, y `uv run maha --version` → `maha 0.2.0`.
+   verde, y `uv run maha --version` → la versión del último tag (hoy,
+   `maha 0.4.0`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
