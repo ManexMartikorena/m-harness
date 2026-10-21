@@ -1,5 +1,7 @@
 """The agent loop (spec hito 4, §1.7 and §4.4), with fakes."""
 
+import asyncio
+
 import pytest
 
 from mharness.application.agent import Agent
@@ -11,6 +13,7 @@ from mharness.domain.agent_events import (
     ToolFinished,
     TurnFinished,
 )
+from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
@@ -239,3 +242,39 @@ async def test_validation_errors_do_not_echo_the_input() -> None:
     )
 
     assert "secret-value" not in finished.result.content
+
+
+# A failed or cancelled turn is not kept (spec hito 4, §1.7).
+
+
+async def test_a_model_error_mid_turn_leaves_the_history_as_it_was() -> None:
+    fake = FakeModelClient(
+        [reply("Hola."), tool_calls(call("c1")), ModelUnavailableError("down")]
+    )
+    subject = agent(fake)
+    await run(subject, "Primero")
+    before = subject.messages
+
+    with pytest.raises(ModelUnavailableError):
+        await run(subject, "Segundo")
+
+    assert subject.messages == before
+
+
+async def test_cancelling_during_a_tool_leaves_the_history_as_it_was() -> None:
+    gate = asyncio.Event()  # never set: the tool waits until cancelled
+    echo = FakeTool(gate=gate)
+    fake = FakeModelClient([tool_calls(call("c1"))])
+    subject = agent(fake, echo)
+
+    task = asyncio.ensure_future(run(subject))
+    for _ in range(100):
+        if echo.calls:
+            break
+        await asyncio.sleep(0)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert echo.calls  # the tool had started
+    assert subject.messages == ()
