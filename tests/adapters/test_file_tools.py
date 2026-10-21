@@ -4,8 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from mharness.adapters.tools import ListDir, ReadFile, Workspace
-from mharness.adapters.tools.files import READ_MAX_LINE, ListDirParams, ReadFileParams
+from mharness.adapters.tools import Glob, ListDir, ReadFile, Workspace, files
+from mharness.adapters.tools.files import (
+    READ_MAX_LINE,
+    GlobParams,
+    ListDirParams,
+    ReadFileParams,
+)
 from mharness.domain.tools import ToolError
 from mharness.ports.tools import Tool
 
@@ -227,3 +232,71 @@ async def test_empty_directory(root: Path) -> None:
     result = await tool.run(ListDirParams())
 
     assert (result, tool.summary(result)) == ("(empty directory)", "0 entries")
+
+
+# glob
+
+
+async def glob(root: Path, pattern: str, path: str = ".") -> str:
+    return await Glob(Workspace(root)).run(GlobParams(pattern=pattern, path=path))
+
+
+async def test_glob_finds_files_recursively(root: Path) -> None:
+    write(root, "main.py", "")
+    write(root, "src/app.py", "")
+    write(root, "src/sub/util.py", "")
+    write(root, "src/notes.md", "")
+
+    assert await glob(root, "**/*.py") == "main.py\nsrc/app.py\nsrc/sub/util.py"
+    assert await glob(root, "*.py") == "main.py"
+    # Relative to `path`, results relative to the working directory.
+    assert await glob(root, "*.py", "src") == "src/app.py"
+
+
+async def test_glob_skips_heavy_and_secret_places(root: Path) -> None:
+    write(root, "app.py", "")
+    write(root, ".git/hooks/x.py", "")
+    write(root, ".venv/lib/y.py", "")
+    write(root, "node_modules/z.py", "")
+    write(root, ".ssh/k.py", "")
+    write(root, ".env", "")
+
+    assert await glob(root, "**/*.py") == "app.py"
+    assert await glob(root, "**/.env*") == "(no files match)"
+
+
+async def test_glob_skips_links_to_outside(root: Path) -> None:
+    outside = write(root.parent, "outside.py", "")
+    (root / "link.py").symlink_to(outside)
+    write(root, "in.py", "")
+
+    assert await glob(root, "*.py") == "in.py"
+
+
+async def test_glob_cuts_long_results(root: Path) -> None:
+    for i in range(205):
+        write(root, f"f{i:03}.txt", "")
+    tool = Glob(Workspace(root))
+
+    result = await tool.run(GlobParams(pattern="*.txt"))
+
+    assert result.splitlines()[-1] == "… [truncated: 200 of 205 files shown]"
+    assert tool.summary(result) == "200 files"
+
+
+async def test_glob_stops_on_huge_trees(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(files, "WALK_MAX_FILES", 3)
+    for i in range(5):
+        write(root, f"f{i}.txt", "")
+
+    result = await glob(root, "*.txt")
+
+    assert result.splitlines()[-1] == "… [stopped after 3 files; narrow the path]"
+
+
+@pytest.mark.parametrize("pattern", ["/etc/*", "../*.py", "src/../../*"])
+async def test_glob_refuses_patterns_that_escape(root: Path, pattern: str) -> None:
+    with pytest.raises(ToolError, match="must be relative"):
+        await glob(root, pattern)

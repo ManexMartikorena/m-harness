@@ -5,13 +5,17 @@ working directory; secret files are refused. No threads: a thread blocked on
 the disk would keep `maha` from exiting on Ctrl+C (spec hito 2, §12).
 """
 
+import asyncio
+import os
 import re
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import IO
 
 from pydantic import BaseModel, Field
 
-from mharness.domain.paths import is_secret
+from mharness.domain.paths import SKIPPED_DIRS, is_secret
 from mharness.domain.tools import Permission, ToolError
 
 # A file with a NUL byte in its first bytes is binary.
@@ -184,3 +188,110 @@ class ListDir:
             return "0 entries"
         entries = sum(1 for line in result.splitlines() if not line.startswith("… ["))
         return f"{entries} entries"
+
+
+# Searching walks at most this many files; it yields control every few files,
+# so Ctrl+C can stop it.
+WALK_MAX_FILES = 20_000
+WALK_YIELD_EVERY = 100
+
+
+@dataclass(frozen=True)
+class _Found:
+    real: Path  # resolved, inside the working directory
+    relative: PurePath  # to the working directory: what the model sees
+    in_base: PurePath  # to the directory searched: what patterns match
+
+
+class _Walk:
+    """The files under a directory. Skips SKIPPED_DIRS, secrets, and links
+    that point outside."""
+
+    def __init__(self, workspace: Workspace, base: Path) -> None:
+        self._workspace = workspace
+        self._base = base
+        self.stopped_early = False
+
+    async def files(self) -> AsyncIterator[_Found]:
+        seen = 0
+        root = self._workspace.root
+        for dirpath, dirnames, filenames in os.walk(self._base):
+            directory = Path(dirpath)
+            # Pruned in place, so os.walk does not go into them.
+            dirnames[:] = sorted(
+                name
+                for name in dirnames
+                if name not in SKIPPED_DIRS
+                and not is_secret(PurePath((directory / name).relative_to(root)))
+            )
+            for name in sorted(filenames):
+                seen += 1
+                if seen > WALK_MAX_FILES:
+                    self.stopped_early = True
+                    return
+                if seen % WALK_YIELD_EVERY == 0:
+                    await asyncio.sleep(0)
+                path = directory / name
+                relative = PurePath(path.relative_to(root))
+                real = path.resolve()
+                if not real.is_relative_to(root) or is_secret(relative):
+                    continue
+                if is_secret(PurePath(real.relative_to(root))):
+                    continue
+                yield _Found(real, relative, PurePath(path.relative_to(self._base)))
+
+
+def _check_pattern(pattern: str) -> None:
+    pure = PurePath(pattern)
+    if pure.is_absolute() or ".." in pure.parts:
+        raise ToolError("the pattern must be relative, without '..'")
+
+
+GLOB_MAX_RESULTS = 200
+
+
+class GlobParams(BaseModel):
+    pattern: str = Field(description='Pattern like "**/*.py" or "src/*.md"')
+    path: str = Field(
+        default=".",
+        description="Directory to search in, relative to the working directory",
+    )
+
+
+class Glob:
+    name = "glob"
+    description = (
+        "Find files by name pattern, relative to the working directory. "
+        '"**" matches any number of directories. Example: {"pattern": "**/*.py"}'
+    )
+    params = GlobParams
+    permission: Permission = "read"
+
+    def __init__(self, workspace: Workspace) -> None:
+        self._workspace = workspace
+
+    async def run(self, params: GlobParams) -> str:
+        _check_pattern(params.pattern)
+        base = self._workspace.resolve(params.path)
+        if not base.is_dir():
+            raise ToolError(f"not a directory: {params.path}")
+        walk = _Walk(self._workspace, base)
+        found = [
+            str(file.relative)
+            async for file in walk.files()
+            if file.in_base.full_match(params.pattern)
+        ]
+        lines = found[:GLOB_MAX_RESULTS]
+        if len(found) > GLOB_MAX_RESULTS:
+            lines.append(
+                f"… [truncated: {GLOB_MAX_RESULTS} of {len(found)} files shown]"
+            )
+        if walk.stopped_early:
+            lines.append(f"… [stopped after {WALK_MAX_FILES} files; narrow the path]")
+        return "\n".join(lines) if lines else "(no files match)"
+
+    def summary(self, result: str) -> str:
+        if result == "(no files match)":
+            return "0 files"
+        files = sum(1 for line in result.splitlines() if not line.startswith("… ["))
+        return f"{files} files"
