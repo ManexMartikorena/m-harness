@@ -753,6 +753,41 @@ class _Shown:
     old: bytes | None
 
 
+def _changed(raw: str) -> ToolError:
+    return ToolError(f"{raw} changed after the question; ask again")
+
+
+def _as_shown(
+    workspace: Workspace,
+    shown: _Shown | None,
+    params: WriteFileParams | EditFileParams,
+    verb: str,
+) -> tuple[Path, bytes | None]:
+    """The start of `run()` for write_file and edit_file: the same call, the
+    same resolved path and the same bytes the question showed (decisions D1
+    and W6, review of PR 2, fix 5). Gives the path and its bytes."""
+    path = workspace.resolve(params.path)
+    if shown is None or (shown.params, shown.path) != (params, path):
+        raise _changed(params.path)
+    _check_target(workspace, path, params.path)
+    data = _current_bytes(path, params.path, verb)
+    if data != shown.old:
+        raise _changed(params.path)
+    return path, data
+
+
+def _write(workspace: Workspace, path: Path, text: str, *, parents: bool) -> None:
+    """Write `text` to `path` atomically; `parents` creates its folders. A
+    failure is a clean error (decision A2)."""
+    try:
+        if parents:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        _write_atomically(path, text)
+    except OSError as exc:
+        reason = exc.strerror or str(exc)
+        raise ToolError(f"cannot write {workspace.shown(path)}: {reason}") from None
+
+
 class WriteFileParams(BaseModel):
     path: str = Field(description="Path relative to the working directory")
     content: str = Field(description="The whole new content of the file")
@@ -812,23 +847,10 @@ class WriteFile:
 
     async def run(self, params: WriteFileParams) -> str:
         workspace = self._workspace
-        path = workspace.resolve(params.path)
-        shown = self._shown
-        changed = ToolError(f"{params.path} changed after the question; ask again")
-        if shown is None or (shown.params, shown.path) != (params, path):
-            raise changed
-        _check_target(workspace, path, params.path)
-        data = _current_bytes(path, params.path, "overwrite")
-        if data != shown.old:
-            raise changed
+        path, data = _as_shown(workspace, self._shown, params, "overwrite")
         if data is not None:
             _old_text(data, params)
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            _write_atomically(path, params.content)
-        except OSError as exc:
-            reason = exc.strerror or str(exc)
-            raise ToolError(f"cannot write {workspace.shown(path)}: {reason}") from None
+        _write(workspace, path, params.content, parents=True)
         lines = _count(len(_split(params.content)), "line")
         return f"wrote {workspace.shown(path)} ({lines})"
 
@@ -972,21 +994,12 @@ class EditFile:
 
     async def run(self, params: EditFileParams) -> str:
         workspace = self._workspace
-        path = workspace.resolve(params.path)
-        shown = self._shown
-        changed = ToolError(f"{params.path} changed after the question; ask again")
-        if shown is None or (shown.params, shown.path) != (params, path):
-            raise changed
-        _check_target(workspace, path, params.path)
-        data = _current_bytes(path, params.path, "edit")
-        if data is None or data != shown.old:
-            raise changed
+        path, data = _as_shown(workspace, self._shown, params, "edit")
+        if data is None:
+            # approval() refuses a missing file, so it appeared.
+            raise _changed(params.path)
         _, new, found = _edited(data, params)
-        try:
-            _write_atomically(path, new)
-        except OSError as exc:
-            reason = exc.strerror or str(exc)
-            raise ToolError(f"cannot write {workspace.shown(path)}: {reason}") from None
+        _write(workspace, path, new, parents=False)
         return f"edited {workspace.shown(path)} ({_count(found, 'replacement')})"
 
     def summary(self, result: str) -> str:
