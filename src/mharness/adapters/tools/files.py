@@ -132,3 +132,55 @@ def _next_line(file: IO[str]) -> str | None:
             pass
         return line[:READ_MAX_LINE] + " … [line cut]"
     return line.rstrip("\r\n")
+
+
+LIST_MAX_ENTRIES = 500
+
+
+class ListDirParams(BaseModel):
+    path: str = Field(
+        default=".", description="Directory relative to the working directory"
+    )
+
+
+class ListDir:
+    name = "list_dir"
+    description = (
+        'List a directory of the working directory. Directories end in "/". '
+        'Example: {"path": "src"}'
+    )
+    params = ListDirParams
+    permission: Permission = "read"
+
+    def __init__(self, workspace: Workspace) -> None:
+        self._workspace = workspace
+
+    async def run(self, params: ListDirParams) -> str:
+        path = self._workspace.resolve(params.path)
+        if is_secret(self._workspace.relative(path)):
+            raise ToolError(f"secret directory, not listable: {params.path}")
+        if not path.exists():
+            raise ToolError(f"directory not found: {params.path}")
+        if not path.is_dir():
+            raise ToolError(f"not a directory, use read_file: {params.path}")
+        entries = sorted(path.iterdir(), key=lambda entry: entry.name)
+        if not entries:
+            return "(empty directory)"
+        lines = [self._entry(entry) for entry in entries[:LIST_MAX_ENTRIES]]
+        if len(entries) > LIST_MAX_ENTRIES:
+            lines.append(
+                f"… [truncated: {LIST_MAX_ENTRIES} of {len(entries)} entries shown]"
+            )
+        return "\n".join(lines)
+
+    def _entry(self, entry: Path) -> str:
+        name = f"{entry.name}/" if entry.is_dir() else entry.name
+        # Shown, so the model knows it exists and does not ask for it.
+        relative = PurePath(entry.relative_to(self._workspace.root))
+        return f"{name} [secret]" if is_secret(relative) else name
+
+    def summary(self, result: str) -> str:
+        if result == "(empty directory)":
+            return "0 entries"
+        entries = sum(1 for line in result.splitlines() if not line.startswith("… ["))
+        return f"{entries} entries"

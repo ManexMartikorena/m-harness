@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from mharness.adapters.tools import ReadFile, Workspace
-from mharness.adapters.tools.files import READ_MAX_LINE, ReadFileParams
+from mharness.adapters.tools import ListDir, ReadFile, Workspace
+from mharness.adapters.tools.files import READ_MAX_LINE, ListDirParams, ReadFileParams
 from mharness.domain.tools import ToolError
 from mharness.ports.tools import Tool
 
@@ -164,3 +164,66 @@ async def test_env_example_is_readable(root: Path) -> None:
     write(root, ".env.example", "OPENCODE_API_KEY=\n")
 
     assert await read(root, ".env.example") == "     1\tOPENCODE_API_KEY="
+
+
+# list_dir
+
+
+async def list_dir(root: Path, path: str = ".") -> str:
+    return await ListDir(Workspace(root)).run(ListDirParams(path=path))
+
+
+async def test_list_dir_sorted_with_slashes(root: Path) -> None:
+    write(root, "b.txt", "")
+    write(root, "src/app.py", "")
+    write(root, "a.txt", "")
+
+    assert await list_dir(root) == "a.txt\nb.txt\nsrc/"
+    assert await list_dir(root, "src") == "app.py"
+
+
+async def test_list_dir_marks_secrets(root: Path) -> None:
+    write(root, ".env", "OPENCODE_API_KEY=sk-inventada")
+    write(root, ".ssh/config", "")
+    write(root, "notas.txt", "")
+
+    assert await list_dir(root) == ".env [secret]\n.ssh/ [secret]\nnotas.txt"
+
+
+async def test_list_dir_refuses_a_secret_directory(root: Path) -> None:
+    write(root, ".ssh/config", "")
+
+    with pytest.raises(ToolError, match="secret directory"):
+        await list_dir(root, ".ssh")
+
+
+async def test_list_dir_cuts_long_listings(root: Path) -> None:
+    for i in range(510):
+        write(root, f"f{i:03}.txt", "")
+    tool = ListDir(Workspace(root))
+
+    result = await tool.run(ListDirParams())
+
+    assert result.splitlines()[-1] == "… [truncated: 500 of 510 entries shown]"
+    assert tool.summary(result) == "500 entries"
+
+
+async def test_list_dir_errors(root: Path) -> None:
+    write(root, "notas.txt", "")
+
+    with pytest.raises(ToolError, match="directory not found"):
+        await list_dir(root, "missing")
+    with pytest.raises(ToolError, match="not a directory"):
+        await list_dir(root, "notas.txt")
+    with pytest.raises(ToolError, match="outside the working directory"):
+        await list_dir(root, "..")
+    # An absolute path inside the working directory is fine.
+    assert await list_dir(root, str(root)) == "notas.txt"
+
+
+async def test_empty_directory(root: Path) -> None:
+    tool = ListDir(Workspace(root))
+
+    result = await tool.run(ListDirParams())
+
+    assert (result, tool.summary(result)) == ("(empty directory)", "0 entries")
