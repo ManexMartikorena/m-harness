@@ -766,3 +766,18 @@ Propuestas del agente (2026-10-21), aprobadas por el humano con la spec:
 7. **Ruff ASYNC240** marca operaciones de `pathlib` dentro de funciones
    `async`. En vez de silenciarla, el recorrido entrega ya las rutas
    relativas y la lectura de cada fichero va en funciones normales.
+8. **`TurnFinished` lleva también `steps`** (amplía §1.7 y §12.1): la
+   terminal escribe `[step limit reached: 25]` sin conocer el límite.
+9. **Fallo encontrado por el test de punta a punta:** la terminal decía
+   `✓ 1 lines`. Los resúmenes usan ya el singular (`1 line`, `1 entry`,
+   `1 file`, `1 match`), con su test.
+10. **Un fallo interno de una herramienta** se avisa por stderr como
+    `warning: tool "x" failed: <Tipo>: <mensaje>` (concreta §1.8).
+11. **Prueba en pty con el modelo real antes del PR 5, 2026-10-21** (agente;
+    OpenCode Go, `glm-5.3-flash`; sobre el propio repo, solo lecturas):
+    - "¿En qué fichero y línea se define parse_sse?" → `grep(pattern="def
+      parse_sse")`, `✓ 5 matches`, y la respuesta correcta
+      (`src/mharness/adapters/models/sse.py`, línea 21). 1638 tokens de
+      entrada: las cuatro herramientas y el resultado pesan;
+    - "Lee el fichero .env" → `✗ error: secret file, not readable: .env`, y
+      el modelo explica que no puede leerlo.
