@@ -1935,3 +1935,76 @@ def test_reading_git_does_not_ask(root: Path) -> None:
     assert (
         ReadFile(Workspace(root)).approval(ReadFileParams(path=".git/config")) is None
     )
+
+
+# The diff tells when the line endings change (review of PR 2, fix 4)
+
+
+def endings_note(root: Path, old: bytes, new: str) -> str:
+    (root / "n.txt").write_bytes(old)
+    return ask_write(write_tool(root), "n.txt", new).detail
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "first"),
+    [
+        (b"a\r\nb\r\n", "a\nc\n", "(line endings change: CRLF → LF)"),
+        (b"a\nb\n", "a\r\nc\r\n", "(line endings change: LF → CRLF)"),
+        (b"a\nb\r\n", "a\nc\n", "(line endings change: mixed → LF)"),
+        (b"a\r\nb\r\n", "a\r\nc\n", "(line endings change: CRLF → mixed)"),
+        (b"a\rb\r", "a\nc\n", "(line endings change: mixed → LF)"),
+    ],
+)
+def test_a_change_of_line_endings_is_told_first(
+    root: Path, old: bytes, new: str, first: str
+) -> None:
+    lines = endings_note(root, old, new).splitlines()
+
+    assert lines[0] == first
+    assert lines[1].startswith("@@ ")
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        (b"a", "b\r\n"),  # no endings before
+        (b"a\r\n", "b"),  # no endings after
+        (b"a\r\nb\r\n", "a\r\nc\r\n"),  # the same style
+    ],
+)
+def test_no_note_without_two_different_styles(root: Path, old: bytes, new: str) -> None:
+    assert endings_note(root, old, new).startswith("@@ ")
+
+
+def test_only_line_endings_have_no_extra_note(root: Path) -> None:
+    assert endings_note(root, b"a\r\nb\r\n", "a\nb\n") == "(only line endings change)"
+
+
+def test_the_note_goes_after_the_asked_path(root: Path) -> None:
+    write(root, "real.txt", "uno\n")
+    (root / "notes.txt").symlink_to(root / "real.txt")
+
+    detail = ask_write(write_tool(root), "notes.txt", "dos\r\n").detail
+
+    assert detail.splitlines()[:3] == [
+        "(asked: notes.txt)",
+        "(line endings change: LF → CRLF)",
+        "@@ -1 +1 @@",
+    ]
+
+
+def test_an_edit_tells_a_change_of_line_endings(root: Path) -> None:
+    write(root, "app.py", "x\n")
+
+    request = ask_edit(edit_tool(root), edit_params("app.py", "x\n", "y\r\n"))
+
+    assert request.detail == "(line endings change: LF → CRLF)\n@@ -1 +1 @@\n-x\n+y"
+
+
+def test_the_fallback_detail_has_no_note(root: Path) -> None:
+    # Fix 1: the fallback derives nothing from the content.
+    write(root, ".env", "KEY=1\n")
+
+    request = ask_edit(edit_tool(root), edit_params(".env", "nada", "x\r\n"))
+
+    assert request.detail == "old_string:\nnada\nnew_string:\nx"

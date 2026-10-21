@@ -627,7 +627,27 @@ def _diff(old: str, new: str) -> str:
     shown = lines[:DIFF_MAX_LINES]
     if len(lines) > DIFF_MAX_LINES:
         shown.append(f"… [{len(lines) - DIFF_MAX_LINES} more diff lines]")
+    before, after = _endings(old), _endings(new)
+    if before and after and before != after:
+        # The diff compares lines without their endings: it would not show it
+        # (review of PR 2, fix 4).
+        shown.insert(0, f"(line endings change: {before} → {after})")
     return "\n".join(shown)
+
+
+def _endings(text: str) -> str | None:
+    """The line ending style of `text`: "CRLF", "LF", "mixed" (also a lone
+    "\r"), or None without line endings."""
+    crlf = text.count("\r\n")
+    lf = text.count("\n") - crlf
+    cr = text.count("\r") - crlf
+    if cr or (crlf and lf):
+        return "mixed"
+    if crlf:
+        return "CRLF"
+    if lf:
+        return "LF"
+    return None
 
 
 def _change_warning(workspace: Workspace, path: Path) -> str | None:
