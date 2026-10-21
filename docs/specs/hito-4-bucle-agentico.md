@@ -1,4 +1,5 @@
-Estado: PROPUESTA (2026-10-21) → APROBADA (2026-10-21, sin cambios)
+Estado: PROPUESTA (2026-10-21) → APROBADA (2026-10-21, sin cambios) →
+IMPLEMENTADA (2026-10-21)
 
 # Spec — Hito 4: Tool calling y bucle agéntico
 
@@ -728,9 +729,9 @@ Propuestas del agente (2026-10-21), aprobadas por el humano con la spec:
    lines`). Alternativa: mostrar las primeras líneas del resultado.
 5. **Llamadas en orden** (propuesta, §1.7), no en paralelo, hasta el hito 15.
 
-## 12. Aprendido al implementar (fecha)
+## 12. Aprendido al implementar (2026-10-21)
 
-*(Se completa al cerrar el hito.)*
+Seis PRs: #20 a #24 y el de cierre.
 
 1. **`ToolFinished` lleva además `summary` e `internal_error`, y
    `TurnFinished` lleva `tool_calls`** (amplía §1.7). La terminal muestra el
@@ -781,3 +782,34 @@ Propuestas del agente (2026-10-21), aprobadas por el humano con la spec:
       entrada: las cuatro herramientas y el resultado pesan;
     - "Lee el fichero .env" → `✗ error: secret file, not readable: .env`, y
       el modelo explica que no puede leerlo.
+12. **Verificación a mano (§7), 2026-10-21** (agente, PC de Windows en WSL;
+    OpenCode Go, `glm-5.3-flash`; `maha` conducido en una pty sobre el
+    propio repo; solo lecturas):
+    1. `maha --version` → `maha 0.4.0`.
+    2. "¿Qué hay en este directorio?" → `list_dir(path=".")`, `✓ 22
+       entries`, y una lista correcta que señala `.env` como secreto.
+    3. "¿Dónde se define parse_sse?" → `grep`, y la línea correcta (§12.11).
+    4. "Lee el fichero .env" → `✗ error: secret file` (§12.11).
+    5. "Lee /etc/hostname" → `✗ error: outside the working directory`, y
+       el modelo lo explica.
+    6. Varios pasos: "Busca dónde se define MAX_STEPS, léelo y dime su
+       valor" → `grep` y `read_file(offset=25, limit=25)`, `2 calls`, y la
+       respuesta correcta (línea 31, valor 25).
+    7. Ctrl+C con un turno de herramientas en curso: `[interrupted]` y el
+       prompt; el turno siguiente ("Di solo OK") contó 711 tokens de
+       entrada, sin el turno cortado.
+    8. Dos turnos: "¿Y en qué carpeta está ese fichero?" se contesta sin
+       herramientas, recordando el turno anterior.
+    9. `maha < notas.txt > salida.txt` → `glob` y la lista; sale con 0 y
+       ningún código de escape.
+13. **Detalles vistos en la verificación, solo visuales** (hito 19, con
+    prompt_toolkit y Rich):
+    - el eco de `^C` de la terminal se pega a la línea siguiente
+      (`^C  ✓ 10 files`); el `✓` sale porque `glob` ya había terminado
+      cuando llegó Ctrl+C, y es correcto;
+    - lo que se teclea durante un turno se mezcla con la salida (ya visto en
+      el hito 3, spec 3 §12.10).
+14. **Tokens:** con las cuatro herramientas, cada llamada al modelo cuesta
+    unos 700 tokens de entrada antes de cualquier historial; un turno de dos
+    pasos con un fichero leído llegó a 4111. La compactación es del hito
+    11; el coste se verá en el 7.
