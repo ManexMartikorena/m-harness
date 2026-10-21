@@ -1,8 +1,9 @@
 """Read-only tools over the working directory (spec hito 4, §1.6).
 
-Every path is resolved (following symbolic links) and must stay inside the
-working directory; secret files are refused. No threads: a thread blocked on
-the disk would keep `maha` from exiting on Ctrl+C (spec hito 2, §12).
+Every path is resolved (following symbolic links). Reading outside the
+working directory, or a secret file, asks the user first, one call at a time
+(spec hito 5, §1.6). No threads: a thread blocked on the disk would keep
+`maha` from exiting on Ctrl+C (spec hito 2, §12).
 """
 
 import asyncio
@@ -27,6 +28,11 @@ READ_MAX_CHARS = 100_000
 # A longer line is cut: one huge line must not fill the context.
 READ_MAX_LINE = 2000
 
+# The warnings of a question (spec hito 5, §1.6).
+OUTSIDE = "outside the working directory"
+SECRET_FILE = "secret file: its content goes to the model provider"
+SECRET_DIR = "secret directory: its file names go to the model provider"
+
 
 def _count(number: int, singular: str, plural: str | None = None) -> str:
     """ "1 line", "3 lines": the summaries the terminal shows."""
@@ -35,29 +41,80 @@ def _count(number: int, singular: str, plural: str | None = None) -> str:
 
 
 class Workspace:
-    """The working directory: the only place the tools can see."""
+    """The working directory: the tools see it without asking."""
 
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
 
     def resolve(self, raw: str) -> Path:
-        """The real path of `raw`, which must stay inside the root.
+        """The real path of `raw`, relative to the root.
 
-        `../`, absolute paths and links that point outside do not escape:
-        the check runs on the resolved path.
+        `../`, absolute paths and links that point outside do not hide where
+        they go: every check runs on the resolved path.
         """
-        path = (self.root / raw).resolve()
-        if not path.is_relative_to(self.root):
-            # Reading outside needs approval, which arrives in hito 5.
-            raise ToolError(f"outside the working directory: {raw}")
-        return path
+        return (self.root / raw).resolve()
 
-    def relative(self, path: Path) -> PurePath:
-        return PurePath(path.relative_to(self.root))
+    def contains(self, path: Path) -> bool:
+        return path.is_relative_to(self.root)
 
-    def check_not_secret(self, path: Path, raw: str) -> None:
-        if is_secret(self.relative(path)):
-            raise ToolError(f"secret file, not readable: {raw}")
+    def secret(self, path: Path) -> bool:
+        """Inside, by the path relative to the root; outside, by the absolute
+        path, so an approved `~/.ssh` still counts as secret."""
+        if self.contains(path):
+            return is_secret(PurePath(path.relative_to(self.root)))
+        return is_secret(PurePath(path))
+
+    def shown(self, path: Path) -> str:
+        """What the model and the user see: relative inside, absolute
+        outside."""
+        if self.contains(path):
+            return str(path.relative_to(self.root))
+        return str(path)
+
+    def warning(self, path: Path, secret: str | None) -> str | None:
+        """Why reading `path` needs a question, or None. `secret` is the
+        warning for a secret path, or None if secrets do not ask."""
+        found = []
+        if not self.contains(path):
+            found.append(OUTSIDE)
+        if secret is not None and self.secret(path):
+            found.append(secret)
+        return "; ".join(found) or None
+
+
+class _Asked:
+    """The last path a tool asked about, so `run()` reads only that one.
+
+    Between the question and `run()` a link can change (TOCTOU: time of
+    check to time of use). `run()` resolves the path again: it reads without
+    a question only what needs none, and otherwise only the exact resolved
+    path the user approved. One slot is enough because calls run one at a
+    time; with parallel calls (hito 15) it must keep one per call.
+    """
+
+    def __init__(self) -> None:
+        self._last: tuple[str, Path] | None = None
+
+    def forget(self) -> None:
+        self._last = None
+
+    def remember(self, raw: str, path: Path) -> None:
+        self._last = (raw, path)
+
+    def check(self, raw: str, path: Path, warning: str | None) -> None:
+        if warning is not None and self._last != (raw, path):
+            raise ToolError(f"{raw} changed after the question; ask again")
+
+
+def _request(
+    tool: str, title: str, workspace: Workspace, path: Path, raw: str, warning: str
+) -> ApprovalRequest:
+    """A question about reading `path`: never for the whole session."""
+    shown = workspace.shown(path)
+    detail = str(path) if raw == shown else f"{path} (asked: {raw})"
+    return ApprovalRequest(
+        tool=tool, title=title, detail=detail, scope=None, warning=warning
+    )
 
 
 def is_binary(path: Path) -> bool:
@@ -84,20 +141,27 @@ class ReadFile:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
+        self._asked = _Asked()
 
     def approval(self, params: ReadFileParams) -> ApprovalRequest | None:
-        # Asks nothing yet: run() still refuses outside paths and secrets.
-        return None
+        self._asked.forget()
+        path = self._workspace.resolve(params.path)
+        warning = self._workspace.warning(path, SECRET_FILE)
+        if warning is None:
+            return None
+        # Before asking: no useless question (spec hito 5, §1.2).
+        _check_file(path, params.path)
+        self._asked.remember(params.path, path)
+        shown = self._workspace.shown(path)
+        return _request(
+            self.name, f"read {shown}", self._workspace, path, params.path, warning
+        )
 
     async def run(self, params: ReadFileParams) -> str:
         path = self._workspace.resolve(params.path)
-        self._workspace.check_not_secret(path, params.path)
-        if not path.exists():
-            raise ToolError(f"file not found: {params.path}")
-        if path.is_dir():
-            raise ToolError(f"is a directory, use list_dir: {params.path}")
-        if is_binary(path):
-            raise ToolError(f"binary file, not readable: {params.path}")
+        warning = self._workspace.warning(path, SECRET_FILE)
+        self._asked.check(params.path, path, warning)
+        _check_file(path, params.path)
         limit = min(params.limit or READ_MAX_LINES, READ_MAX_LINES)
         with path.open(encoding="utf-8", errors="replace", newline="") as file:
             return _numbered_lines(file, params.offset, limit)
@@ -109,6 +173,15 @@ class ReadFile:
 
 
 _NUMBERED = re.compile(r"^ *\d+\t")
+
+
+def _check_file(path: Path, raw: str) -> None:
+    if not path.exists():
+        raise ToolError(f"file not found: {raw}")
+    if path.is_dir():
+        raise ToolError(f"is a directory, use list_dir: {raw}")
+    if is_binary(path):
+        raise ToolError(f"binary file, not readable: {raw}")
 
 
 def _numbered_lines(file: IO[str], offset: int, limit: int) -> str:
@@ -170,19 +243,26 @@ class ListDir:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
+        self._asked = _Asked()
 
     def approval(self, params: ListDirParams) -> ApprovalRequest | None:
-        # Asks nothing yet: run() still refuses outside paths and secrets.
-        return None
+        self._asked.forget()
+        path = self._workspace.resolve(params.path)
+        warning = self._workspace.warning(path, SECRET_DIR)
+        if warning is None:
+            return None
+        _check_dir(path, params.path)
+        self._asked.remember(params.path, path)
+        shown = self._workspace.shown(path)
+        return _request(
+            self.name, f"list {shown}", self._workspace, path, params.path, warning
+        )
 
     async def run(self, params: ListDirParams) -> str:
         path = self._workspace.resolve(params.path)
-        if is_secret(self._workspace.relative(path)):
-            raise ToolError(f"secret directory, not listable: {params.path}")
-        if not path.exists():
-            raise ToolError(f"directory not found: {params.path}")
-        if not path.is_dir():
-            raise ToolError(f"not a directory, use read_file: {params.path}")
+        warning = self._workspace.warning(path, SECRET_DIR)
+        self._asked.check(params.path, path, warning)
+        _check_dir(path, params.path)
         entries = sorted(path.iterdir(), key=lambda entry: entry.name)
         if not entries:
             return "(empty directory)"
@@ -196,14 +276,20 @@ class ListDir:
     def _entry(self, entry: Path) -> str:
         name = f"{entry.name}/" if entry.is_dir() else entry.name
         # Shown, so the model knows it exists and does not ask for it.
-        relative = PurePath(entry.relative_to(self._workspace.root))
-        return f"{name} [secret]" if is_secret(relative) else name
+        return f"{name} [secret]" if self._workspace.secret(entry) else name
 
     def summary(self, result: str) -> str:
         if result == "(empty directory)":
             return _count(0, "entry", "entries")
         entries = sum(1 for line in result.splitlines() if not line.startswith("… ["))
         return _count(entries, "entry", "entries")
+
+
+def _check_dir(path: Path, raw: str) -> None:
+    if not path.exists():
+        raise ToolError(f"directory not found: {raw}")
+    if not path.is_dir():
+        raise ToolError(f"not a directory, use read_file: {raw}")
 
 
 # Searching walks at most this many files; it yields control every few files,
@@ -214,31 +300,38 @@ WALK_YIELD_EVERY = 100
 
 @dataclass(frozen=True)
 class _Found:
-    real: Path  # resolved, inside the working directory
-    relative: PurePath  # to the working directory: what the model sees
+    real: Path  # resolved, inside the limit of the walk
+    shown: str  # what the model sees: relative inside, absolute outside
     in_base: PurePath  # to the directory searched: what patterns match
 
 
 class _Walk:
     """The files under a directory. Skips SKIPPED_DIRS, secrets, and links
-    that point outside."""
+    that leave the limit: the working directory, or the approved directory
+    when the search is outside (spec hito 5, §1.6)."""
 
     def __init__(self, workspace: Workspace, base: Path) -> None:
         self._workspace = workspace
         self._base = base
+        self._inside = workspace.contains(base)
+        self._limit = workspace.root if self._inside else base
         self.stopped_early = False
+
+    def _shown(self, path: Path) -> str:
+        # A search outside shows every path absolute, also the ones of the
+        # working directory.
+        return self._workspace.shown(path) if self._inside else str(path)
 
     async def files(self) -> AsyncIterator[_Found]:
         seen = 0
-        root = self._workspace.root
+        workspace = self._workspace
         for dirpath, dirnames, filenames in os.walk(self._base):
             directory = Path(dirpath)
             # Pruned in place, so os.walk does not go into them.
             dirnames[:] = sorted(
                 name
                 for name in dirnames
-                if name not in SKIPPED_DIRS
-                and not is_secret(PurePath((directory / name).relative_to(root)))
+                if name not in SKIPPED_DIRS and not workspace.secret(directory / name)
             )
             for name in sorted(filenames):
                 seen += 1
@@ -248,19 +341,25 @@ class _Walk:
                 if seen % WALK_YIELD_EVERY == 0:
                     await asyncio.sleep(0)
                 path = directory / name
-                relative = PurePath(path.relative_to(root))
                 real = path.resolve()
-                if not real.is_relative_to(root) or is_secret(relative):
+                if not real.is_relative_to(self._limit) or workspace.secret(path):
                     continue
-                if is_secret(PurePath(real.relative_to(root))):
+                if workspace.secret(real):
                     continue
-                yield _Found(real, relative, PurePath(path.relative_to(self._base)))
+                in_base = PurePath(path.relative_to(self._base))
+                yield _Found(real, self._shown(path), in_base)
 
 
 def _check_pattern(pattern: str) -> None:
     pure = PurePath(pattern)
     if pure.is_absolute() or ".." in pure.parts:
         raise ToolError("the pattern must be relative, without '..'")
+
+
+def _check_glob(pattern: str, base: Path, raw: str) -> None:
+    _check_pattern(pattern)
+    if not base.is_dir():
+        raise ToolError(f"not a directory: {raw}")
 
 
 GLOB_MAX_RESULTS = 200
@@ -285,19 +384,27 @@ class Glob:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
+        self._asked = _Asked()
 
     def approval(self, params: GlobParams) -> ApprovalRequest | None:
-        # Asks nothing yet: run() still refuses outside paths and secrets.
-        return None
+        self._asked.forget()
+        base = self._workspace.resolve(params.path)
+        # Secrets found while walking are skipped, never asked about.
+        warning = self._workspace.warning(base, None)
+        if warning is None:
+            return None
+        _check_glob(params.pattern, base, params.path)
+        self._asked.remember(params.path, base)
+        title = f"glob {params.pattern} in {self._workspace.shown(base)}"
+        return _request(self.name, title, self._workspace, base, params.path, warning)
 
     async def run(self, params: GlobParams) -> str:
-        _check_pattern(params.pattern)
         base = self._workspace.resolve(params.path)
-        if not base.is_dir():
-            raise ToolError(f"not a directory: {params.path}")
+        self._asked.check(params.path, base, self._workspace.warning(base, None))
+        _check_glob(params.pattern, base, params.path)
         walk = _Walk(self._workspace, base)
         found = [
-            str(file.relative)
+            file.shown
             async for file in walk.files()
             if file.in_base.full_match(params.pattern)
         ]
@@ -346,31 +453,40 @@ class Grep:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
+        self._asked = _Asked()
 
     def approval(self, params: GrepParams) -> ApprovalRequest | None:
-        # Asks nothing yet: run() still refuses outside paths and secrets.
-        return None
+        self._asked.forget()
+        base = self._workspace.resolve(params.path)
+        warning = self._warning(base)
+        if warning is None:
+            return None
+        _check_grep(params, base)
+        self._asked.remember(params.path, base)
+        title = f'grep "{params.pattern}" in {self._workspace.shown(base)}'
+        if params.glob:
+            title += f" (glob: {params.glob})"
+        return _request(self.name, title, self._workspace, base, params.path, warning)
+
+    def _warning(self, base: Path) -> str | None:
+        # One secret file asks, as read_file; a secret directory is walked,
+        # and the walk skips its secrets without asking.
+        secret = SECRET_FILE if base.is_file() else None
+        return self._workspace.warning(base, secret)
 
     async def run(self, params: GrepParams) -> str:
-        try:
-            regex = re.compile(params.pattern)
-        except re.error as exc:
-            raise ToolError(f"invalid regular expression: {exc}") from None
-        if params.glob:
-            _check_pattern(params.glob)
         base = self._workspace.resolve(params.path)
-        if not base.exists():
-            raise ToolError(f"not found: {params.path}")
+        self._asked.check(params.path, base, self._warning(base))
+        regex = _check_grep(params, base)
         if base.is_file():
-            self._workspace.check_not_secret(base, params.path)
-            found = _search(base, self._workspace.relative(base), regex)
+            found = _search(base, self._workspace.shown(base), regex)
             return _grep_result(found, stopped_early=False)
         walk = _Walk(self._workspace, base)
         matches: list[str] = []
         async for file in walk.files():
             if params.glob and not _glob_matches(file.in_base, params.glob):
                 continue
-            matches.extend(_search(file.real, file.relative, regex))
+            matches.extend(_search(file.real, file.shown, regex))
             # One more than shown: it tells whether something was left out.
             if len(matches) > GREP_MAX_MATCHES:
                 break
@@ -383,6 +499,18 @@ class Grep:
         return _count(found, "match", "matches")
 
 
+def _check_grep(params: GrepParams, base: Path) -> re.Pattern[str]:
+    try:
+        regex = re.compile(params.pattern)
+    except re.error as exc:
+        raise ToolError(f"invalid regular expression: {exc}") from None
+    if params.glob:
+        _check_pattern(params.glob)
+    if not base.exists():
+        raise ToolError(f"not found: {params.path}")
+    return regex
+
+
 def _glob_matches(in_base: PurePath, pattern: str) -> bool:
     # Without "/", by file name, as ripgrep does: "*.py" anywhere.
     if "/" not in pattern:
@@ -390,7 +518,7 @@ def _glob_matches(in_base: PurePath, pattern: str) -> bool:
     return in_base.full_match(pattern)
 
 
-def _search(path: Path, relative: PurePath, regex: re.Pattern[str]) -> list[str]:
+def _search(path: Path, shown: str, regex: re.Pattern[str]) -> list[str]:
     """The matching lines of one text file, as "path:line: text"."""
     if path.stat().st_size > GREP_MAX_FILE_BYTES or is_binary(path):
         return []
@@ -399,7 +527,7 @@ def _search(path: Path, relative: PurePath, regex: re.Pattern[str]) -> list[str]
         for number, line in enumerate(file, start=1):
             text = line.rstrip("\r\n")
             if regex.search(text):
-                found.append(f"{relative}:{number}: {text[:GREP_MAX_LINE]}")
+                found.append(f"{shown}:{number}: {text[:GREP_MAX_LINE]}")
                 if len(found) > GREP_MAX_MATCHES:
                     break
     return found

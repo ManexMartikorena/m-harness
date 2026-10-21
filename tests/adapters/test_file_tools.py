@@ -1,4 +1,5 @@
-"""The read-only file tools (spec hito 4, §1.6 and §4.6), in `tmp_path`."""
+"""The read-only file tools (spec hito 4, §1.6 and §4.6, and spec hito 5,
+§1.6 and §4.3), in `tmp_path`."""
 
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from mharness.adapters.tools.files import (
     ListDirParams,
     ReadFileParams,
 )
+from mharness.domain.approval import ApprovalRequest
 from mharness.domain.tools import ToolError
 from mharness.ports.tools import Tool
 
@@ -43,7 +45,7 @@ def test_read_file_satisfies_the_port(root: Path) -> None:
 
 
 def test_reading_asks_for_no_approval(root: Path) -> None:
-    # Until hito 5, §1.6: outside paths and secrets are still refused by run().
+    # Inside and not secret: READ runs without asking (spec hito 5, §1.6).
     workspace = Workspace(root)
 
     assert ReadFile(workspace).approval(ReadFileParams(path="a.txt")) is None
@@ -131,23 +133,45 @@ async def test_read_errors(root: Path, setup: object, path: str, message: str) -
         await read(root, path)
 
 
-# Perimeter (spec hito 4, §1.6)
+# Perimeter (spec hito 4, §1.6; with approval, spec hito 5, §1.6)
+
+OUTSIDE = "outside the working directory"
+SECRET_FILE = "secret file: its content goes to the model provider"
+SECRET_DIR = "secret directory: its file names go to the model provider"
 
 
-@pytest.mark.parametrize("path", ["../outside.txt", "/etc/hostname", "src/../../x"])
-async def test_paths_outside_are_refused(root: Path, path: str) -> None:
-    write(root.parent, "outside.txt", "fuera")
+@pytest.mark.parametrize(
+    "path", ["../outside.txt", "{parent}/outside.txt", "src/../../outside.txt"]
+)
+async def test_paths_outside_ask_and_are_read_once_approved(
+    root: Path, path: str
+) -> None:
+    outside = write(root.parent, "outside.txt", "fuera")
+    tool = ReadFile(Workspace(root))
+    params = ReadFileParams(path=path.format(parent=root.parent))
 
-    with pytest.raises(ToolError, match="outside the working directory"):
-        await read(root, path)
+    request = tool.approval(params)
+
+    assert request is not None
+    assert (request.tool, request.title) == ("read_file", f"read {outside}")
+    assert (request.scope, request.warning) == (None, OUTSIDE)
+    assert await tool.run(params) == "     1\tfuera"
 
 
-async def test_a_link_to_outside_is_refused(root: Path) -> None:
+async def test_a_link_to_outside_asks_with_the_real_path(root: Path) -> None:
     outside = write(root.parent, "outside.txt", "fuera")
     (root / "link.txt").symlink_to(outside)
+    tool = ReadFile(Workspace(root))
 
-    with pytest.raises(ToolError, match="outside the working directory"):
-        await read(root, "link.txt")
+    request = tool.approval(ReadFileParams(path="link.txt"))
+
+    assert request == ApprovalRequest(
+        tool="read_file",
+        title=f"read {outside}",
+        detail=f"{outside} (asked: link.txt)",
+        scope=None,
+        warning=OUTSIDE,
+    )
 
 
 async def test_a_link_inside_is_read(root: Path) -> None:
@@ -161,19 +185,36 @@ async def test_a_link_inside_is_read(root: Path) -> None:
 
 
 @pytest.mark.parametrize("path", [".env", "config/.env.local", ".ssh/id_rsa"])
-async def test_secret_files_are_refused(root: Path, path: str) -> None:
+async def test_secret_files_ask_and_are_read_once_approved(
+    root: Path, path: str
+) -> None:
     write(root, path, "OPENCODE_API_KEY=sk-inventada")
+    tool = ReadFile(Workspace(root))
+    params = ReadFileParams(path=path)
 
-    with pytest.raises(ToolError, match="secret file"):
-        await read(root, path)
+    request = tool.approval(params)
+
+    assert request == ApprovalRequest(
+        tool="read_file",
+        title=f"read {path}",
+        detail=str(root / path),
+        scope=None,
+        warning=SECRET_FILE,
+    )
+    assert await tool.run(params) == "     1\tOPENCODE_API_KEY=sk-inventada"
 
 
-async def test_a_link_to_a_secret_is_refused(root: Path) -> None:
+async def test_a_link_to_a_secret_asks_with_the_real_path(root: Path) -> None:
     write(root, ".env", "OPENCODE_API_KEY=sk-inventada")
     (root / "notes.txt").symlink_to(root / ".env")
+    tool = ReadFile(Workspace(root))
 
-    with pytest.raises(ToolError, match="secret file"):
-        await read(root, "notes.txt")
+    request = tool.approval(ReadFileParams(path="notes.txt"))
+
+    assert request is not None
+    assert request.title == "read .env"
+    assert request.detail == f"{root / '.env'} (asked: notes.txt)"
+    assert request.warning == SECRET_FILE
 
 
 async def test_env_example_is_readable(root: Path) -> None:
@@ -206,11 +247,17 @@ async def test_list_dir_marks_secrets(root: Path) -> None:
     assert await list_dir(root) == ".env [secret]\n.ssh/ [secret]\nnotas.txt"
 
 
-async def test_list_dir_refuses_a_secret_directory(root: Path) -> None:
+async def test_list_dir_asks_for_a_secret_directory(root: Path) -> None:
     write(root, ".ssh/config", "")
+    tool = ListDir(Workspace(root))
+    params = ListDirParams(path=".ssh")
 
-    with pytest.raises(ToolError, match="secret directory"):
-        await list_dir(root, ".ssh")
+    request = tool.approval(params)
+
+    assert request is not None
+    assert (request.tool, request.title) == ("list_dir", "list .ssh")
+    assert (request.scope, request.warning) == (None, SECRET_DIR)
+    assert await tool.run(params) == "config [secret]"
 
 
 async def test_list_dir_cuts_long_listings(root: Path) -> None:
@@ -231,8 +278,9 @@ async def test_list_dir_errors(root: Path) -> None:
         await list_dir(root, "missing")
     with pytest.raises(ToolError, match="not a directory"):
         await list_dir(root, "notas.txt")
-    with pytest.raises(ToolError, match="outside the working directory"):
-        await list_dir(root, "..")
+    request = ListDir(Workspace(root)).approval(ListDirParams(path=".."))
+    assert request is not None
+    assert request.warning == OUTSIDE
     # An absolute path inside the working directory is fine.
     assert await list_dir(root, str(root)) == "notas.txt"
 
@@ -343,8 +391,9 @@ async def test_grep_in_one_file(root: Path) -> None:
     write(root, ".env", "dos=sk-inventada\n")
 
     assert await grep(root, "dos", path="a.txt") == "a.txt:2: dos"
-    with pytest.raises(ToolError, match="secret file"):
-        await grep(root, "dos", path=".env")
+    request = Grep(Workspace(root)).approval(GrepParams(pattern="dos", path=".env"))
+    assert request is not None
+    assert request.warning == SECRET_FILE
 
 
 async def test_grep_skips_secrets_binaries_and_heavy_dirs(root: Path) -> None:
@@ -412,3 +461,245 @@ async def test_summaries_use_the_singular_for_one(root: Path) -> None:
     assert Glob(workspace).summary(globbed) == "1 file"
     assert Grep(workspace).summary(grepped) == "1 match"
     assert Grep(workspace).summary("(no matches)") == "0 matches"
+
+
+# Reading outside or a secret, with approval (spec hito 5, §1.6 and §4.3)
+
+
+@pytest.fixture
+def other(root: Path) -> Path:
+    """A directory next to the working directory, so outside it."""
+    other = root.parent / "other"
+    write(other, "a.py", "Ane\n")
+    write(other, "sub/b.py", "Ane\n")
+    write(other, ".env", "Ane=sk-inventada\n")
+    write(other, ".ssh/k.py", "Ane\n")
+    return other
+
+
+async def test_list_dir_outside_asks_and_marks_secrets(root: Path, other: Path) -> None:
+    tool = ListDir(Workspace(root))
+    params = ListDirParams(path="../other")
+
+    request = tool.approval(params)
+
+    assert request == ApprovalRequest(
+        tool="list_dir",
+        title=f"list {other}",
+        detail=f"{other} (asked: ../other)",
+        scope=None,
+        warning=OUTSIDE,
+    )
+    # The absolute path decides what is secret (decision D4).
+    assert await tool.run(params) == ".env [secret]\n.ssh/ [secret]\na.py\nsub/"
+
+
+async def test_glob_outside_asks_and_stays_in_the_approved_directory(
+    root: Path, other: Path
+) -> None:
+    write(root, "in.py", "")
+    write(root.parent, "elsewhere.py", "")
+    # Both leave the approved directory: skipped (decision D2).
+    (other / "in.py").symlink_to(root / "in.py")
+    (other / "up.py").symlink_to(root.parent / "elsewhere.py")
+    tool = Glob(Workspace(root))
+    params = GlobParams(pattern="**/*.py", path="../other")
+
+    request = tool.approval(params)
+
+    assert request is not None
+    assert (request.tool, request.title) == ("glob", f"glob **/*.py in {other}")
+    assert (request.scope, request.warning) == (None, OUTSIDE)
+    # Absolute paths (decision D3); secrets skipped (decision D4).
+    assert await tool.run(params) == f"{other}/a.py\n{other}/sub/b.py"
+
+
+async def test_grep_outside_asks_and_gives_absolute_paths(
+    root: Path, other: Path
+) -> None:
+    (other / "up.py").symlink_to(write(root.parent, "elsewhere.py", "Ane\n"))
+    tool = Grep(Workspace(root))
+    folder = GrepParams(pattern="Ane", path="../other", glob="*.py")
+    one_file = GrepParams(pattern="Ane", path="../other/a.py")
+
+    request = tool.approval(folder)
+
+    assert request is not None
+    assert (request.tool, request.title) == (
+        "grep",
+        f'grep "Ane" in {other} (glob: *.py)',
+    )
+    assert (request.scope, request.warning) == (None, OUTSIDE)
+    assert await tool.run(folder) == f"{other}/a.py:1: Ane\n{other}/sub/b.py:1: Ane"
+    assert tool.approval(one_file) is not None
+    assert await tool.run(one_file) == f"{other}/a.py:1: Ane"
+
+
+async def test_a_search_outside_shows_every_path_absolute(root: Path) -> None:
+    # Decision D3, also for the files of the working directory.
+    write(root, "in.py", "Ane\n")
+    write(root.parent, "up.py", "Ane\n")
+    workspace = Workspace(root)
+    globbing = GlobParams(pattern="**/*.py", path="..")
+    grepping = GrepParams(pattern="Ane", path="..")
+
+    globber, searcher = Glob(workspace), Grep(workspace)
+
+    assert globber.approval(globbing) is not None
+    assert searcher.approval(grepping) is not None
+    assert await globber.run(globbing) == f"{root.parent}/up.py\n{root}/in.py"
+    assert await searcher.run(grepping) == (
+        f"{root.parent}/up.py:1: Ane\n{root}/in.py:1: Ane"
+    )
+
+
+async def test_outside_and_secret_give_both_warnings(root: Path, other: Path) -> None:
+    # Decisions D5 and D6: outside first, then the secret.
+    workspace = Workspace(root)
+
+    read_request = ReadFile(workspace).approval(ReadFileParams(path="../other/.env"))
+    list_request = ListDir(workspace).approval(ListDirParams(path="../other/.ssh"))
+    grep_request = Grep(workspace).approval(
+        GrepParams(pattern="Ane", path="../other/.env")
+    )
+
+    assert read_request is not None
+    assert read_request.warning == f"{OUTSIDE}; {SECRET_FILE}"
+    assert list_request is not None
+    assert list_request.warning == f"{OUTSIDE}; {SECRET_DIR}"
+    assert grep_request is not None
+    assert grep_request.warning == f"{OUTSIDE}; {SECRET_FILE}"
+
+
+async def test_grep_on_a_secret_file_asks_and_is_read_once_approved(
+    root: Path,
+) -> None:
+    # Decision D7: grep on one secret file asks, as read_file.
+    write(root, ".env", "dos=sk-inventada\n")
+    tool = Grep(Workspace(root))
+    params = GrepParams(pattern="dos", path=".env")
+
+    request = tool.approval(params)
+
+    assert request == ApprovalRequest(
+        tool="grep",
+        title='grep "dos" in .env',
+        detail=str(root / ".env"),
+        scope=None,
+        warning=SECRET_FILE,
+    )
+    assert await tool.run(params) == ".env:1: dos=sk-inventada"
+
+
+async def test_searching_skips_secrets_and_links_out_without_asking(
+    root: Path,
+) -> None:
+    write(root, ".env", "Ane\n")
+    write(root, ".ssh/config", "Ane\n")
+    write(root, "notes.py", "Ane\n")
+    (root / "out.py").symlink_to(write(root.parent, "outside.py", "Ane\n"))
+    workspace = Workspace(root)
+    globbing = GlobParams(pattern="**/*")
+    grepping = GrepParams(pattern="Ane")
+    # A secret directory as the path: skipped as today (decision D7).
+    in_secret_dir = GrepParams(pattern="Ane", path=".ssh")
+
+    assert Glob(workspace).approval(globbing) is None
+    assert Grep(workspace).approval(grepping) is None
+    assert Grep(workspace).approval(in_secret_dir) is None
+    assert await Glob(workspace).run(globbing) == "notes.py"
+    assert await Grep(workspace).run(grepping) == "notes.py:1: Ane"
+    assert await Grep(workspace).run(in_secret_dir) == "(no matches)"
+
+
+async def test_cheap_failures_come_before_the_question(root: Path, other: Path) -> None:
+    # Decision D8: what run() would refuse is refused before asking.
+    (other / "img.bin").write_bytes(b"\x89PNG\0\0")
+    workspace = Workspace(root)
+
+    with pytest.raises(ToolError, match="file not found"):
+        ReadFile(workspace).approval(ReadFileParams(path="../missing"))
+    with pytest.raises(ToolError, match="is a directory"):
+        ReadFile(workspace).approval(ReadFileParams(path="../other"))
+    with pytest.raises(ToolError, match="binary file"):
+        ReadFile(workspace).approval(ReadFileParams(path="../other/img.bin"))
+    with pytest.raises(ToolError, match="directory not found"):
+        ListDir(workspace).approval(ListDirParams(path="../missing"))
+    with pytest.raises(ToolError, match="not a directory"):
+        ListDir(workspace).approval(ListDirParams(path="../other/a.py"))
+    with pytest.raises(ToolError, match="must be relative"):
+        Glob(workspace).approval(GlobParams(pattern="../*", path="../other"))
+    with pytest.raises(ToolError, match="not a directory"):
+        Glob(workspace).approval(GlobParams(pattern="*", path="../other/a.py"))
+    with pytest.raises(ToolError, match="invalid regular expression"):
+        Grep(workspace).approval(GrepParams(pattern="(", path="../other"))
+    with pytest.raises(ToolError, match="must be relative"):
+        Grep(workspace).approval(GrepParams(pattern="x", path="../o", glob="/x"))
+    with pytest.raises(ToolError, match="not found"):
+        Grep(workspace).approval(GrepParams(pattern="x", path="../missing"))
+    # Inside and not secret, nothing to ask: run() gives the error, as before.
+    assert ReadFile(workspace).approval(ReadFileParams(path="missing")) is None
+
+
+# What was asked is what is read (decision D1: TOCTOU)
+
+
+async def test_a_link_changed_after_the_question_is_not_read(root: Path) -> None:
+    first = write(root.parent, "first.txt", "uno")
+    second = write(root.parent, "second.txt", "dos")
+    link = root / "link.txt"
+    link.symlink_to(first)
+    tool = ReadFile(Workspace(root))
+    params = ReadFileParams(path="link.txt")
+
+    request = tool.approval(params)
+    link.unlink()
+    link.symlink_to(second)
+
+    assert request is not None
+    assert request.title == f"read {first}"
+    with pytest.raises(
+        ToolError, match=r"link\.txt changed after the question; ask again"
+    ):
+        await tool.run(params)
+
+
+async def test_a_link_that_leaves_after_no_question_is_not_read(
+    root: Path,
+) -> None:
+    write(root, "real.txt", "dentro")
+    write(root, ".env", "OPENCODE_API_KEY=sk-inventada")
+    link = root / "link.txt"
+    link.symlink_to(root / "real.txt")
+    tool = ReadFile(Workspace(root))
+    params = ReadFileParams(path="link.txt")
+
+    assert tool.approval(params) is None
+    link.unlink()
+    link.symlink_to(root / ".env")
+
+    with pytest.raises(
+        ToolError, match=r"link\.txt changed after the question; ask again"
+    ):
+        await tool.run(params)
+
+
+async def test_each_question_replaces_the_last_one(root: Path) -> None:
+    write(root.parent, "outside.txt", "fuera")
+    write(root, "a.txt", "dentro")
+    workspace = Workspace(root)
+    outside = ReadFileParams(path="../outside.txt")
+    other_outside = ListDirParams(path="..")
+
+    reader = ReadFile(workspace)
+    assert reader.approval(outside) is not None
+    assert reader.approval(ReadFileParams(path="a.txt")) is None
+    with pytest.raises(ToolError, match="changed after the question"):
+        await reader.run(outside)
+    # Without asking at all, an outside path is not read either.
+    with pytest.raises(ToolError, match="changed after the question"):
+        await ListDir(workspace).run(other_outside)
+    with pytest.raises(ToolError, match="changed after the question"):
+        await Glob(workspace).run(GlobParams(pattern="*", path=".."))
+    with pytest.raises(ToolError, match="changed after the question"):
+        await Grep(workspace).run(GrepParams(pattern="x", path=".."))
