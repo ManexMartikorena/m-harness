@@ -4,6 +4,7 @@ import asyncio
 
 from pydantic import BaseModel, Field
 
+from mharness.domain.approval import ApprovalRequest
 from mharness.domain.tools import Permission
 
 
@@ -34,6 +35,9 @@ class FakeTool:
         self._results = list(results or [])
         self._gate = gate
         self.calls: list[EchoParams] = []
+
+    def approval(self, params: EchoParams) -> ApprovalRequest | None:
+        return None
 
     async def run(self, params: EchoParams) -> str:
         self.calls.append(params)
