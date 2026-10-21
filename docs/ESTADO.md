@@ -2,21 +2,24 @@
 
 Última actualización: 2026-10-21. **Hito 4 (tool calling y bucle agéntico)
 cerrado y publicado como `v0.4.0`.** Hito 5 (permisos y herramientas con
-efecto): spec APROBADA (PR #27); implementación sin empezar. **Sesión
-cerrada en el PC de Windows; se sigue en el Ubuntu de casa.**
+efecto): spec APROBADA (PR #27); PR 1 (piezas 1 a 5) sale por PR desde
+`feature/hito-5-aprobacion` y lo integra el agente con el CI en verde. **Se
+trabaja en el Ubuntu de casa.**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 4 cerrado (`v0.4.0`). Hito 5 (permisos y herramientas con
-efecto): spec APROBADA (PR #27); implementación sin empezar.**
+efecto): spec APROBADA (PR #27); PR 1 (contrato de aprobación y el bucle que
+pregunta) sale por PR desde `feature/hito-5-aprobacion` y lo integra el
+agente con el CI en verde.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.4.0` — Tool calling y bucle agéntico**
   (2026-10-21):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.4.0
-- Ramas abiertas: `docs/spec-hito-5-permisos` (spec del hito 5). Las integradas se
+- Ramas abiertas: ninguna tras integrar el PR 1 del hito 5. Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -30,6 +33,19 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Hito 5, PR 1, 2026-10-21, Ubuntu de casa** (sale por PR desde
+  `feature/hito-5-aprobacion` y lo integra el agente con el CI en verde;
+  piezas 1 a 5 de la spec §6):
+  contrato de aprobación (`0f8311d`), aprobaciones de sesión (`14026e1`), el
+  bucle pregunta (`839231f`), lo ejecutado consta (`a9acbab`) y los docs.
+  Arreglos de la revisión, aprobados por el mantenedor: solo una decisión
+  válida ejecuta (`d3953b0`), fallo de `summary()` y JSON demasiado anidado
+  como error interno (`56d7909`) y más tests del bucle (`bf643a6`). En
+  verde: 362 tests. Las decisiones que la spec no fijaba y la revisión, en
+  la spec §12.
+- **Ubuntu de casa al día, 2026-10-21:** `main` al día, rama local
+  `docs/spec-hito-3-streaming` borrada, `uv sync`; 327 tests, mypy,
+  lint-imports y ruff en verde; `uv run maha --version` → `maha 0.4.0`.
 - **Cierre de sesión, 2026-10-21, PC de Windows (WSL).** Todo integrado y
   con push: `main` en el merge del PR #27 más este cierre; sin ramas
   abiertas ni cambios sin commitear. El mantenedor mantiene para el hito 5
@@ -319,34 +335,13 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano, en el Ubuntu de casa:** ponerlo al día (ver "Para seguir en el
-   Ubuntu de casa", justo debajo) y lanzar el agente desde el clon.
-2. **Agente:** implementar el hito 5 por piezas (spec §6) en
-   `feature/hito-5-aprobacion`, desde `main` actualizado, empezando por la
-   pieza 1 (contrato de aprobación: `domain/approval.py`,
-   `ports/approval.py`, `Tool.approval()` y `FakeApproval`). Push e
-   integración de cada PR con el CI en verde, con permiso del mantenedor.
-3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+1. **Agente:** PR 2 del hito 5 (`feature/hito-5-ficheros`) desde `main`
+   actualizado, empezando por la pieza 6 de la spec §6 (leer fuera del
+   directorio y secretos con aprobación). Push e integración con el CI en
+   verde, con permiso del mantenedor.
+2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
-
-**Sesión del 2026-10-21 cerrada en el PC de Windows (WSL).** Nada sin push.
-
-### Para seguir en el Ubuntu de casa
-
-Desde el clon, en este orden:
-1. `git switch main && git pull`.
-2. Borrar las ramas locales ya integradas (en ese PC puede quedar
-   `docs/spec-hito-3-streaming`): `git fetch --prune` y después
-   `git branch --merged main | grep -v '^\*\|main' | xargs -r git branch -d`.
-   Las ramas de GitHub se conservan.
-3. `uv sync`: las dependencias no han cambiado desde `v0.2.0`, pero
-   `uv.lock` lleva la versión nueva.
-4. Comprobar: `uv run pytest` (327 tests), `uv run mypy` y
-   `uv run lint-imports` en verde, y `uv run maha --version` →
-   `maha 0.4.0`.
-5. Probar las herramientas: `uv run --env-file .env maha` y "¿Qué hay en
-   este directorio?" → `list_dir` y una lista.
 
 ### Al abrir el agente en otro PC
 
@@ -425,9 +420,11 @@ resuelve):
 
 **Pendientes del hito 4** (anotados en su spec; cada uno con el hito que lo
 resuelve):
-- **Turno atómico:** un fallo o Ctrl+C no guarda nada del turno. Vale porque
+- ~~**Turno atómico:** un fallo o Ctrl+C no guarda nada del turno. Vale porque
   ninguna herramienta tiene efecto; **el hito 5 lo revisa**, porque una
-  edición ya hecha sí debe constar (spec 4, §1.7).
+  edición ya hecha sí debe constar (spec 4, §1.7).~~ **Resuelto** en el
+  hito 5, pieza 4 (`a9acbab`): lo ejecutado consta aunque falle el modelo o
+  se cancele (spec 5, §1.5 y §12).
 - **Leer fuera del directorio de trabajo y secretos con otro nombre**
   (`credenciales.txt`): hoy se deniega, o no se detecta. Aprobación en el
   hito 5 (spec 4, §1.6 y §10).
@@ -446,6 +443,14 @@ resuelve):
   casos; spec 4, §10).
 - **Detalles visuales:** el eco de `^C` y lo que se teclea durante un turno
   se mezclan con la salida. Hito 19 (spec 4, §12.13).
+
+**Pendientes del hito 5** (anotados en su spec; cada uno con el hito que lo
+resuelve):
+- **Excepciones no previstas tras una ejecución** (p. ej., el `gate` falla
+  con `OSError`): el turno no se guarda; solo lo guardan `ModelError`,
+  `CancelledError` y `GeneratorExit` (decisión D4). Hoy tumban `maha` y el
+  historial en memoria se pierde igual. Hito 6, con las sesiones en disco
+  (spec 5, §12.5).
 
 **Por medir:**
 - Línea base de las evals (hito 8).
