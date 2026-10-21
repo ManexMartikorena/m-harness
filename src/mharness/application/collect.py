@@ -4,7 +4,7 @@ from collections.abc import AsyncIterable
 
 from mharness.domain.errors import ModelResponseError
 from mharness.domain.events import MessageEnd, ModelEvent, TextDelta
-from mharness.domain.messages import Message, TextBlock
+from mharness.domain.messages import Block, Message, TextBlock
 from mharness.domain.model import ModelResponse
 
 
@@ -27,7 +27,7 @@ class Accumulator:
         if self._end is None:
             raise ModelResponseError("stream ended before the answer was complete")
         text = "".join(self._texts)
-        blocks = [TextBlock(text=text)] if text else []
+        blocks: list[Block] = [TextBlock(text=text)] if text else []
         return ModelResponse(
             message=Message(role="assistant", blocks=blocks),
             stop_reason=self._end.stop_reason,
