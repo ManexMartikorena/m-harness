@@ -26,8 +26,14 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
-from mharness.domain.events import MessageEnd, ModelEvent, TextDelta
-from mharness.domain.messages import Block, Message, TextBlock
+from mharness.domain.events import MessageEnd, ModelEvent, TextDelta, ToolCallDelta
+from mharness.domain.messages import (
+    Block,
+    Message,
+    TextBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+)
 from mharness.domain.model import ModelRequest, ModelResponse, StopReason, Usage
 
 USER_AGENT = (
@@ -179,6 +185,15 @@ class OpenAIChatClient:
             choice = chunk.choices[0]
             if choice.delta.content:
                 yield TextDelta(text=choice.delta.content)
+            # `tool_calls` may come as an explicit null (spec hito 4, §1.1).
+            for call in choice.delta.tool_calls or []:
+                function = call.function or _DeltaFunction()
+                yield ToolCallDelta(
+                    index=call.index,
+                    id=call.id,
+                    name=function.name,
+                    arguments=function.arguments or "",
+                )
             finish_reason = choice.finish_reason or finish_reason
         if finish_reason is None:
             raise ModelResponseError("stream ended before the answer was complete")
@@ -230,22 +245,77 @@ def _error_message(error: Any) -> str | None:
 
 def _to_openai(request: ModelRequest) -> dict[str, Any]:
     """The request body: the system prompt, if any, goes first as a message."""
-    messages: list[dict[str, str]] = []
+    messages: list[dict[str, Any]] = []
     if request.system:
         # `system`, not `developer`: it is the role compatible servers know.
         messages.append({"role": "system", "content": request.system})
-    messages.extend(
-        {"role": message.role, "content": message.text} for message in request.messages
-    )
-    return {"model": request.model, "messages": messages}
+    for message in request.messages:
+        messages.extend(_message_to_openai(message))
+    body: dict[str, Any] = {"model": request.model, "messages": messages}
+    if request.tools:
+        # No `tool_choice` (the default, "auto", is what is wanted) and no
+        # `parallel_tool_calls` (OpenCode ignores it) (spec hito 4, §1.4).
+        body["tools"] = [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.input_schema,
+                },
+            }
+            for tool in request.tools
+        ]
+    return body
+
+
+def _message_to_openai(message: Message) -> list[dict[str, Any]]:
+    """One domain message as OpenAI messages: a `tool` message becomes one
+    message per result."""
+    if message.role == "tool":
+        # OpenAI has no `is_error`: an error result already says "error:".
+        return [
+            {"role": "tool", "tool_call_id": block.call_id, "content": block.content}
+            for block in message.blocks
+            if isinstance(block, ToolResultBlock)
+        ]
+    calls = [block for block in message.blocks if isinstance(block, ToolCallBlock)]
+    if not calls:
+        return [{"role": message.role, "content": message.text}]
+    return [
+        {
+            "role": message.role,
+            # Required unless there are tool calls: null when there is no text.
+            "content": message.text or None,
+            "tool_calls": [
+                {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {"name": call.name, "arguments": call.arguments},
+                }
+                for call in calls
+            ],
+        }
+    ]
 
 
 # What the adapter reads from the response. Unknown fields (such as
 # `reasoning_content`) are ignored; missing or null counters count as 0.
 
 
+class _Function(BaseModel):
+    name: str
+    arguments: str
+
+
+class _ToolCall(BaseModel):
+    id: str
+    function: _Function
+
+
 class _ResponseMessage(BaseModel):
     content: str | None = None
+    tool_calls: list[_ToolCall] | None = None
 
 
 class _Choice(BaseModel):
@@ -273,6 +343,12 @@ def _to_domain(completion: _Completion, request: ModelRequest) -> ModelResponse:
     choice = completion.choices[0]
     content = choice.message.content
     blocks: list[Block] = [TextBlock(text=content)] if content else []
+    blocks.extend(
+        ToolCallBlock(
+            id=call.id, name=call.function.name, arguments=call.function.arguments
+        )
+        for call in choice.message.tool_calls or []
+    )
     return ModelResponse(
         message=Message(role="assistant", blocks=blocks),
         stop_reason=STOP_REASONS.get(choice.finish_reason or "", "other"),
@@ -285,8 +361,20 @@ def _to_domain(completion: _Completion, request: ModelRequest) -> ModelResponse:
 # last, with `choices` empty.
 
 
+class _DeltaFunction(BaseModel):
+    name: str | None = None
+    arguments: str | None = None
+
+
+class _DeltaToolCall(BaseModel):
+    index: int
+    id: str | None = None
+    function: _DeltaFunction | None = None
+
+
 class _Delta(BaseModel):
     content: str | None = None
+    tool_calls: list[_DeltaToolCall] | None = None
 
 
 class _ChunkChoice(BaseModel):

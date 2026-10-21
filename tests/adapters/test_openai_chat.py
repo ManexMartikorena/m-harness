@@ -17,8 +17,8 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
-from mharness.domain.messages import Message, TextBlock
-from mharness.domain.model import ModelRequest, StopReason, Usage
+from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
+from mharness.domain.model import ModelRequest, StopReason, ToolSpec, Usage
 from mharness.ports.model import ModelClient
 
 BASE_URL = "https://models.example.test/v1"
@@ -416,3 +416,135 @@ async def test_key_cut_by_the_limit_is_not_shown(client: OpenAIChatClient) -> No
         await client.complete(ModelRequest(model="m", messages=CONVERSATION))
 
     assert API_KEY[:10] not in str(raised.value)
+
+
+# Tools and their results (spec hito 4, §1.4).
+
+READ_FILE = ToolSpec(
+    name="read_file",
+    description="Read a text file.",
+    input_schema={
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "required": ["path"],
+    },
+)
+
+
+@respx.mock
+async def test_sends_the_tools(client: OpenAIChatClient) -> None:
+    route = respx.post(ENDPOINT).respond(json=fixture("completion.json"))
+
+    await client.complete(
+        ModelRequest(model="m", messages=CONVERSATION, tools=[READ_FILE])
+    )
+
+    assert sent_json(route)["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read a text file.",
+                "parameters": READ_FILE.input_schema,
+            },
+        }
+    ]
+
+
+@respx.mock
+async def test_without_tools_there_is_no_tools_key(client: OpenAIChatClient) -> None:
+    route = respx.post(ENDPOINT).respond(json=fixture("completion.json"))
+
+    await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert "tools" not in sent_json(route)
+
+
+@respx.mock
+async def test_sends_calls_and_results_in_openai_format(
+    client: OpenAIChatClient,
+) -> None:
+    route = respx.post(ENDPOINT).respond(json=fixture("completion.json"))
+    call_a = ToolCallBlock(id="call_a", name="read_file", arguments='{"path": "a.txt"}')
+    call_b = ToolCallBlock(id="call_b", name="read_file", arguments='{"path": ')
+    history = [
+        Message(role="user", blocks=[TextBlock(text="Lee a.txt y b.txt")]),
+        Message(role="assistant", blocks=[call_a, call_b]),
+        Message(
+            role="tool",
+            blocks=[
+                ToolResultBlock(call_id="call_a", content="     1\tHola"),
+                ToolResultBlock(
+                    call_id="call_b",
+                    content="error: arguments are not a valid JSON object",
+                    is_error=True,
+                ),
+            ],
+        ),
+        Message(
+            role="assistant",
+            blocks=[
+                TextBlock(text="Leo otra vez:"),
+                ToolCallBlock(id="call_c", name="list_dir", arguments="{}"),
+            ],
+        ),
+    ]
+
+    await client.complete(ModelRequest(model="m", messages=history))
+
+    assert sent_json(route)["messages"] == [
+        {"role": "user", "content": "Lee a.txt y b.txt"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_a",
+                    "type": "function",
+                    "function": {"name": "read_file", "arguments": '{"path": "a.txt"}'},
+                },
+                {
+                    "id": "call_b",
+                    "type": "function",
+                    "function": {"name": "read_file", "arguments": '{"path": '},
+                },
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_a", "content": "     1\tHola"},
+        {
+            "role": "tool",
+            "tool_call_id": "call_b",
+            "content": "error: arguments are not a valid JSON object",
+        },
+        {
+            "role": "assistant",
+            "content": "Leo otra vez:",
+            "tool_calls": [
+                {
+                    "id": "call_c",
+                    "type": "function",
+                    "function": {"name": "list_dir", "arguments": "{}"},
+                }
+            ],
+        },
+    ]
+
+
+@respx.mock
+async def test_translates_tool_calls_of_a_whole_response(
+    client: OpenAIChatClient,
+) -> None:
+    # Shape measured on OpenCode Go (spec hito 4, §1.1): content "" and the
+    # calls in message.tool_calls.
+    respx.post(ENDPOINT).respond(json=fixture("completion_with_tool_calls.json"))
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.stop_reason == "tool_use"
+    assert response.message.blocks == [
+        ToolCallBlock(
+            id="call_test_000000000000000c",
+            name="read_file",
+            arguments='{"path": "notas.txt"}',
+        )
+    ]
