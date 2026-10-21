@@ -520,8 +520,12 @@ class Grep:
         async for file in walk.files():
             if params.glob and not _glob_matches(file.in_base, params.glob):
                 continue
-            with _reading(file.shown):
+            try:
                 matches.extend(_search(file.real, file.shown, regex))
+            except OSError:
+                # Skipped, as secrets, binary and large files (review of
+                # PR 2, fix 8).
+                continue
             # One more than shown: it tells whether something was left out.
             if len(matches) > GREP_MAX_MATCHES:
                 break

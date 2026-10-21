@@ -1809,13 +1809,22 @@ async def test_reading_tools_say_cannot_read(locked: Path) -> None:
         await ListDir(workspace).run(ListDirParams(path="closed"))
     with pytest.raises(ToolError) as grep_file:
         await Grep(workspace).run(GrepParams(pattern="x", path="locked.txt"))
-    with pytest.raises(ToolError) as grep_walk:
-        await Grep(workspace).run(GrepParams(pattern="x"))
 
     assert str(read_error.value) == f"cannot read locked.txt: {DENIED}"
     assert str(list_error.value) == f"cannot read closed: {DENIED}"
     assert str(grep_file.value) == f"cannot read locked.txt: {DENIED}"
-    assert str(grep_walk.value) == f"cannot read locked.txt: {DENIED}"
+
+
+@not_root
+async def test_grep_skips_the_files_it_cannot_read_when_walking(
+    locked: Path,
+) -> None:
+    # As secrets, binary and large files (review of PR 2, fix 8).
+    write(locked, "ok.txt", "x\n")
+
+    result = await Grep(Workspace(locked)).run(GrepParams(pattern="x"))
+
+    assert result == "ok.txt:1: x"
 
 
 @not_root
