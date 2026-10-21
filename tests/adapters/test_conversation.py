@@ -10,10 +10,12 @@ from pathlib import Path
 import pytest
 
 from mharness.adapters.cli.conversation import EXIT_INTERRUPTED, StdinLines, converse
+from mharness.adapters.cli.spinner import CLEAR_LINE
 from mharness.application.chat import Chat
-from mharness.domain.errors import ModelAuthError
+from mharness.domain.errors import ModelAuthError, ModelUnavailableError
+from mharness.domain.events import TextDelta
 from mharness.domain.model import Usage
-from tests.fakes.model import FakeModelClient, reply
+from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply
 
 HEADER = f"maha {version('m-harness')} · opencode-go · glm-5.3-flash · /exit to quit"
 
@@ -188,3 +190,180 @@ async def test_stdin_lines_reads_a_regular_file(tmp_path: Path) -> None:
             await lines.readline()
     finally:
         os.close(fd)
+
+
+# Streaming (spec hito 3, §1.10).
+
+
+async def test_text_is_shown_before_the_stream_ends() -> None:
+    gate = Gate()
+    fake = FakeModelClient(
+        [[TextDelta(text="Hola, "), gate, TextDelta(text="Ane."), END]]
+    )
+    out = io.StringIO()
+    task = asyncio.ensure_future(
+        converse(
+            Chat(fake, model="m"),
+            provider="p",
+            model="m",
+            read_line=ScriptedInput("Hola"),
+            out=out,
+            err=io.StringIO(),
+        )
+    )
+    for _ in range(100):
+        if out.getvalue().endswith("Hola, "):
+            break
+        await asyncio.sleep(0)
+
+    assert out.getvalue().endswith("> Hola, ")
+    gate.release()
+    assert await task == 0
+    assert out.getvalue().endswith("> Hola, Ane.\n> \n")
+
+
+async def test_no_token_line_when_usage_is_all_zeros() -> None:
+    code, out, _ = await run(FakeModelClient([reply("Hola.")]), "Hola", "/exit")
+
+    assert code == 0
+    assert out == f"{HEADER}\n> Hola.\n> "
+
+
+async def test_error_mid_stream_keeps_the_text_and_goes_on() -> None:
+    fake = FakeModelClient(
+        [[TextDelta(text="Hol"), ModelUnavailableError("cut")], reply("Hola.")]
+    )
+
+    code, out, err = await run(fake, "Hola", "Hola otra vez", "/exit")
+
+    assert code == 0
+    assert out == f"{HEADER}\n> Hol\n> Hola.\n> "
+    assert err == "error: cut\n"
+
+
+# Spinner (spec hito 3, §1.12).
+
+
+class FakeTerminal(io.StringIO):
+    """A StringIO that says it is a terminal."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+async def converse_until_spinning(
+    fake: FakeModelClient, gate: Gate, out: io.StringIO, err: io.StringIO
+) -> int:
+    task = asyncio.ensure_future(
+        converse(
+            Chat(fake, model="m"),
+            provider="p",
+            model="m",
+            read_line=ScriptedInput("Hola"),
+            out=out,
+            err=err,
+        )
+    )
+    if out.isatty():
+        for _ in range(200):  # at most 2 s
+            if "⠋" in out.getvalue():
+                break
+            await asyncio.sleep(0.01)
+    else:
+        # Time for a spinner that should not appear.
+        await asyncio.sleep(0.15)
+    gate.release()
+    return await task
+
+
+@pytest.mark.parametrize("no_color", ["", "1"])
+async def test_spinner_is_erased_before_the_first_text(
+    no_color: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("NO_COLOR", no_color)
+    gate = Gate()
+    fake = FakeModelClient([[gate, TextDelta(text="Hola."), END]])
+    out = FakeTerminal()
+
+    code = await converse_until_spinning(fake, gate, out, io.StringIO())
+
+    text = out.getvalue()
+    assert code == 0
+    assert "⠋" in text
+    assert ("\x1b[3" in text) is (no_color == "")
+    assert f"{CLEAR_LINE}Hola.\n" in text
+
+
+async def test_spinner_is_erased_before_an_error() -> None:
+    gate = Gate()
+    fake = FakeModelClient([[gate, ModelUnavailableError("down")]])
+    out, err = FakeTerminal(), io.StringIO()
+
+    code = await converse_until_spinning(fake, gate, out, err)
+
+    assert code == 0
+    assert out.getvalue().endswith(f"{CLEAR_LINE}> \n")
+    assert err.getvalue() == "error: down\n"
+
+
+async def test_no_escape_codes_when_not_a_terminal() -> None:
+    gate = Gate()
+    fake = FakeModelClient([[gate, TextDelta(text="Hola."), END]])
+    out = io.StringIO()
+
+    await converse_until_spinning(fake, gate, out, io.StringIO())
+
+    assert "\x1b" not in out.getvalue()
+    assert "maha 0" in out.getvalue()  # only the header mentions maha
+
+
+# Ctrl+C during an answer (spec hito 3, §1.10).
+
+
+async def interrupt_when(out: io.StringIO, text: str) -> None:
+    """Press Ctrl+C once `text` is on the screen."""
+    for _ in range(200):  # at most 2 s
+        if text in out.getvalue():
+            break
+        await asyncio.sleep(0.01)
+    signal.raise_signal(signal.SIGINT)
+
+
+async def test_ctrl_c_during_an_answer_goes_back_to_the_prompt() -> None:
+    fake = FakeModelClient([[TextDelta(text="Esperando"), HANG], reply("Hola.")])
+    out = io.StringIO()
+    pressing = asyncio.ensure_future(interrupt_when(out, "Esperando"))
+
+    code = await converse(
+        Chat(fake, model="m"),
+        provider="p",
+        model="m",
+        read_line=ScriptedInput("Cuéntame algo", "Hola", "/exit"),
+        out=out,
+        err=io.StringIO(),
+    )
+    await pressing
+
+    assert code == 0
+    assert out.getvalue().endswith("> Esperando\n  [interrupted]\n> Hola.\n> ")
+    # The cut answer is not kept: the next request has only the new message.
+    assert [m.text for m in fake.requests[1].messages] == ["Hola"]
+
+
+async def test_ctrl_c_while_the_spinner_spins() -> None:
+    fake = FakeModelClient([[HANG]])
+    out = FakeTerminal()
+    pressing = asyncio.ensure_future(interrupt_when(out, "⠋"))
+
+    code = await converse(
+        Chat(fake, model="m"),
+        provider="p",
+        model="m",
+        read_line=ScriptedInput("Hola"),
+        out=out,
+        err=io.StringIO(),
+    )
+    await pressing
+
+    assert code == 0
+    assert out.getvalue().endswith(f"{CLEAR_LINE}  [interrupted]\n> \n")

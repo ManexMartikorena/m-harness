@@ -860,3 +860,20 @@ como registro.
 5. **Un commit salió con mypy en rojo** (pieza 7): la cadena de comprobaciones
    acababa en `| tail -1`, que oculta el código de salida. Se corrigió con
    `--amend` antes del push. Lección: comprobaciones con `set -o pipefail`.
+6. **Ctrl+C capturado con un objeto `_Sigint`**, no con una bandera `in_turn`
+   (§1.10). El manejador de SIGINT marca `pending` y cancela la tarea, como
+   en el hito 2. `_answer` captura la cancelación solo con `pending`; fuera de
+   una respuesta sube y `converse` sale con 130. Mismo patrón, un nombre más
+   claro.
+7. **`reply()` del fake sigue devolviendo un `ModelResponse`** (§3.2). Al
+   reproducirlo en `stream()`, el texto sale en dos `TextDelta`. Hay además
+   `END`, un `MessageEnd` listo para los guiones.
+8. **Prueba en pty con el modelo real, 2026-10-21** (agente; OpenCode Go,
+   `glm-5.3-flash`; prompts inventados), antes de abrir el PR 3:
+   - primer texto a los 4,6 s; el spinner gira en color y se borra con
+     `\x1b[2K` justo antes del texto;
+   - Ctrl+C a mitad (byte `\x03` por la terminal, como una persona): `^C`,
+     `  [interrupted]` y el prompt;
+   - el turno siguiente ("OK") contó 20 tokens de entrada: el turno cortado
+     no se guardó;
+   - Ctrl+D sale con 0.

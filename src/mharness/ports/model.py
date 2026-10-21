@@ -1,10 +1,13 @@
 """Port to a language model (DESIGN §6).
 
-Hito 2 asks for the whole answer at once; hito 3 adds streaming.
+`complete()` gives the whole answer at once; `stream()` gives it as it
+arrives (spec hito 3, §1.2).
 """
 
+from collections.abc import AsyncGenerator
 from typing import Protocol
 
+from mharness.domain.events import ModelEvent
 from mharness.domain.model import ModelRequest, ModelResponse
 
 
@@ -15,3 +18,9 @@ class ModelClient(Protocol):
     """
 
     async def complete(self, request: ModelRequest) -> ModelResponse: ...
+
+    # `def`, not `async def`: an async generator returns the iterator itself,
+    # not a coroutine. An `AsyncGenerator` can be closed with `aclose()`.
+    def stream(self, request: ModelRequest) -> AsyncGenerator[ModelEvent]:
+        """Yield `TextDelta`s and, last, one `MessageEnd`."""
+        ...

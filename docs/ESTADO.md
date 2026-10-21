@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-21. **Hito 2 (primera conversación) cerrado y
-publicado como `v0.2.0`.** Hito 3 (streaming): spec APROBADA (PR #13
-integrado), PR 1 integrado (#14) y PR 2 (`feature/hito-3-adaptador`) en
+publicado como `v0.2.0`.** Hito 3 (streaming): spec APROBADA (PR #13),
+PRs 1 (#14) y 2 (#15) integrados, PR 3 (`feature/hito-3-terminal`) en
 revisión.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
@@ -10,13 +10,13 @@ Lo primero al abrir: "Siguiente paso", más abajo.
 ## Fase actual
 
 **Desarrollo. Hito 2 cerrado (`v0.2.0`). Hito 3 (streaming): spec APROBADA
-(PR #13). Implementación: PR 1 integrado (#14); PR 2 en
-`feature/hito-3-adaptador`.**
+(PR #13). Implementación: PRs 1 (#14) y 2 (#15) integrados; PR 3 en
+`feature/hito-3-terminal`.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.2.0` — Primera conversación** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.2.0
-- Ramas abiertas: `feature/hito-3-adaptador` (PR 2 del hito 3). Las integradas se
+- Ramas abiertas: `feature/hito-3-terminal` (PR 3 del hito 3). Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -30,7 +30,12 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
-- **Hito 3, PR 2, 2026-10-21** (rama `feature/hito-3-adaptador`; piezas 5
+- **Hito 3, PR 3, 2026-10-21** (rama `feature/hito-3-terminal`; piezas 9
+  a 15 de la spec §6): `stream()` en el puerto y el fake (`Gate`, `HANG`),
+  `Chat.stream()`, terminal en directo, spinner con "maha" en colores y
+  Ctrl+C que corta solo la respuesta. En verde: 216 tests, ruff, mypy e
+  import-linter. Probado en pty con el modelo real (spec §12.8).
+- **Hito 3, PR 2 (#15) integrado, 2026-10-21** (merge `3a4fa5e`; piezas 5
   a 8 de la spec §6): `OpenAIChatClient.stream()` con la petición en stream,
   decodificador incremental, traducción de los trozos, errores del stream y
   cierre de la conexión al cancelar. Timeout `read=120` como silencio
@@ -207,14 +212,14 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente (con permiso del mantenedor en la sesión del 2026-10-21):** push
-   de `feature/hito-3-adaptador`, PR con la plantilla e integración con
-   merge commit con el CI en verde. Si no se llegó a hacer, comprobar con
-   `gh pr list`.
-2. **Agente:** PR 3 del hito 3 (spec §6, piezas 9 a 15) en
-   `feature/hito-3-terminal`, desde `main` actualizado: `stream()` en el
-   puerto (tipo `AsyncGenerator`, spec §12.2) y el fake, `Chat.stream()`,
-   terminal en directo, spinner y Ctrl+C por respuesta.
+1. **Agente:** push de `feature/hito-3-terminal` y PR con la plantilla.
+   **Humano:** decir si el agente lo integra (merge commit, CI en verde).
+2. **Agente:** PR 4 del hito 3 (spec §6, piezas 16 a 19) en
+   `feature/hito-3-cierre`, desde `main` actualizado: versión 0.3.0, nota
+   `docs/guia/03-streaming.md`, spec en IMPLEMENTADA y docs al día. Antes,
+   la verificación a mano de la spec §7 (parte ya hecha en pty, §12.8).
+3. **Humano o agente con permiso:** tag `v0.3.0` sobre el merge del PR 4 y
+   push del tag.
 
 **Sesión del 2026-10-21 en el PC de Windows (WSL).**
 

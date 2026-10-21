@@ -2,9 +2,10 @@
 
 import json
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
 
+import httpx
 import pytest
 import respx
 
@@ -48,19 +49,27 @@ def stdin() -> Iterator[Callable[[str], None]]:
     os.close(saved)
 
 
-def completion(
-    text: str, prompt_tokens: int, completion_tokens: int
-) -> dict[str, object]:
-    return {
-        "model": "glm-5.3-flash",
-        "choices": [
-            {"message": {"role": "assistant", "content": text}, "finish_reason": "stop"}
-        ],
-        "usage": {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
+def streamed(text: str, prompt_tokens: int, completion_tokens: int) -> bytes:
+    """An SSE body: the text, the finish reason, the usage and [DONE]."""
+    chunks = [
+        {"choices": [{"delta": {"content": text}, "finish_reason": "stop"}]},
+        {
+            "model": "glm-5.3-flash",
+            "choices": [],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+            },
         },
-    }
+    ]
+    events = [f"data: {json.dumps(chunk)}\n\n" for chunk in chunks]
+    return ("".join(events) + "data: [DONE]\n\n").encode()
+
+
+def sse_response(body: bytes) -> respx.MockResponse:
+    return respx.MockResponse(
+        headers={"content-type": "text/event-stream"}, content=body
+    )
 
 
 @respx.mock
@@ -72,8 +81,8 @@ def test_two_turns_resend_the_history(
     write_user_config(workspace, 'provider = "opencode-go"\nmodel = "glm-5.3-flash"\n')
     route = respx.post(GO_ENDPOINT).mock(
         side_effect=[
-            respx.MockResponse(json=completion("Hola, Ane.", 12, 9)),
-            respx.MockResponse(json=completion("Te llamas Ane.", 31, 5)),
+            sse_response(streamed("Hola, Ane.", 12, 9)),
+            sse_response(streamed("Te llamas Ane.", 31, 5)),
         ]
     )
     stdin("Hola, soy Ane\n¿Cómo me llamo?\n/exit\n")
@@ -94,6 +103,41 @@ def test_two_turns_resend_the_history(
         {"role": "user", "content": "¿Cómo me llamo?"},
     ]
     assert route.calls.last.request.headers["Authorization"] == f"Bearer {KEY}"
+
+
+async def cut_after(body: bytes) -> AsyncIterator[bytes]:
+    yield body
+    raise httpx.ReadError("connection reset")
+
+
+@respx.mock
+def test_a_cut_stream_shows_the_error_and_the_next_turn_works(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'provider = "opencode-go"\nmodel = "glm-5.3-flash"\n')
+    partial = b'data: {"choices":[{"delta":{"content":"Hola, A"}}]}\n\n'
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            respx.MockResponse(
+                headers={"content-type": "text/event-stream"},
+                content=cut_after(partial),
+            ),
+            sse_response(streamed("Hola, Ane.", 12, 9)),
+        ]
+    )
+    stdin("Hola, soy Ane\nHola otra vez\n/exit\n")
+
+    code = main([])
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "> Hola, A\n> Hola, Ane.\n  [tokens: 12 in · 9 out]" in captured.out
+    assert captured.err.startswith("error: the connection to the provider failed")
+    # The cut turn was not kept.
+    second = json.loads(route.calls.last.request.content)
+    assert second["messages"] == [{"role": "user", "content": "Hola otra vez"}]
 
 
 def test_without_configuration_explains_what_is_missing(
