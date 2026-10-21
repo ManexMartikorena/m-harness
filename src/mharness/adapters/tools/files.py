@@ -16,6 +16,7 @@ from typing import IO
 
 from pydantic import BaseModel, Field
 
+from mharness.domain.approval import ApprovalRequest
 from mharness.domain.paths import SKIPPED_DIRS, is_secret
 from mharness.domain.tools import Permission, ToolError
 
@@ -83,6 +84,10 @@ class ReadFile:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
+
+    def approval(self, params: ReadFileParams) -> ApprovalRequest | None:
+        # Asks nothing yet: run() still refuses outside paths and secrets.
+        return None
 
     async def run(self, params: ReadFileParams) -> str:
         path = self._workspace.resolve(params.path)
@@ -165,6 +170,10 @@ class ListDir:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
+
+    def approval(self, params: ListDirParams) -> ApprovalRequest | None:
+        # Asks nothing yet: run() still refuses outside paths and secrets.
+        return None
 
     async def run(self, params: ListDirParams) -> str:
         path = self._workspace.resolve(params.path)
@@ -277,6 +286,10 @@ class Glob:
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
 
+    def approval(self, params: GlobParams) -> ApprovalRequest | None:
+        # Asks nothing yet: run() still refuses outside paths and secrets.
+        return None
+
     async def run(self, params: GlobParams) -> str:
         _check_pattern(params.pattern)
         base = self._workspace.resolve(params.path)
@@ -333,6 +346,10 @@ class Grep:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
+
+    def approval(self, params: GrepParams) -> ApprovalRequest | None:
+        # Asks nothing yet: run() still refuses outside paths and secrets.
+        return None
 
     async def run(self, params: GrepParams) -> str:
         try:

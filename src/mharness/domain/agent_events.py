@@ -1,13 +1,15 @@
 """What the loop tells the terminal, and later the traces (DESIGN §5).
 
-Hito 4 implements these; `TurnStarted`, `ApprovalRequested`, `AgentError` and
-the cost arrive with their hitos (spec hito 4, §1.7).
+Hito 4 implements these, and hito 5 adds `ApprovalRequested`; `TurnStarted`,
+`AgentError` and the cost arrive with their hitos (spec hito 4, §1.7, and spec
+hito 5, §1.4).
 """
 
 from typing import Literal
 
 from pydantic import BaseModel
 
+from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
@@ -18,6 +20,15 @@ class ToolCallProposed(BaseModel, frozen=True):
 
     type: Literal["tool_call_proposed"] = "tool_call_proposed"
     call: ToolCallBlock
+
+
+class ApprovalRequested(BaseModel, frozen=True):
+    """The loop asks the user before running a call; the answer comes from
+    the `ApprovalGate`."""
+
+    type: Literal["approval_requested"] = "approval_requested"
+    call: ToolCallBlock
+    request: ApprovalRequest
 
 
 class ToolFinished(BaseModel, frozen=True):
@@ -31,6 +42,8 @@ class ToolFinished(BaseModel, frozen=True):
     duration: float  # seconds
     # Set when the tool crashed (a bug of ours): type and message.
     internal_error: str | None = None
+    # What the user answered; None if nobody was asked.
+    decision: Decision | None = None
 
 
 class ModelCallFinished(BaseModel, frozen=True):
@@ -46,14 +59,21 @@ class TurnFinished(BaseModel, frozen=True):
 
     type: Literal["turn_finished"] = "turn_finished"
     # `end_turn`: the model answered without calls. `max_steps`: the limit.
-    reason: Literal["end_turn", "max_steps"]
+    # `denied`: the user denied a call.
+    reason: Literal["end_turn", "max_steps", "denied"]
     # Summed over every call to the model in the turn.
     usage: Usage
+    # Calls handled by the loop; not those skipped after a denial.
     tool_calls: int
     # Calls to the model in the turn.
     steps: int
 
 
 type AgentEvent = (
-    TextDelta | ToolCallProposed | ToolFinished | ModelCallFinished | TurnFinished
+    TextDelta
+    | ToolCallProposed
+    | ApprovalRequested
+    | ToolFinished
+    | ModelCallFinished
+    | TurnFinished
 )

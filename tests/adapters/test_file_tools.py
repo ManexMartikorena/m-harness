@@ -42,6 +42,16 @@ def test_read_file_satisfies_the_port(root: Path) -> None:
     assert (tool.name, tool.permission) == ("read_file", "read")
 
 
+def test_reading_asks_for_no_approval(root: Path) -> None:
+    # Until hito 5, §1.6: outside paths and secrets are still refused by run().
+    workspace = Workspace(root)
+
+    assert ReadFile(workspace).approval(ReadFileParams(path="a.txt")) is None
+    assert ListDir(workspace).approval(ListDirParams()) is None
+    assert Glob(workspace).approval(GlobParams(pattern="**/*.py")) is None
+    assert Grep(workspace).approval(GrepParams(pattern="def")) is None
+
+
 # read_file
 
 

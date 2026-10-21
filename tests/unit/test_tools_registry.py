@@ -36,10 +36,12 @@ def test_a_name_registered_twice_fails() -> None:
         ToolRegistry([FakeTool("echo"), FakeTool("echo")])
 
 
-def test_an_effect_tool_is_refused() -> None:
-    # Fixes decision 1.5: nothing can approve an effect until hito 5.
-    with pytest.raises(ValueError, match="only read tools"):
-        ToolRegistry([FakeTool("write", permission="effect")])
+def test_an_effect_tool_is_accepted() -> None:
+    # Since hito 5 the loop asks before running it (spec hito 5, §1.4).
+    write = FakeTool("write", permission="effect")
+    registry = ToolRegistry([write])
+
+    assert registry.get("write") is write
 
 
 def test_empty_registry() -> None:

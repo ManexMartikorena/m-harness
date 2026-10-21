@@ -1,6 +1,7 @@
 """The tools the model may use in a session (spec hito 4, §1.5).
 
-What is not registered does not exist for the model (DESIGN §10).
+What is not registered does not exist for the model (DESIGN §10). Effect tools
+are accepted: the loop asks before running them (spec hito 5, §1.4).
 """
 
 from collections.abc import Iterable
@@ -19,9 +20,6 @@ class ToolRegistry:
             self._add(tool)
 
     def _add(self, tool: Tool[Any]) -> None:
-        if tool.permission != "read":
-            # Nothing can approve an effect until the ApprovalGate (hito 5).
-            raise ValueError(f'tool "{tool.name}": only read tools until hito 5')
         if tool.name in self._tools:
             raise ValueError(f'tool "{tool.name}" is registered twice')
         self._tools[tool.name] = tool
