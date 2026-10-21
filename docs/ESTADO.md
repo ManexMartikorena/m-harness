@@ -2,9 +2,9 @@
 
 Última actualización: 2026-10-21. **Hito 4 (tool calling y bucle agéntico)
 cerrado y publicado como `v0.4.0`.** Hito 5 (permisos y herramientas con
-efecto): spec APROBADA (PR #27); PR 1 (piezas 1 a 5) sale por PR desde
-`feature/hito-5-aprobacion` y lo integra el agente con el CI en verde. **Se
-trabaja en el Ubuntu de casa.**
+efecto): spec APROBADA (PR #27); PR 1 integrado (#29); PR 2 (piezas 6 a 9)
+sale por PR desde `feature/hito-5-ficheros` y lo integra el agente con el CI
+en verde. **Se trabaja en el Ubuntu de casa.**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
@@ -12,15 +12,16 @@ Lo primero al abrir: "Siguiente paso", más abajo.
 
 **Desarrollo. Hito 4 cerrado (`v0.4.0`). Hito 5 (permisos y herramientas con
 efecto): spec APROBADA (PR #27); PR 1 (contrato de aprobación y el bucle que
-pregunta) sale por PR desde `feature/hito-5-aprobacion` y lo integra el
+pregunta) integrado (#29); PR 2 (ficheros con aprobación, `write_file` y
+`edit_file`) sale por PR desde `feature/hito-5-ficheros` y lo integra el
 agente con el CI en verde.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.4.0` — Tool calling y bucle agéntico**
   (2026-10-21):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.4.0
-- Ramas abiertas: ninguna tras integrar el PR 1 del hito 5. Las integradas se
-  conservan en GitHub.
+- Ramas abiertas: `feature/hito-5-ficheros` (PR 2 del hito 5), hasta su
+  integración. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -33,6 +34,24 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Hito 5, PR 2, 2026-10-21, Ubuntu de casa** (sale por PR desde
+  `feature/hito-5-ficheros` y lo integra el agente con el CI en verde;
+  piezas 6 a 9 de la spec §6): leer fuera del directorio o un secreto con
+  aprobación (`7e39cfb`), `write_file` con escritura atómica (`fad129c`),
+  `fsync` de la carpeta tras el renombrado (`c22eb08`), `edit_file` con
+  adaptación a CRLF (`b8e98b6`) y los docs (mapa, spec y estado).
+  Arreglos de la revisión, decididos por el mantenedor: con aviso, la
+  pregunta va antes de los errores de contenido (`39162ca`), tamaño máximo
+  de 2 MiB para cambiar (`40e7e1a`), `cannot read` (`b66b354`), la llamada
+  entera en `_Shown` y `_Asked` (`06e285e`), `.git` siempre pregunta
+  (`ad2341d`), refactor `_as_shown`/`_write` (`9015a45`), aviso de cambio de
+  saltos de línea (`8458304`), `grep` salta los ilegibles (`105904d`) y el
+  commit "Dar un error limpio si falla el stat del fichero que se cambia"
+  (`30ffc45`). Segunda revisión: sin bloqueantes.
+  `write_file` y `edit_file` aún no están cableadas en `bootstrap` (pieza
+  17). En verde: 487 tests. Las decisiones, los límites conocidos, lo
+  pendiente y la revisión, en la spec §12 (puntos 6 a 12).
+- **Hito 5, PR 1 (#29) integrado, 2026-10-21** (`98fb0dd`).
 - **Hito 5, PR 1, 2026-10-21, Ubuntu de casa** (sale por PR desde
   `feature/hito-5-aprobacion` y lo integra el agente con el CI en verde;
   piezas 1 a 5 de la spec §6):
@@ -335,11 +354,15 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente:** PR 2 del hito 5 (`feature/hito-5-ficheros`) desde `main`
-   actualizado, empezando por la pieza 6 de la spec §6 (leer fuera del
-   directorio y secretos con aprobación). Push e integración con el CI en
-   verde, con permiso del mantenedor.
-2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+1. **Agente:** PR `fix/` de la FIFO (`read_file`, `grep` al recorrer e
+   `is_binary`; spec 5, §12.11) desde `main` actualizado, con el test que lo
+   reproduce primero. Push e integración con el CI en verde, con permiso del
+   mantenedor.
+2. **Agente:** PR 3 (`feature/hito-5-comandos`) desde `main` actualizado,
+   empezando por la pieza 10 de la spec §6 (puerto `CommandRunner` y
+   `FakeRunner`). Push e integración con el CI en verde, con permiso del
+   mantenedor.
+3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -427,7 +450,9 @@ resuelve):
   se cancele (spec 5, §1.5 y §12).
 - **Leer fuera del directorio de trabajo y secretos con otro nombre**
   (`credenciales.txt`): hoy se deniega, o no se detecta. Aprobación en el
-  hito 5 (spec 4, §1.6 y §10).
+  hito 5 (spec 4, §1.6 y §10). **Leer fuera y los secretos conocidos,
+  resuelto** en el hito 5, pieza 6 (`7e39cfb`): preguntan, una a una (spec
+  5, §1.6 y §12.6). Los secretos con otro nombre siguen sin detectarse.
 - **Tokens:** cada llamada al modelo cuesta ~700 tokens de entrada solo por
   las cuatro herramientas; un turno de dos pasos llegó a 4111. Coste: hito
   7; compactación: hito 11 (spec 4, §12.14).
@@ -451,6 +476,17 @@ resuelve):
   `CancelledError` y `GeneratorExit` (decisión D4). Hoy tumban `maha` y el
   historial en memoria se pierde igual. Hito 6, con las sesiones en disco
   (spec 5, §12.5).
+- **Una FIFO bloquea `read_file` y `grep` al recorrer** (por `is_binary`;
+  viene del hito 4): PR `fix/` justo después del PR 2, con su test primero
+  (spec 5, §12.11).
+- **Pieza 14 (`TerminalApproval`):** sanear los caracteres de control (ESC,
+  `\r`…) de `title`, `detail` y `warning` antes de pintarlos, para que no se
+  pueda falsear la pregunta (spec 5, §1.10 y §12.12).
+- **`.git/config` se lee sin preguntar** y puede llevar URLs con token:
+  valorar si la lectura de `.git/config` debe preguntar (decisión del
+  mantenedor).
+- **Límites conocidos de `write_file` y `edit_file`** (enlace duro separado,
+  sin propietario ni ACL, solo POSIX…): aceptados; lista en spec 5, §12.10.
 
 **Por medir:**
 - Línea base de las evals (hito 8).

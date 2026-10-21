@@ -1,14 +1,22 @@
-"""Read-only tools over the working directory (spec hito 4, §1.6).
+"""File tools over the working directory (spec hito 4, §1.6, and spec hito
+5, §1.6 to §1.8).
 
-Every path is resolved (following symbolic links) and must stay inside the
-working directory; secret files are refused. No threads: a thread blocked on
-the disk would keep `maha` from exiting on Ctrl+C (spec hito 2, §12).
+Every path is resolved (following symbolic links). Reading outside the
+working directory, or a secret file, asks the user first, one call at a time
+(spec hito 5, §1.6). Writing always asks. No threads: a thread blocked on the
+disk would keep `maha` from exiting on Ctrl+C (spec hito 2, §12).
 """
 
 import asyncio
+import contextlib
+import difflib
+import errno
+import io
 import os
 import re
-from collections.abc import AsyncIterator
+import secrets
+import stat
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePath
@@ -27,6 +35,14 @@ READ_MAX_CHARS = 100_000
 # A longer line is cut: one huge line must not fill the context.
 READ_MAX_LINE = 2000
 
+# The warnings of a question (spec hito 5, §1.6).
+OUTSIDE = "outside the working directory"
+SECRET_FILE = "secret file: its content goes to the model provider"
+SECRET_DIR = "secret directory: its file names go to the model provider"
+# Writing in .git always asks: a hook or the config can run code (review of
+# PR 2, fix 6). Reading it does not.
+GIT_DIR = "git directory: hooks and config here can run code"
+
 
 def _count(number: int, singular: str, plural: str | None = None) -> str:
     """ "1 line", "3 lines": the summaries the terminal shows."""
@@ -35,29 +51,94 @@ def _count(number: int, singular: str, plural: str | None = None) -> str:
 
 
 class Workspace:
-    """The working directory: the only place the tools can see."""
+    """The working directory: the tools see it without asking."""
 
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
 
     def resolve(self, raw: str) -> Path:
-        """The real path of `raw`, which must stay inside the root.
+        """The real path of `raw`, relative to the root.
 
-        `../`, absolute paths and links that point outside do not escape:
-        the check runs on the resolved path.
+        `../`, absolute paths and links that point outside do not hide where
+        they go: every check runs on the resolved path.
         """
-        path = (self.root / raw).resolve()
-        if not path.is_relative_to(self.root):
-            # Reading outside needs approval, which arrives in hito 5.
-            raise ToolError(f"outside the working directory: {raw}")
-        return path
+        return (self.root / raw).resolve()
 
-    def relative(self, path: Path) -> PurePath:
-        return PurePath(path.relative_to(self.root))
+    def contains(self, path: Path) -> bool:
+        return path.is_relative_to(self.root)
 
-    def check_not_secret(self, path: Path, raw: str) -> None:
-        if is_secret(self.relative(path)):
-            raise ToolError(f"secret file, not readable: {raw}")
+    def secret(self, path: Path) -> bool:
+        """Inside, by the path relative to the root; outside, by the absolute
+        path, so an approved `~/.ssh` still counts as secret."""
+        if self.contains(path):
+            return is_secret(PurePath(path.relative_to(self.root)))
+        return is_secret(PurePath(path))
+
+    def shown(self, path: Path) -> str:
+        """What the model and the user see: relative inside, absolute
+        outside."""
+        if self.contains(path):
+            return str(path.relative_to(self.root))
+        return str(path)
+
+    def warning(self, path: Path, secret: str | None) -> str | None:
+        """Why reading `path` needs a question, or None. `secret` is the
+        warning for a secret path, or None if secrets do not ask."""
+        found = []
+        if not self.contains(path):
+            found.append(OUTSIDE)
+        if secret is not None and self.secret(path):
+            found.append(secret)
+        return "; ".join(found) or None
+
+
+class _Asked:
+    """The last call a tool asked about, so `run()` reads only that one.
+
+    Between the question and `run()` a link can change (TOCTOU: time of
+    check to time of use). `run()` resolves the path again: it reads without
+    a question only what needs none, and otherwise only the exact resolved
+    path the user approved, with the same parameters (review of PR 2, fix
+    5). One slot is enough because calls run one at a time; with parallel
+    calls (hito 15) it must keep one per call.
+    """
+
+    def __init__(self) -> None:
+        self._last: tuple[BaseModel, Path] | None = None
+
+    def forget(self) -> None:
+        self._last = None
+
+    def remember(self, params: BaseModel, path: Path) -> None:
+        self._last = (params, path)
+
+    def check(
+        self, params: BaseModel, raw: str, path: Path, warning: str | None
+    ) -> None:
+        if warning is not None and self._last != (params, path):
+            raise ToolError(f"{raw} changed after the question; ask again")
+
+
+def _request(
+    tool: str, title: str, workspace: Workspace, path: Path, raw: str, warning: str
+) -> ApprovalRequest:
+    """A question about reading `path`: never for the whole session."""
+    shown = workspace.shown(path)
+    detail = str(path) if raw == shown else f"{path} (asked: {raw})"
+    return ApprovalRequest(
+        tool=tool, title=title, detail=detail, scope=None, warning=warning
+    )
+
+
+@contextlib.contextmanager
+def _reading(raw: str) -> Iterator[None]:
+    """A failure to read `raw` (no rights, a disk error) as a clean error,
+    not an internal one (review of PR 2, fix 3)."""
+    try:
+        yield
+    except OSError as exc:
+        reason = exc.strerror or str(exc)
+        raise ToolError(f"cannot read {raw}: {reason}") from None
 
 
 def is_binary(path: Path) -> bool:
@@ -84,23 +165,32 @@ class ReadFile:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
+        self._asked = _Asked()
 
     def approval(self, params: ReadFileParams) -> ApprovalRequest | None:
-        # Asks nothing yet: run() still refuses outside paths and secrets.
-        return None
+        self._asked.forget()
+        path = self._workspace.resolve(params.path)
+        warning = self._workspace.warning(path, SECRET_FILE)
+        if warning is None:
+            return None
+        # Before asking: no useless question (spec hito 5, §1.2). Only what
+        # the metadata tells: whether it is binary waits for the approval.
+        _check_exists(path, params.path)
+        self._asked.remember(params, path)
+        shown = self._workspace.shown(path)
+        return _request(
+            self.name, f"read {shown}", self._workspace, path, params.path, warning
+        )
 
     async def run(self, params: ReadFileParams) -> str:
         path = self._workspace.resolve(params.path)
-        self._workspace.check_not_secret(path, params.path)
-        if not path.exists():
-            raise ToolError(f"file not found: {params.path}")
-        if path.is_dir():
-            raise ToolError(f"is a directory, use list_dir: {params.path}")
-        if is_binary(path):
-            raise ToolError(f"binary file, not readable: {params.path}")
+        warning = self._workspace.warning(path, SECRET_FILE)
+        self._asked.check(params, params.path, path, warning)
         limit = min(params.limit or READ_MAX_LINES, READ_MAX_LINES)
-        with path.open(encoding="utf-8", errors="replace", newline="") as file:
-            return _numbered_lines(file, params.offset, limit)
+        with _reading(params.path):
+            _check_file(path, params.path)
+            with path.open(encoding="utf-8", errors="replace", newline="") as file:
+                return _numbered_lines(file, params.offset, limit)
 
     def summary(self, result: str) -> str:
         lines = sum(1 for line in result.splitlines() if _NUMBERED.match(line))
@@ -109,6 +199,19 @@ class ReadFile:
 
 
 _NUMBERED = re.compile(r"^ *\d+\t")
+
+
+def _check_exists(path: Path, raw: str) -> None:
+    if not path.exists():
+        raise ToolError(f"file not found: {raw}")
+    if path.is_dir():
+        raise ToolError(f"is a directory, use list_dir: {raw}")
+
+
+def _check_file(path: Path, raw: str) -> None:
+    _check_exists(path, raw)
+    if is_binary(path):
+        raise ToolError(f"binary file, not readable: {raw}")
 
 
 def _numbered_lines(file: IO[str], offset: int, limit: int) -> str:
@@ -170,20 +273,28 @@ class ListDir:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
+        self._asked = _Asked()
 
     def approval(self, params: ListDirParams) -> ApprovalRequest | None:
-        # Asks nothing yet: run() still refuses outside paths and secrets.
-        return None
+        self._asked.forget()
+        path = self._workspace.resolve(params.path)
+        warning = self._workspace.warning(path, SECRET_DIR)
+        if warning is None:
+            return None
+        _check_dir(path, params.path)
+        self._asked.remember(params, path)
+        shown = self._workspace.shown(path)
+        return _request(
+            self.name, f"list {shown}", self._workspace, path, params.path, warning
+        )
 
     async def run(self, params: ListDirParams) -> str:
         path = self._workspace.resolve(params.path)
-        if is_secret(self._workspace.relative(path)):
-            raise ToolError(f"secret directory, not listable: {params.path}")
-        if not path.exists():
-            raise ToolError(f"directory not found: {params.path}")
-        if not path.is_dir():
-            raise ToolError(f"not a directory, use read_file: {params.path}")
-        entries = sorted(path.iterdir(), key=lambda entry: entry.name)
+        warning = self._workspace.warning(path, SECRET_DIR)
+        self._asked.check(params, params.path, path, warning)
+        _check_dir(path, params.path)
+        with _reading(params.path):
+            entries = sorted(path.iterdir(), key=lambda entry: entry.name)
         if not entries:
             return "(empty directory)"
         lines = [self._entry(entry) for entry in entries[:LIST_MAX_ENTRIES]]
@@ -196,14 +307,20 @@ class ListDir:
     def _entry(self, entry: Path) -> str:
         name = f"{entry.name}/" if entry.is_dir() else entry.name
         # Shown, so the model knows it exists and does not ask for it.
-        relative = PurePath(entry.relative_to(self._workspace.root))
-        return f"{name} [secret]" if is_secret(relative) else name
+        return f"{name} [secret]" if self._workspace.secret(entry) else name
 
     def summary(self, result: str) -> str:
         if result == "(empty directory)":
             return _count(0, "entry", "entries")
         entries = sum(1 for line in result.splitlines() if not line.startswith("… ["))
         return _count(entries, "entry", "entries")
+
+
+def _check_dir(path: Path, raw: str) -> None:
+    if not path.exists():
+        raise ToolError(f"directory not found: {raw}")
+    if not path.is_dir():
+        raise ToolError(f"not a directory, use read_file: {raw}")
 
 
 # Searching walks at most this many files; it yields control every few files,
@@ -214,31 +331,38 @@ WALK_YIELD_EVERY = 100
 
 @dataclass(frozen=True)
 class _Found:
-    real: Path  # resolved, inside the working directory
-    relative: PurePath  # to the working directory: what the model sees
+    real: Path  # resolved, inside the limit of the walk
+    shown: str  # what the model sees: relative inside, absolute outside
     in_base: PurePath  # to the directory searched: what patterns match
 
 
 class _Walk:
     """The files under a directory. Skips SKIPPED_DIRS, secrets, and links
-    that point outside."""
+    that leave the limit: the working directory, or the approved directory
+    when the search is outside (spec hito 5, §1.6)."""
 
     def __init__(self, workspace: Workspace, base: Path) -> None:
         self._workspace = workspace
         self._base = base
+        self._inside = workspace.contains(base)
+        self._limit = workspace.root if self._inside else base
         self.stopped_early = False
+
+    def _shown(self, path: Path) -> str:
+        # A search outside shows every path absolute, also the ones of the
+        # working directory.
+        return self._workspace.shown(path) if self._inside else str(path)
 
     async def files(self) -> AsyncIterator[_Found]:
         seen = 0
-        root = self._workspace.root
+        workspace = self._workspace
         for dirpath, dirnames, filenames in os.walk(self._base):
             directory = Path(dirpath)
             # Pruned in place, so os.walk does not go into them.
             dirnames[:] = sorted(
                 name
                 for name in dirnames
-                if name not in SKIPPED_DIRS
-                and not is_secret(PurePath((directory / name).relative_to(root)))
+                if name not in SKIPPED_DIRS and not workspace.secret(directory / name)
             )
             for name in sorted(filenames):
                 seen += 1
@@ -248,19 +372,25 @@ class _Walk:
                 if seen % WALK_YIELD_EVERY == 0:
                     await asyncio.sleep(0)
                 path = directory / name
-                relative = PurePath(path.relative_to(root))
                 real = path.resolve()
-                if not real.is_relative_to(root) or is_secret(relative):
+                if not real.is_relative_to(self._limit) or workspace.secret(path):
                     continue
-                if is_secret(PurePath(real.relative_to(root))):
+                if workspace.secret(real):
                     continue
-                yield _Found(real, relative, PurePath(path.relative_to(self._base)))
+                in_base = PurePath(path.relative_to(self._base))
+                yield _Found(real, self._shown(path), in_base)
 
 
 def _check_pattern(pattern: str) -> None:
     pure = PurePath(pattern)
     if pure.is_absolute() or ".." in pure.parts:
         raise ToolError("the pattern must be relative, without '..'")
+
+
+def _check_glob(pattern: str, base: Path, raw: str) -> None:
+    _check_pattern(pattern)
+    if not base.is_dir():
+        raise ToolError(f"not a directory: {raw}")
 
 
 GLOB_MAX_RESULTS = 200
@@ -285,19 +415,29 @@ class Glob:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
+        self._asked = _Asked()
 
     def approval(self, params: GlobParams) -> ApprovalRequest | None:
-        # Asks nothing yet: run() still refuses outside paths and secrets.
-        return None
+        self._asked.forget()
+        base = self._workspace.resolve(params.path)
+        # Secrets found while walking are skipped, never asked about.
+        warning = self._workspace.warning(base, None)
+        if warning is None:
+            return None
+        _check_glob(params.pattern, base, params.path)
+        self._asked.remember(params, base)
+        title = f"glob {params.pattern} in {self._workspace.shown(base)}"
+        return _request(self.name, title, self._workspace, base, params.path, warning)
 
     async def run(self, params: GlobParams) -> str:
-        _check_pattern(params.pattern)
         base = self._workspace.resolve(params.path)
-        if not base.is_dir():
-            raise ToolError(f"not a directory: {params.path}")
+        self._asked.check(
+            params, params.path, base, self._workspace.warning(base, None)
+        )
+        _check_glob(params.pattern, base, params.path)
         walk = _Walk(self._workspace, base)
         found = [
-            str(file.relative)
+            file.shown
             async for file in walk.files()
             if file.in_base.full_match(params.pattern)
         ]
@@ -346,31 +486,46 @@ class Grep:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
+        self._asked = _Asked()
 
     def approval(self, params: GrepParams) -> ApprovalRequest | None:
-        # Asks nothing yet: run() still refuses outside paths and secrets.
-        return None
+        self._asked.forget()
+        base = self._workspace.resolve(params.path)
+        warning = self._warning(base)
+        if warning is None:
+            return None
+        _check_grep(params, base)
+        self._asked.remember(params, base)
+        title = f'grep "{params.pattern}" in {self._workspace.shown(base)}'
+        if params.glob:
+            title += f" (glob: {params.glob})"
+        return _request(self.name, title, self._workspace, base, params.path, warning)
+
+    def _warning(self, base: Path) -> str | None:
+        # One secret file asks, as read_file; a secret directory is walked,
+        # and the walk skips its secrets without asking.
+        secret = SECRET_FILE if base.is_file() else None
+        return self._workspace.warning(base, secret)
 
     async def run(self, params: GrepParams) -> str:
-        try:
-            regex = re.compile(params.pattern)
-        except re.error as exc:
-            raise ToolError(f"invalid regular expression: {exc}") from None
-        if params.glob:
-            _check_pattern(params.glob)
         base = self._workspace.resolve(params.path)
-        if not base.exists():
-            raise ToolError(f"not found: {params.path}")
+        self._asked.check(params, params.path, base, self._warning(base))
+        regex = _check_grep(params, base)
         if base.is_file():
-            self._workspace.check_not_secret(base, params.path)
-            found = _search(base, self._workspace.relative(base), regex)
+            with _reading(params.path):
+                found = _search(base, self._workspace.shown(base), regex)
             return _grep_result(found, stopped_early=False)
         walk = _Walk(self._workspace, base)
         matches: list[str] = []
         async for file in walk.files():
             if params.glob and not _glob_matches(file.in_base, params.glob):
                 continue
-            matches.extend(_search(file.real, file.relative, regex))
+            try:
+                matches.extend(_search(file.real, file.shown, regex))
+            except OSError:
+                # Skipped, as secrets, binary and large files (review of
+                # PR 2, fix 8).
+                continue
             # One more than shown: it tells whether something was left out.
             if len(matches) > GREP_MAX_MATCHES:
                 break
@@ -383,6 +538,18 @@ class Grep:
         return _count(found, "match", "matches")
 
 
+def _check_grep(params: GrepParams, base: Path) -> re.Pattern[str]:
+    try:
+        regex = re.compile(params.pattern)
+    except re.error as exc:
+        raise ToolError(f"invalid regular expression: {exc}") from None
+    if params.glob:
+        _check_pattern(params.glob)
+    if not base.exists():
+        raise ToolError(f"not found: {params.path}")
+    return regex
+
+
 def _glob_matches(in_base: PurePath, pattern: str) -> bool:
     # Without "/", by file name, as ripgrep does: "*.py" anywhere.
     if "/" not in pattern:
@@ -390,7 +557,7 @@ def _glob_matches(in_base: PurePath, pattern: str) -> bool:
     return in_base.full_match(pattern)
 
 
-def _search(path: Path, relative: PurePath, regex: re.Pattern[str]) -> list[str]:
+def _search(path: Path, shown: str, regex: re.Pattern[str]) -> list[str]:
     """The matching lines of one text file, as "path:line: text"."""
     if path.stat().st_size > GREP_MAX_FILE_BYTES or is_binary(path):
         return []
@@ -399,7 +566,7 @@ def _search(path: Path, relative: PurePath, regex: re.Pattern[str]) -> list[str]
         for number, line in enumerate(file, start=1):
             text = line.rstrip("\r\n")
             if regex.search(text):
-                found.append(f"{relative}:{number}: {text[:GREP_MAX_LINE]}")
+                found.append(f"{shown}:{number}: {text[:GREP_MAX_LINE]}")
                 if len(found) > GREP_MAX_MATCHES:
                     break
     return found
@@ -412,3 +579,454 @@ def _grep_result(matches: list[str], *, stopped_early: bool) -> str:
     if stopped_early:
         lines.append(f"… [stopped after {WALK_MAX_FILES} files; narrow the path]")
     return "\n".join(lines) if lines else "(no matches)"
+
+
+# Writing (spec hito 5, §1.7).
+
+WRITE_PREVIEW_LINES = 20
+# The diff shown before an overwrite or an edit (spec hito 5, §1.8).
+DIFF_CONTEXT = 3
+DIFF_MAX_LINES = 60
+# Random names tried for the temporary file before giving up.
+TEMP_TRIES = 100
+# A larger file is not overwritten or edited: reading it and computing its
+# diff would block the loop (review of PR 2, fix 2).
+MIB = 1024 * 1024
+CHANGE_MAX_FILE_BYTES = 2 * MIB
+
+
+def _split(text: str) -> list[str]:
+    """The lines of `text` without their endings, split as `read_file`
+    numbers them: at "\n", "\r" or "\r\n"."""
+    lines = []
+    for line in io.StringIO(text, newline="").readlines():
+        if line.endswith("\r\n"):
+            line = line[:-2]
+        elif line.endswith(("\n", "\r")):
+            line = line[:-1]
+        lines.append(line)
+    return lines
+
+
+def _preview(text: str) -> str:
+    """The first lines of a new file, as the user reads them."""
+    lines = _split(text)
+    if not lines:
+        return "(empty file)"
+    shown = lines[:WRITE_PREVIEW_LINES]
+    if len(lines) > WRITE_PREVIEW_LINES:
+        shown.append(f"… [{len(lines) - WRITE_PREVIEW_LINES} more lines]")
+    return "\n".join(shown)
+
+
+def _diff(old: str, new: str) -> str:
+    """A unified diff from `old` to `new`, without the "---"/"+++" header:
+    the path is in the title of the question."""
+    lines = list(
+        difflib.unified_diff(_split(old), _split(new), n=DIFF_CONTEXT, lineterm="")
+    )[2:]
+    if not lines:
+        # Same lines, different bytes: only the line endings change.
+        return "(only line endings change)"
+    shown = lines[:DIFF_MAX_LINES]
+    if len(lines) > DIFF_MAX_LINES:
+        shown.append(f"… [{len(lines) - DIFF_MAX_LINES} more diff lines]")
+    before, after = _endings(old), _endings(new)
+    if before and after and before != after:
+        # The diff compares lines without their endings: it would not show it
+        # (review of PR 2, fix 4).
+        shown.insert(0, f"(line endings change: {before} → {after})")
+    return "\n".join(shown)
+
+
+def _endings(text: str) -> str | None:
+    """The line ending style of `text`: "CRLF", "LF", "mixed" (also a lone
+    "\r"), or None without line endings."""
+    crlf = text.count("\r\n")
+    lf = text.count("\n") - crlf
+    cr = text.count("\r") - crlf
+    if cr or (crlf and lf):
+        return "mixed"
+    if crlf:
+        return "CRLF"
+    if lf:
+        return "LF"
+    return None
+
+
+def _change_warning(workspace: Workspace, path: Path) -> str | None:
+    """Why changing `path` cannot be approved for the whole session: the
+    warnings of reading it, and .git anywhere in its resolved path."""
+    found = [workspace.warning(path, SECRET_FILE)]
+    if ".git" in path.parts:
+        found.append(GIT_DIR)
+    return "; ".join(warning for warning in found if warning) or None
+
+
+def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
+    """What would make writing `path` fail, found before asking."""
+    if path.is_dir():
+        raise ToolError(f"is a directory: {raw}")
+    if path.exists() and not path.is_file():
+        raise ToolError(f"not a regular file: {raw}")
+    for parent in path.parents:
+        if parent.exists():
+            if not parent.is_dir():
+                raise ToolError(f"not a directory: {workspace.shown(parent)}")
+            return
+
+
+def _current_bytes(path: Path, raw: str, verb: str) -> bytes | None:
+    """The bytes of the file to `verb`, or None if it does not exist.
+
+    Bytes, not text: a question about a secret or a file outside must not
+    tell the model whether it is text before the user approves (review of
+    PR 2, fix 1); the bytes still let `run()` see a change (decision W6).
+    """
+    if not path.exists():
+        return None
+    with _reading(raw):
+        size = path.stat().st_size
+    if size > CHANGE_MAX_FILE_BYTES:
+        raise ToolError(
+            f"file too large to {verb} ({size / MIB:.1f} MiB, "
+            f"max {CHANGE_MAX_FILE_BYTES // MIB} MiB); use run_command"
+        )
+    with _reading(raw):
+        return path.read_bytes()
+
+
+def _decode(data: bytes, raw: str) -> str:
+    """The text of `data`, read as `newline=""` does: endings as they are."""
+    if b"\0" in data[:BINARY_PROBE]:
+        raise ToolError(f"binary file, not writable: {raw}")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ToolError(f"not a UTF-8 text file: {raw}") from None
+
+
+def _create_temporary(path: Path) -> tuple[int, Path]:
+    """A new hidden file next to `path`, so the rename stays on the same
+    file system.
+
+    Created like `open("w")` does, with mode 0o666 and the umask applied by
+    the system, not with the 0o600 of `tempfile.mkstemp`. O_EXCL makes the
+    name ours; O_NOFOLLOW refuses a link planted with that name.
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
+    for _ in range(TEMP_TRIES):
+        temporary = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
+        try:
+            return os.open(temporary, flags, 0o666), temporary
+        except FileExistsError:
+            continue
+    raise FileExistsError(errno.EEXIST, "no free temporary file name")
+
+
+def _write_atomically(path: Path, text: str) -> None:
+    """Write `text` to `path` in UTF-8, as is: a reader sees the old file or
+    the new one, never half of it.
+
+    Written to a temporary file in the same folder, flushed to the disk and
+    renamed over `path`; then the folder is flushed too, so the rename
+    survives a power cut. An existing file keeps its mode. On any failure, or
+    a cancellation, before the rename, the temporary file is removed and
+    `path` is untouched.
+    """
+    try:
+        mode: int | None = stat.S_IMODE(path.stat().st_mode)
+    except FileNotFoundError:
+        mode = None
+    descriptor, temporary = _create_temporary(path)
+    try:
+        with open(descriptor, "w", encoding="utf-8", newline="") as file:
+            if mode is not None:
+                os.fchmod(file.fileno(), mode)
+            file.write(text)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+    _sync_folder(path.parent)
+
+
+def _sync_folder(folder: Path) -> None:
+    """Flush the entries of `folder` to the disk (POSIX).
+
+    The fsync of a file does not cover its entry in the folder: the rename
+    needs an fsync of the folder too (fsync(2)). A failure is ignored: the
+    file is already replaced, and some file systems cannot flush a folder.
+    """
+    with contextlib.suppress(OSError):
+        descriptor = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
+@dataclass(frozen=True)
+class _Shown:
+    """What the question showed: the call, the resolved path, and the bytes
+    it would replace (None: the file did not exist)."""
+
+    params: BaseModel
+    path: Path
+    old: bytes | None
+
+
+def _changed(raw: str) -> ToolError:
+    return ToolError(f"{raw} changed after the question; ask again")
+
+
+def _as_shown(
+    workspace: Workspace,
+    shown: _Shown | None,
+    params: WriteFileParams | EditFileParams,
+    verb: str,
+) -> tuple[Path, bytes | None]:
+    """The start of `run()` for write_file and edit_file: the same call, the
+    same resolved path and the same bytes the question showed (decisions D1
+    and W6, review of PR 2, fix 5). Gives the path and its bytes."""
+    path = workspace.resolve(params.path)
+    if shown is None or (shown.params, shown.path) != (params, path):
+        raise _changed(params.path)
+    _check_target(workspace, path, params.path)
+    data = _current_bytes(path, params.path, verb)
+    if data != shown.old:
+        raise _changed(params.path)
+    return path, data
+
+
+def _write(workspace: Workspace, path: Path, text: str, *, parents: bool) -> None:
+    """Write `text` to `path` atomically; `parents` creates its folders. A
+    failure is a clean error (decision A2)."""
+    try:
+        if parents:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        _write_atomically(path, text)
+    except OSError as exc:
+        reason = exc.strerror or str(exc)
+        raise ToolError(f"cannot write {workspace.shown(path)}: {reason}") from None
+
+
+class WriteFileParams(BaseModel):
+    path: str = Field(description="Path relative to the working directory")
+    content: str = Field(description="The whole new content of the file")
+
+
+class WriteFile:
+    name = "write_file"
+    description = (
+        "Create or overwrite a text file in the working directory. The user "
+        'approves it first. Example: {"path": "notes.txt", "content": "…"}'
+    )
+    params = WriteFileParams
+    permission: Permission = "effect"
+
+    def __init__(self, workspace: Workspace) -> None:
+        self._workspace = workspace
+        # What the last question showed; run() writes only that (decision
+        # D1). One slot is enough because calls run one at a time; with
+        # parallel calls (hito 15) it must keep one per call.
+        self._shown: _Shown | None = None
+
+    def approval(self, params: WriteFileParams) -> ApprovalRequest | None:
+        self._shown = None
+        workspace = self._workspace
+        path = workspace.resolve(params.path)
+        _check_target(workspace, path, params.path)
+        try:
+            params.content.encode("utf-8")
+        except UnicodeEncodeError:
+            raise ToolError("content is not valid UTF-8") from None
+        warning = _change_warning(workspace, path)
+        data = _current_bytes(path, params.path, "overwrite")
+        shown = workspace.shown(path)
+        if data is None:
+            lines = _count(len(_split(params.content)), "line")
+            title = f"create {shown} ({lines})"
+            body = _preview(params.content)
+        else:
+            title = f"overwrite {shown}"
+            try:
+                body = _diff(_old_text(data, params), params.content)
+            except ToolError:
+                # With a warning, what depends on the content waits for the
+                # approval (review of PR 2, fix 1).
+                if warning is None:
+                    raise
+                body = _preview(params.content)
+        detail = body if params.path == shown else f"(asked: {params.path})\n{body}"
+        self._shown = _Shown(params, path, data)
+        return ApprovalRequest(
+            tool=self.name,
+            title=title,
+            detail=detail,
+            scope=self.name if warning is None else None,
+            warning=warning,
+        )
+
+    async def run(self, params: WriteFileParams) -> str:
+        workspace = self._workspace
+        path, data = _as_shown(workspace, self._shown, params, "overwrite")
+        if data is not None:
+            _old_text(data, params)
+        _write(workspace, path, params.content, parents=True)
+        lines = _count(len(_split(params.content)), "line")
+        return f"wrote {workspace.shown(path)} ({lines})"
+
+    def summary(self, result: str) -> str:
+        # "wrote notas.txt (3 lines)" → "3 lines".
+        return result[result.rfind("(") + 1 : -1]
+
+
+def _old_text(data: bytes, params: WriteFileParams) -> str:
+    """The text that `params` overwrites; the errors that depend on it."""
+    old = _decode(data, params.path)
+    if old == params.content:
+        raise ToolError("nothing to change")
+    return old
+
+
+# Editing (spec hito 5, §1.8).
+
+# A "\n" with no "\r" before it.
+_LONE_LF = re.compile(r"(?<!\r)\n")
+
+
+class EditFileParams(BaseModel):
+    path: str = Field(description="Path relative to the working directory")
+    old_string: str = Field(description="The exact text to replace")
+    new_string: str = Field(description="The text to put in its place")
+    replace_all: bool = Field(
+        default=False, description="Replace every occurrence of old_string"
+    )
+
+
+def _check_strings(params: EditFileParams) -> None:
+    """What is wrong with the strings alone, found before the disk."""
+    if not params.old_string:
+        raise ToolError("old_string is empty")
+    if params.old_string == params.new_string:
+        raise ToolError("nothing to change")
+    try:
+        params.new_string.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ToolError("new_string is not valid UTF-8") from None
+
+
+def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
+    """`text` after the edit, and how many replacements it makes.
+
+    Exact matches first. With none, in a file with CRLF, the lone "\\n" of
+    both strings become "\\r\\n": the model sees the lines without their
+    endings (decision 9b).
+    """
+    old, new = params.old_string, params.new_string
+    found = text.count(old)
+    if found == 0 and "\r\n" in text and _LONE_LF.search(old):
+        old = _LONE_LF.sub("\r\n", old)
+        new = _LONE_LF.sub("\r\n", new)
+        found = text.count(old)
+    if found == 0:
+        raise ToolError(
+            f"old_string not found in {params.path}; "
+            "read the file and copy the text exactly"
+        )
+    if found > 1 and not params.replace_all:
+        raise ToolError(
+            f"old_string appears {found} times in {params.path}; "
+            "add context to make it unique or use replace_all"
+        )
+    return text.replace(old, new), found
+
+
+def _edited(data: bytes, params: EditFileParams) -> tuple[str, str, int]:
+    """The text before and after the edit, and how many replacements; the
+    errors that depend on the content."""
+    old = _decode(data, params.path)
+    new, found = _replaced(old, params)
+    if new == old:
+        # Possible after adapting to CRLF: "a\n" for "a\r\n" (decision C).
+        raise ToolError("nothing to change")
+    return old, new, found
+
+
+def _strings(params: EditFileParams) -> str:
+    """The strings of the call, for a question that cannot derive anything
+    from the content (review of PR 2, fix 1)."""
+    lines = ["old_string:", *_split(params.old_string)]
+    lines += ["new_string:", *_split(params.new_string)]
+    if params.replace_all:
+        lines.append("replace_all: true")
+    shown = lines[:DIFF_MAX_LINES]
+    if len(lines) > DIFF_MAX_LINES:
+        shown.append(f"… [{len(lines) - DIFF_MAX_LINES} more lines]")
+    return "\n".join(shown)
+
+
+class EditFile:
+    name = "edit_file"
+    description = (
+        "Replace an exact text in a file. old_string must appear exactly once "
+        "(or use replace_all). Read the file first. The user approves it. "
+        'Example: {"path": "app.py", "old_string": "return 1", '
+        '"new_string": "return 2"}'
+    )
+    params = EditFileParams
+    permission: Permission = "effect"
+
+    def __init__(self, workspace: Workspace) -> None:
+        self._workspace = workspace
+        # What the last question showed; run() edits only that (decisions
+        # D1 and W6). One slot is enough because calls run one at a time;
+        # with parallel calls (hito 15) it must keep one per call.
+        self._shown: _Shown | None = None
+
+    def approval(self, params: EditFileParams) -> ApprovalRequest | None:
+        self._shown = None
+        _check_strings(params)
+        workspace = self._workspace
+        path = workspace.resolve(params.path)
+        _check_target(workspace, path, params.path)
+        data = _current_bytes(path, params.path, "edit")
+        if data is None:
+            raise ToolError(f"file not found: {params.path}")
+        warning = _change_warning(workspace, path)
+        try:
+            old, new, _ = _edited(data, params)
+            body = _diff(old, new)
+        except ToolError:
+            # With a warning, what depends on the content waits for the
+            # approval (review of PR 2, fix 1).
+            if warning is None:
+                raise
+            body = _strings(params)
+        shown = workspace.shown(path)
+        detail = body if params.path == shown else f"(asked: {params.path})\n{body}"
+        self._shown = _Shown(params, path, data)
+        return ApprovalRequest(
+            tool=self.name,
+            title=f"edit {shown}",
+            detail=detail,
+            scope=self.name if warning is None else None,
+            warning=warning,
+        )
+
+    async def run(self, params: EditFileParams) -> str:
+        workspace = self._workspace
+        path, data = _as_shown(workspace, self._shown, params, "edit")
+        if data is None:
+            # approval() refuses a missing file, so it appeared.
+            raise _changed(params.path)
+        _, new, found = _edited(data, params)
+        _write(workspace, path, new, parents=False)
+        return f"edited {workspace.shown(path)} ({_count(found, 'replacement')})"
+
+    def summary(self, result: str) -> str:
+        # "edited app.py (1 replacement)" → "1 replacement".
+        return result[result.rfind("(") + 1 : -1]

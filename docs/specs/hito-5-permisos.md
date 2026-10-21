@@ -147,6 +147,9 @@ Responder `a` guarda el `scope` de la petición; las siguientes con el mismo
   en su propio repo y resulte pesado, con su propia spec de mejora.
 - **Por qué nunca para la sesión fuera del perímetro o con secretos:** son las
   dos cosas que DESIGN §10 pide "explícitamente" una a una.
+- *(Añadido 2026-10-21, decisión del mantenedor; ver §12.12.)* Escribir o
+  editar en `.git` también pregunta siempre (`scope=None`): sus hooks y su
+  config ejecutan código. Leer en `.git` no cambia.
 - Ver duda 2 de §11.
 
 ### 1.4 El bucle pregunta; una negativa termina el turno
@@ -207,6 +210,11 @@ Para cada llamada, tras validar los argumentos (hito 4, §1.8):
 - Leer **dentro** y no secreto sigue sin preguntar (`READ`, DESIGN §10).
 - La pregunta enseña la ruta resuelta, no la que escribió el modelo: un
   enlace no puede disfrazar a dónde va.
+- *(Añadido 2026-10-21, decisión del mantenedor; ver §12.12.)* Con aviso
+  (fuera, secreto o `.git`), la pregunta va antes de los errores que dependen
+  del contenido (binario, no UTF-8, `old_string` que no está…): si no, el
+  modelo podría sondear un secreto sin pregunta. Antes solo salen los de
+  metadatos y parámetros.
 
 ### 1.7 `write_file`
 
@@ -221,6 +229,9 @@ sobrescribe entero. `effect`.
 - `scope`: `"write_file"` dentro; `None` fuera o si es un secreto.
 - Escribe en UTF-8 tal cual (sin cambiar los saltos de línea). Devuelve
   `wrote notas.txt (3 lines)`.
+  *(Añadido 2026-10-21, decisión del mantenedor; ver §12.)* La escritura es
+  **atómica** (temporal en la misma carpeta y `os.replace`); `edit_file`
+  usa la misma.
 - Una carpeta en `path` → `ToolError`.
 
 ### 1.8 `edit_file`
@@ -234,6 +245,12 @@ exacto por otro. `effect`.
   `replace_all=True`). Si no aparece o aparece varias veces → `ToolError` en
   `approval()`, antes de preguntarte. El modelo puede corregirse leyendo el
   fichero.
+  *(Corregido 2026-10-21, decisión del mantenedor; ver §12.)* **Adaptación a
+  CRLF:** si hay 0 coincidencias exactas, `old_string` contiene `\n` sueltos
+  y el fichero contiene `\r\n`, se busca con esos `\n` pasados a `\r\n`, y
+  `new_string` se escribe adaptado igual. La coincidencia exacta tiene
+  prioridad. Por qué: `read_file` no muestra los `\r`; sin esto, toda edición
+  de varias líneas en un fichero CRLF fallaría.
 - **Pregunta** con el diff unificado (3 líneas de contexto, a lo sumo 60
   líneas de diff; más, con un aviso de cuántas faltan).
 - `scope`: `"edit_file"` dentro; `None` fuera o en un secreto.
@@ -317,6 +334,11 @@ directorio de trabajo. `effect`; `timeout` de 1 a 600 s.
   `deny`.
 - Con aviso, una línea más en amarillo: `│ ! outside the working directory`.
 - `detail` se corta a 60 líneas y cada línea a 200 caracteres.
+- *(Añadido 2026-10-21, decisión del mantenedor tras la revisión del PR 2;
+  ver §12.12.)* **Requisito para la pieza 14:** antes de pintar `title`,
+  `detail` y `warning`, se sanean sus caracteres de control (ESC, `\r`…).
+  Por qué: un fichero o un argumento del modelo con secuencias de terminal
+  podría falsear lo que ves en la pregunta.
 - **Sin terminal, se deniega sin preguntar.** Con `maha < notas.txt`, la
   "respuesta" sería la siguiente línea del fichero: una línea que empiece por
   "y" aprobaría un comando. `bootstrap` usa entonces `DenyAll`, que escribe
@@ -486,7 +508,8 @@ Cada punto es un commit, en verde.
 12. **`run_command`.** 4.5.6. 13. **Mapa.**
 
 **PR 4** (`feature/hito-5-terminal`): terminal, `refusal` y cableado.
-14. **`TerminalApproval` y `DenyAll`.** 4.6.1–2.
+14. **`TerminalApproval` y `DenyAll`.** 4.6.1–2. *(Añadido 2026-10-21:
+    con el saneado de caracteres de control de §1.10.)*
 15. **La conversación con aprobaciones.** 4.6.3.
 16. **`refusal`.** 4.7.
 17. **Cableado** de las siete herramientas, el gate y el runner. 4.8.
@@ -664,3 +687,182 @@ decidido al implementar; en las piezas 3 y 4, por el mantenedor.
      excepción no prevista (p. ej., el `gate` falla con `OSError`), el turno
      no se guarda. Hoy eso tumba `maha` y el historial en memoria se pierde
      igual. Se revisa cuando las sesiones se guarden en disco.
+
+PR 2 (`feature/hito-5-ficheros`, piezas 6 a 9). Lo que la spec no fijaba,
+decidido por el mantenedor al implementar. Todo en
+`adapters/tools/files.py`.
+
+6. **Pieza 6, lectura con aprobación** (`7e39cfb`):
+   - el permiso pasa de `run()` a `approval()`. Cambian 7 tests del hito 4:
+     de "denegado" a "pregunta";
+   - D1: `run()` vuelve a resolver la ruta; si no es la que se preguntó →
+     `<ruta> changed after the question; ask again`. Una sola pareja
+     `(escrita, resuelta)` por herramienta (`_Asked`), porque las llamadas
+     van una a una; en el hito 15, una por llamada. Ese texto sale también si
+     un enlace pasa a apuntar fuera o a un secreto sin que hubiera pregunta:
+     aceptado así. *(Revisión, `06e285e`: ahora se guarda la llamada entera,
+     no solo la ruta; ver §12.12.)*;
+   - D2: en un recorrido (`glob`, `grep`) de fuera, el límite es la carpeta
+     aprobada: los enlaces que salen de ella se saltan;
+   - D3: fuera, todas las rutas salen absolutas, también las de dentro al
+     buscar en `..`;
+   - D4: fuera del directorio, `is_secret` mira la ruta absoluta resuelta
+     (dentro, la relativa, como en el hito 4): un `~/.ssh` aprobado sigue
+     siendo secreto;
+   - D5: con los dos avisos, van juntos con `"; "`, el de fuera primero;
+   - D6: `list_dir` de una carpeta secreta avisa con `secret directory: its
+     file names go to the model provider`. §1.6 decía "como un secreto"
+     (contenido), pero lo que sale son nombres; texto exacto elegido por el
+     mantenedor;
+   - D7: `grep` sobre un fichero secreto pregunta; sobre una carpeta secreta
+     no pregunta, y el recorrido salta sus secretos;
+   - D8: los fallos baratos (no existe, carpeta, binario, patrón o regex
+     inválidos) van antes de preguntar. *(Revisión, `39162ca`: "binario" ya
+     no; sale en `run()`, tras aprobar. Ver §12.12.)*;
+   - textos: title `read <ruta>`, `list <ruta>`, `glob <patrón> in <ruta>`,
+     `grep "<patrón>" in <ruta>` (más ` (glob: …)` si lo hay); detail, la ruta
+     resuelta, con ` (asked: <escrita>)` si difiere.
+7. **Pieza 7, `write_file`** (`fad129c`):
+   - W1: diff con 3 líneas de contexto y como mucho 60; si hay más,
+     `… [N more diff lines]`;
+   - W2: fichero existente binario o no UTF-8 → error antes de preguntar.
+     *(Revisión, `39162ca`: con aviso, sale en `run()`, tras aprobar.)*;
+   - W3: líneas contadas como las numera `read_file` (`\n`, `\r` o `\r\n`);
+   - W4: diff sin cabeceras `---`/`+++`, como el ejemplo de §0: la ruta va en
+     el title;
+   - W5: mismo contenido → `nothing to change`; solo cambian los saltos de
+     línea → el detail dice `(only line endings change)`. *(Revisión,
+     `39162ca`: con aviso, `nothing to change` sale en `run()`, tras
+     aprobar.)*;
+   - W6: `run()` vuelve a leer el fichero; si no es el texto que mostró la
+     pregunta (o ahora existe y antes no) → `changed after the question`;
+   - W7: `(asked: <escrita>)` como primera línea del detail, si difiere;
+   - W8/A3: carpeta, algo que no es un fichero normal, un padre que no es
+     carpeta o `content` no UTF-8 → error antes de preguntar;
+   - A2: un `OSError` al escribir → `cannot write <ruta>: <motivo>`;
+   - A4: las carpetas creadas antes de un fallo se quedan;
+   - textos: vista previa de 20 líneas, con `… [N more lines]` y
+     `(empty file)`; resultado `wrote <ruta> (N lines)`; summary `N lines`;
+   - **escritura atómica** (fuera de la spec, decisión del mantenedor):
+     temporal oculto `.<nombre>.<8 hex>.tmp` en la misma carpeta, creado con
+     `os.open(…, O_EXCL|O_NOFOLLOW|O_CLOEXEC, 0o666)` para que la umask se
+     aplique como con `open("w")` (A1; `mkstemp` crea con 0600); `fsync`;
+     `os.replace`. Si el fichero existía, se copia su modo. Ante cualquier
+     fallo o cancelación antes del `os.replace`, se borra el temporal y el
+     original queda intacto.
+8. **`fsync` de la carpeta** (`c22eb08`, decisión del mantenedor): completa
+   el patrón atómico; el `fsync` del fichero no cubre su entrada en la
+   carpeta. Si falla, se ignora: el fichero ya está reemplazado, y decir
+   `cannot write` haría que el modelo lo repitiera.
+9. **Pieza 8, `edit_file`** (`b8e98b6`):
+   - errores con pista: `old_string not found in <ruta>; read the file and
+     copy the text exactly` y `old_string appears N times in <ruta>; add
+     context to make it unique or use replace_all`;
+   - plural: `1 replacement`, `N replacements`;
+   - `old_string` vacío → error; `replace_all` sin apariciones → error (el de
+     "not found");
+   - fichero que no existe → `file not found: <ruta>`;
+   - binario o no UTF-8 → los errores de `write_file`. *(Revisión,
+     `39162ca`: con aviso, estos, "not found" y "appears N times" salen en
+     `run()`, tras aprobar.)*;
+   - `new_string` no UTF-8 → error antes de preguntar;
+   - apariciones contadas sin solapar (`str.count`);
+   - orden: parámetros, fichero, pregunta;
+   - cada campo de `EditFileParams` lleva descripción;
+   - 9b, adaptación a CRLF: ver §1.8;
+   - C: si tras la adaptación el texto queda igual (`"a\n"` por `"a\r\n"`)
+     → `nothing to change`. *(Revisión, `39162ca`: con aviso, sale en
+     `run()`, tras aprobar.)*
+10. **Límites conocidos** (aceptados):
+    - un enlace duro se separa: `os.replace` deja un fichero nuevo;
+    - no se conservan el propietario, el grupo, los atributos extendidos ni
+      las ACL: solo el modo;
+    - las carpetas creadas antes de un fallo se quedan (A4);
+    - el `fsync` llega solo a la carpeta del fichero, no a las carpetas padre
+      recién creadas;
+    - solo POSIX (`O_DIRECTORY`, `O_NOFOLLOW`);
+    - un nombre de más de unos 240 caracteres falla al crear el temporal (el
+      temporal suma 14);
+    - queda un hueco de microsegundos entre la última comprobación y
+      `os.replace` / `open`;
+    - las apariciones solapadas cuentan sin solapar;
+    - en un fichero mezclado, un `old_string` que cruza las zonas LF y CRLF
+      no coincide;
+    - los `\r` solos no se adaptan;
+    - ~~`_Shown` comprueba la ruta y el texto del fichero, no los demás
+      parámetros.~~ **Resuelto** en la revisión (`06e285e`, §12.12);
+    - el fallo del `fsync` de la carpeta no deja rastro (el hito 7 lo podrá
+      registrar);
+    - *(segunda revisión)* `difflib` sobre un fichero de hasta 2 MiB con
+      muchas líneas casi iguales puede tardar: es trabajo síncrono;
+    - *(segunda revisión)* `GIT_DIR` solo cubre `.git`: `.github/workflows`,
+      `.husky`, `.pre-commit-config.yaml` o la configuración de `maha`
+      siguen admitiendo "siempre en esta sesión";
+    - *(segunda revisión)* con aviso, un `old_string` incorrecto o un
+      binario pregunta primero y falla después de aprobar: coste aceptado
+      del arreglo de la fuga (`39162ca`, §12.12).
+11. **Pendiente fuera del hito:** una FIFO bloquea la lectura (viene del
+    hito 4). Afecta a `read_file`, a `grep` al recorrer y a `is_binary`, que
+    las dos usan para mirar los primeros bytes. Irá en un PR `fix/` justo
+    después del PR 2, con su test primero. `write_file` y `edit_file` no se
+    ven afectadas: una FIFO no es un fichero normal y falla antes de leer.
+12. **Revisión del PR 2** (2026-10-21). Arreglos decididos por el
+    mantenedor, un commit cada uno; el código los cita como "review of PR 2,
+    fix N":
+    - **`39162ca`, con aviso, la pregunta va antes que el contenido** (fix
+      1). Con aviso (fuera, secreto o `.git`), antes de preguntar solo salen
+      errores de metadatos (no existe, carpeta, no es un fichero normal,
+      padre que no es carpeta, tamaño, `cannot read`) y de parámetros que no
+      miran el disco (`old_string` vacío, `old_string` igual a `new_string`,
+      `content` o `new_string` no UTF-8). Los que dependen del contenido
+      (`not found`, `appears N times`, `nothing to change`, binario, no
+      UTF-8) salen en `run()`, tras aprobar. `read_file` con aviso tampoco
+      dice "binary" antes. Por qué: sin esto, un modelo podía sondear un
+      secreto carácter a carácter sin pregunta. Si el contenido no es
+      válido, el detail es de reserva: en `edit_file`, `old_string:` y
+      `new_string:` con sus líneas (y `replace_all: true`), cortado a 60
+      líneas; en `write_file`, la vista previa del contenido nuevo. El diff
+      de un secreto válido sí se enseña: va a la terminal, no al modelo.
+      Ajusta D8, W2, W5 y C (§12.6, §12.7 y §12.9).
+    - **`40e7e1a`, tamaño máximo para cambiar** (fix 2):
+      `CHANGE_MAX_FILE_BYTES` = 2 MiB, comprobado con `stat` antes de leer.
+      Más grande → `file too large to edit|overwrite (N.N MiB, max 2 MiB);
+      use run_command`. Por qué: leerlo y calcular su diff bloquearía el
+      bucle. Es metadato: sale antes de preguntar, también con aviso.
+    - **`b66b354`, `cannot read`** (fix 3): un `OSError` al leer → `cannot
+      read <ruta>: <motivo>`, con `_reading`, en vez de un error interno.
+      Lo usan `read_file`, `list_dir`, `grep` sobre un fichero, `write_file`
+      y `edit_file`; `glob` no lo usa.
+    - **`8458304`, aviso de saltos de línea** (fix 4): si cambia el estilo,
+      `(line endings change: X → Y)` como primera línea del diff (tras
+      `(asked: …)`). Estilos `CRLF`, `LF` o `mixed`; un `\r` suelto cuenta
+      como `mixed`. Sin aviso si un lado no tiene saltos, si solo cambian los
+      saltos (ya sale `(only line endings change)`) o con el detail de
+      reserva. Por qué: el diff compara líneas sin su salto y no lo
+      enseñaría.
+    - **`06e285e`, la llamada entera** (fix 5): `_Shown` y `_Asked` guardan
+      los parámetros completos, y `run()` los compara; si difieren, el error
+      de D1. Cierra el hueco antes del hito 15 (llamadas en paralelo).
+    - **`ad2341d`, `.git` siempre pregunta** (fix 6): escribir o editar en
+      una ruta resuelta con un componente `.git` → `scope=None` y el aviso
+      `git directory: hooks and config here can run code`. Orden de los
+      avisos: fuera, secreto, git. Por qué: hooks y config de git ejecutan
+      código, y "siempre en esta sesión" lo permitiría sin pregunta. Leer en
+      `.git` no cambia. Límite: si el directorio de trabajo está dentro de
+      una carpeta `.git`, toda escritura avisa.
+    - **`9015a45`, refactor**: `_as_shown` (el inicio común de `run()` en
+      `write_file` y `edit_file`) y `_write` (escritura atómica con el error
+      de A2). Sin cambio de comportamiento.
+    - **`105904d`, `grep` y los ficheros ilegibles** (fix 8): al recorrer,
+      los salta, como los secretos, binarios y grandes; sobre un fichero
+      suelto da `cannot read`.
+    - **Requisito para la pieza 14:** `TerminalApproval` sanea los
+      caracteres de control de `title`, `detail` y `warning` antes de
+      pintarlos (§1.10).
+
+    Segunda revisión del PR 2: sin bloqueantes. Un arreglo más:
+    - **`30ffc45`, "Dar un error limpio si falla el stat del fichero que se
+      cambia"**: `path.stat()` en `_current_bytes` también da `cannot read`
+      en vez de error interno.
+
+    En verde: 487 tests.
