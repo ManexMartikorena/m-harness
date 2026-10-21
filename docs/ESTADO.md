@@ -2,14 +2,14 @@
 
 Última actualización: 2026-10-21. **Hito 4 (tool calling y bucle agéntico)
 cerrado y publicado como `v0.4.0`.** Hito 5 (permisos y herramientas con
-efecto): spec PROPUESTA en `docs/spec-hito-5-permisos`.
+efecto): spec APROBADA (PR #27).
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 4 cerrado (`v0.4.0`). Hito 5 (permisos y herramientas con
-efecto): spec PROPUESTA en la rama `docs/spec-hito-5-permisos`.**
+efecto): spec APROBADA (PR #27); implementación sin empezar.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.4.0` — Tool calling y bucle agéntico**
@@ -29,6 +29,9 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Spec del hito 5 aprobada, 2026-10-21** (PR #27): el mantenedor acepta
+  las cinco recomendaciones de §11 sin cambios; se anota como mejora futura
+  aprobar comandos por prefijo (spec §1.3).
 - **Spec del hito 5 propuesta, 2026-10-21** (rama
   `docs/spec-hito-5-permisos`):
   - contrato de aprobación: `ApprovalRequest`, `Decision`, puerto
@@ -307,18 +310,12 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Agente:** push de `docs/spec-hito-5-permisos` y PR.
-2. **Humano:** decidir las dudas de la spec §11 y decírselas al agente:
-   1. una negativa termina el turno;
-   2. ámbitos de "toda la sesión";
-   3. sin terminal, se deniega todo;
-   4. `refusal` en este hito;
-   5. lo ejecutado consta.
-3. **Agente, en la rama del PR:** anotar las decisiones en §11, spec a
-   APROBADA, ajustar lo que cambie, ESTADO, commit y push.
-4. **Humano o agente:** integrar el PR con merge commit, con el CI en verde.
-5. **Agente:** implementar el hito 5 por piezas (spec §6) en
-   `feature/hito-5-aprobacion`, desde la pieza 1.
+1. **Agente:** integrar el PR #27 con merge commit, con el CI en verde, y
+   `git switch main && git pull`.
+2. **Agente:** implementar el hito 5 por piezas (spec §6) en
+   `feature/hito-5-aprobacion`, desde la pieza 1 (contrato de aprobación).
+   Push e integración de cada PR: preguntar al mantenedor si mantiene el
+   permiso que dio para el hito 4.
 
 **Sesión del 2026-10-21 en el PC de Windows (WSL).**
 
@@ -381,8 +378,8 @@ resuelve):
   §12.9.3).
 - **`refusal` del stream se ignora:** una negativa del modelo se perdería
   en silencio (spec 3, §10). `tool_calls` quedó resuelto en el hito 4, pero
-  `refusal` no entró en su spec: **sin hito asignado**; la spec del hito 5
-  propone tratarlo en él (§1.11, duda 4).
+  `refusal` no entró en su spec: se trata en el hito 5 (spec 5, §1.11),
+  aprobado por el mantenedor.
 - **Respuesta cortada con Ctrl+C:** queda en pantalla, pero el modelo no la
   recuerda. Guardarla marcada como cortada: hito 6 (spec 3, §1.6).
 - **Sin reintentos** ante 429 o 5xx: se valoran en el hito 7 o el 8 (spec 3,

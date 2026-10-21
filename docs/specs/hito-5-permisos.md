@@ -1,4 +1,4 @@
-Estado: PROPUESTA (2026-10-21)
+Estado: PROPUESTA (2026-10-21) → APROBADA (2026-10-21, sin cambios)
 
 # Spec — Hito 5: Permisos y herramientas con efecto
 
@@ -141,6 +141,10 @@ Responder `a` guarda el `scope` de la petición; las siguientes con el mismo
 - **Por qué el comando exacto:** aprobar "todos los comandos" sería dar la
   terminal entera; aprobar `uv run pytest` para la sesión es lo útil.
   Prefijos o patrones (como Claude Code) quedan fuera (§0).
+- **Mejora futura, anotada al aprobar:** aprobar por prefijo
+  (`uv run pytest *`) es más cómodo para el producto final: con el comando
+  exacto, cada variante vuelve a preguntar. Se valora cuando `maha` trabaje
+  en su propio repo y resulte pesado, con su propia spec de mejora.
 - **Por qué nunca para la sesión fuera del perímetro o con secretos:** son las
   dos cosas que DESIGN §10 pide "explícitamente" una a una.
 - Ver duda 2 de §11.
@@ -557,12 +561,20 @@ las herramientas con efecto se prueban así), creado para la prueba.
 
 ## 11. Decisiones
 
-Del humano (fecha): *ninguna todavía.*
+Del humano (2026-10-21): **acepta las cinco recomendaciones del agente**:
+1. Una negativa termina el turno.
+2. "Toda la sesión" cubre todas las escrituras, todas las ediciones o cada
+   comando exacto. La aprobación por prefijo queda como mejora futura
+   (§1.3).
+3. Sin terminal, se deniega todo; la política para el modo no interactivo se
+   decide en el hito 8.
+4. `refusal` entra en este hito, como texto.
+5. Lo ejecutado consta en el historial aunque el turno falle o se cancele.
 
-Propuestas del agente (2026-10-21), pendientes de aprobación: **todas las de
-§1.2 a §1.11 y los cinco PRs de §6**.
+Propuestas del agente (2026-10-21), aprobadas por el humano con la spec:
+**todas las de §1.2 a §1.11 y los cinco PRs de §6**.
 
-**Por decidir por el mantenedor:**
+**Dudas que se plantearon al mantenedor** (registro):
 1. **Una negativa termina el turno** (propuesta, §1.4). Alternativa: el
    modelo recibe el error y sigue (puede volver a preguntarte con otra cosa).
 2. **Ámbitos de "toda la sesión"** (propuesta, §1.3): todas las escrituras,
