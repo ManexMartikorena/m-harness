@@ -140,6 +140,27 @@ def test_a_cut_stream_shows_the_error_and_the_next_turn_works(
     assert second["messages"] == [{"role": "user", "content": "Hola otra vez"}]
 
 
+@respx.mock
+def test_maha_offers_the_read_only_tools(
+    workspace: Path, stdin: Callable[[str], None]
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Hola.", 1, 1))
+    )
+    stdin("Hola\n")
+
+    main([])
+
+    tools = json.loads(route.calls.last.request.content)["tools"]
+    assert [tool["function"]["name"] for tool in tools] == [
+        "read_file",
+        "list_dir",
+        "glob",
+        "grep",
+    ]
+
+
 def test_without_configuration_explains_what_is_missing(
     workspace: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
