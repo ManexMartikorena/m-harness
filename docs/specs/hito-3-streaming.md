@@ -835,4 +835,28 @@ como registro.
 
 ## 12. Aprendido al implementar (fecha)
 
-*(Se rellena al implementar.)* La sonda se hizo en la fase de spec (§1.7).
+*(Se completa al cerrar el hito.)* La sonda se hizo en la fase de spec (§1.7).
+
+1. **respx 0.23.1 (POR VERIFICAR de §4 y §10), comprobado el 2026-10-21 por
+   el agente con una prueba local:**
+   - `httpx.Response(200, content=<generador asíncrono>)` sirve el cuerpo en
+     trozos, y si el generador lanza `httpx.ReadError` a mitad, el consumidor
+     lo recibe tras los trozos previos. Vale la hipótesis; el plan B
+     (`MockTransport`) no hizo falta;
+   - un `httpx.AsyncByteStream` propio (`stream=`) funciona, y su `aclose()`
+     se llama al cancelar: así se prueba el cierre (4.4.19).
+2. **`stream()` se anota `AsyncGenerator[ModelEvent]`, no `AsyncIterator`**
+   (corrige §1.2). `contextlib.aclosing` exige un objeto con `aclose()`, y
+   `AsyncIterator` no lo garantiza: mypy lo rechaza. Un generador asíncrono sí
+   lo tiene. El puerto (pieza 9) usa el mismo tipo.
+3. **Los tests de `stream()` van en `tests/adapters/test_openai_chat_stream.py`**,
+   no en `test_openai_chat.py` (§3.1). Como `complete()` se queda (§11, duda
+   1), sus tests no se migran; ponerlos juntos haría un fichero de más de
+   800 líneas.
+4. **Error de un trozo:** su mensaje sale como "the provider failed while
+   answering: …", y el de un 200 en JSON, tal cual (§1.8). Los cortes de red
+   del stream dicen "the connection to the provider failed: …" (en
+   `complete()` sigue "cannot reach the provider").
+5. **Un commit salió con mypy en rojo** (pieza 7): la cadena de comprobaciones
+   acababa en `| tail -1`, que oculta el código de salida. Se corrigió con
+   `--amend` antes del push. Lección: comprobaciones con `set -o pipefail`.
