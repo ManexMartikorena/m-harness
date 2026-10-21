@@ -2,6 +2,7 @@
 §4.2), with fakes."""
 
 import asyncio
+from collections.abc import Callable
 from contextlib import aclosing
 
 import pytest
@@ -16,7 +17,7 @@ from mharness.domain.agent_events import (
     ToolFinished,
     TurnFinished,
 )
-from mharness.domain.approval import ApprovalRequest
+from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
@@ -260,12 +261,42 @@ async def test_validation_errors_do_not_echo_the_input() -> None:
     assert "secret-value" not in finished.result.content
 
 
-# A failed or cancelled turn is not kept (spec hito 4, §1.7).
+# What ran is kept, also when the turn fails or is cancelled (spec hito 5,
+# §1.5 and §4.2.7). With nothing run, nothing is kept (spec hito 4, §1.7).
 
 
-async def test_a_model_error_mid_turn_leaves_the_history_as_it_was() -> None:
+def failed(id: str, text: str) -> ToolResultBlock:
+    return ToolResultBlock(call_id=id, content=f"error: {text}", is_error=True)
+
+
+async def until(condition: Callable[[], bool]) -> None:
+    for _ in range(100):
+        if condition():
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("the condition never held")
+
+
+class HangingApproval:
+    """An `ApprovalGate` that never answers: the user is still reading."""
+
+    def __init__(self) -> None:
+        self.requests: list[ApprovalRequest] = []
+
+    async def decide(self, request: ApprovalRequest) -> Decision:
+        self.requests.append(request)
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+async def test_a_model_error_after_a_tool_keeps_the_turn_up_to_its_result() -> None:
+    # 4.2.7: the half answer of step 2 is dropped.
     fake = FakeModelClient(
-        [reply("Hola."), tool_calls(call("c1")), ModelUnavailableError("down")]
+        [
+            reply("Hola."),
+            tool_calls(call("c1")),
+            [TextDelta(text="Ya est"), ModelUnavailableError("down")],
+        ]
     )
     subject = agent(fake)
     await run(subject, "Primero")
@@ -274,26 +305,153 @@ async def test_a_model_error_mid_turn_leaves_the_history_as_it_was() -> None:
     with pytest.raises(ModelUnavailableError):
         await run(subject, "Segundo")
 
-    assert subject.messages == before
+    assert subject.messages == (
+        *before,
+        user("Segundo"),
+        Message(role="assistant", blocks=[call("c1")]),
+        Message(
+            role="tool", blocks=[ToolResultBlock(call_id="c1", content="echo: Hola")]
+        ),
+    )
 
 
-async def test_cancelling_during_a_tool_leaves_the_history_as_it_was() -> None:
-    gate = asyncio.Event()  # never set: the tool waits until cancelled
-    echo = FakeTool(gate=gate)
-    fake = FakeModelClient([tool_calls(call("c1"))])
+async def test_a_model_error_before_any_tool_leaves_the_history_as_it_was() -> None:
+    # 4.2.7: no tool ran in step 1, only an invalid call.
+    bad = ToolCallBlock(id="c1", name="echo", arguments="{}")
+    fake = FakeModelClient(
+        [reply("Hola."), tool_calls(bad), ModelUnavailableError("down")]
+    )
+    echo = FakeTool()
     subject = agent(fake, echo)
+    await run(subject, "Primero")
+    before = subject.messages
+
+    with pytest.raises(ModelUnavailableError):
+        await run(subject, "Segundo")
+
+    assert subject.messages == before
+    assert echo.calls == []
+
+
+async def test_a_model_error_in_the_first_step_keeps_nothing() -> None:
+    # 4.2.7
+    subject = agent(FakeModelClient([ModelUnavailableError("down")]))
+
+    with pytest.raises(ModelUnavailableError):
+        await run(subject)
+
+    assert subject.messages == ()
+
+
+async def test_cancelling_during_the_second_of_three_calls_keeps_them_paired() -> None:
+    # 4.2.7
+    echo = FakeTool("echo")
+    waiting = FakeTool("wait", gate=asyncio.Event())  # never set
+    calls = [call("c1"), call("c2", name="wait"), call("c3")]
+    fake = FakeModelClient([tool_calls(*calls)])
+    subject = agent(fake, echo, waiting)
 
     task = asyncio.ensure_future(run(subject))
-    for _ in range(100):
-        if echo.calls:
-            break
-        await asyncio.sleep(0)
+    await until(lambda: bool(waiting.calls))
     task.cancel()
 
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert echo.calls  # the tool had started
+    assert subject.messages == (
+        user("Hola"),
+        Message(role="assistant", blocks=[*calls]),
+        Message(
+            role="tool",
+            blocks=[
+                ToolResultBlock(call_id="c1", content="echo: Hola"),
+                failed("c2", "cancelled by the user"),
+                failed("c3", "not run"),
+            ],
+        ),
+    )
+    assert len(echo.calls) == 1
+
+
+async def test_cancelling_during_the_only_call_keeps_it_as_cancelled() -> None:
+    # D2: the tool had started, so the turn is kept.
+    echo = FakeTool(gate=asyncio.Event())  # never set
+    fake = FakeModelClient([tool_calls(call("c1"))])
+    subject = agent(fake, echo)
+
+    task = asyncio.ensure_future(run(subject))
+    await until(lambda: bool(echo.calls))
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert subject.messages == (
+        user("Hola"),
+        Message(role="assistant", blocks=[call("c1")]),
+        Message(role="tool", blocks=[failed("c1", "cancelled by the user")]),
+    )
+
+
+async def test_cancelling_while_asking_after_a_run_keeps_the_turn() -> None:
+    # D3: the call being approved was cancelled; the next one did not run.
+    echo = FakeTool("echo")
+    write = FakeTool("write", permission="effect", requests=[ask()])
+    calls = [call("c1"), call("c2", name="write"), call("c3")]
+    fake = FakeModelClient([tool_calls(*calls)])
+    gate = HangingApproval()
+    subject = Agent(fake, ToolRegistry([echo, write]), gate=gate, model=MODEL)
+
+    task = asyncio.ensure_future(run(subject))
+    await until(lambda: bool(gate.requests))
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert subject.messages[-1] == Message(
+        role="tool",
+        blocks=[
+            ToolResultBlock(call_id="c1", content="echo: Hola"),
+            failed("c2", "cancelled by the user"),
+            failed("c3", "not run"),
+        ],
+    )
+    assert write.calls == []
+
+
+async def test_cancelling_while_asking_before_any_run_keeps_nothing() -> None:
+    write = FakeTool("write", permission="effect", requests=[ask()])
+    fake = FakeModelClient([tool_calls(call("c1", name="write"))])
+    gate = HangingApproval()
+    subject = Agent(fake, ToolRegistry([write]), gate=gate, model=MODEL)
+
+    task = asyncio.ensure_future(run(subject))
+    await until(lambda: bool(gate.requests))
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
     assert subject.messages == ()
+
+
+async def test_closing_the_loop_after_a_run_keeps_the_turn() -> None:
+    # Ctrl+C while the terminal is the one waiting: the loop gets
+    # GeneratorExit at a yield, not CancelledError.
+    calls = [call("c1"), call("c2"), call("c3")]
+    fake = FakeModelClient([tool_calls(*calls)])
+    subject = agent(fake)
+
+    async with aclosing(subject.run("Hola")) as events:
+        async for event in events:
+            if isinstance(event, ToolFinished):
+                break
+
+    assert subject.messages[-1] == Message(
+        role="tool",
+        blocks=[
+            ToolResultBlock(call_id="c1", content="echo: Hola"),
+            failed("c2", "cancelled by the user"),
+            failed("c3", "not run"),
+        ],
+    )
 
 
 async def test_turn_is_kept_when_the_caller_stops_at_the_end() -> None:
@@ -307,6 +465,27 @@ async def test_turn_is_kept_when_the_caller_stops_at_the_end() -> None:
                 break
 
     assert len(subject.messages) == 2
+
+
+async def test_closing_the_loop_after_a_denial_keeps_the_denial() -> None:
+    calls = [call("c1"), call("c2", name="write"), call("c3")]
+    fake = FakeModelClient([tool_calls(*calls)])
+    write = FakeTool("write", permission="effect", requests=[ask()])
+    subject = agent(fake, FakeTool("echo"), write, gate=FakeApproval(["deny"]))
+
+    async with aclosing(subject.run("Hola")) as events:
+        async for event in events:
+            if isinstance(event, ToolFinished) and event.decision == "deny":
+                break
+
+    assert subject.messages[-1] == Message(
+        role="tool",
+        blocks=[
+            ToolResultBlock(call_id="c1", content="echo: Hola"),
+            failed("c2", "the user denied this call"),
+            failed("c3", "not run: a previous call was denied"),
+        ],
+    )
 
 
 # The loop asks before running a call (spec hito 5, §1.2 and §1.4).

@@ -15,7 +15,7 @@ from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import TextDelta
-from mharness.domain.messages import ToolCallBlock
+from mharness.domain.messages import ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from tests.fakes.approval import FakeApproval
 from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply, tool_calls
@@ -502,4 +502,7 @@ async def test_ctrl_c_during_a_tool_goes_back_to_the_prompt() -> None:
 
     assert code == 0
     assert out.getvalue().endswith('  → echo(text="Hola")\n  [interrupted]\n> ')
-    assert agent.messages == ()
+    # The tool had started: the turn is kept (spec hito 5, §1.5).
+    result = agent.messages[-1].blocks[0]
+    assert isinstance(result, ToolResultBlock)
+    assert (result.content, result.is_error) == ("error: cancelled by the user", True)

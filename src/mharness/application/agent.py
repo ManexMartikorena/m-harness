@@ -5,6 +5,7 @@ The model only proposes calls; this code validates them, asks the user when
 the tool needs it, and runs them.
 """
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncGenerator, Sequence
@@ -26,6 +27,7 @@ from mharness.domain.agent_events import (
     TurnFinished,
 )
 from mharness.domain.approval import ApprovalRequest, Decision
+from mharness.domain.errors import ModelError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import ModelRequest, Usage
@@ -36,6 +38,8 @@ from mharness.ports.tools import Tool
 
 # Calls to the model in one turn. A limit in code, not in the prompt.
 MAX_STEPS = 25
+
+NOT_RUN_DENIED = "not run: a previous call was denied"
 
 
 class Agent:
@@ -73,92 +77,126 @@ class Agent:
 
         The turn is kept when it ends, before `TurnFinished` is yielded, also
         when the user denies a call. If a call to the model fails, or the
-        turn is cancelled, nothing is kept (spec hito 4, §1.7).
+        turn is cancelled, what already ran is kept: the turn up to the last
+        complete result, and a result for every call of the interrupted step.
+        If no tool ran, nothing is kept (spec hito 5, §1.5).
         """
         turn = [Message(role="user", blocks=[TextBlock(text=text)])]
         usage = Usage()
         calls_run = 0
-        for step in range(1, self._max_steps + 1):
-            accumulator = Accumulator()
-            request = self._request(turn)
-            async with aclosing(self._client.stream(request)) as events:
-                async for event in events:
-                    accumulator.add(event)
-                    if isinstance(event, TextDelta):
-                        yield event
-            response = accumulator.response()
-            usage = _add(usage, response.usage)
-            yield ModelCallFinished(usage=response.usage, model=response.model)
-            turn.append(response.message)
-            calls = [b for b in response.message.blocks if isinstance(b, ToolCallBlock)]
-            if not calls:
-                self._messages.extend(turn)
-                yield TurnFinished(
-                    reason="end_turn", usage=usage, tool_calls=calls_run, steps=step
-                )
-                return
-            results: list[ToolResultBlock] = []
-            denied = False
-            # In order, not in parallel, until hito 15 (spec hito 4, §1.7).
-            for call in calls:
-                yield ToolCallProposed(call=call)
-                if denied:
-                    # Every call gets a result (spec hito 4, §1.1); these do
-                    # not run, and do not count as handled.
-                    skipped = _error(call, "not run: a previous call was denied")
-                    results.append(skipped.result)
+        # Whether some tool's `run()` was called in this turn.
+        executed = False
+        # Whether the turn is already in the history.
+        kept = False
+        # The calls of the current step while they are handled, and their
+        # results so far.
+        calls: list[ToolCallBlock] = []
+        results: list[ToolResultBlock] = []
+        denied = False
+        try:
+            for step in range(1, self._max_steps + 1):
+                accumulator = Accumulator()
+                request = self._request(turn)
+                async with aclosing(self._client.stream(request)) as events:
+                    async for event in events:
+                        accumulator.add(event)
+                        if isinstance(event, TextDelta):
+                            yield event
+                response = accumulator.response()
+                usage = _add(usage, response.usage)
+                yield ModelCallFinished(usage=response.usage, model=response.model)
+                turn.append(response.message)
+                calls = [
+                    b for b in response.message.blocks if isinstance(b, ToolCallBlock)
+                ]
+                if not calls:
+                    self._messages.extend(turn)
+                    kept = True
+                    yield TurnFinished(
+                        reason="end_turn",
+                        usage=usage,
+                        tool_calls=calls_run,
+                        steps=step,
+                    )
+                    return
+                results = []
+                # In order, not in parallel, until hito 15 (spec hito 4, §1.7).
+                for call in calls:
+                    yield ToolCallProposed(call=call)
+                    if denied:
+                        # Every call gets a result (spec hito 4, §1.1); these
+                        # do not run, and do not count as handled.
+                        skipped = _error(call, NOT_RUN_DENIED)
+                        results.append(skipped.result)
+                        yield ToolFinished(
+                            call=call,
+                            result=skipped.result,
+                            summary=skipped.summary,
+                            duration=0.0,
+                        )
+                        continue
+                    started = time.monotonic()
+                    decision: Decision | None = None
+                    prepared = self._prepare(call)
+                    if isinstance(prepared, _Outcome):
+                        outcome = prepared
+                    else:
+                        question = prepared.request
+                        if question is not None and not self._approvals.covers(
+                            question
+                        ):
+                            yield ApprovalRequested(call=call, request=question)
+                            decision = await self._gate.decide(question)
+                            self._approvals.record(question, decision)
+                            # The time spent deciding is not the tool's.
+                            started = time.monotonic()
+                        if decision == "deny":
+                            denied = True
+                            outcome = _error(call, "the user denied this call")
+                        else:
+                            executed = True
+                            outcome = await self._run(call, prepared)
+                    calls_run += 1
+                    results.append(outcome.result)
                     yield ToolFinished(
                         call=call,
-                        result=skipped.result,
-                        summary=skipped.summary,
-                        duration=0.0,
+                        result=outcome.result,
+                        summary=outcome.summary,
+                        duration=time.monotonic() - started,
+                        internal_error=outcome.internal_error,
+                        decision=decision,
                     )
-                    continue
-                started = time.monotonic()
-                decision: Decision | None = None
-                prepared = self._prepare(call)
-                if isinstance(prepared, _Outcome):
-                    outcome = prepared
-                else:
-                    question = prepared.request
-                    if question is not None and not self._approvals.covers(question):
-                        yield ApprovalRequested(call=call, request=question)
-                        decision = await self._gate.decide(question)
-                        self._approvals.record(question, decision)
-                        # The time spent deciding is not the tool's.
-                        started = time.monotonic()
-                    if decision == "deny":
-                        denied = True
-                        outcome = _error(call, "the user denied this call")
-                    else:
-                        outcome = await self._run(call, prepared)
-                calls_run += 1
-                results.append(outcome.result)
-                yield ToolFinished(
-                    call=call,
-                    result=outcome.result,
-                    summary=outcome.summary,
-                    duration=time.monotonic() - started,
-                    internal_error=outcome.internal_error,
-                    decision=decision,
-                )
-            turn.append(Message(role="tool", blocks=list(results)))
-            if denied:
-                # Without calling the model again: the user writes next
-                # (spec hito 5, §1.4).
+                turn.append(Message(role="tool", blocks=list(results)))
+                calls = []
+                if denied:
+                    # Without calling the model again: the user writes next
+                    # (spec hito 5, §1.4).
+                    self._messages.extend(turn)
+                    kept = True
+                    yield TurnFinished(
+                        reason="denied", usage=usage, tool_calls=calls_run, steps=step
+                    )
+                    return
+            # The turn ends on tool results; the user can still go on.
+            self._messages.extend(turn)
+            kept = True
+            yield TurnFinished(
+                reason="max_steps",
+                usage=usage,
+                tool_calls=calls_run,
+                steps=self._max_steps,
+            )
+        except ModelError, asyncio.CancelledError, GeneratorExit:
+            # A failed call to the model, or Ctrl+C: Ctrl+C arrives as
+            # CancelledError while the loop waits, or as GeneratorExit when
+            # the terminal was the one waiting and closes the loop. What ran
+            # is kept, so the model does not do it again (spec hito 5, §1.5).
+            if executed and not kept:
+                if calls:
+                    blocks = _interrupted(calls, results, denied=denied)
+                    turn.append(Message(role="tool", blocks=[*blocks]))
                 self._messages.extend(turn)
-                yield TurnFinished(
-                    reason="denied", usage=usage, tool_calls=calls_run, steps=step
-                )
-                return
-        # The turn ends on tool results; the user can still go on.
-        self._messages.extend(turn)
-        yield TurnFinished(
-            reason="max_steps",
-            usage=usage,
-            tool_calls=calls_run,
-            steps=self._max_steps,
-        )
+            raise
 
     def _request(self, turn: list[Message]) -> ModelRequest:
         # No system prompt until hito 10 (spec hito 2, §1.5).
@@ -236,6 +274,24 @@ def _error(
     text = f"error: {message}"
     result = ToolResultBlock(call_id=call.id, content=text, is_error=True)
     return _Outcome(result=result, summary=text, internal_error=internal_error)
+
+
+def _interrupted(
+    calls: list[ToolCallBlock], results: list[ToolResultBlock], *, denied: bool
+) -> list[ToolResultBlock]:
+    """The results of a step cut short: the finished calls keep theirs, the
+    one in progress was cancelled, and the rest did not run. Every call keeps
+    its result (spec hito 4, §1.1, and spec hito 5, §1.5)."""
+    blocks = list(results)
+    for index, call in enumerate(calls[len(results) :]):
+        if denied:
+            message = NOT_RUN_DENIED
+        elif index == 0:
+            message = "cancelled by the user"
+        else:
+            message = "not run"
+        blocks.append(_error(call, message).result)
+    return blocks
 
 
 def _crash(call: ToolCallBlock, detail: str) -> _Outcome:
