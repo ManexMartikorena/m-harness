@@ -528,3 +528,23 @@ async def test_sends_calls_and_results_in_openai_format(
             ],
         },
     ]
+
+
+@respx.mock
+async def test_translates_tool_calls_of_a_whole_response(
+    client: OpenAIChatClient,
+) -> None:
+    # Shape measured on OpenCode Go (spec hito 4, §1.1): content "" and the
+    # calls in message.tool_calls.
+    respx.post(ENDPOINT).respond(json=fixture("completion_with_tool_calls.json"))
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.stop_reason == "tool_use"
+    assert response.message.blocks == [
+        ToolCallBlock(
+            id="call_test_000000000000000c",
+            name="read_file",
+            arguments='{"path": "notas.txt"}',
+        )
+    ]

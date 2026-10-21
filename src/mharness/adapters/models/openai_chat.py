@@ -303,8 +303,19 @@ def _message_to_openai(message: Message) -> list[dict[str, Any]]:
 # `reasoning_content`) are ignored; missing or null counters count as 0.
 
 
+class _Function(BaseModel):
+    name: str
+    arguments: str
+
+
+class _ToolCall(BaseModel):
+    id: str
+    function: _Function
+
+
 class _ResponseMessage(BaseModel):
     content: str | None = None
+    tool_calls: list[_ToolCall] | None = None
 
 
 class _Choice(BaseModel):
@@ -332,6 +343,12 @@ def _to_domain(completion: _Completion, request: ModelRequest) -> ModelResponse:
     choice = completion.choices[0]
     content = choice.message.content
     blocks: list[Block] = [TextBlock(text=content)] if content else []
+    blocks.extend(
+        ToolCallBlock(
+            id=call.id, name=call.function.name, arguments=call.function.arguments
+        )
+        for call in choice.message.tool_calls or []
+    )
     return ModelResponse(
         message=Message(role="assistant", blocks=blocks),
         stop_reason=STOP_REASONS.get(choice.finish_reason or "", "other"),
