@@ -1,4 +1,4 @@
-Estado: PROPUESTA (2026-10-20)
+Estado: APROBADA (2026-10-21)
 
 # Spec — Hito 3: Streaming
 
@@ -12,24 +12,27 @@ con una respuesta larga, la terminal queda en blanco hasta 120 s, y Ctrl+C
 mata el programa.
 
 **Lo que hace este cambio.** `maha` imprime la respuesta token a token según
-llega. Ctrl+C a mitad de respuesta corta esa respuesta y vuelve al prompt. El
-puerto `ModelClient` pasa a ser `stream()`, que devuelve eventos.
+llega. Mientras espera el primer token, muestra un spinner animado con
+"maha". Ctrl+C a mitad de respuesta corta esa respuesta y vuelve al prompt. El
+puerto `ModelClient` gana `stream()`, que devuelve eventos, junto a
+`complete()`.
 
 Dentro de alcance:
 - Tipos del dominio `TextDelta`, `MessageEnd` y `ModelEvent` (§1.4).
-- Puerto `ModelClient.stream()`; `complete()` sale del puerto (§1.2).
+- Puerto `ModelClient.stream()`, junto a `complete()` (§1.2).
 - Analizador de SSE propio (*Server-Sent Events*: el formato de streaming
   sobre HTTP), en el adaptador (§1.3).
 - `OpenAIChatClient.stream()` con errores a mitad de stream y tiempos (§1.8).
 - `FakeModelClient` que emite eventos; `Chat` que los reenvía (§1.6).
-- Terminal en directo y Ctrl+C por respuesta (§1.10).
+- Terminal en directo, spinner de espera y Ctrl+C por respuesta (§1.10,
+  §1.12).
 - Nota 03 de la guía y docs al día.
 
 **Fuera de alcance** (y por qué):
 - Herramientas (`ToolCallDelta`): hito 4. Aquí no se envían `tools`.
 - `ReasoningDelta`/`ReasoningBlock`: `glm-5.3-flash` manda el razonamiento
-  en `delta.reasoning_content` (§1.7). Se ignora; decide el mantenedor
-  (§11, duda 2).
+  en `delta.reasoning_content` (§1.7). Se ignora (§11, duda 2: el
+  mantenedor eligió el spinner).
 - Desglose de tokens (razonamiento, caché, coste): hito 7.
 - Reintentos (§1.9), límite de tokens de salida y de tiempo total del turno
   (hitos 4 y 11), guardar el texto parcial de una respuesta cancelada
@@ -79,23 +82,29 @@ agente con la sonda (§1.7). Lo no comprobado es **POR VERIFICAR** (§10).
   `[tokens: 22 in · 67 out]`. En el hito 2, 142 de salida para una frase (spec 2,
   §12.12). Causa: razonamiento (§1.7).
 
-### 1.2 `complete()` sale del puerto; se deriva de `stream()`
+### 1.2 `stream()` entra en el puerto, junto a `complete()`
 
-**Dónde:** `ports/model.py` y `application/collect.py`.
+**Dónde:** `ports/model.py`.
 
 ```python
 class ModelClient(Protocol):
+    async def complete(self, request: ModelRequest) -> ModelResponse: ...
     def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]: ...
 ```
 
-Quien necesita la respuesta entera (evals del hito 8, resúmenes del 11,
-subagentes) usa `await collect(client.stream(request))` (§1.5).
+**Decisión del mantenedor (2026-10-21, §11, duda 1):** `complete()` se queda.
+Corrige DESIGN §6 (anotado).
 
-- **Por qué:** es lo que dice DESIGN §6; una sola ruta de código por adaptador
-  (los hitos 4 y 9 no la duplican); lo que se prueba es lo que se usa.
-- **Descartado:** mantener `complete()` junto a `stream()` (doble superficie en
-  cada adaptador y fake, sin ganancia); borrarlo sin `collect()` (cada
-  consumidor reescribiría el acumulador).
+- `complete()` sigue como en el hito 2: petición sin `stream`, respuesta
+  entera. La terminal usa `stream()`; `complete()` queda para quien quiera la
+  respuesta entera sin trozos (evals del hito 8, resúmenes del 11,
+  subagentes).
+- **Consecuencia aceptada:** dos rutas por adaptador. Cada adaptador (el de
+  OpenAI ahora, el de Anthropic en el hito 9) y el fake implementan las dos, y
+  las dos se prueban.
+- **Descartado (era la propuesta del agente):** quitar `complete()` y derivarlo
+  con `collect(client.stream(request))` (§1.5). Una sola ruta, pero el
+  mantenedor prefirió conservar la llamada directa.
 - **Sintaxis:** en el `Protocol`, `stream` va con `def`, no `async def`. Un
   generador asíncrono (`async def` con `yield`) devuelve el iterador
   directamente; un `async def` declarado sería una corrutina que *devuelve* un
@@ -215,7 +224,8 @@ async def collect(events: AsyncIterator[ModelEvent]) -> ModelResponse: ...
 
 Junta los `TextDelta` en un `TextBlock` y toma `stop_reason`, `usage` y
 `model` de `MessageEnd`. Va en `application` (lógica de caso de uso) y solo usa
-tipos del dominio.
+tipos del dominio. `Chat.stream()` usa el `Accumulator` (§1.6); `collect()`
+es su atajo para un stream entero, y lo usa el fake para `complete()` (§3.2).
 
 ### 1.6 `Chat.stream()`: reenvía y guarda el turno
 
@@ -238,8 +248,8 @@ hito 2, spec 2 §12.2). Quien lo consume lo cierra con `contextlib.aclosing`.
   - Descartado guardarlo ya: un mensaje del asistente cortado y sin
     `stop_reason` real confunde al modelo, y la forma correcta es un diseño de
     sesiones.
-- `Chat.send()` (hito 2) se queda solo mientras la terminal lo use; se borra
-  en la misma pieza que cambia la terminal a `stream()` (§6, pieza 11).
+- `Chat.send()` (hito 2) se queda: usa `complete()` (§1.2). La terminal pasa
+  a `Chat.stream()` (§6, pieza 11).
 
 ### 1.7 Tokens de salida altos de `glm-5.3-flash`: medido; el desglose, en el hito 7
 
@@ -264,7 +274,7 @@ hito 2, spec 2 §12.2). Quien lo consume lo cierra con `contextlib.aclosing`.
 **En el código:** `Usage` no cambia (`output_tokens` = `completion_tokens`, lo
 que se factura). `reasoning_content` se ignora. **Hito 7:**
 `Usage.reasoning_tokens`, su coste y el catálogo de precios. El silencio de
-~5 s y el indicador de espera: §11, duda 2.
+~5 s se cubre con el spinner (§1.12).
 
 ### 1.8 Errores, tiempos límite
 
@@ -320,14 +330,19 @@ Otro chiste, que se corta aq^C
 > /exit
 ```
 
+- Desde el envío hasta el primer evento, el spinner de §1.12 ocupa la línea.
+  Se borra justo antes de escribir el primer texto, el error o
+  `[interrupted]`.
 - Cada `TextDelta` se escribe en `out` con `flush`. Con `MessageEnd`, un salto
   de línea y la línea de tokens.
 - **Si `usage` es todo ceros, no se imprime la línea de tokens.** Solo es una
   defensa: OpenCode manda `usage` siempre (§1.7). Ver la duda 5 de §11.
 - **Error a mitad de stream:** se escribe `\n` en `out` (si ya se imprimió
   texto), luego `error: …` en stderr; el texto impreso se queda.
-- **Ctrl+C con respuesta en curso:** corta la petición HTTP, escribe un salto
-  de línea y `  [interrupted]`, y vuelve al prompt. El turno no se guarda.
+- **Ctrl+C con respuesta en curso** (también durante el spinner): corta la
+  petición HTTP, escribe un salto de línea y `  [interrupted]`, y vuelve al
+  prompt. El turno no se guarda. *Decisión del mantenedor (2026-10-21, §11,
+  duda 3).*
 - **Ctrl+C en el prompt:** sale con 130, como en el hito 2.
   - **Cambia el hito 2** (spec 2, §1.11 y §7.8), donde siempre salía.
     Descartado seguir saliendo siempre: no sería cancelar, sería cerrar.
@@ -372,6 +387,52 @@ Otro chiste, que se corta aq^C
   | `model` | lo guarda |
   | `[DONE]` o cierre limpio | emite `MessageEnd` y termina (reglas de §1.8) |
 
+### 1.12 Spinner de espera con "maha"
+
+**Dónde:** `adapters/cli/spinner.py`, usado por `adapters/cli/conversation.py`.
+
+**Decisión del mantenedor (2026-10-21, §11, duda 2):** opción B, animada: un
+spinner de puntos braille junto a "maha", con **cada letra en un color, y los
+colores rotando** de un fotograma al siguiente.
+
+```
+⠋ maha      m rojo, a amarillo, h verde, a cian
+⠙ maha      m amarillo, a verde, h cian, a azul
+⠹ maha      ...
+```
+
+- **Por qué:** con `glm-5.3-flash` hay ~5 s de silencio antes del primer byte
+  (§1.7). Sin indicador, la terminal parece colgada.
+- **Fotogramas:** `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` (10 caracteres braille), uno cada 0,1 s. Paleta
+  de 6 colores ANSI (rojo, amarillo, verde, cian, azul, magenta). La letra `i`
+  del fotograma `n` toma el color `(i + n) mod 6`: los colores avanzan como
+  una ola.
+- **Colores sin librería:** códigos de escape ANSI a mano (`\x1b[31m`…
+  `\x1b[0m`). Rich llega en el hito 19 y sustituirá esto.
+  - *Código de escape ANSI:* secuencia que empieza por `ESC [` y que la
+    terminal interpreta (color, borrar línea) en vez de mostrarla.
+- **Dibujo:** cada fotograma se escribe con `\r` (vuelve al principio de la
+  línea) y sin salto. Al parar, `\r\x1b[2K` borra la línea entera, y el texto
+  empieza limpio en esa misma línea.
+- **Solo en una terminal real:** si `out.isatty()` es falso (`maha <
+  notas.txt`, una tubería, los tests), no se dibuja nada. Así la salida
+  redirigida no se llena de códigos.
+- **`NO_COLOR`:** si la variable existe y no está vacía, el spinner gira sin
+  colores. Es la convención de https://no-color.org (comprobada el
+  2026-10-21 por el agente).
+- **Cómo:** una tarea de `asyncio` que dibuja hasta que la cancelan.
+  `Spinner.start()` la crea; `await Spinner.stop()` la cancela, la espera y
+  borra la línea. `stop()` se puede llamar más de una vez. `_turns` lo para
+  con el primer evento, y en un `finally` (error o Ctrl+C).
+  - No choca con §1.10: la tarea del spinner solo dibuja. La petición sigue
+    en la tarea principal, y Ctrl+C la sigue cancelando ahí.
+- **Forma:** la función de los fotogramas es pura, y se prueba sin terminal:
+
+  ```python
+  def frame(n: int, *, color: bool) -> str:
+      """The n-th frame: spinner char, space and "maha"."""
+  ```
+
 ## 2. En la industria
 
 | Pieza | M-Harness | Alternativas | Cuándo se elegirían |
@@ -393,18 +454,19 @@ ningún producto concreto.*
 ```
 src/mharness/
 ├── domain/events.py               # nuevo: TextDelta, MessageEnd, ModelEvent
-├── ports/model.py                 # stream(); complete() fuera al final
+├── ports/model.py                 # stream(), junto a complete()
 ├── application/collect.py         # nuevo: Accumulator, collect()
-├── application/chat.py            # Chat.stream(); send() fuera
+├── application/chat.py            # Chat.stream(), junto a send()
 └── adapters/
     ├── models/sse.py              # nuevo: parse_sse()
-    ├── models/openai_chat.py      # stream(); complete() fuera al final
-    └── cli/conversation.py        # deltas en directo; Ctrl+C por respuesta
+    ├── models/openai_chat.py      # stream(), junto a complete()
+    ├── cli/spinner.py             # nuevo: frame(), Spinner
+    └── cli/conversation.py        # deltas en directo; spinner; Ctrl+C por respuesta
 tests/
 ├── fakes/model.py                 # emite eventos; reply(), HANG, Gate
 ├── fixtures/openai_chat/          # streams SSE de ejemplo (datos inventados)
 ├── unit/                          # test_events, test_collect, test_chat, test_fake_model
-└── adapters/                      # test_sse, test_openai_chat, test_conversation
+└── adapters/                      # test_sse, test_openai_chat, test_spinner, test_conversation
 docs/guia/03-streaming.md
 ```
 
@@ -434,8 +496,10 @@ gate.release()  # from the test
   stream. `HANG` espera para siempre, hasta que lo cancelan.
 - `reply(text, chunks=2)` parte el texto en `TextDelta` y añade el
   `MessageEnd`. Guion agotado → `AssertionError`.
-- Mientras convivan `complete()` y `stream()` (§6, piezas 9 a 12), un paso
-  `ModelResponse` también vale para `stream()` (se emite como eventos).
+- El fake implementa `complete()` y `stream()` (§1.2) sobre el mismo guion. Un
+  paso `ModelResponse` también vale para `stream()` (se emite como eventos), y
+  un paso de eventos vale para `complete()` (se junta con `collect()`). Así
+  los tests del hito 2 no cambian.
 
 ### 3.3 Configuración nueva
 
@@ -480,9 +544,11 @@ inventados): 1.er trozo `{"role":"assistant","content":""}`; trozos solo con
 `choices: []` y `usage`; `[DONE]`; terminador `\n`; el cuerpo se parte en
 trozos de bytes a mitad del JSON.
 1. El JSON lleva `stream: true` y `stream_options.include_usage`, con y sin
-   `system` (**migra el test de `_to_openai` del hito 2**). Fija §1.11.
+   `system` (como el test de `_to_openai` del hito 2). Fija §1.11. La
+   petición de `complete()` sigue **sin** `stream` (el test del hito 2 se
+   queda).
 2. Cabeceras: `Authorization`, `User-Agent`, la de sesión; sin clave no hay
-   `Authorization` (**migra el del hito 2**).
+   `Authorization` (como el del hito 2).
 3. Un stream normal (fixtures A y B): `TextDelta` en orden y un solo
    `MessageEnd` al final.
 4. `finish_reason` en el mismo trozo que el último `content` (A) y en un
@@ -502,8 +568,8 @@ trozos de bytes a mitad del JSON.
     `finish_reason`: `ModelResponseError`.
 12. Datos después de `[DONE]`: se ignoran y se cierra la conexión.
 13. 401, 403, 429, 400, 404, 500 y 503 antes del stream → su error, con el
-    `message` del proveedor, la clave tapada y el recorte a 300 (**migra los
-    del hito 2**). Caso medido: 400 con `type: "server_error"` y "Model is
+    `message` del proveedor, la clave tapada y el recorte a 300 (los del
+    hito 2, ahora también para `stream()`). Caso medido: 400 con `type: "server_error"` y "Model is
     unavailable." → `ModelRequestError`.
 14. 200 con `Content-Type` JSON y `error.message` → `ModelResponseError` con
     ese mensaje (tapado y recortado); sin mensaje, o con otro tipo,
@@ -523,7 +589,9 @@ trozos de bytes a mitad del JSON.
 **4.5 `FakeModelClient`** (`tests/unit/test_fake_model.py`)
 1. Emite el guion en orden. 2. Lanza el error en su sitio, tras los eventos
 previos. 3. `Gate` espera hasta `release()`; `HANG` espera y se cancela.
-4. Guarda las peticiones. 5. Falla al agotarse.
+4. Guarda las peticiones. 5. Falla al agotarse. 6. `complete()` con un paso de
+eventos devuelve la respuesta juntada; `stream()` con un paso `ModelResponse`
+la emite como eventos.
 
 **4.6 `Chat`** (`tests/unit/test_chat.py`), con el fake
 1. Entrega los eventos en directo, uno a uno.
@@ -533,6 +601,8 @@ previos. 3. `Gate` espera hasta `release()`; `HANG` espera y se cancela.
 4. Cancelar a mitad (con `HANG`) deja la conversación como estaba. Fija §1.6.
 5. Tras recibir `MessageEnd` y cerrar el generador, el turno ya está
    guardado. Fija §1.6.
+6. `Chat.send()` sigue funcionando con `complete()` (los tests del hito 2 se
+   quedan).
 
 **4.7 Terminal** (`tests/adapters/test_conversation.py`)
 1. Con un `Gate`, el primer `TextDelta` está en `out` **antes** de liberar el
@@ -544,6 +614,11 @@ previos. 3. `Gate` espera hasta `release()`; `HANG` espera y se cancela.
 4. Ctrl+C con la respuesta en curso (`HANG`): `[interrupted]`, no sale, y el
    siguiente turno funciona. Fija §1.10.
 5. Ctrl+C en el prompt: sale con 130.
+6. Con un `out` que dice ser terminal (`isatty()` verdadero) y un `Gate`
+   antes del primer `TextDelta`: el spinner dibuja algún fotograma y la línea
+   se borra (`\r\x1b[2K`) antes del primer texto. Igual ante un error y ante
+   Ctrl+C.
+7. Con un `out` que no es terminal: ningún código de escape en la salida.
 
 **4.8 De punta a punta** (`tests/test_bootstrap.py`): `main()` con
 configuración temporal, respx que sirve un SSE y entrada guionizada. Dos
@@ -552,6 +627,15 @@ stderr y el turno siguiente funciona.
 
 **4.9 Arquitectura:** el test de imports del núcleo sigue igual (httpx solo en
 el adaptador); `domain/events.py` solo usa la biblioteca estándar y Pydantic.
+
+**4.10 Spinner** (`tests/adapters/test_spinner.py`)
+1. `frame(n, color=False)`: el carácter `n mod 10` de la lista, un espacio y
+   "maha", sin códigos de escape.
+2. `frame(n, color=True)`: la letra `i` lleva el color `(i + n) mod 6`, y
+   acaba en `\x1b[0m`. Dos fotogramas seguidos tienen los colores desplazados
+   una posición.
+3. `NO_COLOR` no vacía → sin color; vacía → con color (https://no-color.org).
+4. `stop()` dos veces no falla; `stop()` sin `start()` no escribe nada.
 
 **Cómo se simula un stream con respx.** Un cuerpo SSE en bytes basta para
 casi todo (`httpx.Response(200, headers={"content-type": "text/event-stream"},
@@ -597,23 +681,21 @@ La sonda (§1.7) ya se hizo en la fase de spec: no es una pieza.
    *Commit:* "Cerrar la conexión al cancelar el stream"
 8. **Mapa.** *Commit:* "Actualizar el mapa con el streaming del adaptador"
 
-**PR 3** (`feature/hito-3-terminal`): puerto, `Chat`, terminal, limpieza.
+**PR 3** (`feature/hito-3-terminal`): puerto, `Chat` y terminal.
 9. **Puerto y fake.** `stream()` entra en el `Protocol` junto a `complete()`;
-   el fake emite eventos (`Gate`, `HANG`); tests 4.5.
+   el fake emite eventos (`Gate`, `HANG`) y sirve los dos métodos; tests 4.5.
    *Commit:* "Añadir stream() al puerto ModelClient y al fake"
-10. **`Chat.stream()`.** `Chat.send()` sigue; tests 4.6.
+10. **`Chat.stream()`.** `Chat.send()` se queda (§1.2); tests 4.6.
     *Commit:* "Añadir Chat.stream(), que guarda el turno al terminar"
-11. **Terminal en directo.** `converse()` usa `Chat.stream()`; se borra
-    `Chat.send()` (la producción ya no lo usa) y sus tests se adaptan aquí;
-    tests 4.7.1 a 4.7.3.
+11. **Terminal en directo.** `converse()` usa `Chat.stream()`; tests 4.7.1 a
+    4.7.3.
     *Commit:* "Mostrar la respuesta según llega"
-12. **Ctrl+C por respuesta.** §1.10; tests 4.7.4 y 4.7.5.
+12. **Spinner.** `adapters/cli/spinner.py` (§1.12) y su uso en `_turns`;
+    tests 4.10, y 4.7.6 y 4.7.7 salvo el caso de Ctrl+C.
+    *Commit:* "Mostrar un spinner con maha mientras llega la respuesta"
+13. **Ctrl+C por respuesta.** §1.10; tests 4.7.4, 4.7.5 y el caso de Ctrl+C
+    de 4.7.6.
     *Commit:* "Cancelar solo la respuesta con Ctrl+C"
-13. **Quitar `complete()`** del puerto, del fake y del adaptador. Los tests del
-    hito 2 de `complete()` **ya están migrados a `stream()`** (4.4.1, 4.4.2 y
-    4.4.13); solo se borran los que no tienen equivalente en streaming (la
-    traducción de una respuesta entera).
-    *Commit:* "Quitar complete(), ya derivado de stream()"
 14. **Punta a punta.** Tests 4.8; `bootstrap` no cambia salvo que haga falta.
     *Commit:* "Probar el streaming de punta a punta"
 15. **Mapa.** *Commit:* "Actualizar el mapa con la terminal en streaming"
@@ -635,8 +717,11 @@ La sonda (§1.7) ya se hizo en la fase de spec: no es una pieza.
 Con `opencode-go` y `glm-5.3-flash`.
 
 1. `uv run maha --version` → `maha 0.3.0`.
-2. `uv run --env-file .env maha` con una pregunta de respuesta larga: el texto
-   **aparece mientras se escribe**. Se anota el tiempo hasta el primer trozo.
+2. `uv run --env-file .env maha` con una pregunta de respuesta larga: el
+   spinner "⠋ maha" gira con las letras cambiando de color hasta el primer
+   trozo, y se borra sin dejar restos; luego el texto **aparece mientras se
+   escribe**. Se anota el tiempo hasta el primer trozo. Con `NO_COLOR=1`, el
+   spinner gira sin colores.
 3. Sale la línea de tokens, y con "OK" la salida es de ~16 a 46 tokens (§1.7:
    cuenta el razonamiento).
 4. Dos turnos: el segundo recuerda al primero y los tokens de entrada crecen.
@@ -652,14 +737,16 @@ Con `opencode-go` y `glm-5.3-flash`.
    brusco de la conexión TCP), el error llega tras el timeout de lectura
    (120 s); con un corte que dé RST, al momento. Si no se puede provocar, se
    anota.
-10. `maha < notas.txt` sigue funcionando.
+10. `maha < notas.txt` sigue funcionando, y `maha < notas.txt > salida.txt`
+    no deja códigos de escape del spinner en `salida.txt`.
 
 ## 8. Lo que no viaja por git y lo que necesita la release
 
 - Clave y configuración: las del hito 2. `PUESTA_EN_MARCHA` sin cambios.
 - Release: nada fuera de lo normal.
 - `docs/MAPA.md`: los ficheros de §3.1.
-- `docs/DESIGN.md` §5 (`MessageEnd` lleva `model`): ya corregido, con fecha.
+- `docs/DESIGN.md` §5 (`MessageEnd` lleva `model`) y §6 (`complete()` se
+  queda junto a `stream()`): ya corregidos, con fecha.
 
 ## 9. Guía
 
@@ -672,6 +759,8 @@ se cancela":
 3. Qué puede salir mal a mitad, y qué queda en la conversación (§1.6, §1.8).
 4. Cancelar con Ctrl+C: `CancelledError` y el cierre de la conexión.
 5. Los tokens de más: el razonamiento (§1.7).
+6. El spinner: una tarea que dibuja con `\r` y códigos ANSI, solo en una
+   terminal real, y `NO_COLOR` (§1.12).
 
 "En la industria": la tabla de §2.
 
@@ -688,8 +777,11 @@ se cancela":
 **Riesgos y contingencias:**
 - **Otro servidor sin `usage` en el stream:** `Usage()` en ceros y la terminal
   no imprime la línea (§1.10). Con OpenCode no pasa (§1.7).
-- **Silencio de ~5 s antes del primer byte** (§1.7): `read=120` no corta, pero
-  la terminal parece colgada. Opciones en la duda 2.
+- **Silencio de ~5 s antes del primer byte** (§1.7): `read=120` no corta. El
+  spinner (§1.12) evita que parezca colgada.
+- **El spinner deja restos o se mezcla con el texto:** si no se borra antes
+  de escribir. Se para siempre antes de escribir nada y en un `finally`
+  (tests 4.7.6); se mira a mano (§7.2).
 - **Texto cancelado en pantalla que el modelo no recuerda** (§1.6): se explica
   en la guía; se corrige en el hito 6.
 - **Ctrl+C y `CancelledError` mezclados:** ya falló en el hito 2. Se cubre con
@@ -702,12 +794,23 @@ se cancela":
 
 ## 11. Decisiones
 
-Del humano (fecha): *ninguna todavía.*
+Del humano (2026-10-21):
+- **Duda 1:** `complete()` se queda en el puerto, junto a `stream()`. Contra
+  la propuesta del agente. Cambia §1.2, §1.5, §1.6, §3, §4 y §6 (sale la
+  pieza que quitaba `complete()`).
+- **Duda 2:** opción B, animada. Spinner braille con "maha", cada letra en un
+  color y los colores rotando. Nueva §1.12 y pieza 12 de §6.
+- **Duda 3:** Ctrl+C a mitad de respuesta vuelve al prompt (§1.10).
+- **Duda 5:** `Usage` sigue sin `None`; la línea de tokens se omite si todo
+  es cero, solo como defensa (§1.10).
+- El resto de propuestas de §1 y los cuatro PRs de §6, aprobados con estos
+  cambios.
 
-Propuestas del agente (2026-10-20), pendientes de aprobación: **todas las de
-§1.2 a §1.11 y los cuatro PRs de §6**, cada una explicada en su sitio.
+Propuestas del agente (2026-10-20): todas las de §1.2 a §1.11 y los cuatro
+PRs de §6, cada una explicada en su sitio. El texto de las dudas queda abajo
+como registro.
 
-**Por decidir por el mantenedor:**
+**Dudas que se plantearon al mantenedor:**
 1. ¿`complete()` fuera del puerto (propuesta, §1.2) o junto a `stream()`?
 2. Razonamiento y silencio (datos de §1.7: el silencio de ~5 s es **antes**
    del primer byte; el razonamiento llega en menos de 1 s después). Opciones:
