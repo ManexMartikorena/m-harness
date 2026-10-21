@@ -25,6 +25,14 @@ EXIT_INTERRUPTED = 130
 type ReadLine = Callable[[], Awaitable[str]]
 
 
+class _Sigint:
+    """Whether Ctrl+C asked to cancel the task, and that request was not
+    handled yet. Tells it apart from any other cancellation."""
+
+    def __init__(self) -> None:
+        self.pending = False
+
+
 class StdinLines:
     """Reads lines from a file descriptor without blocking the event loop.
 
@@ -88,18 +96,18 @@ async def converse(
     loop = asyncio.get_running_loop()
     task = asyncio.current_task()
     assert task is not None
-    interrupted = False
+    sigint = _Sigint()
 
     def on_sigint() -> None:
-        nonlocal interrupted
-        interrupted = True
+        sigint.pending = True
         task.cancel()
 
     loop.add_signal_handler(signal.SIGINT, on_sigint)
     try:
-        return await _turns(chat, provider, model, read, out, err)
+        return await _turns(chat, provider, model, read, out, err, sigint)
     except asyncio.CancelledError:
-        if not interrupted:
+        # Ctrl+C at the prompt ends `maha`; an answer handles its own.
+        if not sigint.pending:
             raise
         task.uncancel()
         print(file=out)
@@ -109,7 +117,13 @@ async def converse(
 
 
 async def _turns(
-    chat: Chat, provider: str, model: str, read: ReadLine, out: TextIO, err: TextIO
+    chat: Chat,
+    provider: str,
+    model: str,
+    read: ReadLine,
+    out: TextIO,
+    err: TextIO,
+    sigint: _Sigint,
 ) -> int:
     print(
         f"maha {version(DISTRIBUTION)} · {provider} · {model} · /exit to quit",
@@ -126,11 +140,17 @@ async def _turns(
             continue
         if line == "/exit":
             return 0
-        await _answer(chat, line, out, err)
+        await _answer(chat, line, out, err, sigint)
 
 
-async def _answer(chat: Chat, line: str, out: TextIO, err: TextIO) -> None:
-    """Show one answer as it arrives; a model error ends only this turn."""
+async def _answer(
+    chat: Chat, line: str, out: TextIO, err: TextIO, sigint: _Sigint
+) -> None:
+    """Show one answer as it arrives.
+
+    A model error or Ctrl+C ends only this answer, which is not kept (spec
+    hito 3, §1.10).
+    """
     wrote = False
     # Covers the silence before the first token (spec hito 3, §1.12).
     spinner = Spinner(out, color=use_color())
@@ -153,6 +173,18 @@ async def _answer(chat: Chat, line: str, out: TextIO, err: TextIO) -> None:
         if wrote:
             print(file=out)
         print(f"error: {exc}", file=err, flush=True)
+    except asyncio.CancelledError:
+        if not sigint.pending:
+            raise
+        sigint.pending = False
+        # Without this, asyncio would keep treating the task as cancelled.
+        task = asyncio.current_task()
+        assert task is not None
+        task.uncancel()
+        await spinner.stop()
+        if wrote:
+            print(file=out)
+        print("  [interrupted]", file=out, flush=True)
     finally:
         await spinner.stop()
 

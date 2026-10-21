@@ -15,7 +15,7 @@ from mharness.application.chat import Chat
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.model import Usage
-from tests.fakes.model import END, FakeModelClient, Gate, reply
+from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply
 
 HEADER = f"maha {version('m-harness')} · opencode-go · glm-5.3-flash · /exit to quit"
 
@@ -315,3 +315,55 @@ async def test_no_escape_codes_when_not_a_terminal() -> None:
 
     assert "\x1b" not in out.getvalue()
     assert "maha 0" in out.getvalue()  # only the header mentions maha
+
+
+# Ctrl+C during an answer (spec hito 3, §1.10).
+
+
+async def interrupt_when(out: io.StringIO, text: str) -> None:
+    """Press Ctrl+C once `text` is on the screen."""
+    for _ in range(200):  # at most 2 s
+        if text in out.getvalue():
+            break
+        await asyncio.sleep(0.01)
+    signal.raise_signal(signal.SIGINT)
+
+
+async def test_ctrl_c_during_an_answer_goes_back_to_the_prompt() -> None:
+    fake = FakeModelClient([[TextDelta(text="Esperando"), HANG], reply("Hola.")])
+    out = io.StringIO()
+    pressing = asyncio.ensure_future(interrupt_when(out, "Esperando"))
+
+    code = await converse(
+        Chat(fake, model="m"),
+        provider="p",
+        model="m",
+        read_line=ScriptedInput("Cuéntame algo", "Hola", "/exit"),
+        out=out,
+        err=io.StringIO(),
+    )
+    await pressing
+
+    assert code == 0
+    assert out.getvalue().endswith("> Esperando\n  [interrupted]\n> Hola.\n> ")
+    # The cut answer is not kept: the next request has only the new message.
+    assert [m.text for m in fake.requests[1].messages] == ["Hola"]
+
+
+async def test_ctrl_c_while_the_spinner_spins() -> None:
+    fake = FakeModelClient([[HANG]])
+    out = FakeTerminal()
+    pressing = asyncio.ensure_future(interrupt_when(out, "⠋"))
+
+    code = await converse(
+        Chat(fake, model="m"),
+        provider="p",
+        model="m",
+        read_line=ScriptedInput("Hola"),
+        out=out,
+        err=io.StringIO(),
+    )
+    await pressing
+
+    assert code == 0
+    assert out.getvalue().endswith(f"{CLEAR_LINE}  [interrupted]\n> \n")
