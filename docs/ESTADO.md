@@ -2,21 +2,21 @@
 
 Última actualización: 2026-10-21. **Hito 2 (primera conversación) cerrado y
 publicado como `v0.2.0`.** Hito 3 (streaming): spec APROBADA (PR #13
-integrado). PR 1 (`feature/hito-3-eventos`, piezas 1 a 4) commiteado, sin
-push.
+integrado), PR 1 integrado (#14) y PR 2 (`feature/hito-3-adaptador`) en
+revisión.
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 2 cerrado (`v0.2.0`). Hito 3 (streaming): spec APROBADA
-(PR #13 integrado). Implementación: PR 1 commiteado en
-`feature/hito-3-eventos`, sin push.**
+(PR #13). Implementación: PR 1 integrado (#14); PR 2 en
+`feature/hito-3-adaptador`.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.2.0` — Primera conversación** (2026-10-20):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.2.0
-- Ramas abiertas: `feature/hito-3-eventos` (solo en local). Las integradas se
+- Ramas abiertas: `feature/hito-3-adaptador` (PR 2 del hito 3). Las integradas se
   conservan en GitHub.
 
 ## Para la release
@@ -30,8 +30,15 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
-- **Hito 3, PR 1 commiteado, 2026-10-21** (rama `feature/hito-3-eventos`,
-  sin push; piezas 1 a 4 de la spec §6): eventos del dominio
+- **Hito 3, PR 2, 2026-10-21** (rama `feature/hito-3-adaptador`; piezas 5
+  a 8 de la spec §6): `OpenAIChatClient.stream()` con la petición en stream,
+  decodificador incremental, traducción de los trozos, errores del stream y
+  cierre de la conexión al cancelar. Timeout `read=120` como silencio
+  máximo entre trozos. En verde: 181 tests, ruff, mypy e import-linter. Lo
+  aprendido, en la spec §12 (respx admite cuerpos que fallan a mitad;
+  `stream()` se anota `AsyncGenerator`).
+- **Hito 3, PR 1 (#14) integrado, 2026-10-21** (merge `5fadc22`; piezas 1 a
+  4 de la spec §6): eventos del dominio
   (`domain/events.py`), `collect()` (`application/collect.py`), analizador
   SSE (`adapters/models/sse.py`) y mapa. En verde: 142 tests, ruff, mypy e
   import-linter.
@@ -200,12 +207,14 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-1. **Humano (o agente si se lo pide):** revisar los commits del PR 1
-   (`git log main..feature/hito-3-eventos`), push de la rama, abrir el PR con
-   la plantilla e integrarlo con merge commit, con el CI en verde.
-2. **Agente:** PR 2 del hito 3 (spec §6, piezas 5 a 8) en
-   `feature/hito-3-adaptador`, desde `main` actualizado: `stream()` en
-   `OpenAIChatClient`. Empieza por la pieza 5 (petición y texto).
+1. **Agente (con permiso del mantenedor en la sesión del 2026-10-21):** push
+   de `feature/hito-3-adaptador`, PR con la plantilla e integración con
+   merge commit con el CI en verde. Si no se llegó a hacer, comprobar con
+   `gh pr list`.
+2. **Agente:** PR 3 del hito 3 (spec §6, piezas 9 a 15) en
+   `feature/hito-3-terminal`, desde `main` actualizado: `stream()` en el
+   puerto (tipo `AsyncGenerator`, spec §12.2) y el fake, `Chat.stream()`,
+   terminal en directo, spinner y Ctrl+C por respuesta.
 
 **Sesión del 2026-10-21 en el PC de Windows (WSL).**
 
