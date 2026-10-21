@@ -8,6 +8,7 @@ disk would keep `maha` from exiting on Ctrl+C (spec hito 2, §12).
 """
 
 import asyncio
+import contextlib
 import difflib
 import errno
 import io
@@ -646,8 +647,10 @@ def _write_atomically(path: Path, text: str) -> None:
     the new one, never half of it.
 
     Written to a temporary file in the same folder, flushed to the disk and
-    renamed over `path`. An existing file keeps its mode. On any failure, or
-    a cancellation, the temporary file is removed and `path` is untouched.
+    renamed over `path`; then the folder is flushed too, so the rename
+    survives a power cut. An existing file keeps its mode. On any failure, or
+    a cancellation, before the rename, the temporary file is removed and
+    `path` is untouched.
     """
     try:
         mode: int | None = stat.S_IMODE(path.stat().st_mode)
@@ -665,6 +668,22 @@ def _write_atomically(path: Path, text: str) -> None:
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
+    _sync_folder(path.parent)
+
+
+def _sync_folder(folder: Path) -> None:
+    """Flush the entries of `folder` to the disk (POSIX).
+
+    The fsync of a file does not cover its entry in the folder: the rename
+    needs an fsync of the folder too (fsync(2)). A failure is ignored: the
+    file is already replaced, and some file systems cannot flush a folder.
+    """
+    with contextlib.suppress(OSError):
+        descriptor = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
 
 @dataclass(frozen=True)

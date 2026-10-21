@@ -1059,3 +1059,79 @@ async def test_a_new_file_gets_the_mode_of_the_umask(root: Path) -> None:
     mode = stat.S_IMODE((root / "nuevo.txt").stat().st_mode)
     assert mode == stat.S_IMODE(reference.stat().st_mode)
     assert mode != 0o600
+
+
+def same_file(a: os.stat_result, b: os.stat_result) -> bool:
+    return (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino)
+
+
+async def test_the_rename_is_flushed_to_the_disk(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The fsync of the file does not cover its entry in the folder (fsync(2)):
+    # the folder gets its own fsync after the rename (decision of the
+    # maintainer).
+    write(root, "sub/notas.txt", "uno\n")
+    tool = write_tool(root)
+    params = WriteFileParams(path="sub/notas.txt", content="dos\n")
+    tool.approval(params)
+    synced: list[os.stat_result] = []
+    real_fsync = os.fsync
+
+    def spy(descriptor: int) -> None:
+        synced.append(os.fstat(descriptor))
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", spy)
+    await tool.run(params)
+    monkeypatch.undo()
+
+    file, folder = synced
+    assert same_file(file, (root / "sub/notas.txt").stat())
+    assert same_file(folder, (root / "sub").stat())
+
+
+async def test_a_failed_folder_fsync_still_counts_as_written(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The file is already replaced: "cannot write" would be false, and the
+    # model would write it again.
+    write(root, "notas.txt", "uno\n")
+    tool = write_tool(root)
+    params = WriteFileParams(path="notas.txt", content="dos\n")
+    tool.approval(params)
+    real_fsync = os.fsync
+
+    def fail_on_folders(descriptor: int) -> None:
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError(22, "Invalid argument")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", fail_on_folders)
+    result = await tool.run(params)
+    monkeypatch.undo()
+
+    assert result == "wrote notas.txt (1 line)"
+    assert (root / "notas.txt").read_text(encoding="utf-8") == "dos\n"
+    assert temporaries(root) == []
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root opens any folder")
+async def test_a_folder_that_cannot_be_opened_still_counts_as_written(
+    root: Path,
+) -> None:
+    # Writing a file needs write and search rights on its folder; opening the
+    # folder for its fsync needs read rights too.
+    folder = root / "dropbox"
+    write(root, "dropbox/notas.txt", "uno\n")
+    tool = write_tool(root)
+    params = WriteFileParams(path="dropbox/notas.txt", content="dos\n")
+    tool.approval(params)
+    folder.chmod(0o300)
+    try:
+        result = await tool.run(params)
+    finally:
+        folder.chmod(0o755)
+
+    assert result == "wrote dropbox/notas.txt (1 line)"
+    assert (folder / "notas.txt").read_text(encoding="utf-8") == "dos\n"
