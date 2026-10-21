@@ -2,9 +2,10 @@
 
 Última actualización: 2026-10-21. **Hito 4 (tool calling y bucle agéntico)
 cerrado y publicado como `v0.4.0`.** Hito 5 (permisos y herramientas con
-efecto): spec APROBADA (PR #27); PR 1 integrado (#29); PR 2 (piezas 6 a 9)
-sale por PR desde `feature/hito-5-ficheros` y lo integra el agente con el CI
-en verde. **Se trabaja en el Ubuntu de casa.**
+efecto): spec APROBADA (PR #27); PR 1 integrado (#29); PR 2 integrado (#30).
+Antes del PR 3 (comandos, desde la pieza 10, sin empezar) va el PR `fix/` de
+la FIFO. **Sesión cerrada en el Ubuntu de casa; se sigue en el PC del
+trabajo (el WSL del PC de Windows).**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
@@ -13,15 +14,14 @@ Lo primero al abrir: "Siguiente paso", más abajo.
 **Desarrollo. Hito 4 cerrado (`v0.4.0`). Hito 5 (permisos y herramientas con
 efecto): spec APROBADA (PR #27); PR 1 (contrato de aprobación y el bucle que
 pregunta) integrado (#29); PR 2 (ficheros con aprobación, `write_file` y
-`edit_file`) sale por PR desde `feature/hito-5-ficheros` y lo integra el
-agente con el CI en verde.**
+`edit_file`) integrado (#30). Va por la pieza 10 (PR 3, comandos), sin
+empezar; antes, el PR `fix/` de la FIFO.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.4.0` — Tool calling y bucle agéntico**
   (2026-10-21):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.4.0
-- Ramas abiertas: `feature/hito-5-ficheros` (PR 2 del hito 5), hasta su
-  integración. Las integradas se conservan en GitHub.
+- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -34,12 +34,20 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
-- **Hito 5, PR 2, 2026-10-21, Ubuntu de casa** (sale por PR desde
-  `feature/hito-5-ficheros` y lo integra el agente con el CI en verde;
-  piezas 6 a 9 de la spec §6): leer fuera del directorio o un secreto con
+- **Cierre de sesión, 2026-10-21, Ubuntu de casa.** Todo integrado y con
+  push: `main` en `0f2317a` más este cierre; sin ramas abiertas ni cambios
+  sin commitear; 487 tests en verde. Se mantiene para el hito 5 el permiso
+  del mantenedor: el agente hace push e integra cada PR con el CI en verde;
+  el tag sigue necesitando que el mantenedor lo pida. Método acordado esta
+  sesión: ante cualquier hueco de la spec, el agente para y pregunta con
+  opciones y recomendación; no inventa.
+- **Hito 5, PR 2 integrado (#30, merge `0f2317a`), 2026-10-21, Ubuntu de
+  casa** (rama `feature/hito-5-ficheros`, borrada en local y conservada en
+  GitHub; CI en verde en el PR y en `main`; piezas 6 a 9 de la spec §6): leer fuera del directorio o un secreto con
   aprobación (`7e39cfb`), `write_file` con escritura atómica (`fad129c`),
   `fsync` de la carpeta tras el renombrado (`c22eb08`), `edit_file` con
-  adaptación a CRLF (`b8e98b6`) y los docs (mapa, spec y estado).
+  adaptación a CRLF (`b8e98b6`) y los docs (mapa, spec y estado: `4db13d8`,
+  `e325e54` y `b42ce45`).
   Arreglos de la revisión, decididos por el mantenedor: con aviso, la
   pregunta va antes de los errores de contenido (`39162ca`), tamaño máximo
   de 2 MiB para cambiar (`40e7e1a`), `cannot read` (`b66b354`), la llamada
@@ -354,6 +362,10 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
+Al abrir en el PC del trabajo: `git switch main && git pull`, `uv sync` (por
+si acaso; no hay dependencias nuevas) y comprobar 487 tests, mypy y
+lint-imports en verde; después, el punto 1.
+
 1. **Agente:** PR `fix/` de la FIFO (`read_file`, `grep` al recorrer e
    `is_binary`; spec 5, §12.11) desde `main` actualizado, con el test que lo
    reproduce primero. Push e integración con el CI en verde, con permiso del
@@ -373,7 +385,10 @@ casa. No hace falta repetir la puesta a punto. Si un pull cambia
 dependencias, basta con `uv sync`.
 
 Lo primero, en cualquiera de los dos: `cd` al clon, `git fetch` y contrastar
-con GitHub (`gh pr list`) en qué punto de "Siguiente paso" se está.
+con GitHub (`gh pr list`) en qué punto de "Siguiente paso" se está. Después,
+borrar en ese PC las ramas locales ya integradas:
+`git fetch --prune` y
+`git branch --merged main | grep -v '^\*\|main' | xargs -r git branch -d`.
 
 **Solo para un PC nuevo o tras un pull que toque dependencias:**
 1. `cd` al clon y `git switch main && git pull`.
