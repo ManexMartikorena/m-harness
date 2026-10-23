@@ -3,6 +3,7 @@
 
 import asyncio
 import contextlib
+import errno
 import os
 import stat
 import threading
@@ -2559,3 +2560,68 @@ async def test_ctrl_c_stops_a_slow_search_at_once(root: Path) -> None:
         await task
 
     assert asyncio.get_running_loop().time() - started < 2
+
+
+# Behaviour with no test until the final audit (2026-10-23)
+
+
+async def test_without_extended_attributes_the_write_stays_atomic(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ENOTSUP: the file system has none, so there are none to keep.
+    path = write(root, "a.txt", "uno\n")
+    inode = path.stat().st_ino
+
+    def unsupported(*args: object) -> list[str]:
+        raise OSError(errno.ENOTSUP, "Operation not supported")
+
+    monkeypatch.setattr(os, "listxattr", unsupported)
+    await write_through(root, "a.txt", "dos\n")
+    monkeypatch.undo()
+
+    assert path.read_text(encoding="utf-8") == "dos\n"
+    # A new file took its place: written atomically, not in place.
+    assert path.stat().st_ino != inode
+
+
+def test_the_owner_is_copied_and_a_refusal_writes_in_place(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = write(root, "a.txt", "")
+    mine = path.stat()
+    other = os.stat_result(
+        (mine.st_mode, 0, 0, 1, mine.st_uid + 1, mine.st_gid + 1, 0, 0, 0, 0)
+    )
+    owners: list[tuple[int, int]] = []
+
+    def record(descriptor: int, uid: int, gid: int) -> None:
+        owners.append((uid, gid))
+
+    monkeypatch.setattr(os, "fchown", record)
+    descriptor = os.open(root / "tmp", os.O_WRONLY | os.O_CREAT)
+    try:
+        assert files._copy_identity(descriptor, path, other)
+
+        def refuse(descriptor: int, uid: int, gid: int) -> None:
+            raise PermissionError(1, "Operation not permitted")
+
+        monkeypatch.setattr(os, "fchown", refuse)
+        assert not files._copy_identity(descriptor, path, other)
+    finally:
+        os.close(descriptor)
+
+    assert owners == [(mine.st_uid + 1, mine.st_gid + 1)]
+
+
+async def test_a_gitignore_too_large_is_not_read(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(files, "GITIGNORE_MAX_BYTES", 6)
+    write(root, ".gitignore", "*.log\n*.txt\n")
+    write(root, "a.log", "")
+    write(root, "b.txt", "")
+
+    result = await glob(root, "*.*")
+
+    # Not half of it: a cut last line would become a wrong rule.
+    assert result.splitlines() == [".gitignore", "a.log", "b.txt"]

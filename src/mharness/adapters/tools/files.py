@@ -452,13 +452,16 @@ GITIGNORE_MAX_BYTES = MIB
 
 
 def _add_rules(rules: GitIgnore, base: PurePath, path: Path) -> None:
-    """The rules of the ignore file `path`, if it can be read."""
+    """The rules of the ignore file `path`, if it can be read and is not
+    larger than GITIGNORE_MAX_BYTES: half a file could end in a cut rule."""
     with contextlib.suppress(OSError):
         file = _open_regular(path)
         if file is None:
             return
         with file:
-            data = file.read(GITIGNORE_MAX_BYTES)
+            if os.fstat(file.fileno()).st_size > GITIGNORE_MAX_BYTES:
+                return
+            data = file.read()
         rules.add(base, data.decode("utf-8", errors="replace"))
 
 
