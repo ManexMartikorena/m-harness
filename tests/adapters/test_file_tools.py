@@ -433,6 +433,22 @@ async def test_grep_skips_large_files(
     assert await grep(root, "Ane") == "small.txt:1: Ane"
 
 
+async def test_grep_on_one_large_or_binary_file_is_an_error(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Not "(no matches)": that would be a false answer (spec
+    # mejora-2026-10-23-deuda-hito-5, A4).
+    monkeypatch.setattr(files, "GREP_MAX_FILE_BYTES", 10)
+    write(root, "big.txt", "Ane\n" * 10)
+    (root / "img.bin").write_bytes(b"Ane\0")
+    tool = Grep(Workspace(root))
+
+    with pytest.raises(ToolError, match=r"file too large to search \(0\.0 MiB"):
+        await tool.run(GrepParams(pattern="Ane", path="big.txt"))
+    with pytest.raises(ToolError, match=r"binary file, not searchable: img\.bin"):
+        await tool.run(GrepParams(pattern="Ane", path="img.bin"))
+
+
 async def test_grep_cuts_lines_and_results(root: Path) -> None:
     write(root, "long.txt", "x" * 1000 + "\n")
     write(root, "many.txt", "Ane\n" * 150)
@@ -2122,9 +2138,10 @@ async def test_grep_checks_the_open_file(swapped: Path) -> None:
     tool = Grep(Workspace(swapped.parent))
 
     walked = await tool.run(GrepParams(pattern="x"))
-    alone = await tool.run(GrepParams(pattern="x", path="pipe"))
+    with pytest.raises(ToolError, match="not a regular file: pipe"):
+        await tool.run(GrepParams(pattern="x", path="pipe"))
 
-    assert (walked, alone) == ("(no matches)", "(no matches)")
+    assert walked == "(no matches)"
 
 
 def test_changing_tools_check_the_open_file(swapped: Path) -> None:
