@@ -438,6 +438,19 @@ async def test_invalid_json_arguments_are_shown_as_written() -> None:
     assert '  → echo({"text": )\n' in out
 
 
+async def test_deeply_nested_arguments_are_shown_as_written() -> None:
+    # json.loads raises RecursionError, not ValueError (spec
+    # mejora-2026-10-23-deuda-hito-5, A1).
+    nested = "[" * 100_000 + "]" * 100_000
+    fake = FakeModelClient([tool_calls(call("c1", nested)), reply("Vaya.")])
+
+    code, out, _ = await run_with_tools(fake, "Hola", "/exit")
+
+    assert code == 0
+    assert "  → echo([[[[" in out
+    assert "  ✗ error: arguments are not a valid JSON object" in out
+
+
 async def test_long_calls_are_cut() -> None:
     long_text = "x" * 300
     arguments = f'{{"text": "{long_text}"}}'

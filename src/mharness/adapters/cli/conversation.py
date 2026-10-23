@@ -221,7 +221,7 @@ def _call(call: ToolCallBlock) -> str:
     """`name(arg="value", …)` in one line, at most 100 characters."""
     try:
         arguments = json.loads(call.arguments or "{}")
-    except ValueError:
+    except ValueError, RecursionError:
         arguments = None
     if isinstance(arguments, dict):
         shown = ", ".join(
