@@ -1077,8 +1077,8 @@ def _old_text(data: bytes, params: WriteFileParams) -> str:
 
 # Editing (spec hito 5, §1.8).
 
-# A "\n" with no "\r" before it.
-_LONE_LF = re.compile(r"(?<!\r)\n")
+# A line break, as `read_file` splits the lines.
+_BREAK = re.compile(r"\r\n|\r|\n")
 
 
 class EditFileParams(BaseModel):
@@ -1105,16 +1105,21 @@ def _check_strings(params: EditFileParams) -> None:
 def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
     """`text` after the edit, and how many replacements it makes.
 
-    Exact matches first. With none, in a file with CRLF, the lone "\\n" of
-    both strings become "\\r\\n": the model sees the lines without their
-    endings (decision 9b).
+    Exact matches first. With none, each line break of old_string matches
+    any line break ("\\n", "\\r\\n" or "\\r"), and the breaks of new_string
+    take the style of the first break matched: `read_file` shows the lines
+    without their endings (spec mejora-2026-10-23-deuda-hito-5, D9 and D10;
+    it replaces decision 9b). Overlapping matches count (D8).
     """
     old, new = params.old_string, params.new_string
-    found = _occurrences(text, old)
-    if found == 0 and "\r\n" in text and _LONE_LF.search(old):
-        old = _LONE_LF.sub("\r\n", old)
-        new = _LONE_LF.sub("\r\n", new)
-        found = _occurrences(text, old)
+    pattern = re.compile(re.escape(old))
+    flexible = False
+    found = _occurrences(pattern, text)
+    if found == 0 and _BREAK.search(old):
+        parts = (re.escape(part) for part in _BREAK.split(old))
+        pattern = re.compile(f"(?:{_BREAK.pattern})".join(parts))
+        flexible = True
+        found = _occurrences(pattern, text)
     if found == 0:
         raise ToolError(
             f"old_string not found in {params.path}; "
@@ -1125,19 +1130,25 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
             f"old_string appears {found} times in {params.path}; "
             "add context to make it unique or use replace_all"
         )
+
+    def replacement(match: re.Match[str]) -> str:
+        style = _BREAK.search(match.group()) if flexible else None
+        if style is None:
+            return new
+        return _BREAK.sub(lambda _: style.group(), new)
+
     # Left to right and without overlaps, also with replace_all.
-    return text.replace(old, new), text.count(old)
+    return pattern.subn(replacement, text)
 
 
-def _occurrences(text: str, old: str) -> int:
-    """Where `old` starts in `text`, overlaps included: "aa" is twice in
-    "aaa", and editing one of them is ambiguous (spec
-    mejora-2026-10-23-deuda-hito-5, D8)."""
+def _occurrences(pattern: re.Pattern[str], text: str) -> int:
+    """Where `pattern` starts in `text`, overlaps included: "aa" is twice in
+    "aaa", and editing one of them is ambiguous (D8)."""
     found = 0
-    start = text.find(old)
-    while start != -1:
+    match = pattern.search(text)
+    while match is not None:
         found += 1
-        start = text.find(old, start + 1)
+        match = pattern.search(text, match.start() + 1)
     return found
 
 

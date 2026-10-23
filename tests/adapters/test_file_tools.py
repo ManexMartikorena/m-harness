@@ -1495,7 +1495,8 @@ async def test_editing_without_a_question_is_refused(root: Path) -> None:
     assert (root / "app.py").read_text(encoding="utf-8") == "return 1\n"
 
 
-# edit_file: an old_string with "\n" in a CRLF file (decision 9b)
+# edit_file: an old_string with "\n" in a CRLF file (decision 9b, made
+# general by spec mejora-2026-10-23-deuda-hito-5, D9 and D10)
 
 
 def crlf(root: Path, name: str, text: bytes) -> Path:
@@ -1527,14 +1528,12 @@ async def test_an_exact_match_comes_before_the_crlf_one(root: Path) -> None:
     assert path.read_bytes() == b"x\ny\r\na\r\nb\r\n"
 
 
-async def test_an_lf_file_is_not_adapted(root: Path) -> None:
+async def test_a_crlf_old_string_matches_an_lf_file(root: Path) -> None:
+    # D9: any break matches any break, and new_string takes the file's.
     path = write(root, "unix.txt", "uno\ndos\n")
-    tool = edit_tool(root)
 
-    with pytest.raises(ToolError) as caught:
-        await tool.approval(edit_params("unix.txt", "uno\r\ndos", "x"))
-    assert str(caught.value) == NOT_FOUND.format("unix.txt")
-    _, result = await edit(root, edit_params("unix.txt", "uno\ndos", "UNO\nDOS"))
+    _, result = await edit(root, edit_params("unix.txt", "uno\r\ndos", "UNO\r\nDOS"))
+
     assert result == "edited unix.txt (1 replacement)"
     assert path.read_bytes() == b"UNO\nDOS\n"
 
@@ -1590,15 +1589,17 @@ async def test_an_edit_that_leaves_the_text_equal_is_nothing_to_change(
     assert path.read_bytes() == b"a\r\nb\r\n"
 
 
-async def test_a_mixed_file_old_string_across_lf_and_crlf_is_not_found(
+async def test_a_mixed_file_old_string_across_lf_and_crlf_matches(
     root: Path,
 ) -> None:
-    # Case A1: neither exact ("b\n" is "b\r\n") nor adapted ("a\r\n" is "a\n").
-    crlf(root, "mixed.txt", b"a\nb\r\nc\r\n")
+    # Case A1, a limit until D9: neither exact nor adapted to CRLF. Now the
+    # break of "X\n" takes the style of the first break found, "\n".
+    path = crlf(root, "mixed.txt", b"a\nb\r\nc\r\n")
 
-    with pytest.raises(ToolError) as caught:
-        await edit_tool(root).approval(edit_params("mixed.txt", "a\nb\n", "X\n"))
-    assert str(caught.value) == NOT_FOUND.format("mixed.txt")
+    _, result = await edit(root, edit_params("mixed.txt", "a\nb\n", "X\n"))
+
+    assert result == "edited mixed.txt (1 replacement)"
+    assert path.read_bytes() == b"X\nc\r\n"
 
 
 async def test_a_mixed_file_edits_only_its_crlf_part(root: Path) -> None:
@@ -2400,3 +2401,33 @@ async def test_replace_all_with_overlaps_replaces_left_to_right(root: Path) -> N
 
     assert result == "edited a.txt (1 replacement)"
     assert (root / "a.txt").read_text(encoding="utf-8") == "Xa\n"
+
+
+async def test_an_edit_across_mixed_line_endings_matches(root: Path) -> None:
+    # D9: each line break of old_string matches "\n", "\r\n" or "\r"; the new
+    # breaks take the style of the first break found.
+    path = crlf(root, "m.txt", b"uno\ndos\r\ntres\n")
+
+    _, result = await edit(root, edit_params("m.txt", "uno\ndos\ntres", "1\n2\n3"))
+
+    assert result == "edited m.txt (1 replacement)"
+    assert path.read_bytes() == b"1\n2\n3\n"
+
+
+async def test_an_edit_with_lone_carriage_returns_matches(root: Path) -> None:
+    # D10: old Mac files end their lines in a lone "\r".
+    path = crlf(root, "mac.txt", b"uno\rdos\rtres\r")
+
+    _, result = await edit(root, edit_params("mac.txt", "uno\ndos", "a\nb"))
+
+    assert result == "edited mac.txt (1 replacement)"
+    assert path.read_bytes() == b"a\rb\rtres\r"
+
+
+async def test_flexible_matches_that_overlap_are_ambiguous(root: Path) -> None:
+    # D8 with D9: "a\ra" is not there as is, but "a<break>a" is twice in
+    # "a\na\r\na", at 0 and at 2, sharing the "a" in the middle.
+    crlf(root, "o.txt", b"a\na\r\na")
+
+    with pytest.raises(ToolError, match="old_string appears 2 times"):
+        await edit_tool(root).approval(edit_params("o.txt", "a\ra", "x"))
