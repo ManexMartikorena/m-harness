@@ -1,4 +1,5 @@
-Estado: PROPUESTA (2026-10-21) → APROBADA (2026-10-21, sin cambios)
+Estado: PROPUESTA (2026-10-21) → APROBADA (2026-10-21, sin cambios) →
+IMPLEMENTADA (2026-10-23)
 
 # Spec — Hito 5: Permisos y herramientas con efecto
 
@@ -943,3 +944,35 @@ PR 4 (`feature/hito-5-terminal`, piezas 14 a 18), con A2 y B3 de la mejora:
     punta con una pseudoterminal (`os.openpty`) comprueba la pregunta, la
     respuesta por el lector compartido y que `env` no ve la clave. Sale
     `_DenyEverything`.
+
+PR 5 (`feature/hito-5-cierre`):
+
+23. **Verificación a mano (§7), 2026-10-23** (agente, PC de Windows en WSL;
+    `opencode-go` y `glm-5.3-flash`, en un directorio desechable del
+    scratchpad, fuera del repo). `maha` se condujo desde una pseudoterminal
+    (con terminal de control, para que Ctrl+C llegara como SIGINT). Los 11
+    puntos, en verde:
+    1. `maha 0.5.0`;
+    2. `write_file` con la vista previa; `y` → el fichero existe;
+    3. `edit_file` con el diff; `n` → no cambia, `[denied: …]`, y el modelo
+       contestó en el turno siguiente "la edición fue denegada";
+    4. con `a` en la primera edición, la segunda no preguntó;
+    5. `ls -la` con `y`, otra vez con `a`, la tercera sin pregunta, y `ls`
+       volvió a preguntar;
+    6. `env > vars.txt`: el comando vio solo `HOME LANG LOGNAME PATH PWD
+       SHELL TERM USER XDG_DATA_DIRS XDG_RUNTIME_DIR`, sin
+       `OPENCODE_API_KEY`;
+    7. `sleep 30` y Ctrl+C → `[interrupted]`; `pgrep -x sleep` no encontró
+       nada; el modelo supo después que "la canceló el usuario";
+    8. `sleep 10` con `timeout` 2 → la pregunta dice `time limit: 2 s` y el
+       resultado `timed out`;
+    9. `/etc/hostname` → aviso `outside the working directory`, sin `a`;
+       `y` → se lee;
+    10. `.env` inventado → aviso de secreto; `n`;
+    11. `maha < entrada.txt` → `(denied: input is not a terminal)`; la `y`
+        de la línea siguiente llegó al modelo como mensaje y
+        `prohibido.txt` no existe.
+
+    Los tokens de entrada que parecían bajar entre turnos no son un fallo:
+    la línea suma las llamadas al modelo del turno, y un turno con
+    herramienta hace dos.

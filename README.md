@@ -15,13 +15,13 @@ Lo que lo diferencia es cómo se construye:
   explica el concepto;
 - el historial del repositorio es la guía.
 
-> 🚧 **En construcción.** Hito 4 (tool calling y bucle agéntico) terminado:
-> `maha` ya es un agente que lee, lista y busca en tu directorio de trabajo,
-> todavía sin herramientas que cambien nada. El estado al día está en
-> [`docs/ESTADO.md`](docs/ESTADO.md).
+> 🚧 **En construcción.** Hito 5 (permisos y herramientas con efecto)
+> terminado: `maha` lee, escribe, edita y ejecuta comandos en tu directorio
+> de trabajo, y pregunta antes de cada cosa con efecto. El estado al día está
+> en [`docs/ESTADO.md`](docs/ESTADO.md).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.4.0
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.5.0
 ```
 
 Necesita un proveedor con formato OpenAI (de serie, OpenCode Go o Zen) y su
@@ -36,17 +36,26 @@ model = "glm-5.3-flash"
 ```
 $ export OPENCODE_API_KEY=...
 $ maha
-maha 0.4.0 · opencode-go · glm-5.3-flash · /exit to quit
-> ¿En qué fichero y línea se define la función parse_sse?
-  → grep(pattern="def parse_sse")
-  ✓ 5 matches
-La función `parse_sse` se define en `src/mharness/adapters/models/sse.py`, línea 21.
-  [tokens: 1638 in · 121 out · 1 call]
+maha 0.5.0 · opencode-go · glm-5.3-flash · /exit to quit
+> Cambia la segunda línea de notas.txt por 'tres' con edit_file.
+  → edit_file(new_string="tres", old_string="dos", path="notas.txt")
+  ┌ edit notas.txt
+  │ @@ -1,2 +1,2 @@
+  │  uno
+  │ -dos
+  │ +tres
+  └ Allow? [y] yes · [a] always this session · [n] no: y
+  ✓ 1 replacement
 ```
 
-Herramientas: `read_file`, `list_dir`, `glob` y `grep`, solo de lectura, solo
-dentro del directorio de trabajo y sin acceso a ficheros secretos (`.env`,
-claves, `.ssh`…).
+Herramientas: `read_file`, `list_dir`, `glob` y `grep` (lectura, sin
+preguntar dentro del directorio de trabajo), y `write_file`, `edit_file` y
+`run_command` (con efecto: siempre preguntan, con el diff o el comando).
+Fuera del directorio y con ficheros secretos (`.env`, claves, `.ssh`…),
+también leer pregunta, una vez cada vez. Los comandos corren con un tiempo
+límite y sin tus credenciales en el entorno, pero con tus permisos: lee el
+comando antes de aprobarlo. Sin terminal (`maha < fichero`), se deniega
+todo.
 
 Mientras espera el primer token, gira un spinner con "maha". Ctrl+C a mitad
 de una respuesta la corta y vuelve al prompt; en el prompt, sale.
@@ -100,7 +109,7 @@ detalle está en [`docs/DESIGN.md`](docs/DESIGN.md).
 | 2 | Primera conversación con un modelo | ✅ `v0.2.0` |
 | 3 | Streaming | ✅ `v0.3.0` |
 | 4 | Tool calling y bucle agéntico | ✅ `v0.4.0` |
-| 5 | Permisos y herramientas con efecto | ⬜ |
+| 5 | Permisos y herramientas con efecto | ✅ `v0.5.0` |
 | 6 | Sesiones e historial | ⬜ |
 | 7 | Trazas y coste | ⬜ |
 | 8 | Evals y modo no interactivo | ⬜ |
