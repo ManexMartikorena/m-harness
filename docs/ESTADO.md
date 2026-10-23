@@ -1,21 +1,23 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-23. **Hito 5 (permisos y herramientas con
-efecto) cerrado y publicado como `v0.5.0`, con cero deuda conocida.**
-Siguiente: la spec del hito 6 (sesiones e historial). **Sesión en el PC del
+efecto) cerrado: `v0.5.0`, más el arreglo `v0.5.1`. Cero deuda conocida.**
+Siguiente: la spec del hito 6 (sesiones e historial), cuando el mantenedor
+dé paso. **Sesión en el PC del
 trabajo (el WSL del PC de Windows).**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 5 cerrado (`v0.5.0`). Siguiente: hito 6 (sesiones e
-historial), empezando por su spec.**
+**Desarrollo. Hito 5 cerrado (`v0.5.0` y `v0.5.1`). Siguiente: hito 6
+(sesiones e historial), empezando por su spec, cuando el mantenedor dé
+paso.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.5.0` — Permisos y herramientas con efecto**
+- Última versión: **`v0.5.1` — Procesos escapados y grep por tandas**
   (2026-10-23):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.5.0
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.5.1
 - Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
@@ -39,6 +41,13 @@ Lo más reciente primero.
   `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
   una FIFO. Test primero, con una FIFO real. En verde: 489 tests. Detalle
   en la spec 5, §12.11.
+- **`v0.5.1` publicada, 2026-10-23.** Tag anotado sobre el merge del PR #45
+  (`f688169`), con el CI de `main` en verde; creado por el agente con el
+  visto bueno del mantenedor. `uvx --from
+  git+https://github.com/ManexMartikorena/m-harness@v0.5.1 maha --version`
+  → `maha 0.5.1`. Verificado a mano: un `setsid sleep 300` aprobado no
+  queda vivo, y `grep` sobre 300 ficheros para en 100 resultados.
+- **PR #45 integrado, 2026-10-23** (merge `f688169`).
 - **Arreglos tras `v0.5.0`, 2026-10-23** (rama
   `fix/procesos-escapados-y-grep`, para `v0.5.1`, aprobados por el
   mantenedor): los procesos que salen de su grupo mueren con el comando
@@ -434,10 +443,11 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (por si
 acaso; no hay dependencias nuevas) y comprobar los tests, mypy y
 lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** proponer la spec del hito 6 (sesiones e historial) en
+1. **Mantenedor:** dar paso al hito 6 (pidió parar aquí el 2026-10-23).
+2. **Agente:** proponer la spec del hito 6 (sesiones e historial) en
    `docs/spec-hito-6-<slug>`, tras leer DESIGN §5, §6 y §14. Entran los
    pendientes que DESIGN y las specs asignan al hito 6 (abajo).
-2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -464,7 +474,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.5.0`).
+   `maha 0.5.1`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -583,7 +593,8 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 2. Primera conversación. `v0.2.0` (2026-10-20)
 - [x] 3. Streaming. `v0.3.0` (2026-10-21)
 - [x] 4. Tool calling y bucle agéntico. `v0.4.0` (2026-10-21)
-- [x] 5. Permisos y herramientas con efecto. `v0.5.0` (2026-10-23)
+- [x] 5. Permisos y herramientas con efecto. `v0.5.0` (2026-10-23) y el
+  arreglo `v0.5.1` (2026-10-23)
 - [ ] 6. Sesiones e historial. `v0.6.0`
 - [ ] 7. Trazas y coste. `v0.7.0`
 - [ ] 8. Evals y modo no interactivo. `v0.8.0`
