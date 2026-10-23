@@ -133,3 +133,20 @@ async def test_the_command_gets_exactly_the_env_given(tmp_path: Path) -> None:
     names = {line.split("=", 1)[0] for line in result.output.splitlines()}
     assert "MAHA_X" in names
     assert "HOME" not in names
+
+
+async def test_a_background_child_does_not_make_it_wait_for_the_limit(
+    tmp_path: Path,
+) -> None:
+    # The child keeps the pipe open; the command still ends when its shell
+    # does, and the child goes with the group (final audit, 2026-10-23).
+    pidfile = tmp_path / "pid"
+    started = asyncio.get_running_loop().time()
+
+    result = await run(f"echo hola; sleep 30 & echo $! > {pidfile}", tmp_path, 20)
+
+    assert asyncio.get_running_loop().time() - started < 5
+    assert result == CommandResult(
+        exit_code=0, output="hola\n", truncated=False, timed_out=False
+    )
+    assert await gone(int(pidfile.read_text()))
