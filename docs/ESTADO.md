@@ -39,6 +39,12 @@ Lo más reciente primero.
   `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
   una FIFO. Test primero, con una FIFO real. En verde: 489 tests. Detalle
   en la spec 5, §12.11.
+- **Arreglos tras `v0.5.0`, 2026-10-23** (rama
+  `fix/procesos-escapados-y-grep`, para `v0.5.1`, aprobados por el
+  mantenedor): los procesos que salen de su grupo mueren con el comando
+  (`96db36c`, E2 adelantado del hito 14) y `grep` busca por tandas
+  (`f249080`). `AGENTS.md` gana la regla `v0.N.M` para un arreglo entre
+  hitos. En verde: 749 tests.
 - **`v0.5.0` publicada, 2026-10-23.** Tag anotado sobre el merge del PR #42
   (`2f8dc55`), con el CI de `main` en verde; creado y publicado por el
   agente (el mantenedor pidió "dejar el hito 5 cerrado"). `release.yml` creó
@@ -557,8 +563,9 @@ resuelve):
   (spec `mejora-2026-10-23-deuda-hito-5`, PR 3), salvo lo que decidió el
   mantenedor: D7 aceptado, D14 se mantiene, D5 no es un fallo (Linux) y
   D11 va al hito 7.
-- **Por decisión del mantenedor** (mejora `2026-10-23`): un comando que sale
-  de su grupo (`setsid`) sobrevive a Ctrl+C → hito 14 (E2); el fallo del
+- ~~**Un comando que sale de su grupo** (`setsid`) sobrevive~~ **Resuelto**
+  (`96db36c`, `v0.5.1`): subreaper.
+- **Por decisión del mantenedor** (mejora `2026-10-23`): el fallo del
   `fsync` de la carpeta no deja rastro → hito 7 (D11).
 - **Comandos interactivos** (un editor, `git commit` sin `-m`): sin stdin,
   terminan o llegan al tiempo límite. Es el diseño (spec 5, §10); la

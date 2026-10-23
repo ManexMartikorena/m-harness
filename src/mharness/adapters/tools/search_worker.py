@@ -17,7 +17,11 @@ def main() -> None:
     request = json.load(sys.stdin)
     try:
         matches = search_files(
-            request["pattern"], request["files"], request["raw"], request["max_bytes"]
+            request["pattern"],
+            request["files"],
+            request["raw"],
+            request["max_bytes"],
+            request["max_matches"],
         )
     except ToolError as exc:
         json.dump({"error": str(exc)}, sys.stdout)
