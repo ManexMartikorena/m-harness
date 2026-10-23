@@ -891,3 +891,31 @@ decidido por el mantenedor al implementar. Todo en
       en vez de error interno.
 
     En verde: 487 tests.
+
+PR 3 (`feature/hito-5-comandos`, piezas 10 a 13), con B4 y E1 de la spec
+`mejora-2026-10-23-deuda-hito-5`:
+
+13. **Pieza 10** (`c1264b0`): `CommandResult` va en `domain/commands.py`,
+    no en `ports/commands.py` como decía §1.9: los tipos de datos viven en el
+    dominio, como `ApprovalRequest`, y el puerto solo tiene el `Protocol`. El
+    parámetro es `time_limit`, no `timeout`: ruff (ASYNC109) lo marca, y con
+    razón, porque cancelar desde fuera perdería la salida parcial. El
+    parámetro que ve el modelo sigue siendo `timeout`.
+14. **B4 y E1** (`30f1336`): `domain/environment.py`, `command_env()`. La
+    lista de §1.9 de la mejora, más que ningún nombre con prefijo permitido
+    acabe en `_KEY`, `_TOKEN`, `_SECRET` o `_PASSWORD`, y `drop` para la
+    variable de la clave del proveedor.
+15. **Pieza 11** (`6991d63`): `LocalCommandRunner` mata el grupo también
+    al terminar normal (el `finally` de §1.9), para que no quede nada del
+    comando corriendo. Un código de salida negativo (muerto por una señal)
+    cuenta como `None`. `OUTPUT_MAX_CHARS` pasa al dominio, porque
+    `run_command` lo cita y no puede importar el otro adaptador.
+16. **Pieza 12** (`9836be4`): la pregunta dice `in <directorio>`, `time
+    limit: N s` si no es el de por defecto y `with your permissions: it can
+    change any file you can` (§1.9: "la pregunta lo deja claro"). Resultado:
+    `exit code: N` o `killed`, la salida o `(no output)`, y las notas de
+    corte y de tiempo. Resumen: `exit code N`, `timed out` o `killed`, con
+    ` (cut)`.
+17. **4.9, arquitectura:** el contrato de independencia de import-linter
+    (`mharness.adapters.*`) ya impide que `adapters/tools` importe
+    `adapters/commands`.
