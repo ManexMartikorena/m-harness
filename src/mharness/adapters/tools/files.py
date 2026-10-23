@@ -777,7 +777,9 @@ def _create_temporary(path: Path) -> tuple[int, Path]:
     """
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
     for _ in range(TEMP_TRIES):
-        temporary = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
+        # A fixed length: a long name would not fit with a suffix (spec
+        # mejora-2026-10-23-deuda-hito-5, D6).
+        temporary = path.with_name(f".maha-{secrets.token_hex(8)}.tmp")
         try:
             return os.open(temporary, flags, 0o666), temporary
         except FileExistsError:

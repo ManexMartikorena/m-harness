@@ -2197,3 +2197,24 @@ async def test_a_path_with_nul_is_the_models_error(root: Path) -> None:
 
     with pytest.raises(ToolError, match="invalid path: a\x00b"):
         await tool.approval(ReadFileParams(path="a\x00b"))
+
+
+# Writing without loose ends (spec mejora-2026-10-23-deuda-hito-5, D)
+
+
+async def write_through(root: Path, path: str, content: str) -> str:
+    tool = write_tool(root)
+    params = WriteFileParams(path=path, content=content)
+    await tool.approval(params)
+    return await tool.run(params)
+
+
+async def test_a_long_name_fits_its_temporary_file(root: Path) -> None:
+    # D6: the temporary name has a fixed length; a name of 250 characters
+    # (the limit is 255) still fits.
+    name = "n" * 246 + ".txt"
+
+    await write_through(root, name, "x\n")
+
+    assert (root / name).read_text(encoding="utf-8") == "x\n"
+    assert temporaries(root) == []
