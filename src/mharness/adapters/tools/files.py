@@ -865,6 +865,10 @@ def _write(workspace: Workspace, path: Path, text: str, *, parents: bool) -> Non
             raise
         reason = exc.strerror or str(exc)
         raise ToolError(f"cannot write {workspace.shown(path)}: {reason}") from None
+    # Each new folder is an entry in its parent (spec
+    # mejora-2026-10-23-deuda-hito-5, D4); innermost first, as the file.
+    for folder in reversed(created):
+        _sync_folder(folder.parent)
 
 
 def _make_folders(folder: Path, created: list[Path]) -> None:

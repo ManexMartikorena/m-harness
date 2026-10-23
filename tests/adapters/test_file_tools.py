@@ -2238,3 +2238,28 @@ async def test_a_failed_write_removes_the_folders_it_created(
     monkeypatch.undo()
 
     assert sorted(p.name for p in (root / "a").iterdir()) == ["old.txt"]
+
+
+async def test_new_folders_are_flushed_to_the_disk(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D4: a new folder is an entry in its parent, which needs its own fsync.
+    tool = write_tool(root)
+    params = WriteFileParams(path="a/b/new.txt", content="x\n")
+    await tool.approval(params)
+    synced: list[os.stat_result] = []
+    real_fsync = os.fsync
+
+    def spy(descriptor: int) -> None:
+        synced.append(os.fstat(descriptor))
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", spy)
+    await tool.run(params)
+    monkeypatch.undo()
+
+    folders = [root / "a/b", root / "a", root]
+    assert len(synced) == 4
+    assert same_file(synced[0], (root / "a/b/new.txt").stat())
+    for result, folder in zip(synced[1:], folders, strict=True):
+        assert same_file(result, folder.stat())
