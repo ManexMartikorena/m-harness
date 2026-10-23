@@ -39,7 +39,7 @@ class FakeTool:
         self._gate = gate
         self.calls: list[EchoParams] = []
 
-    def approval(self, params: EchoParams) -> ApprovalRequest | None:
+    async def approval(self, params: EchoParams) -> ApprovalRequest | None:
         if not self._requests:
             return None
         request = self._requests.pop(0)

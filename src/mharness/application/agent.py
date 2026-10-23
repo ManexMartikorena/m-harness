@@ -144,7 +144,7 @@ class Agent:
                     # None: nobody was asked, or the answer was not valid.
                     decision: Decision | None = None
                     asked = False
-                    prepared = self._prepare(call)
+                    prepared = await self._prepare(call)
                     if isinstance(prepared, _Outcome):
                         outcome = prepared
                     else:
@@ -227,7 +227,7 @@ class Agent:
             tools=self._tools.specs(),
         )
 
-    def _prepare(self, call: ToolCallBlock) -> _Ready | _Outcome:
+    async def _prepare(self, call: ToolCallBlock) -> _Ready | _Outcome:
         """Find the tool, validate the arguments and ask the tool what to
         ask the user (spec hito 5, §1.2).
 
@@ -251,7 +251,7 @@ class Agent:
         except ValidationError as exc:
             return _error(call, f"invalid arguments: {_describe(exc)}")
         try:
-            request = tool.approval(params)
+            request = await tool.approval(params)
         except ToolError as exc:
             # Before asking: a useless question is not shown.
             return _error(call, str(exc))

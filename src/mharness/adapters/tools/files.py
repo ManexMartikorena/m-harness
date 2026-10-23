@@ -197,7 +197,7 @@ class ReadFile:
         self._workspace = workspace
         self._asked = _Asked()
 
-    def approval(self, params: ReadFileParams) -> ApprovalRequest | None:
+    async def approval(self, params: ReadFileParams) -> ApprovalRequest | None:
         self._asked.forget()
         path = self._workspace.resolve(params.path)
         warning = self._workspace.warning(path, SECRET_FILE)
@@ -307,7 +307,7 @@ class ListDir:
         self._workspace = workspace
         self._asked = _Asked()
 
-    def approval(self, params: ListDirParams) -> ApprovalRequest | None:
+    async def approval(self, params: ListDirParams) -> ApprovalRequest | None:
         self._asked.forget()
         path = self._workspace.resolve(params.path)
         warning = self._workspace.warning(path, SECRET_DIR)
@@ -449,7 +449,7 @@ class Glob:
         self._workspace = workspace
         self._asked = _Asked()
 
-    def approval(self, params: GlobParams) -> ApprovalRequest | None:
+    async def approval(self, params: GlobParams) -> ApprovalRequest | None:
         self._asked.forget()
         base = self._workspace.resolve(params.path)
         # Secrets found while walking are skipped, never asked about.
@@ -520,7 +520,7 @@ class Grep:
         self._workspace = workspace
         self._asked = _Asked()
 
-    def approval(self, params: GrepParams) -> ApprovalRequest | None:
+    async def approval(self, params: GrepParams) -> ApprovalRequest | None:
         self._asked.forget()
         base = self._workspace.resolve(params.path)
         warning = self._warning(base)
@@ -900,7 +900,7 @@ class WriteFile:
         # parallel calls (hito 15) it must keep one per call.
         self._shown: _Shown | None = None
 
-    def approval(self, params: WriteFileParams) -> ApprovalRequest | None:
+    async def approval(self, params: WriteFileParams) -> ApprovalRequest | None:
         self._shown = None
         workspace = self._workspace
         path = workspace.resolve(params.path)
@@ -1053,7 +1053,7 @@ class EditFile:
         # with parallel calls (hito 15) it must keep one per call.
         self._shown: _Shown | None = None
 
-    def approval(self, params: EditFileParams) -> ApprovalRequest | None:
+    async def approval(self, params: EditFileParams) -> ApprovalRequest | None:
         self._shown = None
         _check_strings(params)
         workspace = self._workspace
