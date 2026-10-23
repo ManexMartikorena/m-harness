@@ -154,8 +154,14 @@ async def _kill_escaped(known: set[int]) -> None:
     for _ in range(ESCAPED_ROUNDS):
         left = _children() - known
         for pid in left:
-            with contextlib.suppress(ProcessLookupError):
+            try:
                 os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                # Of another user (`sudo … &`): not ours to kill, and left
+                # alone, as `_kill_group` does.
+                known.add(pid)
         known |= {pid for pid in left if _reaped(pid)}
         if not left:
             return

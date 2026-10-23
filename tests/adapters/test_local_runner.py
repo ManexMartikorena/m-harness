@@ -2,7 +2,9 @@
 harmless."""
 
 import asyncio
+import contextlib
 import os
+import signal
 from pathlib import Path
 
 import pytest
@@ -182,3 +184,31 @@ async def test_an_escaped_process_dies_on_ctrl_c_too(tmp_path: Path) -> None:
         await task
 
     assert await gone(escaped)
+
+
+async def test_an_escaped_process_that_cannot_be_killed_is_left_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # One of another user (`sudo … &`): the command still gives its result,
+    # as `_kill_group` already does (end-of-session audit, 2026-10-23).
+    pidfile = tmp_path / "pid"
+    real_kill = os.kill
+
+    def refuse(pid: int, sig: int) -> None:
+        if sig == signal.SIGKILL:
+            raise PermissionError(1, "Operation not permitted")
+        real_kill(pid, sig)
+
+    monkeypatch.setattr(os, "kill", refuse)
+    try:
+        result = await run(
+            f"setsid sleep 30 > /dev/null 2>&1 & echo $! > {pidfile}; echo hola",
+            tmp_path,
+        )
+    finally:
+        monkeypatch.undo()
+        if (pid := read_pid(pidfile)) is not None:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+
+    assert (result.exit_code, result.output) == (0, "hola\n")
