@@ -6,14 +6,13 @@ call the agent makes (spec hito 4, §1.9).
 
 import asyncio
 import json
-import os
 import signal
 import sys
-from collections.abc import Awaitable, Callable
 from contextlib import aclosing
 from typing import TextIO
 
 from mharness import __version__
+from mharness.adapters.cli.input import ReadLine, StdinLines
 from mharness.adapters.cli.spinner import Spinner, use_color
 from mharness.adapters.cli.text import clean
 from mharness.application.agent import Agent
@@ -28,8 +27,6 @@ EXIT_INTERRUPTED = 130
 # A tool call is shown in one line, cut to this length.
 MAX_CALL = 100
 
-type ReadLine = Callable[[], Awaitable[str]]
-
 
 class _Sigint:
     """Whether Ctrl+C asked to cancel the task, and that request was not
@@ -37,52 +34,6 @@ class _Sigint:
 
     def __init__(self) -> None:
         self.pending = False
-
-
-class StdinLines:
-    """Reads lines from a file descriptor without blocking the event loop.
-
-    Raises `EOFError` at the end (Ctrl+D). It uses no thread: a thread blocked
-    in `input()` keeps `maha` from exiting on Ctrl+C.
-    """
-
-    def __init__(self, fd: int = 0) -> None:
-        self._fd = fd
-        self._buffer = b""
-
-    async def readline(self) -> str:
-        while b"\n" not in self._buffer:
-            chunk = await self._read()
-            if not chunk:
-                if not self._buffer:
-                    raise EOFError
-                # Last line without a newline.
-                self._buffer += b"\n"
-            self._buffer += chunk
-        line, _, self._buffer = self._buffer.partition(b"\n")
-        # Splitting bytes at b"\n" never cuts a UTF-8 character.
-        return line.decode("utf-8", errors="replace").removesuffix("\r")
-
-    async def _read(self) -> bytes:
-        loop = asyncio.get_running_loop()
-        ready: asyncio.Future[None] = loop.create_future()
-
-        def on_readable() -> None:
-            # It may fire again before the reader is removed.
-            if not ready.done():
-                ready.set_result(None)
-
-        try:
-            loop.add_reader(self._fd, on_readable)
-        except PermissionError:
-            # A regular file (`maha < notes.txt`) cannot be watched; reading
-            # it never blocks.
-            return os.read(self._fd, 4096)
-        try:
-            await ready
-        finally:
-            loop.remove_reader(self._fd)
-        return os.read(self._fd, 4096)
 
 
 async def converse(

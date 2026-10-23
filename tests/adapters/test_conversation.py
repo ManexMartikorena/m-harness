@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from mharness.adapters.cli.conversation import EXIT_INTERRUPTED, StdinLines, converse
+from mharness.adapters.cli.conversation import EXIT_INTERRUPTED, converse
+from mharness.adapters.cli.input import StdinLines
 from mharness.adapters.cli.spinner import CLEAR_LINE
 from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
@@ -20,21 +21,10 @@ from mharness.domain.model import Usage
 from mharness.domain.tools import ToolError
 from tests.fakes.approval import FakeApproval
 from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply, tool_calls
+from tests.fakes.terminal import ScriptedInput
 from tests.fakes.tools import FakeTool
 
 HEADER = f"maha {version('m-harness')} · opencode-go · glm-5.3-flash · /exit to quit"
-
-
-class ScriptedInput:
-    """Returns the scripted lines, then raises EOFError (Ctrl+D)."""
-
-    def __init__(self, *lines: str) -> None:
-        self._lines = list(lines)
-
-    async def __call__(self) -> str:
-        if not self._lines:
-            raise EOFError
-        return self._lines.pop(0)
 
 
 async def run(fake: FakeModelClient, *lines: str) -> tuple[int, str, str]:
