@@ -16,8 +16,7 @@ historial), empezando por su spec.**
 - Última versión: **`v0.5.0` — Permisos y herramientas con efecto**
   (2026-10-23):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.5.0
-- Ramas abiertas: ninguna, salvo este cierre. Las integradas se conservan
-  en GitHub.
+- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
 
