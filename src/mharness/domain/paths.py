@@ -41,7 +41,8 @@ SKIPPED_DIRS = frozenset(
 def is_secret(path: PurePath) -> bool:
     """True for a secret file, or a secret directory and what is inside it.
 
-    `path` is relative to the working directory.
+    `path` is relative to the working directory, or absolute outside it
+    (`is_secret_at`).
     """
     # Without case: a file system that ignores it opens the same file (spec
     # mejora-2026-10-23-deuda-hito-5, A6).

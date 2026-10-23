@@ -2,7 +2,8 @@
 
 from typing import Literal
 
-# `read` runs without asking; `effect` will need approval (hito 5).
+# `read` runs without asking, unless its path asks (outside the working
+# directory, a secret); `effect` always asks (spec hito 5, §1.2).
 type Permission = Literal["read", "effect"]
 
 

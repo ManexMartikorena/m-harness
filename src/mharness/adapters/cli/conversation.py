@@ -154,8 +154,8 @@ async def _answer(
 ) -> None:
     """Show one answer as it arrives.
 
-    A model error or Ctrl+C ends only this answer, which is not kept (spec
-    hito 3, §1.10).
+    A model error or Ctrl+C ends only this answer (spec hito 3, §1.10). The
+    agent keeps what already ran, and nothing else (spec hito 5, §1.5).
     """
     # True while the cursor is after text, not at the start of a line.
     wrote = False
