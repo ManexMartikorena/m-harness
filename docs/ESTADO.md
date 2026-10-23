@@ -45,6 +45,10 @@ Lo más reciente primero.
   `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
   una FIFO. Test primero, con una FIFO real. En verde: 489 tests. Detalle
   en la spec 5, §12.11.
+- **Mejora "cero deuda", PR 4, 2026-10-23** (rama `feature/gitignore`): E6
+  `.gitignore` traducido a mano (`e1b7ffd`) y usado en `glob` y `grep`
+  (`eb675f1`). En verde: 594 tests.
+- **Mejora "cero deuda", PR 3 integrado (#37), 2026-10-23.**
 - **Mejora "cero deuda", PR 3, 2026-10-23** (rama `feature/deuda-escritura`):
   D6 (`689adf7`), D3 (`b5bd7d3`), D4 (`fb79e82`), D1 y D2 (`bbce66e`), D7
   (`7a871a6`), D8 (`552804b`), D9 y D10 (`909a863`), D12 (`d6631a1`) y D13
@@ -507,8 +511,8 @@ resuelve):
 - **Las descripciones de las herramientas son prompts:** primeras candidatas
   a la batería de evals del hito 8 (spec 4, §5).
 - **Llamadas en paralelo:** hito 15 (spec 4, §11, duda 5).
-- **`.gitignore`:** `glob` y `grep` saltan carpetas fijas, no leen
-  `.gitignore`. Sin hito; se valora si molesta (spec 4, §0).
+- ~~**`.gitignore`**~~ **Resuelto** (`eb675f1`, spec
+  `mejora-2026-10-23-deuda-hito-5`, E6): `glob` y `grep` lo leen.
 - **POR VERIFICAR:** si OpenCode llega a partir los argumentos de una
   llamada o a mandar JSON inválido (el código y los tests cubren los dos
   casos; spec 4, §10).
