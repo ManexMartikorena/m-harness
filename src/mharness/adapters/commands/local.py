@@ -6,12 +6,18 @@ time is up, when the task is cancelled, and when its shell ends. No
 threads: the output is read with asyncio while the command runs, so a
 command that writes a lot never blocks on a full pipe.
 
+A process that leaves the group (`setsid`) is caught too: `maha` becomes a
+subreaper, so the orphans of a command become its children instead of
+init's, and the ones left when the command ends are killed (decision of the
+maintainer, 2026-10-23: it came forward from hito 14). Linux only.
+
 It runs with your permissions and no sandbox until hito 14: the defence is
 that you read the command before approving it.
 """
 
 import asyncio
 import contextlib
+import ctypes
 import os
 import signal
 from collections.abc import Mapping
@@ -27,12 +33,22 @@ _CHUNK = 64 * 1024
 EXIT_POLL_SECONDS = 0.05
 # How long the rest of the output is read once the command has ended.
 DRAIN_SECONDS = 1.0
+# prctl(2): orphans of descendants are re-parented to this process.
+PR_SET_CHILD_SUBREAPER = 36
+# Rounds to find what is left of a command, and the pause between them.
+ESCAPED_ROUNDS = 50
+ESCAPED_PAUSE = 0.02
 
 
 class LocalCommandRunner:
+    def __init__(self) -> None:
+        _become_subreaper()
+
     async def run(
         self, command: str, *, cwd: Path, time_limit: float, env: Mapping[str, str]
     ) -> CommandResult:
+        # Children that are not this command's: they are left alone.
+        before = _children()
         process = await asyncio.create_subprocess_shell(
             command,
             cwd=cwd,
@@ -68,6 +84,7 @@ class LocalCommandRunner:
                 await reader
             # Reaped also when cancelled: SIGKILL ends it at once.
             await _exited(process)
+            await _kill_escaped(before | {process.pid})
         text = output.kept.decode("utf-8", errors="replace")
         code = process.returncode
         return CommandResult(
@@ -102,6 +119,57 @@ async def _exited(process: asyncio.subprocess.Process) -> None:
     """
     while process.returncode is None:  # noqa: ASYNC110 (see above)
         await asyncio.sleep(EXIT_POLL_SECONDS)
+
+
+def _become_subreaper() -> None:
+    """Make the orphans of every command children of `maha` (Linux)."""
+    with contextlib.suppress(OSError, AttributeError):
+        ctypes.CDLL(None, use_errno=True).prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0)
+
+
+def _children() -> set[int]:
+    """The pids whose parent is `maha`, from /proc."""
+    me = os.getpid()
+    found = set()
+    with contextlib.suppress(OSError):
+        for entry in os.scandir("/proc"):
+            if not entry.name.isdigit():
+                continue
+            try:
+                with open(os.path.join(entry.path, "stat"), encoding="ascii") as file:
+                    stat = file.read()
+            except OSError:
+                continue
+            # "pid (name) state ppid …"; the name can hold spaces and ")".
+            fields = stat[stat.rindex(")") + 2 :].split()
+            if int(fields[1]) == me:
+                found.add(int(entry.name))
+    return found
+
+
+async def _kill_escaped(known: set[int]) -> None:
+    """Kill and reap what is left of a command: the processes that left its
+    group, now children of `maha`, and theirs as they become orphans too.
+    It stops after a round that finds none."""
+    for _ in range(ESCAPED_ROUNDS):
+        left = _children() - known
+        for pid in left:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+        known |= {pid for pid in left if _reaped(pid)}
+        if not left:
+            return
+        await asyncio.sleep(ESCAPED_PAUSE)
+
+
+def _reaped(pid: int) -> bool:
+    """Reap a killed orphan, without waiting: a zombie left unreaped would
+    stay in the process table. False if it has not died yet."""
+    try:
+        return os.waitpid(pid, os.WNOHANG)[0] != 0
+    except ChildProcessError:
+        # Not ours any more, or already reaped.
+        return True
 
 
 def _kill_group(pid: int) -> None:

@@ -150,3 +150,35 @@ async def test_a_background_child_does_not_make_it_wait_for_the_limit(
         exit_code=0, output="hola\n", truncated=False, timed_out=False
     )
     assert await gone(int(pidfile.read_text()))
+
+
+async def test_a_process_that_leaves_the_group_does_not_survive(tmp_path: Path) -> None:
+    # `setsid` leaves the process group, so killpg misses it. maha adopts the
+    # orphans (subreaper) and kills what is left of the command (decision of
+    # the maintainer, 2026-10-23: E2 comes forward from hito 14).
+    pidfile = tmp_path / "pid"
+
+    result = await run(
+        f"setsid sleep 30 > /dev/null 2>&1 & echo $! > {pidfile}", tmp_path
+    )
+
+    assert result.exit_code == 0
+    assert await gone(await written_pid(pidfile))
+
+
+async def test_an_escaped_process_dies_on_ctrl_c_too(tmp_path: Path) -> None:
+    pidfile = tmp_path / "pid"
+    task = asyncio.ensure_future(
+        run(
+            f"setsid sleep 30 > /dev/null 2>&1 & echo $! > {pidfile}; sleep 30",
+            tmp_path,
+            30,
+        )
+    )
+    escaped = await written_pid(pidfile)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert await gone(escaped)
