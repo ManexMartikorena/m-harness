@@ -1,4 +1,5 @@
-Estado: PROPUESTA (2026-10-23) → APROBADA (2026-10-23, por el humano, sin cambios)
+Estado: PROPUESTA (2026-10-23) → APROBADA (2026-10-23, por el humano, sin
+cambios) → IMPLEMENTADA (2026-10-23)
 
 # Spec — Mejora: cero deuda antes de cerrar el hito 5
 
@@ -325,6 +326,15 @@ fallar antes del arreglo:
     cada carpeta que visita; un `.gitignore` de más de 1 MiB, o ilegible, no
     se lee. Fuera del directorio de trabajo, el límite es la carpeta
     aprobada.
+
+**Dentro del hito 5:** B4 y E1 en su PR 3 (#39); A2 en la pregunta y B3 en su
+PR 4 (#40).
+
+21. **Verificación a mano (§7), 2026-10-23**, junto con la del hito 5
+    (spec 5, §12.23):
+    1. `.ENV` en `/mnt/c/Users/Public/…` → pregunta con el aviso de secreto;
+    2. `env` → solo las variables de la lista de E1;
+    3. `grep MARCA` con `.gitignore` `*.log` → solo `b.txt`, no `a.log`.
 
 **Auditoría final** (2026-10-23, antes de `v0.5.0`; PR `fix/auditoria-final`).
 Una segunda auditoría del código encontró fallos que la primera no vio.
