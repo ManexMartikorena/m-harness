@@ -545,3 +545,20 @@ async def test_split_arguments_give_several_deltas(client: OpenAIChatClient) -> 
         ToolCallDelta(index=0, arguments='{"pa'),
         ToolCallDelta(index=0, arguments='th": "x"}'),
     ]
+
+
+@respx.mock
+async def test_a_refusal_comes_as_text(client: OpenAIChatClient) -> None:
+    # In `delta.refusal`, not in `content` (spec hito 5, §1.11).
+    serve(
+        sse(
+            chunk(refusal="No puedo "),
+            chunk(refusal="ayudar."),
+            chunk(finish_reason="stop"),
+            "[DONE]",
+        )
+    )
+
+    texts = [e.text for e in await events(client) if isinstance(e, TextDelta)]
+
+    assert texts == ["No puedo ", "ayudar."]

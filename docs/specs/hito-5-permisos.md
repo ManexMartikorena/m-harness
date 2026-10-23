@@ -919,3 +919,27 @@ PR 3 (`feature/hito-5-comandos`, piezas 10 a 13), con B4 y E1 de la spec
 17. **4.9, arquitectura:** el contrato de independencia de import-linter
     (`mharness.adapters.*`) ya impide que `adapters/tools` importe
     `adapters/commands`.
+
+PR 4 (`feature/hito-5-terminal`, piezas 14 a 18), con A2 y B3 de la mejora:
+
+18. **B3, antes de la pieza 14** (`3ae659d`): `StdinLines` y `ReadLine`
+    salen de `conversation.py` a `adapters/cli/input.py`, para que la
+    pregunta y la conversación compartan el lector sin importarse entre sí.
+    `ScriptedInput` pasa a `tests/fakes/terminal.py`.
+19. **Pieza 14** (`ea93db2`): `si`, sin tilde, también vale como sí. Una
+    respuesta vacía o desconocida vuelve a preguntar; `a` sin `scope`
+    también. El detalle se corta a 60 líneas de 200 caracteres, y la línea
+    sobrante dice `… [N more lines]`. Todo pasa por `clean()` (A2).
+20. **Pieza 15** (`50725f3`): la auditoría del 2026-10-23 decía que el
+    spinner seguía girando durante la pregunta. No es así: `ApprovalRequested`
+    llega siempre justo después de `ToolCallProposed`, que ya para el
+    spinner, así que no se añade código. La conversación solo gana la línea
+    `[denied: tell maha how to continue]`.
+21. **Pieza 16** (`89e0fec`): `refusal` llega como `TextDelta` con stream y
+    como un `TextBlock` más sin él. Sigue POR VERIFICAR en OpenCode (§10).
+22. **Pieza 17** (`e60101c`): `_gate()` mira `os.isatty(0)`. Sin terminal,
+    `DenyAll` no lee nada, así que la línea siguiente llega a la
+    conversación como un mensaje nuevo; un test lo fija. Un test de punta a
+    punta con una pseudoterminal (`os.openpty`) comprueba la pregunta, la
+    respuesta por el lector compartido y que `env` no ve la clave. Sale
+    `_DenyEverything`.

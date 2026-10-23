@@ -6,16 +6,28 @@ application and starts the `maha` command.
 
 import asyncio
 import os
-from collections.abc import Sequence
+import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from mharness import config
 from mharness.adapters import cli
+from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.models import OpenAIChatClient
-from mharness.adapters.tools import Glob, Grep, ListDir, ReadFile, Workspace
+from mharness.adapters.tools import (
+    EditFile,
+    Glob,
+    Grep,
+    ListDir,
+    ReadFile,
+    RunCommand,
+    Workspace,
+    WriteFile,
+)
 from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
-from mharness.domain.approval import ApprovalRequest, Decision
+from mharness.domain.environment import command_env
+from mharness.ports.approval import ApprovalGate
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -30,33 +42,47 @@ def main(argv: Sequence[str] | None = None) -> int:
     return asyncio.run(_converse(settings, Path.cwd()))
 
 
-class _DenyEverything:
-    """Denies every request, without asking nor writing anything.
-
-    Provisional until piece 17 of spec hito 5 (§6) wires the terminal gate.
-    No registered tool asks yet, so it is never called.
-    """
-
-    async def decide(self, request: ApprovalRequest) -> Decision:
-        return "deny"
-
-
-def _tools(cwd: Path) -> ToolRegistry:
-    """The read-only tools, over the directory where `maha` started."""
+def _tools(cwd: Path, env: Mapping[str, str]) -> ToolRegistry:
+    """The seven tools, over the directory where `maha` started."""
     workspace = Workspace(cwd)
     return ToolRegistry(
-        [ReadFile(workspace), ListDir(workspace), Glob(workspace), Grep(workspace)]
+        [
+            ReadFile(workspace),
+            ListDir(workspace),
+            Glob(workspace),
+            Grep(workspace),
+            WriteFile(workspace),
+            EditFile(workspace),
+            RunCommand(workspace.root, LocalCommandRunner(), env),
+        ]
     )
+
+
+def _gate(lines: cli.StdinLines) -> ApprovalGate:
+    """Asks in the terminal; without one (`maha < notes.txt`), denies all:
+    the next line of the file could "approve" (spec hito 5, §1.10)."""
+    if os.isatty(0):
+        return cli.TerminalApproval(lines.readline, sys.stdout, color=cli.use_color())
+    return cli.DenyAll(sys.stdout)
 
 
 async def _converse(settings: config.Settings, cwd: Path) -> int:
     provider = settings.provider
+    # The variables a command gets; never the provider's key (spec
+    # mejora-2026-10-23-deuda-hito-5, E1).
+    drop = [provider.api_key_env] if provider.api_key_env else []
+    env = command_env(os.environ, drop=drop)
+    # One reader for the conversation and the questions (B3).
+    lines = cli.StdinLines()
     async with OpenAIChatClient(
         base_url=provider.base_url,
         api_key=settings.api_key,
         session_header=provider.session_header,
     ) as client:
-        agent = Agent(client, _tools(cwd), gate=_DenyEverything(), model=settings.model)
+        agent = Agent(client, _tools(cwd, env), gate=_gate(lines), model=settings.model)
         return await cli.converse(
-            agent, provider=settings.provider_name, model=settings.model
+            agent,
+            provider=settings.provider_name,
+            model=settings.model,
+            read_line=lines.readline,
         )

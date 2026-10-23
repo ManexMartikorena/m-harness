@@ -185,6 +185,9 @@ class OpenAIChatClient:
             choice = chunk.choices[0]
             if choice.delta.content:
                 yield TextDelta(text=choice.delta.content)
+            # A refusal is text the person must see (spec hito 5, §1.11).
+            if choice.delta.refusal:
+                yield TextDelta(text=choice.delta.refusal)
             # `tool_calls` may come as an explicit null (spec hito 4, §1.1).
             for call in choice.delta.tool_calls or []:
                 function = call.function or _DeltaFunction()
@@ -315,6 +318,7 @@ class _ToolCall(BaseModel):
 
 class _ResponseMessage(BaseModel):
     content: str | None = None
+    refusal: str | None = None
     tool_calls: list[_ToolCall] | None = None
 
 
@@ -341,8 +345,9 @@ class _Completion(BaseModel):
 
 def _to_domain(completion: _Completion, request: ModelRequest) -> ModelResponse:
     choice = completion.choices[0]
-    content = choice.message.content
-    blocks: list[Block] = [TextBlock(text=content)] if content else []
+    # A refusal is text the person must see (spec hito 5, §1.11).
+    texts = (choice.message.content, choice.message.refusal)
+    blocks: list[Block] = [TextBlock(text=text) for text in texts if text]
     blocks.extend(
         ToolCallBlock(
             id=call.id, name=call.function.name, arguments=call.function.arguments
@@ -374,6 +379,7 @@ class _DeltaToolCall(BaseModel):
 
 class _Delta(BaseModel):
     content: str | None = None
+    refusal: str | None = None
     tool_calls: list[_DeltaToolCall] | None = None
 
 

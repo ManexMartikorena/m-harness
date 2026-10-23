@@ -45,6 +45,12 @@ Lo más reciente primero.
   `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
   una FIFO. Test primero, con una FIFO real. En verde: 489 tests. Detalle
   en la spec 5, §12.11.
+- **Hito 5, PR 4, 2026-10-23** (rama `feature/hito-5-terminal`; piezas 14 a
+  18, con A2 y B3 de la mejora): un solo lector (`3ae659d`),
+  `TerminalApproval` y `DenyAll` (`ea93db2`), la negativa en la conversación
+  (`50725f3`), `refusal` (`89e0fec`) y el cableado (`e60101c`). En verde:
+  637 tests.
+- **Hito 5, PR 3 integrado (#39), 2026-10-23.**
 - **Hito 5, PR 3, 2026-10-23** (rama `feature/hito-5-comandos`; piezas 10 a
   13, con B4 y E1 de la mejora): puerto `CommandRunner` (`c1264b0`),
   `command_env()` (`30f1336`), `LocalCommandRunner` (`6991d63`) y
@@ -531,12 +537,10 @@ resuelve):
   guarda ante cualquier excepción.
 - ~~**Una FIFO bloquea `read_file` y `grep` al recorrer**~~ **Resuelto**
   (`85c9e26`, spec 5, §12.11).
-- **Pieza 14 (`TerminalApproval`):** sanear los caracteres de control (ESC,
-  `\r`…) de `title`, `detail` y `warning` antes de pintarlos, para que no se
-  pueda falsear la pregunta (spec 5, §1.10 y §12.12).
-- **`.git/config` se lee sin preguntar** y puede llevar URLs con token:
-  valorar si la lectura de `.git/config` debe preguntar (decisión del
-  mantenedor).
+- ~~**Pieza 14: sanear la pregunta**~~ **Resuelto** (`ea93db2`, con `clean()`
+  de la mejora, A2).
+- ~~**`.git/config` se lee sin preguntar**~~ **Resuelto** (`c64207b`, mejora
+  E3): es secreto.
 - ~~**Límites conocidos de `write_file` y `edit_file`**~~ **Resueltos**
   (spec `mejora-2026-10-23-deuda-hito-5`, PR 3), salvo lo que decidió el
   mantenedor: D7 aceptado, D14 se mantiene, D5 no es un fallo (Linux) y
