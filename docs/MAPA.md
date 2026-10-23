@@ -3,8 +3,8 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-21 (hito 5, PR 2: ficheros con aprobación,
-`write_file` y `edit_file`).
+Última actualización: 2026-10-23 (hito 5 cerrado, con la mejora "cero
+deuda" y los arreglos de la auditoría final).
 
 ## Raíz
 
@@ -54,7 +54,6 @@ import-linter (`pyproject.toml`).
 
 | Fichero | Capa | Qué es |
 |---|---|---|
-| `__init__.py` | — | El paquete |
 | `__init__.py` | paquete | `DISTRIBUTION` y `__version__`: el nombre y la versión de `maha`, en un solo sitio |
 | `__main__.py` | entrada | `python -m mharness`: igual que `maha` |
 | `bootstrap.py` | raíz de composición | `main()` del comando `maha`: lee la configuración, crea el adaptador, las siete herramientas sobre el directorio de arranque (`run_command` con `LocalCommandRunner` y el entorno de `command_env()`, sin la clave del proveedor), un solo `StdinLines` para la conversación y las preguntas, y el gate: `TerminalApproval` en una terminal, `DenyAll` sin ella; el único que conoce todas las piezas |
@@ -74,14 +73,15 @@ import-linter (`pyproject.toml`).
 | `ports/tools.py` | ports | `Tool`: nombre, descripción, modelo Pydantic de parámetros, permiso, `approval()` asíncrono (qué preguntar antes, o `None`), `run()` y `summary()` |
 | `ports/approval.py` | ports | `ApprovalGate`: `decide(request) -> Decision`; quien aprueba una llamada |
 | `ports/model.py` | ports | `ModelClient`: `complete(request) -> response` y `stream(request) -> eventos` |
-| `application/collect.py` | application | `Accumulator` y `collect()`: la respuesta entera a partir de los eventos, con las llamadas a herramientas juntadas por `index` |
+| `application/collect.py` | application | `Accumulator`: la respuesta entera a partir de los eventos, con las llamadas a herramientas juntadas por `index` |
 | `application/tools.py` | application | `ToolRegistry`: herramientas por nombre y sus `ToolSpec`; acepta las de efecto (el bucle pregunta antes) |
 | `application/approvals.py` | application | `SessionApprovals`: los `scope` aprobados para toda la sesión, en memoria (`covers()` y `record()`); un `scope` `None` nunca se guarda |
 | `application/agent.py` | application | `Agent`: el bucle agéntico (modelo → herramientas → resultados, hasta 25 pasos), con los errores devueltos al modelo. Pregunta al `gate` antes de ejecutar y solo ejecuta con una respuesta de `DECISIONS`; una negativa termina el turno; lo ejecutado consta aunque falle el modelo o se cancele |
 | `adapters/models/sse.py` | adapters | `parse_sse()`: el dato de cada evento SSE, con las líneas partidas solo en CRLF, LF o CR |
 | `adapters/models/openai_chat.py` | adapters | `OpenAIChatClient`: la conversación en formato OpenAI Chat Completions, con httpx. `complete()` (respuesta entera) y `stream()` (eventos SSE); envía herramientas, llamadas y resultados; traduce respuesta, trozos (también `tool_calls`) y errores. `refusal` (con stream y sin él) llega como texto |
-| `adapters/tools/__init__.py` | adapters | Exporta `Workspace`, las cuatro de lectura, `WriteFile` y `EditFile` |
-| `adapters/tools/files.py` | adapters | `Workspace` (perímetro del directorio de trabajo) y las herramientas de lectura `read_file`, `list_dir`, `glob` y `grep`, con topes y sin hilos: fuera del directorio o con un secreto, su `approval()` pregunta (`scope=None`) y `run()` solo lee la ruta resuelta que se preguntó. `run()` solo ejecuta la llamada exacta que se preguntó (`_Asked`, también con los bytes que mostró la pregunta). `WriteFile` (`write_file`: vista previa o diff) y `EditFile` (`edit_file`: texto exacto, diff, adaptación a CRLF), herramientas `effect`; con aviso (las reglas de `domain/paths.py`), nunca para la sesión, y los errores que dependen del contenido esperan a la aprobación. `CHANGE_MAX_FILE_BYTES` (2 MiB) para cambiar un fichero; `_reading`: un `OSError` al leer da `cannot read`; `_endings`: el aviso de cambio de saltos de línea en el diff. Escritura atómica compartida (`_as_shown` y `_write`): temporal `.maha-<hex>.tmp` en la misma carpeta con el propietario, el modo y los atributos extendidos del original, `fsync`, última comprobación, `os.replace` y `fsync` de la carpeta y de las carpetas nuevas; con enlaces duros o atributos que no se copian, escribe en el sitio y, si falla, devuelve los bytes viejos. Una escritura que falla borra las carpetas que creó. El diff recorta lo común y no se calcula por encima de `DIFF_MAX_WORK` líneas. `glob` y `grep` saltan al recorrer lo que ignoran `.gitignore` y `.git/info/exclude` (`_add_rules`). `edit_file` cuenta las apariciones solapadas y acepta cualquier salto de línea en `old_string`. |
+| `adapters/tools/__init__.py` | adapters | Exporta `Workspace`, las cuatro de lectura, `WriteFile`, `EditFile` y `RunCommand` |
+| `adapters/tools/search_worker.py` | adapters | El proceso hijo donde `grep` ejecuta la regex del modelo (`search_files()`), con tiempo límite y matado con Ctrl+C: una regex catastrófica no congela `maha` |
+| `adapters/tools/files.py` | adapters | `Workspace` (perímetro del directorio de trabajo) y las herramientas de lectura `read_file`, `list_dir`, `glob` y `grep`, con topes y sin hilos: fuera del directorio o con un secreto, su `approval()` pregunta (`scope=None`) y `run()` solo lee la ruta resuelta que se preguntó. `run()` solo ejecuta la llamada exacta que se preguntó (`_Asked`, también con los bytes que mostró la pregunta). `WriteFile` (`write_file`: vista previa o diff) y `EditFile` (`edit_file`: texto exacto, diff, adaptación a CRLF), herramientas `effect`; con aviso (las reglas de `domain/paths.py`), nunca para la sesión, y los errores que dependen del contenido esperan a la aprobación. `CHANGE_MAX_FILE_BYTES` (2 MiB) para cambiar un fichero; `_reading`: un `OSError` al leer da `cannot read`; `_endings`: el aviso de cambio de saltos de línea en el diff. Escritura atómica compartida (`_as_shown` y `_write`): temporal `.maha-<hex>.tmp` en la misma carpeta con el propietario, el modo y los atributos extendidos del original, `fsync`, última comprobación, `os.replace` y `fsync` de la carpeta y de las carpetas nuevas; con enlaces duros o atributos que no se copian, escribe en el sitio y, si falla, devuelve los bytes viejos. Una escritura que falla borra las carpetas que creó. El diff recorta lo común y no se calcula por encima de `DIFF_MAX_WORK` líneas. `grep` recorre aquí y busca en `search_worker.py` (`_search_apart`, `GREP_TIME_LIMIT`). `glob` y `grep` saltan al recorrer lo que ignoran `.gitignore` y `.git/info/exclude` (`_add_rules`). `edit_file` cuenta las apariciones solapadas y acepta cualquier salto de línea en `old_string`. |
 | `adapters/tools/shell.py` | adapters | `RunCommand` (`run_command`, `effect`): pregunta con el comando, el directorio y "with your permissions", `scope` del comando exacto; usa el puerto `CommandRunner`, nunca el adaptador local. |
 | `adapters/commands/local.py` | adapters | `LocalCommandRunner`: `create_subprocess_shell` en un grupo de procesos propio, stdin cerrado, stderr con stdout, salida leída mientras corre y cortada a 30 000 caracteres, y `killpg(SIGKILL)` del grupo entero al pasar el tiempo, al cancelar y al terminar. Sin hilos |
 | `adapters/cli/app.py` | adapters | Línea de comandos con argparse: `parse()` (`--version`, la ayuda) y `fail()` |
@@ -111,7 +111,7 @@ import-linter (`pyproject.toml`).
 | `unit/test_messages.py` | `Message.text` une los bloques de texto; bloques de llamada y resultado; validación por `type`; mensajes inmutables |
 | `unit/test_model.py` | `Usage` a 0 por defecto; petición sin `system` y sin herramientas; `ToolSpec`; `StopReason` válido |
 | `unit/test_events.py` | Eventos inmutables (también `ToolCallDelta`), `type` por defecto y `StopReason` válido |
-| `unit/test_collect.py` | `collect()` junta el texto y las llamadas (argumentos partidos, varios `index`), toma el final de `MessageEnd` y falla sin él |
+| `unit/test_collect.py` | `Accumulator` (por el `collect()` del fake) junta el texto y las llamadas (argumentos partidos, varios `index`), toma el final de `MessageEnd` y falla sin él |
 | `unit/test_paths.py` | `is_secret()`: qué rutas son secretas y cuáles no (sin distinguir mayúsculas); `read_warning()` y `change_warning()`, sin disco |
 | `unit/test_gitignore.py` | `GitIgnore`: 35 casos de las reglas de gitignore(5), la última regla gana, `!`, ficheros más hondos y CRLF |
 | `unit/test_environment.py` | `command_env()`: solo pasan las variables permitidas, nunca una credencial con prefijo permitido, y `drop` |
@@ -124,9 +124,10 @@ import-linter (`pyproject.toml`).
 | `unit/test_fake_approval.py` | `FakeApproval` cumple el puerto, sigue el guion y falla al agotarse; `ApprovalRequest` sin aviso por defecto e inmutable |
 | `unit/test_tools_registry.py` | `ToolSpec` desde Pydantic, búsqueda, nombre repetido rechazado y herramienta con efecto aceptada |
 | `unit/test_fake_tool.py` | `FakeTool` cumple el puerto y sigue su guion, también en `approval()` |
-| `fakes/model.py` | `FakeModelClient` guionizado (`complete()` y `stream()`), `reply()`, `tool_calls()`, `END`, `Gate` y `HANG` (no es un test: lo usan los tests) |
+| `fakes/model.py` | `FakeModelClient` guionizado (`complete()` y `stream()`), `collect()`, `reply()`, `tool_calls()`, `END`, `Gate` y `HANG` (no es un test: lo usan los tests) |
 | `fakes/tools.py` | `FakeTool`: una herramienta guionizada, con `permission`, `requests` (lo que devuelve `approval()`: petición, `None` o error) y `gate` para probar la cancelación |
 | `fakes/terminal.py` | `ScriptedInput`: lo que teclea una persona, línea a línea, y luego Ctrl+D |
 | `fakes/commands.py` | `FakeRunner`: un `CommandRunner` que responde con un guion de `CommandResult` y guarda cada comando en `ran` |
 | `fakes/approval.py` | `FakeApproval`: un `ApprovalGate` que responde con un guion de decisiones, guarda las peticiones en `requests` y falla si se agota. `HangingApproval`: nunca responde, para probar Ctrl+C durante la pregunta |
+| `architecture/test_no_hidden_characters.py` | Ningún carácter bidi o de control invisible en `src`, `tests` ni `docs` |
 | `architecture/test_core_imports.py` | `domain`, `ports` y `application` solo usan la biblioteca estándar y Pydantic |

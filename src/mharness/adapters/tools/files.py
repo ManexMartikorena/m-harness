@@ -12,10 +12,12 @@ import contextlib
 import difflib
 import errno
 import io
+import json
 import os
 import re
 import secrets
 import stat
+import sys
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
@@ -425,14 +427,16 @@ class _Walk:
                 and not rules.ignores(here / name, is_dir=True)
             )
             for name in sorted(filenames):
-                if rules.ignores(here / name, is_dir=False):
-                    continue
+                # Every file counts, also the ones skipped below: the walk
+                # stays bounded and keeps yielding (final audit, 2026-10-23).
                 seen += 1
                 if seen > WALK_MAX_FILES:
                     self.stopped_early = True
                     return
                 if seen % WALK_YIELD_EVERY == 0:
                     await asyncio.sleep(0)
+                if rules.ignores(here / name, is_dir=False):
+                    continue
                 path = directory / name
                 real = path.resolve()
                 if not real.is_relative_to(self._limit) or workspace.secret(path):
@@ -448,13 +452,16 @@ GITIGNORE_MAX_BYTES = MIB
 
 
 def _add_rules(rules: GitIgnore, base: PurePath, path: Path) -> None:
-    """The rules of the ignore file `path`, if it can be read."""
+    """The rules of the ignore file `path`, if it can be read and is not
+    larger than GITIGNORE_MAX_BYTES: half a file could end in a cut rule."""
     with contextlib.suppress(OSError):
         file = _open_regular(path)
         if file is None:
             return
         with file:
-            data = file.read(GITIGNORE_MAX_BYTES)
+            if os.fstat(file.fileno()).st_size > GITIGNORE_MAX_BYTES:
+                return
+            data = file.read()
         rules.add(base, data.decode("utf-8", errors="replace"))
 
 
@@ -535,6 +542,8 @@ GREP_MAX_MATCHES = 100
 GREP_MAX_LINE = 300
 # Larger files are not searched: a huge log would block the loop while read.
 GREP_MAX_FILE_BYTES = 2 * MIB
+# A search that takes longer is killed (final audit, 2026-10-23).
+GREP_TIME_LIMIT = 30.0
 
 
 class GrepParams(BaseModel):
@@ -584,25 +593,22 @@ class Grep:
     async def run(self, params: GrepParams) -> str:
         base = self._workspace.resolve(params.path)
         self._asked.check(params, params.path, base, self._warning(base))
-        regex = _check_grep(params, base)
+        _check_grep(params, base)
         if base.is_file():
-            with _reading(params.path):
-                found = _search(base, self._workspace.shown(base), regex, params.path)
+            shown = self._workspace.shown(base)
+            found = await _search_apart(
+                params.pattern, [(str(base), shown)], params.path
+            )
             return _grep_result(found, stopped_early=False)
+        # The walk stays here: its perimeter, secrets and .gitignore rules
+        # are not the child's to decide.
         walk = _Walk(self._workspace, base)
-        matches: list[str] = []
-        async for file in walk.files():
-            if params.glob and not _glob_matches(file.in_base, params.glob):
-                continue
-            try:
-                matches.extend(_search(file.real, file.shown, regex))
-            except OSError:
-                # Skipped, as secrets, binary and large files (review of
-                # PR 2, fix 8).
-                continue
-            # One more than shown: it tells whether something was left out.
-            if len(matches) > GREP_MAX_MATCHES:
-                break
+        files = [
+            (str(file.real), file.shown)
+            async for file in walk.files()
+            if not params.glob or _glob_matches(file.in_base, params.glob)
+        ]
+        matches = await _search_apart(params.pattern, files)
         return _grep_result(matches, stopped_early=walk.stopped_early)
 
     def summary(self, result: str) -> str:
@@ -626,11 +632,12 @@ def _check_grep(params: GrepParams, base: Path) -> re.Pattern[str]:
     return regex
 
 
-def _check_search_size(size: int, raw: str) -> None:
-    if size > GREP_MAX_FILE_BYTES:
+def _check_search_size(size: int, raw: str, max_bytes: int | None = None) -> None:
+    limit = GREP_MAX_FILE_BYTES if max_bytes is None else max_bytes
+    if size > limit:
         raise ToolError(
             f"file too large to search ({size / MIB:.1f} MiB, "
-            f"max {GREP_MAX_FILE_BYTES // MIB} MiB); use run_command"
+            f"max {limit // MIB} MiB); use run_command"
         )
 
 
@@ -642,7 +649,11 @@ def _glob_matches(in_base: PurePath, pattern: str) -> bool:
 
 
 def _search(
-    path: Path, shown: str, regex: re.Pattern[str], raw: str | None = None
+    path: Path,
+    shown: str,
+    regex: re.Pattern[str],
+    raw: str | None,
+    max_bytes: int,
 ) -> list[str]:
     """The matching lines of one text file, as "path:line: text".
 
@@ -659,12 +670,12 @@ def _search(
     found = []
     with _as_text(file) as lines:
         size = os.fstat(file.fileno()).st_size
-        binary = size <= GREP_MAX_FILE_BYTES and is_binary(file)
+        binary = size <= max_bytes and is_binary(file)
         if raw is not None:
-            _check_search_size(size, raw)
+            _check_search_size(size, raw, max_bytes)
             if binary:
                 raise ToolError(f"binary file, not searchable: {raw}")
-        if size > GREP_MAX_FILE_BYTES or binary:
+        if size > max_bytes or binary:
             return []
         for number, line in enumerate(lines, start=1):
             text = line.rstrip("\r\n")
@@ -673,6 +684,77 @@ def _search(
                 if len(found) > GREP_MAX_MATCHES:
                     break
     return found
+
+
+def search_files(
+    pattern: str, files: list[tuple[str, str]], raw: str | None, max_bytes: int
+) -> list[str]:
+    """The matches of `pattern` in `files` (resolved path, shown path), at
+    most one more than GREP_MAX_MATCHES. With `raw`, the one file the model
+    asked for, and its failures are errors. It runs in the child process of
+    `_search_apart`."""
+    regex = re.compile(pattern)
+    matches: list[str] = []
+    for real, shown in files:
+        if raw is not None:
+            with _reading(raw):
+                return _search(Path(real), shown, regex, raw, max_bytes)
+        try:
+            matches.extend(_search(Path(real), shown, regex, None, max_bytes))
+        except OSError:
+            # Skipped, as secrets, binary and large files (review of PR 2,
+            # fix 8).
+            continue
+        # One more than shown: it tells whether something was left out.
+        if len(matches) > GREP_MAX_MATCHES:
+            break
+    return matches
+
+
+async def _search_apart(
+    pattern: str, files: list[tuple[str, str]], raw: str | None = None
+) -> list[str]:
+    """`search_files` in a child process, killed after GREP_TIME_LIMIT or on
+    Ctrl+C: a regex of the model can take exponential time (ReDoS), and in
+    this process it would freeze the loop (final audit, 2026-10-23, decision
+    of the maintainer)."""
+    request = json.dumps(
+        {
+            "pattern": pattern,
+            "files": files,
+            "raw": raw,
+            "max_bytes": GREP_MAX_FILE_BYTES,
+        }
+    ).encode()
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-I",
+        "-m",
+        "mharness.adapters.tools.search_worker",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        async with asyncio.timeout(GREP_TIME_LIMIT):
+            out, err = await process.communicate(request)
+    except TimeoutError:
+        raise ToolError(
+            f"search took more than {GREP_TIME_LIMIT} s; "
+            "use a simpler pattern or a narrower path"
+        ) from None
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+    if process.returncode != 0:
+        # A bug of ours: the loop reports it as an internal error.
+        raise RuntimeError(f"search process failed: {err.decode(errors='replace')}")
+    answer = json.loads(out)
+    if "error" in answer:
+        raise ToolError(answer["error"])
+    matches: list[str] = answer["matches"]
+    return matches
 
 
 def _grep_result(matches: list[str], *, stopped_early: bool) -> str:

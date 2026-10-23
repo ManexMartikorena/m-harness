@@ -3,7 +3,6 @@
 Tool calls are joined by their `index` (spec hito 4, §1.3).
 """
 
-from collections.abc import AsyncIterable
 from dataclasses import dataclass
 
 from mharness.domain.errors import ModelResponseError
@@ -59,11 +58,3 @@ class Accumulator:
             usage=self._end.usage,
             model=self._end.model,
         )
-
-
-async def collect(events: AsyncIterable[ModelEvent]) -> ModelResponse:
-    """Consume a whole stream and return the answer."""
-    accumulator = Accumulator()
-    async for event in events:
-        accumulator.add(event)
-    return accumulator.response()

@@ -15,7 +15,8 @@ class ApprovalRequest(BaseModel, frozen=True):
     the diff of an edit or whether a path leaves the working directory."""
 
     tool: str
-    # One line: "edit src/app.py", "run: uv run pytest".
+    # "edit src/app.py", "run: uv run pytest". Shown on one line: its line
+    # breaks are escaped and it is cut.
     title: str
     # What the user reads before deciding: the diff, the command and its
     # directory…

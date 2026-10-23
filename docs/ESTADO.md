@@ -55,6 +55,12 @@ Lo más reciente primero.
   13, con B4 y E1 de la mejora): puerto `CommandRunner` (`c1264b0`),
   `command_env()` (`30f1336`), `LocalCommandRunner` (`6991d63`) y
   `run_command` (`9836be4`). En verde: 615 tests.
+- **Auditoría final, 2026-10-23** (rama `fix/auditoria-final`): 8 hallazgos,
+  todos arreglados con su test (mejora, §12.22 a §12.29): título de la
+  pregunta en una línea, tope del recorrido, comandos con hijos en segundo
+  plano, `grep` en un proceso hijo contra ReDoS (decisión del mantenedor),
+  caracteres invisibles, tests que faltaban, `collect()` a los fakes, DESIGN
+  y MAPA. En verde: 745 tests.
 - **Mejora "cero deuda", PR 4 integrado (#38), 2026-10-23.**
 - **Mejora "cero deuda", PR 4, 2026-10-23** (rama `feature/gitignore`): E6
   `.gitignore` traducido a mano (`e1b7ffd`) y usado en `glob` y `grep`

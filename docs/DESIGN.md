@@ -75,6 +75,9 @@ m-harness/
 │   │   ├── agent_events.py #  AgentEvent
 │   │   ├── approval.py    #   ApprovalRequest, Decision
 │   │   ├── paths.py       #   secretos y reglas de permisos de ruta
+│   │   ├── commands.py    #   CommandResult
+│   │   ├── environment.py #   las variables que recibe un comando
+│   │   ├── gitignore.py   #   las reglas de .gitignore
 │   │   ├── session.py
 │   │   └── errors.py
 │   ├── ports/             # Interfaces (typing.Protocol): lo que el núcleo necesita del exterior
@@ -84,7 +87,7 @@ m-harness/
 │   │   ├── sessions.py    #   SessionStore
 │   │   ├── memory.py      #   MemoryStore
 │   │   ├── skills.py      #   SkillSource
-│   │   ├── sandbox.py     #   CommandRunner
+│   │   ├── commands.py    #   CommandRunner
 │   │   └── tracing.py     #   TraceSink
 │   ├── application/       # Casos de uso: orquestan el núcleo a través de los puertos
 │   │   ├── agent.py       #   el bucle agéntico: validar → permiso → ejecutar
@@ -95,11 +98,11 @@ m-harness/
 │   │   └── subagents.py
 │   ├── adapters/          # Implementaciones de los puertos: el contacto real con el exterior
 │   │   ├── models/        #   openai_chat.py, anthropic.py
-│   │   ├── tools/         #   filesystem.py, search.py, shell.py, web.py…
+│   │   ├── tools/         #   files.py, search_worker.py, shell.py, web.py…
+│   │   ├── commands/      #   local.py; el aislado, en el hito 14
 │   │   ├── mcp/
 │   │   ├── storage/       #   sesiones (JSONL), memoria (SQLite)
 │   │   ├── skills/
-│   │   ├── sandbox/
 │   │   ├── tracing/       #   jsonl_traces.py, otel.py
 │   │   └── cli/           #   adaptador de entrada: terminal interactiva y modo no interactivo
 │   ├── config.py          # carga y valida la configuración

@@ -1,15 +1,29 @@
 """A `ModelClient` that answers from a script (DESIGN §12)."""
 
 import asyncio
-from collections.abc import AsyncGenerator, Iterable
+from collections.abc import AsyncGenerator, AsyncIterable, Iterable
 
-from mharness.application.collect import collect
+from mharness.application.collect import Accumulator
 from mharness.domain.errors import ModelError
 from mharness.domain.events import MessageEnd, ModelEvent, TextDelta, ToolCallDelta
 from mharness.domain.messages import Block, Message, TextBlock, ToolCallBlock
 from mharness.domain.model import ModelRequest, ModelResponse, StopReason, Usage
 
 FAKE_MODEL = "fake-model"
+
+
+async def collect(events: AsyncIterable[ModelEvent]) -> ModelResponse:
+    """Consume a whole stream and return the answer, as `complete()` does.
+
+    Only the fake needs it: the agent uses `Accumulator` itself, and the
+    OpenAI adapter reads whole answers on its own (final audit, 2026-10-23).
+    """
+    accumulator = Accumulator()
+    async for event in events:
+        accumulator.add(event)
+    return accumulator.response()
+
+
 END = MessageEnd(stop_reason="end_turn", usage=Usage(), model=FAKE_MODEL)
 
 

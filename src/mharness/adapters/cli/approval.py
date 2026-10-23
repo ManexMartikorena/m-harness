@@ -14,7 +14,7 @@ to fake what you approve.
 from typing import TextIO
 
 from mharness.adapters.cli.input import ReadLine
-from mharness.adapters.cli.text import clean
+from mharness.adapters.cli.text import clean, clean_line
 from mharness.domain.approval import ApprovalRequest, Decision
 
 DETAIL_MAX_LINES = 60
@@ -47,11 +47,11 @@ class TerminalApproval:
 
     async def decide(self, request: ApprovalRequest) -> Decision:
         out = self._out
-        print(f"  ┌ {clean(request.title)}", file=out)
+        print(f"  ┌ {_cut(clean_line(request.title))}", file=out)
         for line in _detail(request.detail):
             print(f"  │ {line}", file=out)
         if request.warning:
-            warning = f"! {clean(request.warning)}"
+            warning = f"! {_cut(clean_line(request.warning))}"
             if self._color:
                 warning = f"{YELLOW}{warning}{RESET}"
             print(f"  │ {warning}", file=out)
@@ -71,13 +71,14 @@ class TerminalApproval:
                 return _ANSWERS[answer]
 
 
+def _cut(line: str) -> str:
+    return line if len(line) <= DETAIL_MAX_LINE else line[:DETAIL_MAX_LINE] + "…"
+
+
 def _detail(detail: str) -> list[str]:
     """The lines of the detail, clean and cut."""
     lines = [clean(line) for line in detail.splitlines()]
-    shown = [
-        line if len(line) <= DETAIL_MAX_LINE else line[:DETAIL_MAX_LINE] + "…"
-        for line in lines[:DETAIL_MAX_LINES]
-    ]
+    shown = [_cut(line) for line in lines[:DETAIL_MAX_LINES]]
     if len(lines) > DETAIL_MAX_LINES:
         shown.append(f"… [{len(lines) - DETAIL_MAX_LINES} more lines]")
     return shown
