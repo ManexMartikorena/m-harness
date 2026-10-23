@@ -69,13 +69,17 @@ m-harness/
 ├── src/mharness/
 │   ├── domain/            # Núcleo: tipos y reglas puras, sin E/S ni red
 │   │   ├── messages.py    #   Message, bloques, ToolCall, ToolResult
-│   │   ├── tools.py       #   ToolSpec, Permission
-│   │   ├── events.py      #   ModelEvent, AgentEvent
+│   │   ├── model.py       #   ModelRequest, ModelResponse, ToolSpec, Usage
+│   │   ├── tools.py       #   Permission, ToolError
+│   │   ├── events.py      #   ModelEvent
+│   │   ├── agent_events.py #  AgentEvent
+│   │   ├── approval.py    #   ApprovalRequest, Decision
+│   │   ├── paths.py       #   secretos y reglas de permisos de ruta
 │   │   ├── session.py
 │   │   └── errors.py
 │   ├── ports/             # Interfaces (typing.Protocol): lo que el núcleo necesita del exterior
 │   │   ├── model.py       #   ModelClient, ModelCatalog
-│   │   ├── tool.py        #   Tool
+│   │   ├── tools.py       #   Tool
 │   │   ├── approval.py    #   ApprovalGate
 │   │   ├── sessions.py    #   SessionStore
 │   │   ├── memory.py      #   MemoryStore
@@ -83,8 +87,9 @@ m-harness/
 │   │   ├── sandbox.py     #   CommandRunner
 │   │   └── tracing.py     #   TraceSink
 │   ├── application/       # Casos de uso: orquestan el núcleo a través de los puertos
-│   │   ├── agent_loop.py  #   el bucle agéntico
-│   │   ├── tool_runner.py #   validar → permiso → ejecutar
+│   │   ├── agent.py       #   el bucle agéntico: validar → permiso → ejecutar
+│   │   ├── tools.py       #   el registro de herramientas
+│   │   ├── approvals.py   #   las aprobaciones de la sesión
 │   │   ├── prompt.py      #   composición del system prompt
 │   │   ├── context.py     #   conteo y compactación
 │   │   └── subagents.py
@@ -107,6 +112,9 @@ m-harness/
 ├── evals/                 # batería de tareas, repos de prueba y líneas base
 └── docs/                  # ANALISIS, DESIGN, ESTADO, MAPA, guia/, specs/…
 ```
+
+*(Corregido el 23/10/2026, spec `mejora-2026-10-23-deuda-hito-5`, C: el árbol
+usa los nombres reales de los ficheros que ya existen.)*
 
 El árbol muestra el destino: cada carpeta nace en el hito que la necesita
 (§14). `docs/MAPA.md` describe lo que existe en cada momento y se actualiza en
@@ -197,11 +205,14 @@ AgentEvent = TurnStarted | TextDelta | ToolCallProposed | ApprovalRequested
 
 # Herramientas
 Permission = READ | EFFECT                      # lo prohibido no se registra
-Tool: name, description, Params (modelo Pydantic), permission,
-      approval(params) -> ApprovalRequest | None, async run(params) -> str
+Tool: name, description, params (modelo Pydantic), permission,
+      async approval(params) -> ApprovalRequest | None, async run(params) -> str,
+      summary(result) -> str
 # (Corregido el 21/10/2026, spec del hito 4, §1.5, y spec del hito 5, §1.2:
 #  `run` devuelve texto y el bucle construye el ToolResultBlock; `approval`
-#  dice qué preguntar antes de ejecutar, con el diff o el comando.)
+#  dice qué preguntar antes de ejecutar, con el diff o el comando.
+#  Corregido el 23/10/2026, spec mejora-2026-10-23-deuda-hito-5, B2: `approval` es
+#  asíncrono; `summary` da la línea corta que enseña la terminal.)
 ApprovalRequest(tool, title, detail, scope, warning)  # scope: lo que cubre "toda la sesión"
 Decision = "once" | "session" | "deny"
 
@@ -241,6 +252,7 @@ Session(id, created_at, cwd, model, messages, usage)
 | Capa | Elección | Por qué (y desviación del stack por defecto) |
 |---|---|---|
 | Lenguaje | Python ≥ 3.14. Desarrollo en 3.14; CI en 3.14 y 3.15 | 3.15.0 salió el 9/10/2026: se prueba en CI, pero no se exige hasta que el ecosistema lo haya absorbido |
+| Plataforma | Linux (POSIX). En Windows, WSL2 | Las herramientas usan llamadas POSIX (`O_NOFOLLOW`, `O_DIRECTORY`, grupos de procesos). *(Anotado el 23/10/2026, spec `mejora-2026-10-23-deuda-hito-5`, D5; la plataforma se fijó en la spec del hito 1.)* |
 | Entorno y dependencias | uv, con lockfile | Stack por defecto |
 | Concurrencia | `asyncio` | Streaming, cancelación y paralelismo |
 | Transporte HTTP | httpx (asíncrono), directo | Se ve el JSON exacto que viaja. En la industria se usan los SDK oficiales o LiteLLM (§7.1) |
@@ -359,12 +371,21 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   de trabajo. Fuera de él, incluso leer pide aprobación.
 - **Ficheros secretos:** `.env`, claves privadas, `~/.ssh`, credenciales de la
   nube y similares quedan denegados salvo aprobación explícita, para que su
-  contenido no acabe en el modelo.
+  contenido no acabe en el modelo. *(Añadido el 23/10/2026, spec
+  `mejora-2026-10-23-deuda-hito-5`, A6 y E3: sin distinguir mayúsculas, y también
+  `.git/config` y `.git-credentials`.)*
 - **Terminal:** cada comando es `EFFECT`. Desde el hito 14 corre además en un
   entorno aislado.
   *(Añadido el 21/10/2026, spec del hito 5, §1.9: el comando corre en su propio
   grupo de procesos, con tiempo límite, y sin las variables de entorno con
   credenciales; "toda la sesión" cubre solo ese comando exacto.)*
+  *(Corregido el 23/10/2026, spec `mejora-2026-10-23-deuda-hito-5`, E1: el comando
+  recibe solo una lista de variables permitidas (`PATH`, `HOME`, `LANG`…),
+  no el entorno menos las credenciales conocidas.)*
+- **Ficheros que ejecutan código:** escribir en `.git`, `.github`, `.husky`,
+  `.vscode`, `.maha`, `.pre-commit-config.yaml` o `.envrc` pregunta siempre,
+  sin "toda la sesión". *(Añadido el 23/10/2026, spec `mejora-2026-10-23-deuda-hito-5`,
+  D13.)*
 - **Sin terminal:** si la entrada no es una terminal (`maha < fichero`), toda
   petición de aprobación se deniega sin preguntar. *(Añadido el 21/10/2026, spec
   del hito 5, §1.10: la siguiente línea del fichero podría "aprobar".)*

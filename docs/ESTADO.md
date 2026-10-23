@@ -382,9 +382,10 @@ lint-imports en verde; después, el primer punto sin hacer.
 
 1. **Agente:** integrar el PR `fix/fifo-sin-carrera` con el CI en verde,
    con permiso del mantenedor.
-2. **Mantenedor:** decidir qué hacer con los "límites conocidos" de
-   `write_file` y `edit_file` (spec 5, §12.10): el agente los anotó como
-   aceptados; con la regla nueva, los acepta o no el mantenedor.
+2. **Agente:** spec `mejora-2026-10-23-deuda-hito-5` (APROBADA el
+   2026-10-23: el mantenedor aprobó todas las recomendaciones) y sus cuatro
+   PRs (§6), antes del PR 3 del hito 5. Objetivo del mantenedor: hito 5
+   cerrado con cero deuda técnica.
 3. **Agente:** PR 3 (`feature/hito-5-comandos`) desde `main` actualizado,
    empezando por la pieza 10 de la spec §6 (puerto `CommandRunner` y
    `FakeRunner`). Push e integración con el CI en verde, con permiso del
@@ -516,7 +517,8 @@ resuelve):
   mantenedor).
 - **Límites conocidos de `write_file` y `edit_file`** (enlace duro separado,
   sin propietario ni ACL, solo POSIX…): anotados como aceptados por el
-  agente; falta la decisión del mantenedor (lista en spec 5, §12.10).
+  agente; decididos por el mantenedor el 2026-10-23 (spec
+  `mejora-2026-10-23-deuda-hito-5`, §1 D).
 
 **Por medir:**
 - Línea base de las evals (hito 8).
