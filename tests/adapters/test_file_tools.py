@@ -2,8 +2,10 @@
 §4.3 and §4.4), in `tmp_path`."""
 
 import asyncio
+import contextlib
 import os
 import stat
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -2042,3 +2044,51 @@ def test_a_failed_stat_of_the_file_to_change_cannot_be_read(
 
     assert str(edited.value) == "cannot read app.py: Input/output error"
     assert str(written.value) == "cannot read app.py: Input/output error"
+
+
+# A FIFO is not read (spec hito 5, §12.11)
+
+
+@pytest.fixture
+def fifo(root: Path) -> Iterator[Path]:
+    """A FIFO with a writer that serves every open, so a tool that opens it
+    reads "x" instead of hanging the tests. Released at the end."""
+    path = root / "pipe"
+    os.mkfifo(path)
+    stop = threading.Event()
+
+    def serve() -> None:
+        while True:
+            descriptor = os.open(path, os.O_WRONLY)  # Waits for a reader.
+            with contextlib.suppress(BrokenPipeError):
+                if not stop.is_set():
+                    os.write(descriptor, b"x\n")
+            os.close(descriptor)
+            if stop.is_set():
+                return
+
+    writer = threading.Thread(target=serve, daemon=True)
+    writer.start()
+    yield path
+    stop.set()
+    # A reader that does not wait lets the last open of the writer return.
+    os.close(os.open(path, os.O_RDONLY | os.O_NONBLOCK))
+    writer.join(timeout=5)
+
+
+async def test_read_file_does_not_open_a_fifo(fifo: Path) -> None:
+    tool = ReadFile(Workspace(fifo.parent))
+
+    with pytest.raises(ToolError, match="not a regular file: pipe"):
+        await tool.run(ReadFileParams(path="pipe"))
+
+
+async def test_grep_does_not_open_a_fifo(fifo: Path) -> None:
+    root = fifo.parent
+    write(root, "ok.txt", "x\n")
+    tool = Grep(Workspace(root))
+
+    walked = await tool.run(GrepParams(pattern="x"))
+    assert walked == "ok.txt:1: x"
+    with pytest.raises(ToolError, match="not a regular file: pipe"):
+        await tool.run(GrepParams(pattern="x", path="pipe"))
