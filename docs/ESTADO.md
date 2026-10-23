@@ -45,6 +45,11 @@ Lo más reciente primero.
   `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
   una FIFO. Test primero, con una FIFO real. En verde: 489 tests. Detalle
   en la spec 5, §12.11.
+- **Mejora "cero deuda", PR 2, 2026-10-23** (rama
+  `feature/deuda-arquitectura`): B2 `approval()` asíncrono (`f8b38f8`), B1
+  reglas de ruta en el dominio (`9d95f18`) y la limpieza C (`95014d5`,
+  `eaddf2f`, `ea20fa2`, `397e5e4`, `bb98770`). En verde: 530 tests.
+- **Mejora "cero deuda", PR 1 integrado (#35), 2026-10-23.**
 - **Mejora "cero deuda", PR 1, 2026-10-23** (rama `fix/fallos-auditoria`;
   spec `mejora-2026-10-23-deuda-hito-5`, aprobada en #34): A1 (`7235142`),
   A2 (`4e908f2`), A3 (`b99573b`), A4 (`ec235c3`), A5 (`4da3ccd`), A6
