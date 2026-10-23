@@ -341,6 +341,11 @@ Todos se arreglaron, cada uno con su test primero:
     comando llegaba al tiempo límite aunque su shell ya hubiera terminado.
     Ahora se espera a `process.wait()` mientras otra tarea lee. Al terminar,
     se mata el grupo y se lee lo que queda durante un segundo como mucho.
+    *(Corregido tras el CI, `453d8eb`: en Python 3.14.4, el del CI,
+    `process.wait()` también espera a que se cierren las tuberías; en 3.14.8
+    y 3.15 no. Comprobado ese día con un script en las tres versiones.
+    `_exited()` espera a `returncode`, que se pone al salir el shell en todas,
+    sondeando cada 50 ms, también en el `finally`.)*
 25. **ReDoS** (`222ff26`, decisión del mantenedor: proceso hijo). `grep`
     ejecutaba en el bucle la regex del modelo, sin preguntar, y `(a+)+$`
     podía congelar `maha` sin que Ctrl+C respondiera. El recorrido (perímetro,
