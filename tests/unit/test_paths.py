@@ -20,6 +20,13 @@ from mharness.domain.paths import is_secret
         ".ssh/config",
         ".aws/credentials",
         "home/.kube/config",
+        # A file system that ignores case (/mnt/c in WSL, macOS) opens the
+        # same file (spec mejora-2026-10-23-deuda-hito-5, A6).
+        ".ENV",
+        ".Env.Local",
+        "ID_RSA",
+        "X.PEM",
+        ".SSH/config",
     ],
 )
 def test_secret_paths(path: str) -> None:
@@ -28,7 +35,15 @@ def test_secret_paths(path: str) -> None:
 
 @pytest.mark.parametrize(
     "path",
-    [".env.example", "env.py", "docs/key.md", "src/environment.py", "notas.txt", "."],
+    [
+        ".env.example",
+        ".ENV.EXAMPLE",
+        "env.py",
+        "docs/key.md",
+        "src/environment.py",
+        "notas.txt",
+        ".",
+    ],
 )
 def test_ordinary_paths(path: str) -> None:
     assert not is_secret(PurePath(path))
