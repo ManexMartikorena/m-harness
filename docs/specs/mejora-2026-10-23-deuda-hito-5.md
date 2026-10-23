@@ -41,7 +41,7 @@ Todas propuestas por el agente y aprobadas por el mantenedor el 2026-10-23.
    justo antes de aprobar. Un solo saneador, `adapters/cli/text.py`
    (`clean()`): los caracteres de control (categoría Unicode `Cc`, salvo
    `\n` y `\t`) y los de dirección bidi (U+202A–U+202E, U+2066–U+2069)
-   salen como `\x1b`, `‮`… Lo usa toda la salida de texto no confiable,
+   salen como `\x1b`, `\u202e`… Lo usa toda la salida de texto no confiable,
    y `TerminalApproval` (pieza 14).
 3. **`write_file` y `edit_file` también tienen la carrera de la FIFO.**
    `_current_bytes` hace `stat` y luego `read_bytes()`. Se abre con

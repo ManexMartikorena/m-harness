@@ -4,14 +4,16 @@ A2).
 Text from the model, a tool or a file can carry terminal control sequences
 (ESC, `\r`…) that repaint the screen, or bidi controls that reorder it. The
 screen could then lie, for example about the question just below a call.
-They are shown escaped, as `\x1b` or `‮`.
+They are shown escaped, as `\x1b` or `\u202e`.
 """
 
 import re
 
 # C0 and C1 controls but newline and tab, and the bidi embeddings,
 # overrides, isolates and marks.
-_UNSAFE = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f؜‎‏‪-‮⁦-⁩]")
+_UNSAFE = re.compile(
+    "[\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]"
+)
 
 
 def _escaped(match: re.Match[str]) -> str:
