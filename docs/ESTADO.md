@@ -45,6 +45,11 @@ Lo más reciente primero.
   `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
   una FIFO. Test primero, con una FIFO real. En verde: 489 tests. Detalle
   en la spec 5, §12.11.
+- **Mejora "cero deuda", PR 3, 2026-10-23** (rama `feature/deuda-escritura`):
+  D6 (`689adf7`), D3 (`b5bd7d3`), D4 (`fb79e82`), D1 y D2 (`bbce66e`), D7
+  (`7a871a6`), D8 (`552804b`), D9 y D10 (`909a863`), D12 (`d6631a1`) y D13
+  (`9eade8d`). En verde: 556 tests.
+- **Mejora "cero deuda", PR 2 integrado (#36), 2026-10-23.**
 - **Mejora "cero deuda", PR 2, 2026-10-23** (rama
   `feature/deuda-arquitectura`): B2 `approval()` asíncrono (`f8b38f8`), B1
   reglas de ruta en el dominio (`9d95f18`) y la limpieza C (`95014d5`,
@@ -523,10 +528,10 @@ resuelve):
 - **`.git/config` se lee sin preguntar** y puede llevar URLs con token:
   valorar si la lectura de `.git/config` debe preguntar (decisión del
   mantenedor).
-- **Límites conocidos de `write_file` y `edit_file`** (enlace duro separado,
-  sin propietario ni ACL, solo POSIX…): anotados como aceptados por el
-  agente; decididos por el mantenedor el 2026-10-23 (spec
-  `mejora-2026-10-23-deuda-hito-5`, §1 D).
+- ~~**Límites conocidos de `write_file` y `edit_file`**~~ **Resueltos**
+  (spec `mejora-2026-10-23-deuda-hito-5`, PR 3), salvo lo que decidió el
+  mantenedor: D7 aceptado, D14 se mantiene, D5 no es un fallo (Linux) y
+  D11 va al hito 7.
 
 **Por medir:**
 - Línea base de las evals (hito 8).

@@ -284,3 +284,34 @@ fallar antes del arreglo:
     capas (`ea20fa2`); comentarios (`397e5e4`); aviso `SECRET_CHANGE` al
     escribir un secreto (`bb98770`). DESIGN §3 y §5 ya se corrigieron con
     la spec (#34).
+
+**PR 3** (`feature/deuda-escritura`):
+11. D6 (`689adf7`): `.maha-<16 hex>.tmp`.
+12. D3 (`b5bd7d3`) y D4 (`fb79e82`): `_make_folders()` crea las carpetas una
+    a una y las apunta; si la escritura falla, `_remove_folders()` las borra
+    si siguen vacías; si va bien, `fsync` de la carpeta padre de cada una.
+13. D1 y D2 (`bbce66e`): `_copy_identity()` (propietario y grupo antes que
+    el modo, porque cambiar el propietario puede quitar los bits setuid; y
+    los atributos extendidos). Un sistema de ficheros sin atributos
+    extendidos (`ENOTSUP`) no obliga a escribir en el sitio. La escritura en
+    el sitio abre con `O_NONBLOCK` (una FIFO falla en vez de bloquear) y,
+    si falla, intenta volver a poner los bytes viejos.
+14. D7 (`7a871a6`): antes de `os.replace`, se vuelve a leer el fichero y se
+    compara con lo que mostró la pregunta; en el sitio, sobre el mismo
+    descriptor (`O_RDWR`). Un cambio después de esa comparación sigue
+    ganando: el hueco aceptado por el mantenedor.
+15. D8 (`552804b`): sustituye la decisión 10 del PR 2 (no contar las
+    solapadas); se borra su test. Con `replace_all`, se reemplaza de
+    izquierda a derecha sin solapar, y el resultado cuenta los reemplazos
+    hechos.
+16. D9 y D10 (`909a863`): sustituyen la regla 9b. Cambian dos tests: un
+    `old_string` con CRLF ya coincide en un fichero LF, y el caso A1 (saltos
+    mezclados) ya coincide.
+17. D12 (`d6631a1`): `_shift()` corrige los números de línea de la cabecera
+    del diff recortado. El texto usa guion (`lines 2-9`), no raya: ruff
+    (RUF001) no la admite en el código.
+18. D13 (`9eade8d`): dentro del directorio de trabajo, solo cuentan las
+    partes de la ruta por debajo de la raíz. Eso cierra el límite del fix 6
+    del PR 2 (un directorio de trabajo dentro de `.git` avisaba en cada
+    escritura). Si hay varios, se avisa uno: `.git`, luego lo que ejecuta
+    código, luego `.maha`.
