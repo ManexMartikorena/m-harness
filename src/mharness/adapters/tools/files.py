@@ -88,30 +88,42 @@ class Workspace:
 
 
 class _Asked:
-    """The last call a tool asked about, so `run()` reads only that one.
+    """What the last question of a tool showed, so `run()` does only that.
 
-    Between the question and `run()` a link can change (TOCTOU: time of
-    check to time of use). `run()` resolves the path again: it reads without
-    a question only what needs none, and otherwise only the exact resolved
-    path the user approved, with the same parameters (review of PR 2, fix
-    5). One slot is enough because calls run one at a time; with parallel
-    calls (hito 15) it must keep one per call.
+    Between the question and `run()` a link or the file can change (TOCTOU:
+    time of check to time of use). `run()` resolves the path again and
+    compares: the same call, the same resolved path (decision D1, review of
+    PR 2, fix 5) and, to change a file, the same bytes it would replace
+    (decision W6). One slot is enough because calls run one at a time; with
+    parallel calls (hito 15) it must keep one per call.
     """
 
     def __init__(self) -> None:
         self._last: tuple[BaseModel, Path] | None = None
+        # The bytes the question showed; None: the file did not exist.
+        self.old: bytes | None = None
 
     def forget(self) -> None:
         self._last = None
+        self.old = None
 
-    def remember(self, params: BaseModel, path: Path) -> None:
+    def remember(self, params: BaseModel, path: Path, old: bytes | None = None) -> None:
         self._last = (params, path)
+        self.old = old
+
+    def same(self, params: BaseModel, path: Path) -> bool:
+        return self._last == (params, path)
 
     def check(
         self, params: BaseModel, raw: str, path: Path, warning: str | None
     ) -> None:
-        if warning is not None and self._last != (params, path):
-            raise ToolError(f"{raw} changed after the question; ask again")
+        """For reading: a call that needs a question runs only as asked."""
+        if warning is not None and not self.same(params, path):
+            raise _changed(raw)
+
+
+def _changed(raw: str) -> ToolError:
+    return ToolError(f"{raw} changed after the question; ask again")
 
 
 def _request(
@@ -815,23 +827,9 @@ def _sync_folder(folder: Path) -> None:
             os.close(descriptor)
 
 
-@dataclass(frozen=True)
-class _Shown:
-    """What the question showed: the call, the resolved path, and the bytes
-    it would replace (None: the file did not exist)."""
-
-    params: BaseModel
-    path: Path
-    old: bytes | None
-
-
-def _changed(raw: str) -> ToolError:
-    return ToolError(f"{raw} changed after the question; ask again")
-
-
 def _as_shown(
     workspace: Workspace,
-    shown: _Shown | None,
+    asked: _Asked,
     params: WriteFileParams | EditFileParams,
     verb: str,
 ) -> tuple[Path, bytes | None]:
@@ -839,11 +837,11 @@ def _as_shown(
     same resolved path and the same bytes the question showed (decisions D1
     and W6, review of PR 2, fix 5). Gives the path and its bytes."""
     path = workspace.resolve(params.path)
-    if shown is None or (shown.params, shown.path) != (params, path):
+    if not asked.same(params, path):
         raise _changed(params.path)
     _check_target(workspace, path, params.path)
     data = _current_bytes(path, params.path, verb)
-    if data != shown.old:
+    if data != asked.old:
         raise _changed(params.path)
     return path, data
 
@@ -876,13 +874,10 @@ class WriteFile:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
-        # What the last question showed; run() writes only that (decision
-        # D1). One slot is enough because calls run one at a time; with
-        # parallel calls (hito 15) it must keep one per call.
-        self._shown: _Shown | None = None
+        self._asked = _Asked()
 
     async def approval(self, params: WriteFileParams) -> ApprovalRequest | None:
-        self._shown = None
+        self._asked.forget()
         workspace = self._workspace
         path = workspace.resolve(params.path)
         _check_target(workspace, path, params.path)
@@ -908,7 +903,7 @@ class WriteFile:
                     raise
                 body = _preview(params.content)
         detail = body if params.path == shown else f"(asked: {params.path})\n{body}"
-        self._shown = _Shown(params, path, data)
+        self._asked.remember(params, path, data)
         return ApprovalRequest(
             tool=self.name,
             title=title,
@@ -919,7 +914,7 @@ class WriteFile:
 
     async def run(self, params: WriteFileParams) -> str:
         workspace = self._workspace
-        path, data = _as_shown(workspace, self._shown, params, "overwrite")
+        path, data = _as_shown(workspace, self._asked, params, "overwrite")
         if data is not None:
             _old_text(data, params)
         _write(workspace, path, params.content, parents=True)
@@ -1029,13 +1024,10 @@ class EditFile:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
-        # What the last question showed; run() edits only that (decisions
-        # D1 and W6). One slot is enough because calls run one at a time;
-        # with parallel calls (hito 15) it must keep one per call.
-        self._shown: _Shown | None = None
+        self._asked = _Asked()
 
     async def approval(self, params: EditFileParams) -> ApprovalRequest | None:
-        self._shown = None
+        self._asked.forget()
         _check_strings(params)
         workspace = self._workspace
         path = workspace.resolve(params.path)
@@ -1055,7 +1047,7 @@ class EditFile:
             body = _strings(params)
         shown = workspace.shown(path)
         detail = body if params.path == shown else f"(asked: {params.path})\n{body}"
-        self._shown = _Shown(params, path, data)
+        self._asked.remember(params, path, data)
         return ApprovalRequest(
             tool=self.name,
             title=f"edit {shown}",
@@ -1066,7 +1058,7 @@ class EditFile:
 
     async def run(self, params: EditFileParams) -> str:
         workspace = self._workspace
-        path, data = _as_shown(workspace, self._shown, params, "edit")
+        path, data = _as_shown(workspace, self._asked, params, "edit")
         if data is None:
             # approval() refuses a missing file, so it appeared.
             raise _changed(params.path)
