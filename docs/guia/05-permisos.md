@@ -157,10 +157,16 @@ sería la línea siguiente del fichero, y una `y` aprobaría un comando:
 - **Un hijo en segundo plano** (`servidor &`) no hace esperar al tiempo
   límite: el comando termina cuando termina su shell, y el hijo se va con
   el grupo.
+- **Un proceso que sale de su grupo** (`setsid`) tampoco sobrevive: `maha`
+  es *subreaper* (con `prctl`, en Linux), así que los huérfanos de un
+  comando pasan a ser hijos suyos y no de `init`. Al terminar el comando,
+  mata a los que queden (desde `v0.5.1`). Quien lance un servidor con
+  `nohup … &` verá que muere con el comando.
+  - *Subreaper:* el proceso que adopta a los descendientes que se quedan
+    huérfanos.
 - **Lo que NO protege:** el comando corre con tus permisos y puede hacer
-  `cd ..` o borrar lo que tú puedas borrar. Un proceso que sale de su grupo
-  (`setsid`) sobrevive. Hasta el sandbox (hito 14), **la única defensa es que
-  leas el comando antes de aprobarlo**.
+  `cd ..` o borrar lo que tú puedas borrar. Hasta el sandbox (hito 14),
+  **la única defensa es que leas el comando antes de aprobarlo**.
 
 ### 6. La regex del modelo, aparte
 

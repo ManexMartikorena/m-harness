@@ -126,7 +126,9 @@ Desde el hito 8 (DESIGN §9).
   documentos citan commits por hash, no por rama. *(Adaptado, DESIGN §15.)*
 - Versiones: tag anotado sobre el commit de `main` que cierra un hito, y push
   del tag. El tag dispara el workflow que crea la GitHub Release.
-  - Desarrollo: un tag `v0.N.0` por hito, con el número del hito.
+  - Desarrollo: un tag `v0.N.0` por hito, con el número del hito. Un
+    arreglo publicado entre dos hitos, `v0.N.M` (añadido el 2026-10-23, por
+    decisión del mantenedor: `v0.5.1`).
   - `v1.0.0`: versión 1.0 (hito 21).
   - Mantenimiento: `v1.N.0` si añade o cambia una función, `v1.N.M` si solo
     arregla un fallo. La lista, en docs/ESTADO.md.

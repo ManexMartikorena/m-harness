@@ -581,7 +581,8 @@ las herramientas con efecto se prueban así), creado para la prueba.
 - **Una credencial con otro nombre** (`MI_CLAVE=…`) sí llega al comando. La
   lista es por patrón; mejora posible si aparece.
 - **Un comando que lanza un demonio fuera de su grupo** (`setsid`) sobrevive
-  al Ctrl+C. Es raro; el sandbox lo resolverá.
+  al Ctrl+C. Es raro; el sandbox lo resolverá. *(Resuelto el 2026-10-23,
+  antes del sandbox, por decisión del mantenedor: `96db36c`, subreaper.)*
 - **Comandos interactivos** (un editor, `git commit` sin `-m`): sin stdin
   terminan o se quedan hasta el `timeout`. La descripción pide comandos no
   interactivos.

@@ -146,7 +146,8 @@ Todas propuestas por el agente y aprobadas por el mantenedor el 2026-10-23.
    `TZ`, `TMPDIR`, `PWD`, `XDG_*` y `VIRTUAL_ENV`. Nada más (tampoco
    `SSH_AUTH_SOCK`: da acceso a tus claves SSH). Corrige spec 5, §1.9.
 2. **Procesos que salen de su grupo (`setsid`):** hito 14 (sandbox),
-   decisión del mantenedor.
+   decisión del mantenedor. *(Cambiado el 2026-10-23, tras cerrar `v0.5.0`:
+   el mantenedor pidió traerlo; ver §12.30.)*
 3. **`.git/config` y `.git-credentials`:** secretos. Leerlos pregunta.
 4. **Una excepción no prevista tras ejecutar pierde el turno:** el bucle
    guarda lo ejecutado ante cualquier `Exception` (además de las de D4), y
@@ -376,3 +377,21 @@ Todos se arreglaron, cada uno con su test primero:
     `tests/fakes/model.py`.
 29. DESIGN §3 y MAPA, con los nombres reales (la nota C de arriba decía que
     el árbol ya estaba al día, y no era del todo cierto).
+
+**Tras `v0.5.0`** (2026-10-23; PR `fix/procesos-escapados-y-grep`, tag
+`v0.5.1`). El agente propuso traer dos cosas y el mantenedor lo aprobó:
+
+30. **E2, adelantado del hito 14** (`96db36c`). `LocalCommandRunner` hace a
+    `maha` *subreaper* (`prctl(PR_SET_CHILD_SUBREAPER)` con `ctypes`; solo
+    Linux, y si falla no pasa nada). Antes de cada comando apunta los hijos
+    que ya tiene, leyendo `/proc`. Al terminar, también con Ctrl+C, mata y
+    recoge (`waitpid` con `WNOHANG`) los hijos nuevos, que son lo que el
+    comando sacó de su grupo, ronda a ronda hasta una ronda vacía. Las
+    llamadas van una a una, así que ningún otro hijo de `maha` es nuevo en
+    ese momento. Efecto aceptado: un `nohup servidor &` muere con el
+    comando.
+31. **`grep` por tandas** (`f249080`). Desde el PR de la auditoría final, el
+    recorrido iba entero antes de buscar. Ahora va en tandas de
+    `GREP_BATCH_FILES` (500) ficheros por proceso hijo y para en cuanto pasa
+    de `GREP_MAX_MATCHES`. El tiempo límite (30 s) es para toda la búsqueda.
+    El hijo recibe también el tope de resultados.
