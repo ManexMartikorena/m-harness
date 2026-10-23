@@ -23,6 +23,8 @@ from mharness.domain.commands import OUTPUT_MAX_CHARS, CommandResult
 # thrown away.
 _KEPT_BYTES = 4 * OUTPUT_MAX_CHARS
 _CHUNK = 64 * 1024
+# How often the exit of the shell is checked.
+EXIT_POLL_SECONDS = 0.05
 # How long the rest of the output is read once the command has ended.
 DRAIN_SECONDS = 1.0
 
@@ -51,7 +53,7 @@ class LocalCommandRunner:
                 # the background still holds the pipe (final audit,
                 # 2026-10-23).
                 async with asyncio.timeout(time_limit):
-                    await process.wait()
+                    await _exited(process)
             except TimeoutError:
                 timed_out = True
             _kill_group(process.pid)
@@ -65,7 +67,7 @@ class LocalCommandRunner:
             with contextlib.suppress(asyncio.CancelledError):
                 await reader
             # Reaped also when cancelled: SIGKILL ends it at once.
-            await process.wait()
+            await _exited(process)
         text = output.kept.decode("utf-8", errors="replace")
         code = process.returncode
         return CommandResult(
@@ -88,6 +90,18 @@ class _Output:
         while chunk := await stream.read(_CHUNK):
             self.seen += len(chunk)
             self.kept += chunk[: _KEPT_BYTES - len(self.kept)]
+
+
+async def _exited(process: asyncio.subprocess.Process) -> None:
+    """Until the shell exits.
+
+    Not `process.wait()`: in Python 3.14.4 it also waits for the pipes to
+    close, which a child in the background keeps open (3.14.8 and 3.15 do
+    not; checked on 2026-10-23). `returncode` is set as soon as the shell
+    exits in all of them, and there is no public event to wait for.
+    """
+    while process.returncode is None:  # noqa: ASYNC110 (see above)
+        await asyncio.sleep(EXIT_POLL_SECONDS)
 
 
 def _kill_group(pid: int) -> None:
