@@ -245,6 +245,26 @@ cambios, y pide arreglar todo: A1–A7, B1–B4, C, D1–D4, D6, D8–D10, D12, 
 E1, E3, E4 y E6. Mantener D14 y E5; aceptar D7; D5 no es un fallo; D11 al
 hito 7 y E2 al hito 14.
 
-## 12. Aprendido al implementar
+## 12. Aprendido al implementar (2026-10-23)
 
-(Se añade al implementar.)
+**PR 1** (`fix/fallos-auditoria`), un commit por punto, cada test visto
+fallar antes del arreglo:
+1. A1 (`7235142`): `except ValueError, RecursionError`, como el bucle.
+2. A2 (`4e908f2`): `clean()` también en `fail()` (`cli/app.py`), porque el
+   mensaje puede citar un `.maha/config.toml` ajeno. `\r` sale como
+   `\x0d`. `json.dumps` ya escribía ESC como `\u001b` en los argumentos; el
+   bidi no lo escapaba.
+3. A3 (`b99573b`): el test del `stat` que falla (fix 3 del PR 2) pasa a
+   simular el fallo en `os.fstat`, que es donde se mira ahora el tamaño.
+4. A4 (`ec235c3`): sin aviso, `approval()` no comprueba nada y los errores
+   salen en `run()`. Con aviso, el tamaño sale antes de preguntar
+   (`_check_grep`). La FIFO cambiada sobre un fichero suelto da `not a
+   regular file` (antes `(no matches)`). `MIB` sube al principio del
+   módulo.
+5. A6 (`52dc6ba`): los nombres de `SECRET_DIRS`, `SECRET_NAMES` y
+   `NOT_SECRET` van en minúsculas y se compara con `casefold()`.
+6. E3 (`c64207b`): escribir en `.git/config` lleva ahora tres avisos
+   posibles (fuera, secreto, git).
+7. E4 (`e084fbd`): `except BaseException`. La llamada en curso recibe
+   `cancelled by the user` con Ctrl+C y `interrupted by an internal error`
+   con cualquier otra excepción.
