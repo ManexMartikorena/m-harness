@@ -113,6 +113,9 @@ class Tool[P: BaseModel](Protocol):
         """What to ask before running, or None. May raise ToolError."""
 ```
 
+*(Corregido el 2026-10-23, spec `mejora-2026-10-23-deuda-hito-5`, B2: `approval()`
+pasa a `async`.)*
+
 - **La herramienta sabe qué preguntar:** solo ella puede calcular el diff de
   una edición o saber si una ruta sale del directorio. El bucle solo pregunta
   y decide (§1.4).
@@ -302,6 +305,9 @@ directorio de trabajo. `effect`; `timeout` de 1 a 600 s.
   `_SECRET` o `_PASSWORD` (sin mirar mayúsculas). Si no, un `env` o un
   `echo $OPENCODE_API_KEY` mandaría tu clave al modelo (AGENTS.md: las
   credenciales nunca salen).
+  *(Corregido el 2026-10-23, spec `mejora-2026-10-23-deuda-hito-5`, B4 y E1: el
+  comando recibe solo una lista de variables permitidas, calculada en
+  `domain/environment.py`; el puerto recibe `env`.)*
 - **Resultado** para el modelo:
 
   ```
@@ -773,7 +779,9 @@ decidido por el mantenedor al implementar. Todo en
    - C: si tras la adaptación el texto queda igual (`"a\n"` por `"a\r\n"`)
      → `nothing to change`. *(Revisión, `39162ca`: con aviso, sale en
      `run()`, tras aprobar.)*
-10. **Límites conocidos** (aceptados):
+10. **Límites conocidos** *(corregido el 2026-10-23: los anotó el agente
+    como aceptados sin preguntar. El mantenedor los decidió uno a uno en la
+    spec `mejora-2026-10-23-deuda-hito-5`, §1 D)*:
     - un enlace duro se separa: `os.replace` deja un fichero nuevo;
     - no se conservan el propietario, el grupo, los atributos extendidos ni
       las ACL: solo el modo;
@@ -806,6 +814,8 @@ decidido por el mantenedor al implementar. Todo en
     las dos usan para mirar los primeros bytes. Irá en un PR `fix/` justo
     después del PR 2, con su test primero. `write_file` y `edit_file` no se
     ven afectadas: una FIFO no es un fichero normal y falla antes de leer.
+    *(Corregido el 2026-10-23, spec `mejora-2026-10-23-deuda-hito-5`, A3: sí se ven
+    afectadas por la carrera; la comprobación va antes de abrir.)*
     **Resuelto** en `85c9e26` (PR `fix/fifo-bloquea-lectura`, 2026-10-23):
     `read_file` y `grep` sobre un solo fichero dan `not a regular file`
     antes de abrir (y antes de preguntar, como error de metadatos); `grep`
