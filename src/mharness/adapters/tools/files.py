@@ -51,6 +51,17 @@ def _count(number: int, singular: str, plural: str | None = None) -> str:
     return f"{number} {word}"
 
 
+def _count_lines(
+    result: str, empty: str, singular: str, plural: str | None = None
+) -> str:
+    """How many results a listing gives: its lines, without the "… [" notes,
+    or none if it is the `empty` text."""
+    if result == empty:
+        return _count(0, singular, plural)
+    found = sum(1 for line in result.splitlines() if not line.startswith("… ["))
+    return _count(found, singular, plural)
+
+
 class Workspace:
     """The working directory: the tools see it without asking. The rules of
     what asks live in `domain.paths`; this resolves paths on the disk."""
@@ -344,10 +355,7 @@ class ListDir:
         return f"{name} [secret]" if self._workspace.secret(entry) else name
 
     def summary(self, result: str) -> str:
-        if result == "(empty directory)":
-            return _count(0, "entry", "entries")
-        entries = sum(1 for line in result.splitlines() if not line.startswith("… ["))
-        return _count(entries, "entry", "entries")
+        return _count_lines(result, "(empty directory)", "entry", "entries")
 
 
 def _check_dir(path: Path, raw: str) -> None:
@@ -485,10 +493,7 @@ class Glob:
         return "\n".join(lines) if lines else "(no files match)"
 
     def summary(self, result: str) -> str:
-        if result == "(no files match)":
-            return _count(0, "file")
-        files = sum(1 for line in result.splitlines() if not line.startswith("… ["))
-        return _count(files, "file")
+        return _count_lines(result, "(no files match)", "file")
 
 
 GREP_MAX_MATCHES = 100
@@ -566,10 +571,7 @@ class Grep:
         return _grep_result(matches, stopped_early=walk.stopped_early)
 
     def summary(self, result: str) -> str:
-        if result == "(no matches)":
-            return _count(0, "match", "matches")
-        found = sum(1 for line in result.splitlines() if not line.startswith("… ["))
-        return _count(found, "match", "matches")
+        return _count_lines(result, "(no matches)", "match", "matches")
 
 
 def _check_grep(params: GrepParams, base: Path) -> re.Pattern[str]:
