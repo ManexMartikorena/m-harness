@@ -2526,3 +2526,36 @@ async def test_ignored_files_count_for_the_walk_limit_and_its_yields(
 
     assert result.endswith("… [stopped after 50 files; narrow the path]")
     assert yields >= 5
+
+
+# grep searches in a child process with a time limit (final audit,
+# 2026-10-23, decision of the maintainer): a regex of the model like
+# "(a+)+$" can take exponential time, and must not freeze maha.
+
+REDOS = "(a+)+$"
+
+
+async def test_a_catastrophic_regex_stops_at_the_time_limit(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(files, "GREP_TIME_LIMIT", 0.5)
+    write(root, "a.txt", "a" * 40 + "!\n")
+    started = asyncio.get_running_loop().time()
+
+    with pytest.raises(ToolError, match=r"search took more than 0\.5 s"):
+        await grep(root, REDOS)
+
+    assert asyncio.get_running_loop().time() - started < 5
+
+
+async def test_ctrl_c_stops_a_slow_search_at_once(root: Path) -> None:
+    write(root, "a.txt", "a" * 40 + "!\n")
+    task = asyncio.ensure_future(grep(root, REDOS))
+    await asyncio.sleep(0.5)
+    started = asyncio.get_running_loop().time()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert asyncio.get_running_loop().time() - started < 2
