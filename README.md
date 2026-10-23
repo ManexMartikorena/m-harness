@@ -36,7 +36,7 @@ model = "glm-5.3-flash"
 ```
 $ export OPENCODE_API_KEY=...
 $ maha
-maha 0.5.0 · opencode-go · glm-5.3-flash · /exit to quit
+maha 0.5.1 · opencode-go · glm-5.3-flash · /exit to quit
 > Cambia la segunda línea de notas.txt por 'tres' con edit_file.
   → edit_file(new_string="tres", old_string="dos", path="notas.txt")
   ┌ edit notas.txt

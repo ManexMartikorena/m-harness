@@ -385,6 +385,9 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   *(Corregido el 23/10/2026, spec `mejora-2026-10-23-deuda-hito-5`, E1: el comando
   recibe solo una lista de variables permitidas (`PATH`, `HOME`, `LANG`…),
   no el entorno menos las credenciales conocidas.)*
+  *(Añadido el 23/10/2026, misma spec, §12.30, `v0.5.1`: `maha` es
+  subreaper y mata también lo que un comando saca de su grupo con
+  `setsid`.)*
 - **Ficheros que ejecutan código:** escribir en `.git`, `.github`, `.husky`,
   `.vscode`, `.maha`, `.pre-commit-config.yaml` o `.envrc` pregunta siempre,
   sin "toda la sesión". *(Añadido el 23/10/2026, spec `mejora-2026-10-23-deuda-hito-5`,

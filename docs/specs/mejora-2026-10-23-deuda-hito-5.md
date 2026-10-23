@@ -245,7 +245,8 @@ terminal, la lista de variables permitidas y la escritura en el sitio.
 Del humano (2026-10-23): aprueba todas las recomendaciones del agente, sin
 cambios, y pide arreglar todo: A1–A7, B1–B4, C, D1–D4, D6, D8–D10, D12, D13,
 E1, E3, E4 y E6. Mantener D14 y E5; aceptar D7; D5 no es un fallo; D11 al
-hito 7 y E2 al hito 14.
+hito 7 y E2 al hito 14. *(E2 cambiado tras `v0.5.0`, por decisión del
+mantenedor: ver §12.30.)*
 
 ## 12. Aprendido al implementar (2026-10-23)
 
@@ -395,3 +396,12 @@ Todos se arreglaron, cada uno con su test primero:
     `GREP_BATCH_FILES` (500) ficheros por proceso hijo y para en cuanto pasa
     de `GREP_MAX_MATCHES`. El tiempo límite (30 s) es para toda la búsqueda.
     El hijo recibe también el tope de resultados.
+
+**Auditoría de fin de sesión** (2026-10-23, tras `v0.5.1`; PR
+`fix/escapado-sin-permiso`). Un fallo, sin hallazgos de arquitectura:
+
+32. (`b79d577`) Si un proceso escapado no se puede matar (por ejemplo, de
+    otro usuario con `sudo … &`), `os.kill` daba `PermissionError`, la
+    ronda se cortaba y el comando se perdía como "internal error". Ahora se
+    deja en paz, como ya hacía `_kill_group`. Límite: si ese proceso muere
+    después, queda como zombi hasta que termine `maha`.
