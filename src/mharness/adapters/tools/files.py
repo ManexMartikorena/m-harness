@@ -655,6 +655,9 @@ WRITE_PREVIEW_LINES = 20
 # The diff shown before an overwrite or an edit (spec hito 5, §1.8).
 DIFF_CONTEXT = 3
 DIFF_MAX_LINES = 60
+# Changed lines, both sides together, past which no diff is computed (spec
+# mejora-2026-10-23-deuda-hito-5, D12).
+DIFF_MAX_WORK = 4000
 # Random names tried for the temporary file before giving up.
 TEMP_TRIES = 100
 # A larger file is not overwritten or edited: reading it and computing its
@@ -688,22 +691,75 @@ def _preview(text: str) -> str:
 
 def _diff(old: str, new: str) -> str:
     """A unified diff from `old` to `new`, without the "---"/"+++" header:
-    the path is in the title of the question."""
-    lines = list(
-        difflib.unified_diff(_split(old), _split(new), n=DIFF_CONTEXT, lineterm="")
-    )[2:]
+    the path is in the title of the question.
+
+    The lines both share at the start and at the end are cut before difflib,
+    which is slow on many changed lines; past `DIFF_MAX_WORK` changed lines
+    it is not called at all (spec mejora-2026-10-23-deuda-hito-5, D12).
+    """
+    before, after = _split(old), _split(new)
+    start = 0
+    while start < min(len(before), len(after)) and before[start] == after[start]:
+        start += 1
+    end = 0
+    while (
+        end < min(len(before), len(after)) - start
+        and before[-1 - end] == after[-1 - end]
+    ):
+        end += 1
+    if (len(before) - start - end) + (len(after) - start - end) > DIFF_MAX_WORK:
+        return _too_large(before, after, start, end)
+    low = max(0, start - DIFF_CONTEXT)
+    lines = [
+        _shift(line, low)
+        for line in list(
+            difflib.unified_diff(
+                before[low : len(before) - end + DIFF_CONTEXT],
+                after[low : len(after) - end + DIFF_CONTEXT],
+                n=DIFF_CONTEXT,
+                lineterm="",
+            )
+        )[2:]
+    ]
     if not lines:
         # Same lines, different bytes: only the line endings change.
         return "(only line endings change)"
     shown = lines[:DIFF_MAX_LINES]
     if len(lines) > DIFF_MAX_LINES:
         shown.append(f"… [{len(lines) - DIFF_MAX_LINES} more diff lines]")
-    before, after = _endings(old), _endings(new)
-    if before and after and before != after:
+    styles = _endings(old), _endings(new)
+    if styles[0] and styles[1] and styles[0] != styles[1]:
         # The diff compares lines without their endings: it would not show it
         # (review of PR 2, fix 4).
-        shown.insert(0, f"(line endings change: {before} → {after})")
+        shown.insert(0, f"(line endings change: {styles[0]} → {styles[1]})")
     return "\n".join(shown)
+
+
+_HUNK = re.compile(r"^@@ -(\d+)(,\d+)? \+(\d+)(,\d+)? @@$")
+
+
+def _shift(line: str, offset: int) -> str:
+    """A hunk header of a diff over lines from `offset` on, with the line
+    numbers of the whole file."""
+    match = _HUNK.match(line)
+    if match is None or offset == 0:
+        return line
+    old, old_count, new, new_count = match.groups()
+    return (
+        f"@@ -{int(old) + offset}{old_count or ''} "
+        f"+{int(new) + offset}{new_count or ''} @@"
+    )
+
+
+def _too_large(before: list[str], after: list[str], start: int, end: int) -> str:
+    """What the question shows instead of a diff too costly to compute."""
+    changed = f"lines {start + 1}-{len(before) - end}"
+    lines = [f"(diff too large: {changed} change, {len(before)} → {len(after)} lines)"]
+    new = after[start : len(after) - end]
+    lines += new[:WRITE_PREVIEW_LINES]
+    if len(new) > WRITE_PREVIEW_LINES:
+        lines.append(f"… [{len(new) - WRITE_PREVIEW_LINES} more lines]")
+    return "\n".join(lines)
 
 
 def _endings(text: str) -> str | None:

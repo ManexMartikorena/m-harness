@@ -2431,3 +2431,35 @@ async def test_flexible_matches_that_overlap_are_ambiguous(root: Path) -> None:
 
     with pytest.raises(ToolError, match="old_string appears 2 times"):
         await edit_tool(root).approval(edit_params("o.txt", "a\ra", "x"))
+
+
+async def test_a_change_deep_in_a_file_keeps_its_line_numbers(root: Path) -> None:
+    # D12: the common start and end are cut before difflib; the hunk still
+    # tells the real lines.
+    lines = [f"línea {n}\n" for n in range(1, 101)]
+    write(root, "big.txt", "".join(lines))
+    lines[49] = "cambiada\n"
+
+    request = await ask_write(write_tool(root), "big.txt", "".join(lines))
+
+    assert request.detail.splitlines()[0] == "@@ -47,7 +47,7 @@"
+    assert "-línea 50" in request.detail
+    assert "+cambiada" in request.detail
+
+
+async def test_a_diff_too_large_is_summed_up(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D12: difflib can take very long on many changed lines; past the limit,
+    # the question tells what changes and shows the start of the new text.
+    monkeypatch.setattr(files, "DIFF_MAX_WORK", 10)
+    write(root, "a.txt", "igual\n" + "".join(f"viejo {n}\n" for n in range(8)))
+    new = "igual\n" + "".join(f"nuevo {n}\n" for n in range(30))
+
+    request = await ask_write(write_tool(root), "a.txt", new)
+
+    detail = request.detail.splitlines()
+    assert detail[0] == "(diff too large: lines 2-9 change, 9 → 31 lines)"
+    assert detail[1:3] == ["nuevo 0", "nuevo 1"]
+    assert len(detail) == 1 + 20 + 1
+    assert detail[-1] == "… [10 more lines]"
