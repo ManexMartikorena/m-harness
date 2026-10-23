@@ -45,6 +45,11 @@ Lo más reciente primero.
   `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
   una FIFO. Test primero, con una FIFO real. En verde: 489 tests. Detalle
   en la spec 5, §12.11.
+- **Hito 5, PR 3, 2026-10-23** (rama `feature/hito-5-comandos`; piezas 10 a
+  13, con B4 y E1 de la mejora): puerto `CommandRunner` (`c1264b0`),
+  `command_env()` (`30f1336`), `LocalCommandRunner` (`6991d63`) y
+  `run_command` (`9836be4`). En verde: 615 tests.
+- **Mejora "cero deuda", PR 4 integrado (#38), 2026-10-23.**
 - **Mejora "cero deuda", PR 4, 2026-10-23** (rama `feature/gitignore`): E6
   `.gitignore` traducido a mano (`e1b7ffd`) y usado en `glob` y `grep`
   (`eb675f1`). En verde: 594 tests.
