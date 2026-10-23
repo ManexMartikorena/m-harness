@@ -3,7 +3,8 @@
 Última actualización: 2026-10-23. **Hito 4 (tool calling y bucle agéntico)
 cerrado y publicado como `v0.4.0`.** Hito 5 (permisos y herramientas con
 efecto): spec APROBADA (PR #27); PR 1 integrado (#29); PR 2 integrado (#30).
-Arreglo de la FIFO en el PR `fix/fifo-bloquea-lectura`. Después, el PR 3
+Arreglo de la FIFO integrado (#32); el hueco que quedaba, en el PR
+`fix/fifo-sin-carrera`. Después, el PR 3
 (comandos, desde la pieza 10, sin empezar). **Sesión en el PC del trabajo
 (el WSL del PC de Windows).**
 
@@ -15,7 +16,7 @@ Lo primero al abrir: "Siguiente paso", más abajo.
 efecto): spec APROBADA (PR #27); PR 1 (contrato de aprobación y el bucle que
 pregunta) integrado (#29); PR 2 (ficheros con aprobación, `write_file` y
 `edit_file`) integrado (#30). Va por la pieza 10 (PR 3, comandos), sin
-empezar; antes, el PR `fix/fifo-bloquea-lectura`.**
+empezar; antes, el PR `fix/fifo-sin-carrera`.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.4.0` — Tool calling y bucle agéntico**
@@ -34,6 +35,12 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Hueco de la FIFO cerrado, 2026-10-23, PC de Windows (WSL)** (rama
+  `fix/fifo-sin-carrera`, `7f329ee`): el tipo se mira con `fstat` sobre el
+  fichero ya abierto. Regla nueva del mantenedor en `AGENTS.md`: ningún
+  fallo conocido se deja sin arreglar por decisión del agente. En verde: 491
+  tests.
+- **PR #32 integrado, 2026-10-23** (merge `dfa2425`).
 - **Arreglo de la FIFO, 2026-10-23, PC de Windows (WSL)** (rama
   `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
   una FIFO. Test primero, con una FIFO real. En verde: 489 tests. Detalle
@@ -373,13 +380,16 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (por si
 acaso; no hay dependencias nuevas) y comprobar los tests, mypy y
 lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** integrar el PR `fix/fifo-bloquea-lectura` con el CI en
-   verde, con permiso del mantenedor.
-2. **Agente:** PR 3 (`feature/hito-5-comandos`) desde `main` actualizado,
+1. **Agente:** integrar el PR `fix/fifo-sin-carrera` con el CI en verde,
+   con permiso del mantenedor.
+2. **Mantenedor:** decidir qué hacer con los "límites conocidos" de
+   `write_file` y `edit_file` (spec 5, §12.10): el agente los anotó como
+   aceptados; con la regla nueva, los acepta o no el mantenedor.
+3. **Agente:** PR 3 (`feature/hito-5-comandos`) desde `main` actualizado,
    empezando por la pieza 10 de la spec §6 (puerto `CommandRunner` y
    `FakeRunner`). Push e integración con el CI en verde, con permiso del
    mantenedor.
-3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -505,7 +515,8 @@ resuelve):
   valorar si la lectura de `.git/config` debe preguntar (decisión del
   mantenedor).
 - **Límites conocidos de `write_file` y `edit_file`** (enlace duro separado,
-  sin propietario ni ACL, solo POSIX…): aceptados; lista en spec 5, §12.10.
+  sin propietario ni ACL, solo POSIX…): anotados como aceptados por el
+  agente; falta la decisión del mantenedor (lista en spec 5, §12.10).
 
 **Por medir:**
 - Línea base de las evals (hito 8).
