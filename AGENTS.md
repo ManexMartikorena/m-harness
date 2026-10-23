@@ -109,6 +109,10 @@ Desde el hito 8 (DESIGN §9).
 - Código en inglés (nombres, comentarios, docstrings). Documentación, commits y
   PRs en español.
 - Cada fallo encontrado se convierte en test antes de arreglarse.
+- Ningún fallo conocido se deja sin arreglar por decisión del agente: o se
+  arregla, o se para y se pregunta al mantenedor, con opciones y
+  recomendación. Un "límite aceptado" solo lo acepta el mantenedor, y se
+  anota con su decisión.
 - Spec antes de código (ver "Ciclo de cada cambio").
 - Ramas desde `main`:
   - `feature/<slug>` para hitos y mejoras;

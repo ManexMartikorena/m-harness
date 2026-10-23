@@ -811,8 +811,16 @@ decidido por el mantenedor al implementar. Todo en
     antes de abrir (y antes de preguntar, como error de metadatos); `grep`
     al recorrer salta lo que no es un fichero normal. El test usa una FIFO
     real con un escritor en un hilo, para que el fallo se vea sin colgar la
-    batería. Límite aceptado: si alguien cambia el fichero por una FIFO
-    entre la comprobación y la apertura, se bloquea igual.
+    batería. Quedaba un hueco (TOCTOU, *time of check to time of use*): si
+    alguien cambiaba el fichero por una FIFO entre la comprobación y la
+    apertura, se bloqueaba igual. El agente lo anotó como "límite aceptado"
+    sin preguntar; el mantenedor pidió arreglarlo y fijó la regla en
+    `AGENTS.md` (ningún fallo conocido se deja sin arreglar por decisión del
+    agente). **Resuelto** en `7f329ee` (PR `fix/fifo-sin-carrera`,
+    2026-10-23): se abre una sola vez con `O_NONBLOCK`, se mira el tipo con
+    `fstat` sobre el fichero abierto y se lee de ese mismo descriptor. El
+    test simula la carrera: la comprobación previa ve un fichero normal y en
+    disco hay una FIFO.
 12. **Revisión del PR 2** (2026-10-21). Arreglos decididos por el
     mantenedor, un commit cada uno; el código los cita como "review of PR 2,
     fix N":
