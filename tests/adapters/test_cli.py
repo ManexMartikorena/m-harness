@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from mharness.adapters import cli
+from mharness.adapters.cli.text import clean
 
 PYPROJECT = Path(__file__).parents[2] / "pyproject.toml"
 
@@ -62,3 +63,25 @@ def test_fail_reports_on_stderr(capsys: pytest.CaptureFixture[str]) -> None:
     assert code == 1
     assert captured.out == ""
     assert captured.err == "error: no model configured\n"
+
+
+def test_fail_escapes_control_characters(capsys: pytest.CaptureFixture[str]) -> None:
+    # The message can quote a project's .maha/config.toml, written by anyone
+    # (spec mejora-2026-10-23-deuda-hito-5, A2).
+    cli.fail("bad model '\x1b[2Jx'")
+
+    assert capsys.readouterr().err == "error: bad model '\\x1b[2Jx'\n"
+
+
+@pytest.mark.parametrize(
+    ("text", "shown"),
+    [
+        ("a\nb\tc", "a\nb\tc"),
+        ("\x1b[31m", "\\x1b[31m"),
+        ("\r\x00\x7f\x9b", "\\x0d\\x00\\x7f\\x9b"),
+        ("\u202eabc\u2066\u200f", "\\u202eabc\\u2066\\u200f"),
+        ("ñ → ✓ 日本", "ñ → ✓ 日本"),
+    ],
+)
+def test_clean_escapes_only_unsafe_characters(text: str, shown: str) -> None:
+    assert clean(text) == shown

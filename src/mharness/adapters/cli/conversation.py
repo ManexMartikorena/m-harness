@@ -15,6 +15,7 @@ from importlib.metadata import version
 from typing import TextIO
 
 from mharness.adapters.cli.spinner import Spinner, use_color
+from mharness.adapters.cli.text import clean
 from mharness.application.agent import Agent
 from mharness.domain.agent_events import ToolCallProposed, ToolFinished, TurnFinished
 from mharness.domain.errors import ModelError
@@ -168,7 +169,7 @@ async def _answer(
                 match event:
                     case TextDelta(text=text):
                         await spinner.stop()
-                        out.write(text)
+                        out.write(clean(text))
                         out.flush()
                         wrote = True
                     case ToolCallProposed(call=call):
@@ -179,11 +180,11 @@ async def _answer(
                         print(f"  → {_call(call)}", file=out, flush=True)
                     case ToolFinished():
                         mark = "✗" if event.result.is_error else "✓"
-                        print(f"  {mark} {event.summary}", file=out, flush=True)
+                        print(f"  {mark} {clean(event.summary)}", file=out, flush=True)
                         if event.internal_error:
                             print(
-                                f'warning: tool "{event.call.name}" failed: '
-                                f"{event.internal_error}",
+                                f'warning: tool "{clean(event.call.name)}" failed: '
+                                f"{clean(event.internal_error)}",
                                 file=err,
                                 flush=True,
                             )
@@ -200,7 +201,7 @@ async def _answer(
         # The text already shown stays; the error starts on a new line.
         if wrote:
             print(file=out)
-        print(f"error: {exc}", file=err, flush=True)
+        print(f"error: {clean(str(exc))}", file=err, flush=True)
     except asyncio.CancelledError:
         if not sigint.pending:
             raise
@@ -231,7 +232,7 @@ def _call(call: ToolCallBlock) -> str:
     else:
         # As the model wrote it: the loop answers it with an error.
         shown = call.arguments
-    text = " ".join(f"{call.name}({shown})".split())
+    text = clean(" ".join(f"{call.name}({shown})".split()))
     return text if len(text) <= MAX_CALL else text[: MAX_CALL - 1] + "…"
 
 
