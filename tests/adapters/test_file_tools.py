@@ -2153,3 +2153,11 @@ def test_changing_tools_check_the_open_file(swapped: Path) -> None:
         edit_tool(root).approval(edit_params("pipe", "x", "y"))
     with pytest.raises(ToolError, match="not a regular file: pipe"):
         write_tool(root).approval(WriteFileParams(path="pipe", content="y"))
+
+
+async def test_a_path_with_nul_is_the_models_error(root: Path) -> None:
+    # Not an internal error (spec mejora-2026-10-23-deuda-hito-5, A5).
+    tool = ReadFile(Workspace(root))
+
+    with pytest.raises(ToolError, match="invalid path: a\x00b"):
+        tool.approval(ReadFileParams(path="a\x00b"))

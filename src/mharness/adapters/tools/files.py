@@ -63,7 +63,11 @@ class Workspace:
         `../`, absolute paths and links that point outside do not hide where
         they go: every check runs on the resolved path.
         """
-        return (self.root / raw).resolve()
+        try:
+            return (self.root / raw).resolve()
+        except ValueError:
+            # A NUL in the path (spec mejora-2026-10-23-deuda-hito-5, A5).
+            raise ToolError(f"invalid path: {raw}") from None
 
     def contains(self, path: Path) -> bool:
         return path.is_relative_to(self.root)
