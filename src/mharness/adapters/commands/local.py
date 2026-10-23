@@ -17,9 +17,8 @@ import signal
 from collections.abc import Mapping
 from pathlib import Path
 
-from mharness.domain.commands import CommandResult
+from mharness.domain.commands import OUTPUT_MAX_CHARS, CommandResult
 
-OUTPUT_MAX_CHARS = 30_000
 # Enough bytes for that many characters in UTF-8; the rest is read and
 # thrown away.
 _KEPT_BYTES = 4 * OUTPUT_MAX_CHARS

@@ -9,5 +9,15 @@ from mharness.adapters.tools.files import (
     Workspace,
     WriteFile,
 )
+from mharness.adapters.tools.shell import RunCommand
 
-__all__ = ["EditFile", "Glob", "Grep", "ListDir", "ReadFile", "Workspace", "WriteFile"]
+__all__ = [
+    "EditFile",
+    "Glob",
+    "Grep",
+    "ListDir",
+    "ReadFile",
+    "RunCommand",
+    "Workspace",
+    "WriteFile",
+]

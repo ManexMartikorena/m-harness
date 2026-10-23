@@ -8,8 +8,7 @@ from pathlib import Path
 import pytest
 
 from mharness.adapters.commands import LocalCommandRunner
-from mharness.adapters.commands.local import OUTPUT_MAX_CHARS
-from mharness.domain.commands import CommandResult
+from mharness.domain.commands import OUTPUT_MAX_CHARS, CommandResult
 from mharness.ports.commands import CommandRunner
 
 ENV = {"PATH": os.environ["PATH"]}
