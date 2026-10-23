@@ -406,6 +406,36 @@ async def test_cancelling_while_asking_after_a_run_keeps_the_turn() -> None:
     assert write.calls == []
 
 
+class BrokenApproval:
+    """A gate that fails with an error nobody expects."""
+
+    async def decide(self, request: ApprovalRequest) -> Decision:
+        raise OSError(5, "Input/output error")
+
+
+async def test_an_unexpected_error_after_a_run_keeps_the_turn() -> None:
+    # Any exception, not only the expected ones (spec
+    # mejora-2026-10-23-deuda-hito-5, E4): the model must know what ran.
+    echo = FakeTool("echo")
+    write = FakeTool("write", permission="effect", requests=[ask()])
+    calls = [call("c1"), call("c2", name="write"), call("c3")]
+    fake = FakeModelClient([tool_calls(*calls)])
+    subject = Agent(
+        fake, ToolRegistry([echo, write]), gate=BrokenApproval(), model=MODEL
+    )
+
+    with pytest.raises(OSError, match="Input/output error"):
+        await run(subject)
+    assert subject.messages[-1] == Message(
+        role="tool",
+        blocks=[
+            ToolResultBlock(call_id="c1", content="echo: Hola"),
+            failed("c2", "interrupted by an internal error"),
+            failed("c3", "not run"),
+        ],
+    )
+
+
 async def test_cancelling_while_asking_before_any_run_keeps_nothing() -> None:
     write = FakeTool("write", permission="effect", requests=[ask()])
     fake = FakeModelClient([tool_calls(call("c1", name="write"))])
