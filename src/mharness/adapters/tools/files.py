@@ -206,6 +206,9 @@ def _check_exists(path: Path, raw: str) -> None:
         raise ToolError(f"file not found: {raw}")
     if path.is_dir():
         raise ToolError(f"is a directory, use list_dir: {raw}")
+    # A FIFO or a device would block the open (spec hito 5, §12.11).
+    if not path.is_file():
+        raise ToolError(f"not a regular file: {raw}")
 
 
 def _check_file(path: Path, raw: str) -> None:
@@ -547,6 +550,8 @@ def _check_grep(params: GrepParams, base: Path) -> re.Pattern[str]:
         _check_pattern(params.glob)
     if not base.exists():
         raise ToolError(f"not found: {params.path}")
+    if not base.is_dir() and not base.is_file():
+        raise ToolError(f"not a regular file: {params.path}")
     return regex
 
 
@@ -559,7 +564,12 @@ def _glob_matches(in_base: PurePath, pattern: str) -> bool:
 
 def _search(path: Path, shown: str, regex: re.Pattern[str]) -> list[str]:
     """The matching lines of one text file, as "path:line: text"."""
-    if path.stat().st_size > GREP_MAX_FILE_BYTES or is_binary(path):
+    info = path.stat()
+    # A FIFO or a device is skipped: opening it would block (spec hito 5,
+    # §12.11).
+    if not stat.S_ISREG(info.st_mode) or info.st_size > GREP_MAX_FILE_BYTES:
+        return []
+    if is_binary(path):
         return []
     found = []
     with path.open(encoding="utf-8", errors="replace", newline="") as file:
