@@ -325,3 +325,39 @@ fallar antes del arreglo:
     cada carpeta que visita; un `.gitignore` de más de 1 MiB, o ilegible, no
     se lee. Fuera del directorio de trabajo, el límite es la carpeta
     aprobada.
+
+**Auditoría final** (2026-10-23, antes de `v0.5.0`; PR `fix/auditoria-final`).
+Una segunda auditoría del código encontró fallos que la primera no vio.
+Todos se arreglaron, cada uno con su test primero:
+
+22. **Seguridad** (`501b75e`): `clean()` deja pasar `\n`, así que un título
+    con 80 saltos de línea dejaba el principio del comando fuera de la
+    pantalla, y con `a` se aprobaba para la sesión. `clean_line()` escapa
+    también `\n` y `\t`; el título y el aviso salen en una línea, cortados
+    a 200 caracteres.
+23. (`eebbe5f`) Los ficheros que ignora git no contaban para el tope del
+    recorrido ni para ceder el bucle.
+24. (`623228a`) Un hijo en segundo plano mantenía abierta la tubería, y el
+    comando llegaba al tiempo límite aunque su shell ya hubiera terminado.
+    Ahora se espera a `process.wait()` mientras otra tarea lee. Al terminar,
+    se mata el grupo y se lee lo que queda durante un segundo como mucho.
+25. **ReDoS** (`222ff26`, decisión del mantenedor: proceso hijo). `grep`
+    ejecutaba en el bucle la regex del modelo, sin preguntar, y `(a+)+$`
+    podía congelar `maha` sin que Ctrl+C respondiera. El recorrido (perímetro,
+    secretos, `.gitignore`) sigue en `maha`; la búsqueda va a
+    `adapters/tools/search_worker.py`, en `python -I -m`, con
+    `GREP_TIME_LIMIT` (30 s) y matado al cancelar. Coste: unos 50 ms por
+    búsqueda; la batería pasa de 3 s a 8 s. El recorrido ya no para a los
+    100 resultados: recorre hasta su tope y el hijo para en los 100.
+26. (`12d6f25`) `text.py` y esta spec tenían caracteres bidi literales,
+    invisibles al revisar: se me convirtieron al escribir los ficheros.
+    Pasan a escapes `\uXXXX`, y `tests/architecture/test_no_hidden_characters.py`
+    impide que vuelvan a `src`, `tests` o `docs`.
+27. (`dd50bd9`) Tests de lo que no tenía: `ENOTSUP`, el cambio de
+    propietario y el tope del `.gitignore`. El test destapó que un
+    `.gitignore` grande se leía a medias, con la última regla cortada; ahora
+    no se lee, como decía el comentario.
+28. (`bad430e`) `collect()` solo lo usaba el fake: pasa a
+    `tests/fakes/model.py`.
+29. DESIGN §3 y MAPA, con los nombres reales (la nota C de arriba decía que
+    el árbol ya estaba al día, y no era del todo cierto).
