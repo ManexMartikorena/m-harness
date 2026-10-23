@@ -1110,11 +1110,11 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
     endings (decision 9b).
     """
     old, new = params.old_string, params.new_string
-    found = text.count(old)
+    found = _occurrences(text, old)
     if found == 0 and "\r\n" in text and _LONE_LF.search(old):
         old = _LONE_LF.sub("\r\n", old)
         new = _LONE_LF.sub("\r\n", new)
-        found = text.count(old)
+        found = _occurrences(text, old)
     if found == 0:
         raise ToolError(
             f"old_string not found in {params.path}; "
@@ -1125,7 +1125,20 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
             f"old_string appears {found} times in {params.path}; "
             "add context to make it unique or use replace_all"
         )
-    return text.replace(old, new), found
+    # Left to right and without overlaps, also with replace_all.
+    return text.replace(old, new), text.count(old)
+
+
+def _occurrences(text: str, old: str) -> int:
+    """Where `old` starts in `text`, overlaps included: "aa" is twice in
+    "aaa", and editing one of them is ambiguous (spec
+    mejora-2026-10-23-deuda-hito-5, D8)."""
+    found = 0
+    start = text.find(old)
+    while start != -1:
+        found += 1
+        start = text.find(old, start + 1)
+    return found
 
 
 def _edited(data: bytes, params: EditFileParams) -> tuple[str, str, int]:

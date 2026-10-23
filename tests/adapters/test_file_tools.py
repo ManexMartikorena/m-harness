@@ -1296,16 +1296,6 @@ async def test_replace_all_with_no_occurrence_fails(root: Path) -> None:
     assert str(caught.value) == NOT_FOUND.format("app.py")
 
 
-async def test_occurrences_do_not_overlap(root: Path) -> None:
-    # Decision 10: counted as str.count does, the same as str.replace.
-    write(root, "a.txt", "aaa\n")
-
-    _, result = await edit(root, edit_params("a.txt", "aa", "b"))
-
-    assert result == "edited a.txt (1 replacement)"
-    assert (root / "a.txt").read_text(encoding="utf-8") == "ba\n"
-
-
 async def test_crlf_is_kept(root: Path) -> None:
     write(root, "win.txt", "")
     (root / "win.txt").write_bytes(b"uno\r\ndos\r\ntres\r\n")
@@ -2393,3 +2383,20 @@ async def test_a_change_just_before_writing_in_place_is_not_overwritten(
     monkeypatch.undo()
 
     assert path.read_text(encoding="utf-8") == "tuyo\n"
+
+
+async def test_overlapping_occurrences_are_ambiguous(root: Path) -> None:
+    # D8: "aa" is twice in "aaa", at 0 and at 1: which one is meant?
+    write(root, "a.txt", "aaa\n")
+
+    with pytest.raises(ToolError, match="old_string appears 2 times"):
+        await edit_tool(root).approval(edit_params("a.txt", "aa", "X"))
+
+
+async def test_replace_all_with_overlaps_replaces_left_to_right(root: Path) -> None:
+    write(root, "a.txt", "aaa\n")
+
+    _, result = await edit(root, edit_params("a.txt", "aa", "X", replace_all=True))
+
+    assert result == "edited a.txt (1 replacement)"
+    assert (root / "a.txt").read_text(encoding="utf-8") == "Xa\n"
