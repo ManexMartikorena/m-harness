@@ -1,4 +1,5 @@
-"""`maha` end to end: configuration, adapter, `Chat` and terminal, no network."""
+"""`maha` end to end: configuration, adapter, `Agent` and terminal, no
+network."""
 
 import json
 import os
@@ -141,7 +142,7 @@ def test_a_cut_stream_shows_the_error_and_the_next_turn_works(
 
 
 @respx.mock
-def test_maha_offers_the_read_only_tools(
+def test_maha_offers_the_seven_tools(
     workspace: Path, stdin: Callable[[str], None]
 ) -> None:
     write_user_config(workspace, 'model = "glm-5.3-flash"\n')
@@ -158,6 +159,9 @@ def test_maha_offers_the_read_only_tools(
         "list_dir",
         "glob",
         "grep",
+        "write_file",
+        "edit_file",
+        "run_command",
     ]
 
 
@@ -257,3 +261,81 @@ def test_version_needs_no_configuration(
 
     assert code == 0
     assert capsys.readouterr().out.startswith("maha ")
+
+
+@respx.mock
+def test_without_a_terminal_a_write_is_denied_without_asking(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Spec hito 5, §1.10 and §4.8: the next line of the file could "approve".
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    arguments = '{"path": "notas.txt", "content": "y"}'
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            sse_response(tool_call_stream("write_file", arguments)),
+            sse_response(streamed("Vale.", 1, 1)),
+        ]
+    )
+    stdin("Escribe notas.txt\ny\n/exit\n")
+
+    code = main([])
+
+    out = capsys.readouterr().out
+    assert code == 0
+    # The "y" was not an answer: it reached the model as the next message.
+    last = json.loads(route.calls.last.request.content)["messages"][-1]
+    assert last == {"role": "user", "content": "y"}
+    assert "  (denied: input is not a terminal)\n" in out
+    assert "  [denied: tell maha how to continue]\n" in out
+    assert "Allow?" not in out
+    assert not (Path.cwd() / "notas.txt").exists()
+
+
+@pytest.fixture
+def terminal() -> Iterator[Callable[[str], None]]:
+    """Replace file descriptor 0 with a pseudo-terminal holding the input."""
+    saved = os.dup(0)
+    master, slave = os.openpty()
+    os.dup2(slave, 0)
+    os.close(slave)
+
+    def type_in(text: str) -> None:
+        os.write(master, text.encode())
+
+    yield type_in
+    os.dup2(saved, 0)
+    os.close(saved)
+    os.close(master)
+
+
+@respx.mock
+def test_in_a_terminal_a_command_asks_and_runs_without_the_key(
+    workspace: Path,
+    terminal: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The question reads the same input as the conversation (spec
+    # mejora-2026-10-23-deuda-hito-5, B3), and the command does not get the
+    # key (E1). `env` is harmless.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            sse_response(tool_call_stream("run_command", '{"command": "env"}')),
+            sse_response(streamed("Hecho.", 1, 1)),
+        ]
+    )
+    terminal("Ejecuta env\ny\n/exit\n")
+
+    code = main([])
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "  ┌ run: env\n" in out
+    assert "  ✓ exit code 0\n" in out
+    result = json.loads(route.calls.last.request.content)["messages"][-1]
+    assert result["role"] == "tool"
+    assert "PATH=" in result["content"]
+    assert KEY not in result["content"]
+    assert "OPENCODE_API_KEY" not in result["content"]
