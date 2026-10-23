@@ -787,33 +787,104 @@ def _create_temporary(path: Path) -> tuple[int, Path]:
     raise FileExistsError(errno.EEXIST, "no free temporary file name")
 
 
-def _write_atomically(path: Path, text: str) -> None:
+def _write_atomically(path: Path, text: str, old: bytes | None) -> None:
     """Write `text` to `path` in UTF-8, as is: a reader sees the old file or
     the new one, never half of it.
 
     Written to a temporary file in the same folder, flushed to the disk and
     renamed over `path`; then the folder is flushed too, so the rename
-    survives a power cut. An existing file keeps its mode. On any failure, or
-    a cancellation, before the rename, the temporary file is removed and
-    `path` is untouched.
+    survives a power cut. On any failure, or a cancellation, before the
+    rename, the temporary file is removed and `path` is untouched.
+
+    The new file gets the mode, owner, group and extended attributes (ACLs
+    too, on Linux) of the old one. If the old one has other hard links, or
+    any of that cannot be copied, `path` is rewritten in place instead
+    (spec mejora-2026-10-23-deuda-hito-5, D1 and D2).
     """
     try:
-        mode: int | None = stat.S_IMODE(path.stat().st_mode)
+        info: os.stat_result | None = path.stat()
     except FileNotFoundError:
-        mode = None
+        info = None
+    if info is not None and info.st_nlink > 1:
+        _write_in_place(path, text, old)
+        return
     descriptor, temporary = _create_temporary(path)
     try:
         with open(descriptor, "w", encoding="utf-8", newline="") as file:
-            if mode is not None:
-                os.fchmod(file.fileno(), mode)
+            if info is not None and not _copy_identity(file.fileno(), path, info):
+                raise _InPlace
             file.write(text)
             file.flush()
             os.fsync(file.fileno())
         os.replace(temporary, path)
+    except _InPlace:
+        temporary.unlink(missing_ok=True)
+        _write_in_place(path, text, old)
+        return
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
     _sync_folder(path.parent)
+
+
+class _InPlace(Exception):
+    """The temporary file cannot take the place of the old one."""
+
+
+def _copy_identity(descriptor: int, path: Path, info: os.stat_result) -> bool:
+    """Give the open temporary file the owner, group, mode and extended
+    attributes of `path`; False if something cannot be copied."""
+    try:
+        own = os.fstat(descriptor)
+        if (own.st_uid, own.st_gid) != (info.st_uid, info.st_gid):
+            os.fchown(descriptor, info.st_uid, info.st_gid)
+        # After the owner: changing it can clear the setuid bits.
+        os.fchmod(descriptor, stat.S_IMODE(info.st_mode))
+        for name in _xattr_names(path):
+            os.setxattr(descriptor, name, os.getxattr(path, name))
+    except OSError:
+        return False
+    return True
+
+
+def _xattr_names(path: Path) -> list[str]:
+    try:
+        return os.listxattr(path)
+    except OSError as exc:
+        # A file system without extended attributes: there is none to keep.
+        if exc.errno == errno.ENOTSUP:
+            return []
+        raise
+
+
+def _write_in_place(path: Path, text: str, old: bytes | None) -> None:
+    """Rewrite `path` itself: it keeps its hard links, owner and attributes,
+    but it is not atomic. If the write fails, the old bytes are put back, as
+    far as the disk lets."""
+    # O_NONBLOCK: a FIFO put in its place fails instead of blocking.
+    flags = os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+    descriptor = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError(errno.EINVAL, "not a regular file")
+        try:
+            _overwrite(descriptor, text.encode("utf-8"))
+        except BaseException:
+            if old is not None:
+                with contextlib.suppress(OSError):
+                    _overwrite(descriptor, old)
+            raise
+    finally:
+        os.close(descriptor)
+
+
+def _overwrite(descriptor: int, data: bytes) -> None:
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    view = memoryview(data)
+    while view:
+        view = view[os.write(descriptor, view) :]
+    os.ftruncate(descriptor, len(data))
+    os.fsync(descriptor)
 
 
 def _sync_folder(folder: Path) -> None:
@@ -850,7 +921,9 @@ def _as_shown(
     return path, data
 
 
-def _write(workspace: Workspace, path: Path, text: str, *, parents: bool) -> None:
+def _write(
+    workspace: Workspace, path: Path, text: str, old: bytes | None, *, parents: bool
+) -> None:
     """Write `text` to `path` atomically; `parents` creates its folders. A
     failure is a clean error (decision A2), and removes the folders it
     created (spec mejora-2026-10-23-deuda-hito-5, D3)."""
@@ -858,7 +931,7 @@ def _write(workspace: Workspace, path: Path, text: str, *, parents: bool) -> Non
     try:
         if parents:
             _make_folders(path.parent, created)
-        _write_atomically(path, text)
+        _write_atomically(path, text, old)
     except BaseException as exc:
         _remove_folders(created)
         if not isinstance(exc, OSError):
@@ -950,7 +1023,7 @@ class WriteFile:
         path, data = _as_shown(workspace, self._asked, params, "overwrite")
         if data is not None:
             _old_text(data, params)
-        _write(workspace, path, params.content, parents=True)
+        _write(workspace, path, params.content, data, parents=True)
         lines = _count(len(_split(params.content)), "line")
         return f"wrote {workspace.shown(path)} ({lines})"
 
@@ -1096,7 +1169,7 @@ class EditFile:
             # approval() refuses a missing file, so it appeared.
             raise _changed(params.path)
         _, new, found = _edited(data, params)
-        _write(workspace, path, new, parents=False)
+        _write(workspace, path, new, data, parents=False)
         return f"edited {workspace.shown(path)} ({_count(found, 'replacement')})"
 
     def summary(self, result: str) -> str:

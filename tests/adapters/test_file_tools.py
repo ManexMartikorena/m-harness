@@ -2263,3 +2263,85 @@ async def test_new_folders_are_flushed_to_the_disk(
     assert same_file(synced[0], (root / "a/b/new.txt").stat())
     for result, folder in zip(synced[1:], folders, strict=True):
         assert same_file(result, folder.stat())
+
+
+def xattrs_work(folder: Path) -> bool:
+    probe = folder / ".probe"
+    probe.write_text("")
+    try:
+        os.setxattr(probe, "user.maha", b"1")
+    except OSError:
+        return False
+    finally:
+        probe.unlink()
+    return True
+
+
+async def test_a_hard_link_keeps_seeing_the_file(root: Path) -> None:
+    # D1: os.replace would leave the other name with the old content.
+    first = write(root, "a.txt", "uno\n")
+    os.link(first, root / "b.txt")
+    inode = first.stat().st_ino
+
+    await write_through(root, "a.txt", "dos\n")
+
+    assert (root / "b.txt").read_text(encoding="utf-8") == "dos\n"
+    assert first.stat().st_ino == inode
+    assert temporaries(root) == []
+
+
+async def test_an_overwrite_keeps_the_extended_attributes(root: Path) -> None:
+    # D2: on Linux, ACLs are extended attributes too.
+    if not xattrs_work(root):
+        pytest.skip("no extended attributes here")
+    path = write(root, "a.txt", "uno\n")
+    os.setxattr(path, "user.maha", b"kept")
+
+    await write_through(root, "a.txt", "dos\n")
+
+    assert os.getxattr(path, "user.maha") == b"kept"
+    assert path.read_text(encoding="utf-8") == "dos\n"
+
+
+async def test_what_cannot_be_copied_is_kept_writing_in_place(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D2: an owner or an attribute the new file cannot get.
+    if not xattrs_work(root):
+        pytest.skip("no extended attributes here")
+    path = write(root, "a.txt", "uno\n")
+    os.setxattr(path, "user.maha", b"kept")
+    inode = path.stat().st_ino
+
+    def refuse(*args: object) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "setxattr", refuse)
+    await write_through(root, "a.txt", "dos\n")
+    monkeypatch.undo()
+
+    assert path.stat().st_ino == inode
+    assert os.getxattr(path, "user.maha") == b"kept"
+    assert path.read_text(encoding="utf-8") == "dos\n"
+    assert temporaries(root) == []
+
+
+async def test_a_failed_write_in_place_puts_the_old_bytes_back(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Writing in place is not atomic: on a failure, the old content returns.
+    first = write(root, "a.txt", "uno\n")
+    os.link(first, root / "b.txt")
+    tool = write_tool(root)
+    params = WriteFileParams(path="a.txt", content="dos, más largo\n")
+    await tool.approval(params)
+
+    def fail(descriptor: int) -> None:
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(os, "fsync", fail)
+    with pytest.raises(ToolError, match=r"cannot write a\.txt: Input/output error"):
+        await tool.run(params)
+    monkeypatch.undo()
+
+    assert first.read_text(encoding="utf-8") == "uno\n"
