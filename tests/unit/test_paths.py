@@ -5,6 +5,7 @@ import pytest
 from mharness.domain.paths import (
     GIT_DIR,
     OUTSIDE,
+    SECRET_CHANGE,
     SECRET_DIR,
     SECRET_FILE,
     change_warning,
@@ -93,8 +94,8 @@ def test_read_warning(path: str, secret: str | None, warning: str | None) -> Non
     [
         ("/home/ane/project/src/app.py", None),
         ("/home/ane/project/.git/hooks/pre-commit", GIT_DIR),
-        ("/home/ane/project/.env", SECRET_FILE),
-        ("/home/ane/other/.git/config", f"{OUTSIDE}; {SECRET_FILE}; {GIT_DIR}"),
+        ("/home/ane/project/.env", SECRET_CHANGE),
+        ("/home/ane/other/.git/config", f"{OUTSIDE}; {SECRET_CHANGE}; {GIT_DIR}"),
     ],
 )
 def test_change_warning(path: str, warning: str | None) -> None:

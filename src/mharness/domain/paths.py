@@ -64,6 +64,9 @@ def is_secret(path: PurePath) -> bool:
 OUTSIDE = "outside the working directory"
 SECRET_FILE = "secret file: its content goes to the model provider"
 SECRET_DIR = "secret directory: its file names go to the model provider"
+# Changing a secret: what it risks is not the model reading it (spec
+# mejora-2026-10-23-deuda-hito-5, C).
+SECRET_CHANGE = "secret file: it may hold credentials"
 # Writing in .git always asks: a hook or the config can run code (review of
 # PR 2, fix 6). Reading it does not.
 GIT_DIR = "git directory: hooks and config here can run code"
@@ -97,7 +100,7 @@ def read_warning(path: PurePath, root: PurePath, *, secret: str | None) -> str |
 def change_warning(path: PurePath, root: PurePath) -> str | None:
     """Why changing the resolved `path` cannot be approved for the whole
     session: the warnings of reading it, and .git anywhere in it."""
-    found = [read_warning(path, root, secret=SECRET_FILE)]
+    found = [read_warning(path, root, secret=SECRET_CHANGE)]
     if ".git" in path.parts:
         found.append(GIT_DIR)
     return "; ".join(warning for warning in found if warning) or None

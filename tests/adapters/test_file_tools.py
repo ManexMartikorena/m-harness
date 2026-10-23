@@ -154,6 +154,9 @@ async def test_read_errors(root: Path, setup: object, path: str, message: str) -
 
 OUTSIDE = "outside the working directory"
 SECRET_FILE = "secret file: its content goes to the model provider"
+# Changing a secret: what it risks is not the model reading it (spec
+# mejora-2026-10-23-deuda-hito-5, C).
+SECRET_CHANGE = "secret file: it may hold credentials"
 SECRET_DIR = "secret directory: its file names go to the model provider"
 
 
@@ -885,8 +888,8 @@ async def test_content_is_written_as_is(root: Path) -> None:
     [
         ("notas.txt", "write_file", None),
         ("../fuera.txt", None, OUTSIDE),
-        (".env", None, SECRET_FILE),
-        ("../.env", None, f"{OUTSIDE}; {SECRET_FILE}"),
+        (".env", None, SECRET_CHANGE),
+        ("../.env", None, f"{OUTSIDE}; {SECRET_CHANGE}"),
     ],
 )
 async def test_write_scope_inside_and_none_outside_or_secret(
@@ -1378,8 +1381,8 @@ async def test_the_strings_are_checked_before_the_disk(root: Path) -> None:
     [
         ("notas.txt", "edit_file", None),
         ("../fuera.txt", None, OUTSIDE),
-        (".env", None, SECRET_FILE),
-        ("../.env", None, f"{OUTSIDE}; {SECRET_FILE}"),
+        (".env", None, SECRET_CHANGE),
+        ("../.env", None, f"{OUTSIDE}; {SECRET_CHANGE}"),
     ],
 )
 async def test_edit_scope_inside_and_none_outside_or_secret(
@@ -1666,7 +1669,7 @@ async def test_other_content_errors_of_an_edit_wait_for_the_approval(
     tool = edit_tool(root)
     params = edit_params(".env", old, new)
 
-    assert (await ask_edit(tool, params)).warning == SECRET_FILE
+    assert (await ask_edit(tool, params)).warning == SECRET_CHANGE
     with pytest.raises(ToolError, match=error):
         await tool.run(params)
     assert path.read_bytes() == text.encode()
@@ -1943,9 +1946,9 @@ GIT_DIR = "git directory: hooks and config here can run code"
         (".git/hooks/pre-commit", False, GIT_DIR),
         # The git config is also a secret (spec mejora-2026-10-23-deuda-hito-5,
         # E3).
-        (".git/config", False, f"{SECRET_FILE}; {GIT_DIR}"),
+        (".git/config", False, f"{SECRET_CHANGE}; {GIT_DIR}"),
         ("src/x.py", True, None),
-        ("../repo/.git/config", False, f"{OUTSIDE}; {SECRET_FILE}; {GIT_DIR}"),
+        ("../repo/.git/config", False, f"{OUTSIDE}; {SECRET_CHANGE}; {GIT_DIR}"),
     ],
 )
 async def test_changing_git_is_never_for_the_session(
