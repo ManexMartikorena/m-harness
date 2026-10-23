@@ -1,28 +1,26 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-23. **Hito 4 (tool calling y bucle agéntico)
-cerrado y publicado como `v0.4.0`.** Hito 5 (permisos y herramientas con
-efecto): spec APROBADA (PR #27); PR 1 integrado (#29); PR 2 integrado (#30).
-Arreglo de la FIFO integrado (#32); el hueco que quedaba, en el PR
-`fix/fifo-sin-carrera`. Después, el PR 3
-(comandos, desde la pieza 10, sin empezar). **Sesión en el PC del trabajo
-(el WSL del PC de Windows).**
+Última actualización: 2026-10-23. **Hito 5 (permisos y herramientas con
+efecto) implementado y verificado, con la mejora "cero deuda"
+(`mejora-2026-10-23-deuda-hito-5`) entera.** Falta integrar el PR 5 de
+cierre (`feature/hito-5-cierre`) y publicar `v0.5.0`. **Sesión en el PC del
+trabajo (el WSL del PC de Windows).**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 4 cerrado (`v0.4.0`). Hito 5 (permisos y herramientas con
-efecto): spec APROBADA (PR #27); PR 1 (contrato de aprobación y el bucle que
-pregunta) integrado (#29); PR 2 (ficheros con aprobación, `write_file` y
-`edit_file`) integrado (#30). Va por la pieza 10 (PR 3, comandos), sin
-empezar; antes, el PR `fix/fifo-sin-carrera`.**
+**Desarrollo. Hito 5 implementado y verificado (PRs #29, #30, #39, #40 y el
+de cierre), con los arreglos #32 y #33 y la mejora "cero deuda" (#34 a
+#38). Siguiente: hito 6 (sesiones e historial), empezando por su spec.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.4.0` — Tool calling y bucle agéntico**
   (2026-10-21):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.4.0
-- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
+  (`v0.5.0`, al integrar el PR 5).
+- Ramas abiertas: `feature/hito-5-cierre`, hasta su merge. Las integradas
+  se conservan en GitHub.
 
 ## Para la release
 
@@ -45,6 +43,12 @@ Lo más reciente primero.
   `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
   una FIFO. Test primero, con una FIFO real. En verde: 489 tests. Detalle
   en la spec 5, §12.11.
+- **Hito 5, PR 5 (cierre), 2026-10-23** (rama `feature/hito-5-cierre`):
+  versión 0.5.0 (`47ace04`), nota `docs/guia/05-permisos.md`, specs del
+  hito 5 y de la mejora en IMPLEMENTADA, README, MAPA y ESTADO. Verificación
+  a mano en una pseudoterminal con el modelo real: los 11 puntos de la spec
+  5 §7 y los 3 de la mejora, en verde (spec 5, §12.23).
+- **Hito 5, PR 4 integrado (#40), 2026-10-23.**
 - **Hito 5, PR 4, 2026-10-23** (rama `feature/hito-5-terminal`; piezas 14 a
   18, con A2 y B3 de la mejora): un solo lector (`3ae659d`),
   `TerminalApproval` y `DenyAll` (`ea93db2`), la negativa en la conversación
@@ -416,17 +420,14 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (por si
 acaso; no hay dependencias nuevas) y comprobar los tests, mypy y
 lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** integrar el PR `fix/fifo-sin-carrera` con el CI en verde,
-   con permiso del mantenedor.
-2. **Agente:** spec `mejora-2026-10-23-deuda-hito-5` (APROBADA el
-   2026-10-23: el mantenedor aprobó todas las recomendaciones) y sus cuatro
-   PRs (§6), antes del PR 3 del hito 5. Objetivo del mantenedor: hito 5
-   cerrado con cero deuda técnica.
-3. **Agente:** PR 3 (`feature/hito-5-comandos`) desde `main` actualizado,
-   empezando por la pieza 10 de la spec §6 (puerto `CommandRunner` y
-   `FakeRunner`). Push e integración con el CI en verde, con permiso del
-   mantenedor.
-4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+1. **Agente:** integrar el PR 5 (`feature/hito-5-cierre`) con el CI en
+   verde, crear el tag anotado `v0.5.0` sobre su merge y hacer push del tag
+   (pedido por el mantenedor el 2026-10-23: "dejar el hito 5 cerrado").
+   Comprobar la release y anotarla aquí en un PR de docs.
+2. **Agente:** proponer la spec del hito 6 (sesiones e historial) en
+   `docs/spec-hito-6-<slug>`, tras leer DESIGN §5, §6 y §14. Entran los
+   pendientes que DESIGN y las specs asignan al hito 6 (abajo).
+3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -453,7 +454,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.4.0`).
+   `maha 0.5.0`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -491,10 +492,9 @@ resuelve):
   porque `glm-5.3-flash` razona; varía mucho con el mismo prompt.
   `reasoning_content` se ignora. Desglose y coste: hito 7 (spec 3, §1.7 y
   §12.9.3).
-- **`refusal` del stream se ignora:** una negativa del modelo se perdería
-  en silencio (spec 3, §10). `tool_calls` quedó resuelto en el hito 4, pero
-  `refusal` no entró en su spec: se trata en el hito 5 (spec 5, §1.11),
-  aprobado por el mantenedor.
+- ~~**`refusal` del stream se ignora**~~ **Resuelto** en el hito 5
+  (`89e0fec`): llega como texto. Sigue POR VERIFICAR en OpenCode, que no la
+  ha mandado nunca (spec 5, §10).
 - **Respuesta cortada con Ctrl+C:** queda en pantalla, pero el modelo no la
   recuerda. Guardarla marcada como cortada: hito 6 (spec 3, §1.6).
 - **Sin reintentos** ante 429 o 5xx: se valoran en el hito 7 o el 8 (spec 3,
@@ -519,7 +519,9 @@ resuelve):
   (`credenciales.txt`): hoy se deniega, o no se detecta. Aprobación en el
   hito 5 (spec 4, §1.6 y §10). **Leer fuera y los secretos conocidos,
   resuelto** en el hito 5, pieza 6 (`7e39cfb`): preguntan, una a una (spec
-  5, §1.6 y §12.6). Los secretos con otro nombre siguen sin detectarse.
+  5, §1.6 y §12.6). Los secretos con otro nombre siguen sin detectarse:
+  se mantiene así por decisión del mantenedor; mirar el contenido es otra
+  pieza (hito 14; mejora `2026-10-23`, E5).
 - **Tokens:** cada llamada al modelo cuesta ~700 tokens de entrada solo por
   las cuatro herramientas; un turno de dos pasos llegó a 4111. Coste: hito
   7; compactación: hito 11 (spec 4, §12.14).
@@ -551,6 +553,12 @@ resuelve):
   (spec `mejora-2026-10-23-deuda-hito-5`, PR 3), salvo lo que decidió el
   mantenedor: D7 aceptado, D14 se mantiene, D5 no es un fallo (Linux) y
   D11 va al hito 7.
+- **Por decisión del mantenedor** (mejora `2026-10-23`): un comando que sale
+  de su grupo (`setsid`) sobrevive a Ctrl+C → hito 14 (E2); el fallo del
+  `fsync` de la carpeta no deja rastro → hito 7 (D11).
+- **Comandos interactivos** (un editor, `git commit` sin `-m`): sin stdin,
+  terminan o llegan al tiempo límite. Es el diseño (spec 5, §10); la
+  descripción pide comandos no interactivos.
 
 **Por medir:**
 - Línea base de las evals (hito 8).

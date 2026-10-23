@@ -694,6 +694,8 @@ decidido al implementar; en las piezas 3 y 4, por el mantenedor.
      excepción no prevista (p. ej., el `gate` falla con `OSError`), el turno
      no se guarda. Hoy eso tumba `maha` y el historial en memoria se pierde
      igual. Se revisa cuando las sesiones se guarden en disco.
+     *(Resuelto el 2026-10-23, antes del hito 6: spec
+     `mejora-2026-10-23-deuda-hito-5`, E4, `e084fbd`.)*
 
 PR 2 (`feature/hito-5-ficheros`, piezas 6 a 9). Lo que la spec no fijaba,
 decidido por el mantenedor al implementar. Todo en
