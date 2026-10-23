@@ -21,8 +21,12 @@ class Tool[P: BaseModel](Protocol):
     params: type[P]
     permission: Permission
 
-    def approval(self, params: P) -> ApprovalRequest | None:
-        """What to ask before running, or None. May raise ToolError."""
+    async def approval(self, params: P) -> ApprovalRequest | None:
+        """What to ask before running, or None. May raise ToolError.
+
+        Asynchronous: a question can need I/O, as reading the file to edit or
+        asking an MCP server (spec mejora-2026-10-23-deuda-hito-5, B2).
+        """
         ...
 
     async def run(self, params: P) -> str:

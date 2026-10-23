@@ -268,3 +268,19 @@ fallar antes del arreglo:
 7. E4 (`e084fbd`): `except BaseException`. La llamada en curso recibe
    `cancelled by the user` con Ctrl+C y `interrupted by an internal error`
    con cualquier otra excepción.
+
+**PR 2** (`feature/deuda-arquitectura`):
+8. B2 (`f8b38f8`): primero, porque cambia el puerto. Las 116 llamadas a
+   `approval()` de los tests se pasaron con un transformador de `ast` (añade
+   `await`, con paréntesis si sigue un atributo, y vuelve `async` las
+   funciones que las contienen, en cascada). En el bucle, `_prepare()` pasa
+   a `async`.
+9. B1 (`9d95f18`): `domain/paths.py` gana `is_inside()`, `is_secret_at()`,
+   `read_warning()`, `change_warning()` y los textos de los avisos.
+   `Workspace` delega en ellas. Tests sin disco en `tests/unit/test_paths.py`.
+10. C, en cinco commits: `_Asked` absorbe a `_Shown` (`95014d5`);
+    `_count_lines()` para `list_dir`, `glob` y `grep` (`eaddf2f`);
+    `DISTRIBUTION` y `__version__` en `mharness/__init__.py`, fuera de las
+    capas (`ea20fa2`); comentarios (`397e5e4`); aviso `SECRET_CHANGE` al
+    escribir un secreto (`bb98770`). DESIGN §3 y §5 ya se corrigieron con
+    la spec (#34).

@@ -61,14 +61,14 @@ def test_read_file_satisfies_the_port(root: Path) -> None:
     assert (tool.name, tool.permission) == ("read_file", "read")
 
 
-def test_reading_asks_for_no_approval(root: Path) -> None:
+async def test_reading_asks_for_no_approval(root: Path) -> None:
     # Inside and not secret: READ runs without asking (spec hito 5, §1.6).
     workspace = Workspace(root)
 
-    assert ReadFile(workspace).approval(ReadFileParams(path="a.txt")) is None
-    assert ListDir(workspace).approval(ListDirParams()) is None
-    assert Glob(workspace).approval(GlobParams(pattern="**/*.py")) is None
-    assert Grep(workspace).approval(GrepParams(pattern="def")) is None
+    assert await ReadFile(workspace).approval(ReadFileParams(path="a.txt")) is None
+    assert await ListDir(workspace).approval(ListDirParams()) is None
+    assert await Glob(workspace).approval(GlobParams(pattern="**/*.py")) is None
+    assert await Grep(workspace).approval(GrepParams(pattern="def")) is None
 
 
 # read_file
@@ -154,6 +154,9 @@ async def test_read_errors(root: Path, setup: object, path: str, message: str) -
 
 OUTSIDE = "outside the working directory"
 SECRET_FILE = "secret file: its content goes to the model provider"
+# Changing a secret: what it risks is not the model reading it (spec
+# mejora-2026-10-23-deuda-hito-5, C).
+SECRET_CHANGE = "secret file: it may hold credentials"
 SECRET_DIR = "secret directory: its file names go to the model provider"
 
 
@@ -167,7 +170,7 @@ async def test_paths_outside_ask_and_are_read_once_approved(
     tool = ReadFile(Workspace(root))
     params = ReadFileParams(path=path.format(parent=root.parent))
 
-    request = tool.approval(params)
+    request = await tool.approval(params)
 
     assert request is not None
     assert (request.tool, request.title) == ("read_file", f"read {outside}")
@@ -180,7 +183,7 @@ async def test_a_link_to_outside_asks_with_the_real_path(root: Path) -> None:
     (root / "link.txt").symlink_to(outside)
     tool = ReadFile(Workspace(root))
 
-    request = tool.approval(ReadFileParams(path="link.txt"))
+    request = await tool.approval(ReadFileParams(path="link.txt"))
 
     assert request == ApprovalRequest(
         tool="read_file",
@@ -209,7 +212,7 @@ async def test_secret_files_ask_and_are_read_once_approved(
     tool = ReadFile(Workspace(root))
     params = ReadFileParams(path=path)
 
-    request = tool.approval(params)
+    request = await tool.approval(params)
 
     assert request == ApprovalRequest(
         tool="read_file",
@@ -226,7 +229,7 @@ async def test_a_link_to_a_secret_asks_with_the_real_path(root: Path) -> None:
     (root / "notes.txt").symlink_to(root / ".env")
     tool = ReadFile(Workspace(root))
 
-    request = tool.approval(ReadFileParams(path="notes.txt"))
+    request = await tool.approval(ReadFileParams(path="notes.txt"))
 
     assert request is not None
     assert request.title == "read .env"
@@ -269,7 +272,7 @@ async def test_list_dir_asks_for_a_secret_directory(root: Path) -> None:
     tool = ListDir(Workspace(root))
     params = ListDirParams(path=".ssh")
 
-    request = tool.approval(params)
+    request = await tool.approval(params)
 
     assert request is not None
     assert (request.tool, request.title) == ("list_dir", "list .ssh")
@@ -295,7 +298,7 @@ async def test_list_dir_errors(root: Path) -> None:
         await list_dir(root, "missing")
     with pytest.raises(ToolError, match="not a directory"):
         await list_dir(root, "notas.txt")
-    request = ListDir(Workspace(root)).approval(ListDirParams(path=".."))
+    request = await ListDir(Workspace(root)).approval(ListDirParams(path=".."))
     assert request is not None
     assert request.warning == OUTSIDE
     # An absolute path inside the working directory is fine.
@@ -408,7 +411,9 @@ async def test_grep_in_one_file(root: Path) -> None:
     write(root, ".env", "dos=sk-inventada\n")
 
     assert await grep(root, "dos", path="a.txt") == "a.txt:2: dos"
-    request = Grep(Workspace(root)).approval(GrepParams(pattern="dos", path=".env"))
+    request = await Grep(Workspace(root)).approval(
+        GrepParams(pattern="dos", path=".env")
+    )
     assert request is not None
     assert request.warning == SECRET_FILE
 
@@ -514,7 +519,7 @@ async def test_list_dir_outside_asks_and_marks_secrets(root: Path, other: Path) 
     tool = ListDir(Workspace(root))
     params = ListDirParams(path="../other")
 
-    request = tool.approval(params)
+    request = await tool.approval(params)
 
     assert request == ApprovalRequest(
         tool="list_dir",
@@ -538,7 +543,7 @@ async def test_glob_outside_asks_and_stays_in_the_approved_directory(
     tool = Glob(Workspace(root))
     params = GlobParams(pattern="**/*.py", path="../other")
 
-    request = tool.approval(params)
+    request = await tool.approval(params)
 
     assert request is not None
     assert (request.tool, request.title) == ("glob", f"glob **/*.py in {other}")
@@ -555,7 +560,7 @@ async def test_grep_outside_asks_and_gives_absolute_paths(
     folder = GrepParams(pattern="Ane", path="../other", glob="*.py")
     one_file = GrepParams(pattern="Ane", path="../other/a.py")
 
-    request = tool.approval(folder)
+    request = await tool.approval(folder)
 
     assert request is not None
     assert (request.tool, request.title) == (
@@ -564,7 +569,7 @@ async def test_grep_outside_asks_and_gives_absolute_paths(
     )
     assert (request.scope, request.warning) == (None, OUTSIDE)
     assert await tool.run(folder) == f"{other}/a.py:1: Ane\n{other}/sub/b.py:1: Ane"
-    assert tool.approval(one_file) is not None
+    assert await tool.approval(one_file) is not None
     assert await tool.run(one_file) == f"{other}/a.py:1: Ane"
 
 
@@ -578,8 +583,8 @@ async def test_a_search_outside_shows_every_path_absolute(root: Path) -> None:
 
     globber, searcher = Glob(workspace), Grep(workspace)
 
-    assert globber.approval(globbing) is not None
-    assert searcher.approval(grepping) is not None
+    assert await globber.approval(globbing) is not None
+    assert await searcher.approval(grepping) is not None
     assert await globber.run(globbing) == f"{root.parent}/up.py\n{root}/in.py"
     assert await searcher.run(grepping) == (
         f"{root.parent}/up.py:1: Ane\n{root}/in.py:1: Ane"
@@ -590,9 +595,13 @@ async def test_outside_and_secret_give_both_warnings(root: Path, other: Path) ->
     # Decisions D5 and D6: outside first, then the secret.
     workspace = Workspace(root)
 
-    read_request = ReadFile(workspace).approval(ReadFileParams(path="../other/.env"))
-    list_request = ListDir(workspace).approval(ListDirParams(path="../other/.ssh"))
-    grep_request = Grep(workspace).approval(
+    read_request = await ReadFile(workspace).approval(
+        ReadFileParams(path="../other/.env")
+    )
+    list_request = await ListDir(workspace).approval(
+        ListDirParams(path="../other/.ssh")
+    )
+    grep_request = await Grep(workspace).approval(
         GrepParams(pattern="Ane", path="../other/.env")
     )
 
@@ -612,7 +621,7 @@ async def test_grep_on_a_secret_file_asks_and_is_read_once_approved(
     tool = Grep(Workspace(root))
     params = GrepParams(pattern="dos", path=".env")
 
-    request = tool.approval(params)
+    request = await tool.approval(params)
 
     assert request == ApprovalRequest(
         tool="grep",
@@ -637,9 +646,9 @@ async def test_searching_skips_secrets_and_links_out_without_asking(
     # A secret directory as the path: skipped as today (decision D7).
     in_secret_dir = GrepParams(pattern="Ane", path=".ssh")
 
-    assert Glob(workspace).approval(globbing) is None
-    assert Grep(workspace).approval(grepping) is None
-    assert Grep(workspace).approval(in_secret_dir) is None
+    assert await Glob(workspace).approval(globbing) is None
+    assert await Grep(workspace).approval(grepping) is None
+    assert await Grep(workspace).approval(in_secret_dir) is None
     assert await Glob(workspace).run(globbing) == "notes.py"
     assert await Grep(workspace).run(grepping) == "notes.py:1: Ane"
     assert await Grep(workspace).run(in_secret_dir) == "(no matches)"
@@ -652,25 +661,25 @@ async def test_cheap_failures_come_before_the_question(root: Path, other: Path) 
     workspace = Workspace(root)
 
     with pytest.raises(ToolError, match="file not found"):
-        ReadFile(workspace).approval(ReadFileParams(path="../missing"))
+        await ReadFile(workspace).approval(ReadFileParams(path="../missing"))
     with pytest.raises(ToolError, match="is a directory"):
-        ReadFile(workspace).approval(ReadFileParams(path="../other"))
+        await ReadFile(workspace).approval(ReadFileParams(path="../other"))
     with pytest.raises(ToolError, match="directory not found"):
-        ListDir(workspace).approval(ListDirParams(path="../missing"))
+        await ListDir(workspace).approval(ListDirParams(path="../missing"))
     with pytest.raises(ToolError, match="not a directory"):
-        ListDir(workspace).approval(ListDirParams(path="../other/a.py"))
+        await ListDir(workspace).approval(ListDirParams(path="../other/a.py"))
     with pytest.raises(ToolError, match="must be relative"):
-        Glob(workspace).approval(GlobParams(pattern="../*", path="../other"))
+        await Glob(workspace).approval(GlobParams(pattern="../*", path="../other"))
     with pytest.raises(ToolError, match="not a directory"):
-        Glob(workspace).approval(GlobParams(pattern="*", path="../other/a.py"))
+        await Glob(workspace).approval(GlobParams(pattern="*", path="../other/a.py"))
     with pytest.raises(ToolError, match="invalid regular expression"):
-        Grep(workspace).approval(GrepParams(pattern="(", path="../other"))
+        await Grep(workspace).approval(GrepParams(pattern="(", path="../other"))
     with pytest.raises(ToolError, match="must be relative"):
-        Grep(workspace).approval(GrepParams(pattern="x", path="../o", glob="/x"))
+        await Grep(workspace).approval(GrepParams(pattern="x", path="../o", glob="/x"))
     with pytest.raises(ToolError, match="not found"):
-        Grep(workspace).approval(GrepParams(pattern="x", path="../missing"))
+        await Grep(workspace).approval(GrepParams(pattern="x", path="../missing"))
     # Inside and not secret, nothing to ask: run() gives the error, as before.
-    assert ReadFile(workspace).approval(ReadFileParams(path="missing")) is None
+    assert await ReadFile(workspace).approval(ReadFileParams(path="missing")) is None
 
 
 # What was asked is what is read (decision D1: TOCTOU)
@@ -684,7 +693,7 @@ async def test_a_link_changed_after_the_question_is_not_read(root: Path) -> None
     tool = ReadFile(Workspace(root))
     params = ReadFileParams(path="link.txt")
 
-    request = tool.approval(params)
+    request = await tool.approval(params)
     link.unlink()
     link.symlink_to(second)
 
@@ -706,7 +715,7 @@ async def test_a_link_that_leaves_after_no_question_is_not_read(
     tool = ReadFile(Workspace(root))
     params = ReadFileParams(path="link.txt")
 
-    assert tool.approval(params) is None
+    assert await tool.approval(params) is None
     link.unlink()
     link.symlink_to(root / ".env")
 
@@ -724,8 +733,8 @@ async def test_each_question_replaces_the_last_one(root: Path) -> None:
     other_outside = ListDirParams(path="..")
 
     reader = ReadFile(workspace)
-    assert reader.approval(outside) is not None
-    assert reader.approval(ReadFileParams(path="a.txt")) is None
+    assert await reader.approval(outside) is not None
+    assert await reader.approval(ReadFileParams(path="a.txt")) is None
     with pytest.raises(ToolError, match="changed after the question"):
         await reader.run(outside)
     # Without asking at all, an outside path is not read either.
@@ -744,8 +753,8 @@ def write_tool(root: Path) -> WriteFile:
     return WriteFile(Workspace(root))
 
 
-def ask_write(tool: WriteFile, path: str, content: str) -> ApprovalRequest:
-    request = tool.approval(WriteFileParams(path=path, content=content))
+async def ask_write(tool: WriteFile, path: str, content: str) -> ApprovalRequest:
+    request = await tool.approval(WriteFileParams(path=path, content=content))
     assert request is not None
     return request
 
@@ -766,7 +775,7 @@ async def test_creating_asks_with_a_preview_and_writes(root: Path) -> None:
     tool = write_tool(root)
     params = WriteFileParams(path="notas.txt", content="uno\ndos\ntres\n")
 
-    request = tool.approval(params)
+    request = await tool.approval(params)
     result = await tool.run(params)
 
     assert request == ApprovalRequest(
@@ -784,13 +793,13 @@ async def test_the_preview_shows_the_first_20_lines(root: Path) -> None:
     tool = write_tool(root)
     content = "".join(f"línea {i}\n" for i in range(1, 26))
 
-    detail = ask_write(tool, "long.txt", content).detail
+    detail = (await ask_write(tool, "long.txt", content)).detail
 
     assert detail.splitlines() == [
         *(f"línea {i}" for i in range(1, 21)),
         "… [5 more lines]",
     ]
-    assert ask_write(tool, "empty.txt", "") == ApprovalRequest(
+    assert await ask_write(tool, "empty.txt", "") == ApprovalRequest(
         tool="write_file",
         title="create empty.txt (0 lines)",
         detail="(empty file)",
@@ -816,7 +825,7 @@ async def test_lines_are_counted_as_read_file_numbers_them(
     tool = write_tool(root)
     params = WriteFileParams(path="n.txt", content=content)
 
-    assert tool.approval(params) is not None
+    assert await tool.approval(params) is not None
     assert await tool.run(params) == f"wrote n.txt ({lines})"
 
 
@@ -825,7 +834,7 @@ async def test_overwriting_asks_with_a_diff(root: Path) -> None:
     tool = write_tool(root)
     params = WriteFileParams(path="notas.txt", content="a\nB\nc\n")
 
-    request = tool.approval(params)
+    request = await tool.approval(params)
     result = await tool.run(params)
 
     # Decision W4: no "---"/"+++" header; the path is in the title.
@@ -844,7 +853,7 @@ async def test_a_long_diff_is_cut_at_60_lines(root: Path) -> None:
     write(root, "big.txt", "".join(f"old {i}\n" for i in range(100)))
     content = "".join(f"new {i}\n" for i in range(100))
 
-    lines = ask_write(write_tool(root), "big.txt", content).detail.splitlines()
+    lines = (await ask_write(write_tool(root), "big.txt", content)).detail.splitlines()
 
     # 1 hunk header + 100 removed + 100 added = 201 lines.
     assert len(lines) == 61
@@ -856,7 +865,9 @@ async def test_writing_creates_the_folders(root: Path) -> None:
     tool = write_tool(root)
     params = WriteFileParams(path="a/b/c.txt", content="hola\n")
 
-    assert ask_write(tool, "a/b/c.txt", "hola\n").title == "create a/b/c.txt (1 line)"
+    assert (
+        await ask_write(tool, "a/b/c.txt", "hola\n")
+    ).title == "create a/b/c.txt (1 line)"
     await tool.run(params)
 
     assert (root / "a/b/c.txt").read_text(encoding="utf-8") == "hola\n"
@@ -866,7 +877,7 @@ async def test_content_is_written_as_is(root: Path) -> None:
     tool = write_tool(root)
     params = WriteFileParams(path="w.txt", content="año\r\ndos\r\n")
 
-    tool.approval(params)
+    await tool.approval(params)
     await tool.run(params)
 
     assert (root / "w.txt").read_bytes() == "año\r\ndos\r\n".encode()
@@ -877,45 +888,45 @@ async def test_content_is_written_as_is(root: Path) -> None:
     [
         ("notas.txt", "write_file", None),
         ("../fuera.txt", None, OUTSIDE),
-        (".env", None, SECRET_FILE),
-        ("../.env", None, f"{OUTSIDE}; {SECRET_FILE}"),
+        (".env", None, SECRET_CHANGE),
+        ("../.env", None, f"{OUTSIDE}; {SECRET_CHANGE}"),
     ],
 )
-def test_write_scope_inside_and_none_outside_or_secret(
+async def test_write_scope_inside_and_none_outside_or_secret(
     root: Path, path: str, scope: str | None, warning: str | None
 ) -> None:
-    request = ask_write(write_tool(root), path, "x\n")
+    request = await ask_write(write_tool(root), path, "x\n")
 
     assert (request.scope, request.warning) == (scope, warning)
 
 
-def test_writing_over_a_directory_fails_before_asking(root: Path) -> None:
+async def test_writing_over_a_directory_fails_before_asking(root: Path) -> None:
     (root / "src").mkdir()
 
     with pytest.raises(ToolError, match="is a directory: src"):
-        write_tool(root).approval(WriteFileParams(path="src", content="x"))
+        await write_tool(root).approval(WriteFileParams(path="src", content="x"))
 
 
-def test_an_existing_file_must_be_utf8_text(root: Path) -> None:
+async def test_an_existing_file_must_be_utf8_text(root: Path) -> None:
     # Decision W2.
     (root / "img.bin").write_bytes(b"\x89PNG\0\0")
     (root / "latin1.txt").write_bytes(b"caf\xe9\n")
     tool = write_tool(root)
 
     with pytest.raises(ToolError, match=r"binary file, not writable: img\.bin"):
-        tool.approval(WriteFileParams(path="img.bin", content="x"))
+        await tool.approval(WriteFileParams(path="img.bin", content="x"))
     with pytest.raises(ToolError, match=r"not a UTF-8 text file: latin1\.txt"):
-        tool.approval(WriteFileParams(path="latin1.txt", content="x"))
+        await tool.approval(WriteFileParams(path="latin1.txt", content="x"))
 
 
-def test_the_same_content_is_nothing_to_change(root: Path) -> None:
+async def test_the_same_content_is_nothing_to_change(root: Path) -> None:
     # Decision W5.
     write(root, "notas.txt", "a\nb\n")
     tool = write_tool(root)
 
     with pytest.raises(ToolError, match="nothing to change"):
-        tool.approval(WriteFileParams(path="notas.txt", content="a\nb\n"))
-    request = ask_write(tool, "notas.txt", "a\r\nb\r\n")
+        await tool.approval(WriteFileParams(path="notas.txt", content="a\nb\n"))
+    request = await ask_write(tool, "notas.txt", "a\r\nb\r\n")
     assert request.detail == "(only line endings change)"
 
 
@@ -926,7 +937,7 @@ async def test_a_link_shows_its_target_and_is_kept(root: Path) -> None:
     tool = write_tool(root)
     params = WriteFileParams(path="notes.txt", content="dos\n")
 
-    request = tool.approval(params)
+    request = await tool.approval(params)
     await tool.run(params)
 
     assert request is not None
@@ -936,18 +947,18 @@ async def test_a_link_shows_its_target_and_is_kept(root: Path) -> None:
     assert (root / "real.txt").read_text(encoding="utf-8") == "dos\n"
 
 
-def test_cheap_write_failures_come_before_the_question(root: Path) -> None:
+async def test_cheap_write_failures_come_before_the_question(root: Path) -> None:
     # Decisions W8 and A3.
     write(root, "notas.txt", "")
     os.mkfifo(root / "pipe")
     tool = write_tool(root)
 
     with pytest.raises(ToolError, match=r"not a directory: notas\.txt"):
-        tool.approval(WriteFileParams(path="notas.txt/x.txt", content="x"))
+        await tool.approval(WriteFileParams(path="notas.txt/x.txt", content="x"))
     with pytest.raises(ToolError, match="content is not valid UTF-8"):
-        tool.approval(WriteFileParams(path="x.txt", content="\ud800"))
+        await tool.approval(WriteFileParams(path="x.txt", content="\ud800"))
     with pytest.raises(ToolError, match="not a regular file: pipe"):
-        tool.approval(WriteFileParams(path="pipe", content="x"))
+        await tool.approval(WriteFileParams(path="pipe", content="x"))
 
 
 # write_file: what was shown is what is written (decisions D1 and W6)
@@ -959,7 +970,7 @@ async def test_a_file_created_after_the_question_is_not_overwritten(
     tool = write_tool(root)
     params = WriteFileParams(path="notas.txt", content="mío\n")
 
-    tool.approval(params)
+    await tool.approval(params)
     write(root, "notas.txt", "de otro\n")
 
     with pytest.raises(ToolError, match=r"notas\.txt changed after the question"):
@@ -974,7 +985,7 @@ async def test_a_file_changed_after_the_question_is_not_overwritten(
     tool = write_tool(root)
     params = WriteFileParams(path="notas.txt", content="dos\n")
 
-    tool.approval(params)
+    await tool.approval(params)
     write(root, "notas.txt", "tres\n")
 
     with pytest.raises(ToolError, match=r"notas\.txt changed after the question"):
@@ -992,7 +1003,7 @@ async def test_a_write_link_changed_after_the_question_is_not_followed(
     tool = write_tool(root)
     params = WriteFileParams(path="link.txt", content="dos\n")
 
-    tool.approval(params)
+    await tool.approval(params)
     link.unlink()
     link.symlink_to(root / "b.txt")
 
@@ -1007,8 +1018,8 @@ async def test_writing_without_a_question_is_refused(root: Path) -> None:
 
     with pytest.raises(ToolError, match="changed after the question"):
         await tool.run(params)
-    tool.approval(params)
-    tool.approval(WriteFileParams(path="otra.txt", content="x"))
+    await tool.approval(params)
+    await tool.approval(WriteFileParams(path="otra.txt", content="x"))
     with pytest.raises(ToolError, match="changed after the question"):
         await tool.run(params)
     assert not (root / "notas.txt").exists()
@@ -1034,7 +1045,7 @@ async def test_a_failed_write_keeps_the_original_and_no_temporary(
     write(root, "notas.txt", "uno\n")
     tool = write_tool(root)
     params = WriteFileParams(path="notas.txt", content="dos\n")
-    tool.approval(params)
+    await tool.approval(params)
 
     def fail(*args: object) -> None:
         if failure is OSError:
@@ -1060,7 +1071,7 @@ async def test_an_overwrite_keeps_the_mode(root: Path) -> None:
     tool = write_tool(root)
     params = WriteFileParams(path="run.sh", content="echo dos\n")
 
-    tool.approval(params)
+    await tool.approval(params)
     await tool.run(params)
 
     assert stat.S_IMODE(script.stat().st_mode) == 0o755
@@ -1073,7 +1084,7 @@ async def test_a_new_file_gets_the_mode_of_the_umask(root: Path) -> None:
     tool = write_tool(root)
     params = WriteFileParams(path="nuevo.txt", content="x\n")
 
-    tool.approval(params)
+    await tool.approval(params)
     await tool.run(params)
 
     mode = stat.S_IMODE((root / "nuevo.txt").stat().st_mode)
@@ -1094,7 +1105,7 @@ async def test_the_rename_is_flushed_to_the_disk(
     write(root, "sub/notas.txt", "uno\n")
     tool = write_tool(root)
     params = WriteFileParams(path="sub/notas.txt", content="dos\n")
-    tool.approval(params)
+    await tool.approval(params)
     synced: list[os.stat_result] = []
     real_fsync = os.fsync
 
@@ -1119,7 +1130,7 @@ async def test_a_failed_folder_fsync_still_counts_as_written(
     write(root, "notas.txt", "uno\n")
     tool = write_tool(root)
     params = WriteFileParams(path="notas.txt", content="dos\n")
-    tool.approval(params)
+    await tool.approval(params)
     real_fsync = os.fsync
 
     def fail_on_folders(descriptor: int) -> None:
@@ -1146,7 +1157,7 @@ async def test_a_folder_that_cannot_be_opened_still_counts_as_written(
     write(root, "dropbox/notas.txt", "uno\n")
     tool = write_tool(root)
     params = WriteFileParams(path="dropbox/notas.txt", content="dos\n")
-    tool.approval(params)
+    await tool.approval(params)
     folder.chmod(0o300)
     try:
         result = await tool.run(params)
@@ -1170,8 +1181,8 @@ def edit_params(path: str, old: str, new: str, **flags: bool) -> EditFileParams:
     return EditFileParams(path=path, old_string=old, new_string=new, **flags)
 
 
-def ask_edit(tool: EditFile, params: EditFileParams) -> ApprovalRequest:
-    request = tool.approval(params)
+async def ask_edit(tool: EditFile, params: EditFileParams) -> ApprovalRequest:
+    request = await tool.approval(params)
     assert request is not None
     return request
 
@@ -1179,7 +1190,7 @@ def ask_edit(tool: EditFile, params: EditFileParams) -> ApprovalRequest:
 async def edit(root: Path, params: EditFileParams) -> tuple[ApprovalRequest, str]:
     """Ask and run, as the loop does after a "yes"."""
     tool = edit_tool(root)
-    request = ask_edit(tool, params)
+    request = await ask_edit(tool, params)
     return request, await tool.run(params)
 
 
@@ -1230,21 +1241,21 @@ async def test_editing_asks_with_a_diff_and_edits(root: Path) -> None:
     )
 
 
-def test_old_string_not_found_fails_before_asking(root: Path) -> None:
+async def test_old_string_not_found_fails_before_asking(root: Path) -> None:
     # Decision 1.
     write(root, "app.py", "return 1\n")
 
     with pytest.raises(ToolError) as caught:
-        edit_tool(root).approval(edit_params("app.py", "return 3", "return 2"))
+        await edit_tool(root).approval(edit_params("app.py", "return 3", "return 2"))
     assert str(caught.value) == NOT_FOUND.format("app.py")
 
 
-def test_old_string_twice_fails_before_asking(root: Path) -> None:
+async def test_old_string_twice_fails_before_asking(root: Path) -> None:
     # Decision 2.
     write(root, "app.py", "x = 1\ny = 1\nz = 1\n")
 
     with pytest.raises(ToolError) as caught:
-        edit_tool(root).approval(edit_params("app.py", "= 1", "= 2"))
+        await edit_tool(root).approval(edit_params("app.py", "= 1", "= 2"))
     assert str(caught.value) == (
         "old_string appears 3 times in app.py; "
         "add context to make it unique or use replace_all"
@@ -1274,12 +1285,14 @@ async def test_replace_all_with_one_occurrence(root: Path) -> None:
     assert result == "edited app.py (1 replacement)"
 
 
-def test_replace_all_with_no_occurrence_fails(root: Path) -> None:
+async def test_replace_all_with_no_occurrence_fails(root: Path) -> None:
     # Decision 5.
     write(root, "app.py", "x = 1\n")
 
     with pytest.raises(ToolError) as caught:
-        edit_tool(root).approval(edit_params("app.py", "9", "2", replace_all=True))
+        await edit_tool(root).approval(
+            edit_params("app.py", "9", "2", replace_all=True)
+        )
     assert str(caught.value) == NOT_FOUND.format("app.py")
 
 
@@ -1303,64 +1316,64 @@ async def test_crlf_is_kept(root: Path) -> None:
     assert (root / "win.txt").read_bytes() == b"uno\r\nDOS\r\ntres\r\n"
 
 
-def test_an_edited_file_must_be_utf8_text(root: Path) -> None:
+async def test_an_edited_file_must_be_utf8_text(root: Path) -> None:
     # Decision 7, as write_file (W2).
     (root / "img.bin").write_bytes(b"\x89PNG\0\0")
     (root / "latin1.txt").write_bytes(b"caf\xe9\n")
     tool = edit_tool(root)
 
     with pytest.raises(ToolError, match=r"binary file, not writable: img\.bin"):
-        tool.approval(edit_params("img.bin", "PNG", "png"))
+        await tool.approval(edit_params("img.bin", "PNG", "png"))
     with pytest.raises(ToolError, match=r"not a UTF-8 text file: latin1\.txt"):
-        tool.approval(edit_params("latin1.txt", "caf", "té"))
+        await tool.approval(edit_params("latin1.txt", "caf", "té"))
     assert (root / "latin1.txt").read_bytes() == b"caf\xe9\n"
 
 
-def test_the_same_strings_are_nothing_to_change(root: Path) -> None:
+async def test_the_same_strings_are_nothing_to_change(root: Path) -> None:
     write(root, "app.py", "return 1\n")
 
     with pytest.raises(ToolError, match="nothing to change"):
-        edit_tool(root).approval(edit_params("app.py", "return 1", "return 1"))
+        await edit_tool(root).approval(edit_params("app.py", "return 1", "return 1"))
 
 
-def test_an_empty_old_string_fails(root: Path) -> None:
+async def test_an_empty_old_string_fails(root: Path) -> None:
     # Decision 4: creating a file is for write_file.
     write(root, "app.py", "return 1\n")
 
     with pytest.raises(ToolError, match="old_string is empty"):
-        edit_tool(root).approval(edit_params("app.py", "", "x"))
+        await edit_tool(root).approval(edit_params("app.py", "", "x"))
 
 
-def test_a_missing_file_is_not_found(root: Path) -> None:
+async def test_a_missing_file_is_not_found(root: Path) -> None:
     # Decision 6.
     with pytest.raises(ToolError, match=r"file not found: nada\.py"):
-        edit_tool(root).approval(edit_params("nada.py", "a", "b"))
+        await edit_tool(root).approval(edit_params("nada.py", "a", "b"))
 
 
-def test_new_string_must_be_valid_utf8(root: Path) -> None:
+async def test_new_string_must_be_valid_utf8(root: Path) -> None:
     # Decision 8.
     write(root, "app.py", "return 1\n")
 
     with pytest.raises(ToolError, match="new_string is not valid UTF-8"):
-        edit_tool(root).approval(edit_params("app.py", "1", "\ud800"))
+        await edit_tool(root).approval(edit_params("app.py", "1", "\ud800"))
 
 
-def test_the_strings_are_checked_before_the_disk(root: Path) -> None:
+async def test_the_strings_are_checked_before_the_disk(root: Path) -> None:
     # Decision 11: the parameters first, then the file, then the question.
     (root / "src").mkdir()
     tool = edit_tool(root)
 
     with pytest.raises(ToolError, match="old_string is empty"):
-        tool.approval(edit_params("nada.py", "", ""))
+        await tool.approval(edit_params("nada.py", "", ""))
     with pytest.raises(ToolError, match="nothing to change"):
-        tool.approval(edit_params("nada.py", "a", "a"))
+        await tool.approval(edit_params("nada.py", "a", "a"))
     with pytest.raises(ToolError, match="new_string is not valid UTF-8"):
-        tool.approval(edit_params("nada.py", "a", "\ud800"))
+        await tool.approval(edit_params("nada.py", "a", "\ud800"))
     with pytest.raises(ToolError, match="is a directory: src"):
-        tool.approval(edit_params("src", "a", "b"))
+        await tool.approval(edit_params("src", "a", "b"))
     write(root, "notas.txt", "")
     with pytest.raises(ToolError, match=r"not a directory: notas\.txt"):
-        tool.approval(edit_params("notas.txt/x.py", "a", "b"))
+        await tool.approval(edit_params("notas.txt/x.py", "a", "b"))
 
 
 @pytest.mark.parametrize(
@@ -1368,16 +1381,16 @@ def test_the_strings_are_checked_before_the_disk(root: Path) -> None:
     [
         ("notas.txt", "edit_file", None),
         ("../fuera.txt", None, OUTSIDE),
-        (".env", None, SECRET_FILE),
-        ("../.env", None, f"{OUTSIDE}; {SECRET_FILE}"),
+        (".env", None, SECRET_CHANGE),
+        ("../.env", None, f"{OUTSIDE}; {SECRET_CHANGE}"),
     ],
 )
-def test_edit_scope_inside_and_none_outside_or_secret(
+async def test_edit_scope_inside_and_none_outside_or_secret(
     root: Path, path: str, scope: str | None, warning: str | None
 ) -> None:
     write(root, path, "uno\n")
 
-    request = ask_edit(edit_tool(root), edit_params(path, "uno", "dos"))
+    request = await ask_edit(edit_tool(root), edit_params(path, "uno", "dos"))
 
     assert (request.scope, request.warning) == (scope, warning)
 
@@ -1400,7 +1413,7 @@ async def test_a_long_edit_diff_is_cut_at_60_lines(root: Path) -> None:
     write(root, "big.txt", "".join(f"old {i}\n" for i in range(100)))
     params = edit_params("big.txt", "old", "new", replace_all=True)
 
-    lines = ask_edit(edit_tool(root), params).detail.splitlines()
+    lines = (await ask_edit(edit_tool(root), params)).detail.splitlines()
 
     assert len(lines) == 61
     assert lines[0] == "@@ -1,100 +1,100 @@"
@@ -1414,7 +1427,7 @@ async def test_a_failed_edit_cannot_write(
     write(root, "app.py", "return 1\n")
     tool = edit_tool(root)
     params = edit_params("app.py", "1", "2")
-    tool.approval(params)
+    await tool.approval(params)
 
     def fail(*args: object) -> None:
         raise OSError(28, "No space left on device")
@@ -1437,7 +1450,7 @@ async def test_a_file_changed_after_the_question_is_not_edited(root: Path) -> No
     tool = edit_tool(root)
     params = edit_params("app.py", "return 1", "return 2")
 
-    tool.approval(params)
+    await tool.approval(params)
     write(root, "app.py", "# yours\nreturn 1\n")
 
     with pytest.raises(ToolError, match=r"app\.py changed after the question"):
@@ -1450,7 +1463,7 @@ async def test_a_file_removed_after_the_question_is_not_edited(root: Path) -> No
     tool = edit_tool(root)
     params = edit_params("app.py", "return 1", "return 2")
 
-    tool.approval(params)
+    await tool.approval(params)
     (root / "app.py").unlink()
 
     with pytest.raises(ToolError, match=r"app\.py changed after the question"):
@@ -1468,7 +1481,7 @@ async def test_an_edit_link_changed_after_the_question_is_not_followed(
     tool = edit_tool(root)
     params = edit_params("link.txt", "uno", "dos")
 
-    tool.approval(params)
+    await tool.approval(params)
     link.unlink()
     link.symlink_to(root / "b.txt")
 
@@ -1484,9 +1497,9 @@ async def test_editing_without_a_question_is_refused(root: Path) -> None:
 
     with pytest.raises(ToolError, match="changed after the question"):
         await tool.run(params)
-    tool.approval(params)
+    await tool.approval(params)
     write(root, "otro.py", "return 1\n")
-    tool.approval(edit_params("otro.py", "1", "2"))
+    await tool.approval(edit_params("otro.py", "1", "2"))
     with pytest.raises(ToolError, match="changed after the question"):
         await tool.run(params)
     assert (root / "app.py").read_text(encoding="utf-8") == "return 1\n"
@@ -1529,18 +1542,18 @@ async def test_an_lf_file_is_not_adapted(root: Path) -> None:
     tool = edit_tool(root)
 
     with pytest.raises(ToolError) as caught:
-        tool.approval(edit_params("unix.txt", "uno\r\ndos", "x"))
+        await tool.approval(edit_params("unix.txt", "uno\r\ndos", "x"))
     assert str(caught.value) == NOT_FOUND.format("unix.txt")
     _, result = await edit(root, edit_params("unix.txt", "uno\ndos", "UNO\nDOS"))
     assert result == "edited unix.txt (1 replacement)"
     assert path.read_bytes() == b"UNO\nDOS\n"
 
 
-def test_uniqueness_counts_the_crlf_matches(root: Path) -> None:
+async def test_uniqueness_counts_the_crlf_matches(root: Path) -> None:
     crlf(root, "win.txt", b"a\r\nb\r\na\r\nb\r\n")
 
     with pytest.raises(ToolError) as caught:
-        edit_tool(root).approval(edit_params("win.txt", "a\nb", "x\ny"))
+        await edit_tool(root).approval(edit_params("win.txt", "a\nb", "x\ny"))
     assert str(caught.value) == (
         "old_string appears 2 times in win.txt; "
         "add context to make it unique or use replace_all"
@@ -1567,15 +1580,15 @@ async def test_only_the_lone_lf_of_new_string_change(root: Path) -> None:
     assert path.read_bytes() == b"a\r\nb\r\nc\r\n"
 
 
-def test_a_crlf_old_string_still_not_found_fails(root: Path) -> None:
+async def test_a_crlf_old_string_still_not_found_fails(root: Path) -> None:
     crlf(root, "win.txt", b"uno\r\ndos\r\n")
 
     with pytest.raises(ToolError) as caught:
-        edit_tool(root).approval(edit_params("win.txt", "uno\ntres", "x"))
+        await edit_tool(root).approval(edit_params("win.txt", "uno\ntres", "x"))
     assert str(caught.value) == NOT_FOUND.format("win.txt")
 
 
-def test_an_edit_that_leaves_the_text_equal_is_nothing_to_change(
+async def test_an_edit_that_leaves_the_text_equal_is_nothing_to_change(
     root: Path,
 ) -> None:
     # Decision C: "a\n" adapted is "a\r\n", the same as new_string; the text
@@ -1583,18 +1596,18 @@ def test_an_edit_that_leaves_the_text_equal_is_nothing_to_change(
     path = crlf(root, "win.txt", b"a\r\nb\r\n")
 
     with pytest.raises(ToolError, match="nothing to change"):
-        edit_tool(root).approval(edit_params("win.txt", "a\n", "a\r\n"))
+        await edit_tool(root).approval(edit_params("win.txt", "a\n", "a\r\n"))
     assert path.read_bytes() == b"a\r\nb\r\n"
 
 
-def test_a_mixed_file_old_string_across_lf_and_crlf_is_not_found(
+async def test_a_mixed_file_old_string_across_lf_and_crlf_is_not_found(
     root: Path,
 ) -> None:
     # Case A1: neither exact ("b\n" is "b\r\n") nor adapted ("a\r\n" is "a\n").
     crlf(root, "mixed.txt", b"a\nb\r\nc\r\n")
 
     with pytest.raises(ToolError) as caught:
-        edit_tool(root).approval(edit_params("mixed.txt", "a\nb\n", "X\n"))
+        await edit_tool(root).approval(edit_params("mixed.txt", "a\nb\n", "X\n"))
     assert str(caught.value) == NOT_FOUND.format("mixed.txt")
 
 
@@ -1630,7 +1643,7 @@ async def test_an_edit_with_a_warning_asks_before_saying_not_found(
     tool = edit_tool(root)
     params = edit_params(path, "tres", "cuatro")
 
-    request = ask_edit(tool, params)
+    request = await ask_edit(tool, params)
 
     assert request.scope is None
     strings = "old_string:\ntres\nnew_string:\ncuatro"
@@ -1656,7 +1669,7 @@ async def test_other_content_errors_of_an_edit_wait_for_the_approval(
     tool = edit_tool(root)
     params = edit_params(".env", old, new)
 
-    assert ask_edit(tool, params).warning == SECRET_FILE
+    assert (await ask_edit(tool, params)).warning == SECRET_CHANGE
     with pytest.raises(ToolError, match=error):
         await tool.run(params)
     assert path.read_bytes() == text.encode()
@@ -1666,7 +1679,7 @@ async def test_replace_all_shows_in_the_strings_of_an_edit(root: Path) -> None:
     write(root, ".env", "uno\n")
     params = edit_params(".env", "a\nb", "c", replace_all=True)
 
-    detail = ask_edit(edit_tool(root), params).detail
+    detail = (await ask_edit(edit_tool(root), params)).detail
 
     assert detail == "old_string:\na\nb\nnew_string:\nc\nreplace_all: true"
 
@@ -1678,7 +1691,7 @@ async def test_a_write_with_a_warning_asks_before_nothing_to_change(
     tool = write_tool(root)
     params = WriteFileParams(path=".env", content="KEY=1\n")
 
-    request = ask_write(tool, ".env", "KEY=1\n")
+    request = await ask_write(tool, ".env", "KEY=1\n")
 
     assert (request.title, request.detail) == ("overwrite .env", "KEY=1")
     with pytest.raises(ToolError, match="nothing to change"):
@@ -1701,8 +1714,8 @@ async def test_a_file_that_is_not_text_outside_asks_first(
     writer, editor = write_tool(root), edit_tool(root)
 
     asked = "(asked: ../img)\n"
-    assert ask_write(writer, "../img", "x\n").detail == f"{asked}x"
-    assert ask_edit(editor, edit_call).detail == (
+    assert (await ask_write(writer, "../img", "x\n")).detail == f"{asked}x"
+    assert (await ask_edit(editor, edit_call)).detail == (
         f"{asked}old_string:\ncaf\nnew_string:\nté"
     )
     with pytest.raises(ToolError, match=error):
@@ -1721,18 +1734,18 @@ async def test_a_valid_edit_with_a_warning_still_shows_the_diff(root: Path) -> N
     assert request.detail == "@@ -1 +1 @@\n-KEY=1\n+KEY=2"
 
 
-def test_metadata_errors_with_a_warning_still_come_first(root: Path) -> None:
+async def test_metadata_errors_with_a_warning_still_come_first(root: Path) -> None:
     (root.parent / "dir").mkdir()
     tool = edit_tool(root)
 
     with pytest.raises(ToolError, match=r"file not found: \.env"):
-        tool.approval(edit_params(".env", "a", "b"))
+        await tool.approval(edit_params(".env", "a", "b"))
     with pytest.raises(ToolError, match=r"is a directory: \.\./dir"):
-        tool.approval(edit_params("../dir", "a", "b"))
+        await tool.approval(edit_params("../dir", "a", "b"))
     with pytest.raises(ToolError, match="old_string is empty"):
-        tool.approval(edit_params(".env", "", "b"))
+        await tool.approval(edit_params(".env", "", "b"))
     with pytest.raises(ToolError, match="content is not valid UTF-8"):
-        write_tool(root).approval(WriteFileParams(path=".env", content="\ud800"))
+        await write_tool(root).approval(WriteFileParams(path=".env", content="\ud800"))
 
 
 async def test_a_binary_file_outside_asks_before_read_file_says_so(
@@ -1742,7 +1755,7 @@ async def test_a_binary_file_outside_asks_before_read_file_says_so(
     tool = ReadFile(Workspace(root))
     params = ReadFileParams(path="../img")
 
-    assert tool.approval(params) is not None
+    assert await tool.approval(params) is not None
     with pytest.raises(ToolError, match=r"binary file, not readable: \.\./img"):
         await tool.run(params)
 
@@ -1759,7 +1772,7 @@ def big_file(root: Path, name: str) -> Path:
 
 
 @pytest.mark.parametrize("name", ["big.txt", ".env"])
-def test_a_file_too_large_is_refused_before_reading(
+async def test_a_file_too_large_is_refused_before_reading(
     root: Path, monkeypatch: pytest.MonkeyPatch, name: str
 ) -> None:
     # The size is metadata: also with a warning, before asking.
@@ -1770,9 +1783,9 @@ def test_a_file_too_large_is_refused_before_reading(
 
     monkeypatch.setattr(Path, "read_bytes", no_reading)
     with pytest.raises(ToolError) as edited:
-        edit_tool(root).approval(edit_params(name, "a", "b"))
+        await edit_tool(root).approval(edit_params(name, "a", "b"))
     with pytest.raises(ToolError) as written:
-        write_tool(root).approval(WriteFileParams(path=name, content="x"))
+        await write_tool(root).approval(WriteFileParams(path=name, content="x"))
 
     assert str(edited.value) == (
         "file too large to edit (3.0 MiB, max 2 MiB); use run_command"
@@ -1788,7 +1801,7 @@ async def test_a_file_grown_after_the_question_is_not_read(
     path = write(root, "app.py", "return 1\n")
     tool = edit_tool(root)
     params = edit_params("app.py", "1", "2")
-    tool.approval(params)
+    await tool.approval(params)
 
     os.truncate(path, 3 * 1024 * 1024)
 
@@ -1846,11 +1859,13 @@ async def test_grep_skips_the_files_it_cannot_read_when_walking(
 
 
 @not_root
-def test_changing_tools_say_cannot_read(locked: Path) -> None:
+async def test_changing_tools_say_cannot_read(locked: Path) -> None:
     with pytest.raises(ToolError) as edited:
-        edit_tool(locked).approval(edit_params("locked.txt", "x", "y"))
+        await edit_tool(locked).approval(edit_params("locked.txt", "x", "y"))
     with pytest.raises(ToolError) as written:
-        write_tool(locked).approval(WriteFileParams(path="locked.txt", content="y"))
+        await write_tool(locked).approval(
+            WriteFileParams(path="locked.txt", content="y")
+        )
 
     assert str(edited.value) == f"cannot read locked.txt: {DENIED}"
     assert str(written.value) == f"cannot read locked.txt: {DENIED}"
@@ -1861,7 +1876,7 @@ async def test_a_file_locked_after_the_question_cannot_be_read(root: Path) -> No
     path = write(root, "app.py", "return 1\n")
     tool = edit_tool(root)
     params = edit_params("app.py", "1", "2")
-    tool.approval(params)
+    await tool.approval(params)
 
     path.chmod(0)
     try:
@@ -1876,7 +1891,7 @@ async def test_a_file_locked_after_the_question_cannot_be_read(root: Path) -> No
 
 async def test_a_write_with_other_content_than_asked_is_refused(root: Path) -> None:
     tool = write_tool(root)
-    tool.approval(WriteFileParams(path="notas.txt", content="uno\n"))
+    await tool.approval(WriteFileParams(path="notas.txt", content="uno\n"))
 
     with pytest.raises(ToolError, match=r"notas\.txt changed after the question"):
         await tool.run(WriteFileParams(path="notas.txt", content="otro\n"))
@@ -1896,7 +1911,7 @@ async def test_an_edit_with_other_strings_than_asked_is_refused(
 ) -> None:
     write(root, "app.py", "return 1\n")
     tool = edit_tool(root)
-    tool.approval(edit_params("app.py", "return 1", "return 2"))
+    await tool.approval(edit_params("app.py", "return 1", "return 2"))
 
     with pytest.raises(ToolError, match=r"app\.py changed after the question"):
         await tool.run(other)
@@ -1908,9 +1923,9 @@ async def test_a_search_with_other_parameters_than_asked_is_refused(
 ) -> None:
     workspace = Workspace(root)
     grep, glob, read = Grep(workspace), Glob(workspace), ReadFile(workspace)
-    grep.approval(GrepParams(pattern="x", path="../other"))
-    glob.approval(GlobParams(pattern="*.py", path="../other"))
-    read.approval(ReadFileParams(path="../other/a.py"))
+    await grep.approval(GrepParams(pattern="x", path="../other"))
+    await glob.approval(GlobParams(pattern="*.py", path="../other"))
+    await read.approval(ReadFileParams(path="../other/a.py"))
 
     with pytest.raises(ToolError, match="changed after the question"):
         await grep.run(GrepParams(pattern="password", path="../other"))
@@ -1931,45 +1946,50 @@ GIT_DIR = "git directory: hooks and config here can run code"
         (".git/hooks/pre-commit", False, GIT_DIR),
         # The git config is also a secret (spec mejora-2026-10-23-deuda-hito-5,
         # E3).
-        (".git/config", False, f"{SECRET_FILE}; {GIT_DIR}"),
+        (".git/config", False, f"{SECRET_CHANGE}; {GIT_DIR}"),
         ("src/x.py", True, None),
-        ("../repo/.git/config", False, f"{OUTSIDE}; {SECRET_FILE}; {GIT_DIR}"),
+        ("../repo/.git/config", False, f"{OUTSIDE}; {SECRET_CHANGE}; {GIT_DIR}"),
     ],
 )
-def test_changing_git_is_never_for_the_session(
+async def test_changing_git_is_never_for_the_session(
     root: Path, path: str, for_session: bool, warning: str | None
 ) -> None:
     write(root, path, "uno\n")
 
-    written = ask_write(write_tool(root), path, "dos\n")
-    edited = ask_edit(edit_tool(root), edit_params(path, "uno", "dos"))
+    written = await ask_write(write_tool(root), path, "dos\n")
+    edited = await ask_edit(edit_tool(root), edit_params(path, "uno", "dos"))
 
     assert written.scope == ("write_file" if for_session else None)
     assert edited.scope == ("edit_file" if for_session else None)
     assert written.warning == edited.warning == warning
 
 
-def test_a_link_into_git_is_never_for_the_session(root: Path) -> None:
+async def test_a_link_into_git_is_never_for_the_session(root: Path) -> None:
     write(root, ".git/hooks/pre-commit", "uno\n")
     (root / "hook").symlink_to(root / ".git/hooks/pre-commit")
 
-    request = ask_write(write_tool(root), "hook", "dos\n")
+    request = await ask_write(write_tool(root), "hook", "dos\n")
 
     assert (request.scope, request.warning) == (None, GIT_DIR)
 
 
-def test_reading_git_does_not_ask(root: Path) -> None:
+async def test_reading_git_does_not_ask(root: Path) -> None:
     write(root, ".git/HEAD", "ref: refs/heads/main\n")
 
-    assert ReadFile(Workspace(root)).approval(ReadFileParams(path=".git/HEAD")) is None
+    assert (
+        await ReadFile(Workspace(root)).approval(ReadFileParams(path=".git/HEAD"))
+        is None
+    )
 
 
-def test_reading_the_git_config_asks(root: Path) -> None:
+async def test_reading_the_git_config_asks(root: Path) -> None:
     # Its remote URLs can carry a token (spec mejora-2026-10-23-deuda-hito-5,
     # E3).
     write(root, ".git/config", "[core]\n")
 
-    request = ReadFile(Workspace(root)).approval(ReadFileParams(path=".git/config"))
+    request = await ReadFile(Workspace(root)).approval(
+        ReadFileParams(path=".git/config")
+    )
 
     assert request is not None
     assert request.warning == SECRET_FILE
@@ -1978,9 +1998,9 @@ def test_reading_the_git_config_asks(root: Path) -> None:
 # The diff tells when the line endings change (review of PR 2, fix 4)
 
 
-def endings_note(root: Path, old: bytes, new: str) -> str:
+async def endings_note(root: Path, old: bytes, new: str) -> str:
     (root / "n.txt").write_bytes(old)
-    return ask_write(write_tool(root), "n.txt", new).detail
+    return (await ask_write(write_tool(root), "n.txt", new)).detail
 
 
 @pytest.mark.parametrize(
@@ -1993,10 +2013,10 @@ def endings_note(root: Path, old: bytes, new: str) -> str:
         (b"a\rb\r", "a\nc\n", "(line endings change: mixed → LF)"),
     ],
 )
-def test_a_change_of_line_endings_is_told_first(
+async def test_a_change_of_line_endings_is_told_first(
     root: Path, old: bytes, new: str, first: str
 ) -> None:
-    lines = endings_note(root, old, new).splitlines()
+    lines = (await endings_note(root, old, new)).splitlines()
 
     assert lines[0] == first
     assert lines[1].startswith("@@ ")
@@ -2010,19 +2030,24 @@ def test_a_change_of_line_endings_is_told_first(
         (b"a\r\nb\r\n", "a\r\nc\r\n"),  # the same style
     ],
 )
-def test_no_note_without_two_different_styles(root: Path, old: bytes, new: str) -> None:
-    assert endings_note(root, old, new).startswith("@@ ")
+async def test_no_note_without_two_different_styles(
+    root: Path, old: bytes, new: str
+) -> None:
+    assert (await endings_note(root, old, new)).startswith("@@ ")
 
 
-def test_only_line_endings_have_no_extra_note(root: Path) -> None:
-    assert endings_note(root, b"a\r\nb\r\n", "a\nb\n") == "(only line endings change)"
+async def test_only_line_endings_have_no_extra_note(root: Path) -> None:
+    assert (
+        await endings_note(root, b"a\r\nb\r\n", "a\nb\n")
+        == "(only line endings change)"
+    )
 
 
-def test_the_note_goes_after_the_asked_path(root: Path) -> None:
+async def test_the_note_goes_after_the_asked_path(root: Path) -> None:
     write(root, "real.txt", "uno\n")
     (root / "notes.txt").symlink_to(root / "real.txt")
 
-    detail = ask_write(write_tool(root), "notes.txt", "dos\r\n").detail
+    detail = (await ask_write(write_tool(root), "notes.txt", "dos\r\n")).detail
 
     assert detail.splitlines()[:3] == [
         "(asked: notes.txt)",
@@ -2031,24 +2056,24 @@ def test_the_note_goes_after_the_asked_path(root: Path) -> None:
     ]
 
 
-def test_an_edit_tells_a_change_of_line_endings(root: Path) -> None:
+async def test_an_edit_tells_a_change_of_line_endings(root: Path) -> None:
     write(root, "app.py", "x\n")
 
-    request = ask_edit(edit_tool(root), edit_params("app.py", "x\n", "y\r\n"))
+    request = await ask_edit(edit_tool(root), edit_params("app.py", "x\n", "y\r\n"))
 
     assert request.detail == "(line endings change: LF → CRLF)\n@@ -1 +1 @@\n-x\n+y"
 
 
-def test_the_fallback_detail_has_no_note(root: Path) -> None:
+async def test_the_fallback_detail_has_no_note(root: Path) -> None:
     # Fix 1: the fallback derives nothing from the content.
     write(root, ".env", "KEY=1\n")
 
-    request = ask_edit(edit_tool(root), edit_params(".env", "nada", "x\r\n"))
+    request = await ask_edit(edit_tool(root), edit_params(".env", "nada", "x\r\n"))
 
     assert request.detail == "old_string:\nnada\nnew_string:\nx"
 
 
-def test_a_failed_stat_of_the_file_to_change_cannot_be_read(
+async def test_a_failed_stat_of_the_file_to_change_cannot_be_read(
     root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Fix 3 also covers the size check (second review of PR 2), now made on
@@ -2062,9 +2087,9 @@ def test_a_failed_stat_of_the_file_to_change_cannot_be_read(
 
     monkeypatch.setattr(os, "fstat", failing_fstat)
     with pytest.raises(ToolError) as edited:
-        edit.approval(edit_params("app.py", "1", "2"))
+        await edit.approval(edit_params("app.py", "1", "2"))
     with pytest.raises(ToolError) as written:
-        overwrite.approval(WriteFileParams(path="app.py", content="x"))
+        await overwrite.approval(WriteFileParams(path="app.py", content="x"))
     monkeypatch.undo()
 
     assert str(edited.value) == "cannot read app.py: Input/output error"
@@ -2155,15 +2180,15 @@ async def test_grep_checks_the_open_file(swapped: Path) -> None:
     assert walked == "(no matches)"
 
 
-def test_changing_tools_check_the_open_file(swapped: Path) -> None:
+async def test_changing_tools_check_the_open_file(swapped: Path) -> None:
     # The same race, in write_file and edit_file (spec
     # mejora-2026-10-23-deuda-hito-5, A3).
     root = swapped.parent
 
     with pytest.raises(ToolError, match="not a regular file: pipe"):
-        edit_tool(root).approval(edit_params("pipe", "x", "y"))
+        await edit_tool(root).approval(edit_params("pipe", "x", "y"))
     with pytest.raises(ToolError, match="not a regular file: pipe"):
-        write_tool(root).approval(WriteFileParams(path="pipe", content="y"))
+        await write_tool(root).approval(WriteFileParams(path="pipe", content="y"))
 
 
 async def test_a_path_with_nul_is_the_models_error(root: Path) -> None:
@@ -2171,4 +2196,4 @@ async def test_a_path_with_nul_is_the_models_error(root: Path) -> None:
     tool = ReadFile(Workspace(root))
 
     with pytest.raises(ToolError, match="invalid path: a\x00b"):
-        tool.approval(ReadFileParams(path="a\x00b"))
+        await tool.approval(ReadFileParams(path="a\x00b"))

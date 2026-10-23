@@ -22,5 +22,6 @@ class ModelClient(Protocol):
     # `def`, not `async def`: an async generator returns the iterator itself,
     # not a coroutine. An `AsyncGenerator` can be closed with `aclose()`.
     def stream(self, request: ModelRequest) -> AsyncGenerator[ModelEvent]:
-        """Yield `TextDelta`s and, last, one `MessageEnd`."""
+        """Yield `TextDelta`s and `ToolCallDelta`s and, last, one
+        `MessageEnd`."""
         ...

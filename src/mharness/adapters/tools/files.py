@@ -25,7 +25,15 @@ from typing import IO
 from pydantic import BaseModel, Field
 
 from mharness.domain.approval import ApprovalRequest
-from mharness.domain.paths import SKIPPED_DIRS, is_secret
+from mharness.domain.paths import (
+    SECRET_DIR,
+    SECRET_FILE,
+    SKIPPED_DIRS,
+    change_warning,
+    is_inside,
+    is_secret_at,
+    read_warning,
+)
 from mharness.domain.tools import Permission, ToolError
 
 MIB = 1024 * 1024
@@ -36,14 +44,6 @@ READ_MAX_CHARS = 100_000
 # A longer line is cut: one huge line must not fill the context.
 READ_MAX_LINE = 2000
 
-# The warnings of a question (spec hito 5, §1.6).
-OUTSIDE = "outside the working directory"
-SECRET_FILE = "secret file: its content goes to the model provider"
-SECRET_DIR = "secret directory: its file names go to the model provider"
-# Writing in .git always asks: a hook or the config can run code (review of
-# PR 2, fix 6). Reading it does not.
-GIT_DIR = "git directory: hooks and config here can run code"
-
 
 def _count(number: int, singular: str, plural: str | None = None) -> str:
     """ "1 line", "3 lines": the summaries the terminal shows."""
@@ -51,8 +51,20 @@ def _count(number: int, singular: str, plural: str | None = None) -> str:
     return f"{number} {word}"
 
 
+def _count_lines(
+    result: str, empty: str, singular: str, plural: str | None = None
+) -> str:
+    """How many results a listing gives: its lines, without the "… [" notes,
+    or none if it is the `empty` text."""
+    if result == empty:
+        return _count(0, singular, plural)
+    found = sum(1 for line in result.splitlines() if not line.startswith("… ["))
+    return _count(found, singular, plural)
+
+
 class Workspace:
-    """The working directory: the tools see it without asking."""
+    """The working directory: the tools see it without asking. The rules of
+    what asks live in `domain.paths`; this resolves paths on the disk."""
 
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
@@ -70,14 +82,10 @@ class Workspace:
             raise ToolError(f"invalid path: {raw}") from None
 
     def contains(self, path: Path) -> bool:
-        return path.is_relative_to(self.root)
+        return is_inside(path, self.root)
 
     def secret(self, path: Path) -> bool:
-        """Inside, by the path relative to the root; outside, by the absolute
-        path, so an approved `~/.ssh` still counts as secret."""
-        if self.contains(path):
-            return is_secret(PurePath(path.relative_to(self.root)))
-        return is_secret(PurePath(path))
+        return is_secret_at(path, self.root)
 
     def shown(self, path: Path) -> str:
         """What the model and the user see: relative inside, absolute
@@ -87,41 +95,46 @@ class Workspace:
         return str(path)
 
     def warning(self, path: Path, secret: str | None) -> str | None:
-        """Why reading `path` needs a question, or None. `secret` is the
-        warning for a secret path, or None if secrets do not ask."""
-        found = []
-        if not self.contains(path):
-            found.append(OUTSIDE)
-        if secret is not None and self.secret(path):
-            found.append(secret)
-        return "; ".join(found) or None
+        return read_warning(path, self.root, secret=secret)
 
 
 class _Asked:
-    """The last call a tool asked about, so `run()` reads only that one.
+    """What the last question of a tool showed, so `run()` does only that.
 
-    Between the question and `run()` a link can change (TOCTOU: time of
-    check to time of use). `run()` resolves the path again: it reads without
-    a question only what needs none, and otherwise only the exact resolved
-    path the user approved, with the same parameters (review of PR 2, fix
-    5). One slot is enough because calls run one at a time; with parallel
-    calls (hito 15) it must keep one per call.
+    Between the question and `run()` a link or the file can change (TOCTOU:
+    time of check to time of use). `run()` resolves the path again and
+    compares: the same call, the same resolved path (decision D1, review of
+    PR 2, fix 5) and, to change a file, the same bytes it would replace
+    (decision W6). One slot is enough because calls run one at a time; with
+    parallel calls (hito 15) it must keep one per call.
     """
 
     def __init__(self) -> None:
         self._last: tuple[BaseModel, Path] | None = None
+        # The bytes the question showed; None: the file did not exist.
+        self.old: bytes | None = None
 
     def forget(self) -> None:
         self._last = None
+        self.old = None
 
-    def remember(self, params: BaseModel, path: Path) -> None:
+    def remember(self, params: BaseModel, path: Path, old: bytes | None = None) -> None:
         self._last = (params, path)
+        self.old = old
+
+    def same(self, params: BaseModel, path: Path) -> bool:
+        return self._last == (params, path)
 
     def check(
         self, params: BaseModel, raw: str, path: Path, warning: str | None
     ) -> None:
-        if warning is not None and self._last != (params, path):
-            raise ToolError(f"{raw} changed after the question; ask again")
+        """For reading: a call that needs a question runs only as asked."""
+        if warning is not None and not self.same(params, path):
+            raise _changed(raw)
+
+
+def _changed(raw: str) -> ToolError:
+    return ToolError(f"{raw} changed after the question; ask again")
 
 
 def _request(
@@ -197,7 +210,7 @@ class ReadFile:
         self._workspace = workspace
         self._asked = _Asked()
 
-    def approval(self, params: ReadFileParams) -> ApprovalRequest | None:
+    async def approval(self, params: ReadFileParams) -> ApprovalRequest | None:
         self._asked.forget()
         path = self._workspace.resolve(params.path)
         warning = self._workspace.warning(path, SECRET_FILE)
@@ -307,7 +320,7 @@ class ListDir:
         self._workspace = workspace
         self._asked = _Asked()
 
-    def approval(self, params: ListDirParams) -> ApprovalRequest | None:
+    async def approval(self, params: ListDirParams) -> ApprovalRequest | None:
         self._asked.forget()
         path = self._workspace.resolve(params.path)
         warning = self._workspace.warning(path, SECRET_DIR)
@@ -342,10 +355,7 @@ class ListDir:
         return f"{name} [secret]" if self._workspace.secret(entry) else name
 
     def summary(self, result: str) -> str:
-        if result == "(empty directory)":
-            return _count(0, "entry", "entries")
-        entries = sum(1 for line in result.splitlines() if not line.startswith("… ["))
-        return _count(entries, "entry", "entries")
+        return _count_lines(result, "(empty directory)", "entry", "entries")
 
 
 def _check_dir(path: Path, raw: str) -> None:
@@ -449,7 +459,7 @@ class Glob:
         self._workspace = workspace
         self._asked = _Asked()
 
-    def approval(self, params: GlobParams) -> ApprovalRequest | None:
+    async def approval(self, params: GlobParams) -> ApprovalRequest | None:
         self._asked.forget()
         base = self._workspace.resolve(params.path)
         # Secrets found while walking are skipped, never asked about.
@@ -483,10 +493,7 @@ class Glob:
         return "\n".join(lines) if lines else "(no files match)"
 
     def summary(self, result: str) -> str:
-        if result == "(no files match)":
-            return _count(0, "file")
-        files = sum(1 for line in result.splitlines() if not line.startswith("… ["))
-        return _count(files, "file")
+        return _count_lines(result, "(no files match)", "file")
 
 
 GREP_MAX_MATCHES = 100
@@ -520,7 +527,7 @@ class Grep:
         self._workspace = workspace
         self._asked = _Asked()
 
-    def approval(self, params: GrepParams) -> ApprovalRequest | None:
+    async def approval(self, params: GrepParams) -> ApprovalRequest | None:
         self._asked.forget()
         base = self._workspace.resolve(params.path)
         warning = self._warning(base)
@@ -564,10 +571,7 @@ class Grep:
         return _grep_result(matches, stopped_early=walk.stopped_early)
 
     def summary(self, result: str) -> str:
-        if result == "(no matches)":
-            return _count(0, "match", "matches")
-        found = sum(1 for line in result.splitlines() if not line.startswith("… ["))
-        return _count(found, "match", "matches")
+        return _count_lines(result, "(no matches)", "match", "matches")
 
 
 def _check_grep(params: GrepParams, base: Path) -> re.Pattern[str]:
@@ -717,15 +721,6 @@ def _endings(text: str) -> str | None:
     return None
 
 
-def _change_warning(workspace: Workspace, path: Path) -> str | None:
-    """Why changing `path` cannot be approved for the whole session: the
-    warnings of reading it, and .git anywhere in its resolved path."""
-    found = [workspace.warning(path, SECRET_FILE)]
-    if ".git" in path.parts:
-        found.append(GIT_DIR)
-    return "; ".join(warning for warning in found if warning) or None
-
-
 def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
     """What would make writing `path` fail, found before asking."""
     if path.is_dir():
@@ -834,23 +829,9 @@ def _sync_folder(folder: Path) -> None:
             os.close(descriptor)
 
 
-@dataclass(frozen=True)
-class _Shown:
-    """What the question showed: the call, the resolved path, and the bytes
-    it would replace (None: the file did not exist)."""
-
-    params: BaseModel
-    path: Path
-    old: bytes | None
-
-
-def _changed(raw: str) -> ToolError:
-    return ToolError(f"{raw} changed after the question; ask again")
-
-
 def _as_shown(
     workspace: Workspace,
-    shown: _Shown | None,
+    asked: _Asked,
     params: WriteFileParams | EditFileParams,
     verb: str,
 ) -> tuple[Path, bytes | None]:
@@ -858,11 +839,11 @@ def _as_shown(
     same resolved path and the same bytes the question showed (decisions D1
     and W6, review of PR 2, fix 5). Gives the path and its bytes."""
     path = workspace.resolve(params.path)
-    if shown is None or (shown.params, shown.path) != (params, path):
+    if not asked.same(params, path):
         raise _changed(params.path)
     _check_target(workspace, path, params.path)
     data = _current_bytes(path, params.path, verb)
-    if data != shown.old:
+    if data != asked.old:
         raise _changed(params.path)
     return path, data
 
@@ -895,13 +876,10 @@ class WriteFile:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
-        # What the last question showed; run() writes only that (decision
-        # D1). One slot is enough because calls run one at a time; with
-        # parallel calls (hito 15) it must keep one per call.
-        self._shown: _Shown | None = None
+        self._asked = _Asked()
 
-    def approval(self, params: WriteFileParams) -> ApprovalRequest | None:
-        self._shown = None
+    async def approval(self, params: WriteFileParams) -> ApprovalRequest | None:
+        self._asked.forget()
         workspace = self._workspace
         path = workspace.resolve(params.path)
         _check_target(workspace, path, params.path)
@@ -909,7 +887,7 @@ class WriteFile:
             params.content.encode("utf-8")
         except UnicodeEncodeError:
             raise ToolError("content is not valid UTF-8") from None
-        warning = _change_warning(workspace, path)
+        warning = change_warning(path, workspace.root)
         data = _current_bytes(path, params.path, "overwrite")
         shown = workspace.shown(path)
         if data is None:
@@ -927,7 +905,7 @@ class WriteFile:
                     raise
                 body = _preview(params.content)
         detail = body if params.path == shown else f"(asked: {params.path})\n{body}"
-        self._shown = _Shown(params, path, data)
+        self._asked.remember(params, path, data)
         return ApprovalRequest(
             tool=self.name,
             title=title,
@@ -938,7 +916,7 @@ class WriteFile:
 
     async def run(self, params: WriteFileParams) -> str:
         workspace = self._workspace
-        path, data = _as_shown(workspace, self._shown, params, "overwrite")
+        path, data = _as_shown(workspace, self._asked, params, "overwrite")
         if data is not None:
             _old_text(data, params)
         _write(workspace, path, params.content, parents=True)
@@ -1048,13 +1026,10 @@ class EditFile:
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
-        # What the last question showed; run() edits only that (decisions
-        # D1 and W6). One slot is enough because calls run one at a time;
-        # with parallel calls (hito 15) it must keep one per call.
-        self._shown: _Shown | None = None
+        self._asked = _Asked()
 
-    def approval(self, params: EditFileParams) -> ApprovalRequest | None:
-        self._shown = None
+    async def approval(self, params: EditFileParams) -> ApprovalRequest | None:
+        self._asked.forget()
         _check_strings(params)
         workspace = self._workspace
         path = workspace.resolve(params.path)
@@ -1062,7 +1037,7 @@ class EditFile:
         data = _current_bytes(path, params.path, "edit")
         if data is None:
             raise ToolError(f"file not found: {params.path}")
-        warning = _change_warning(workspace, path)
+        warning = change_warning(path, workspace.root)
         try:
             old, new, _ = _edited(data, params)
             body = _diff(old, new)
@@ -1074,7 +1049,7 @@ class EditFile:
             body = _strings(params)
         shown = workspace.shown(path)
         detail = body if params.path == shown else f"(asked: {params.path})\n{body}"
-        self._shown = _Shown(params, path, data)
+        self._asked.remember(params, path, data)
         return ApprovalRequest(
             tool=self.name,
             title=f"edit {shown}",
@@ -1085,7 +1060,7 @@ class EditFile:
 
     async def run(self, params: EditFileParams) -> str:
         workspace = self._workspace
-        path, data = _as_shown(workspace, self._shown, params, "edit")
+        path, data = _as_shown(workspace, self._asked, params, "edit")
         if data is None:
             # approval() refuses a missing file, so it appeared.
             raise _changed(params.path)
