@@ -1,26 +1,23 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-23. **Hito 5 (permisos y herramientas con
-efecto) implementado y verificado, con la mejora "cero deuda"
-(`mejora-2026-10-23-deuda-hito-5`) entera.** Falta integrar el PR 5 de
-cierre (`feature/hito-5-cierre`) y publicar `v0.5.0`. **Sesión en el PC del
+efecto) cerrado y publicado como `v0.5.0`, con cero deuda conocida.**
+Siguiente: la spec del hito 6 (sesiones e historial). **Sesión en el PC del
 trabajo (el WSL del PC de Windows).**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 5 implementado y verificado (PRs #29, #30, #39, #40 y el
-de cierre), con los arreglos #32, #33 y #41 y la mejora "cero deuda" (#34
-a #38). Siguiente: hito 6 (sesiones e historial), empezando por su spec.**
+**Desarrollo. Hito 5 cerrado (`v0.5.0`). Siguiente: hito 6 (sesiones e
+historial), empezando por su spec.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.4.0` — Tool calling y bucle agéntico**
-  (2026-10-21):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.4.0
-  (`v0.5.0`, al integrar el PR 5).
-- Ramas abiertas: `feature/hito-5-cierre`, hasta su merge. Las integradas
-  se conservan en GitHub.
+- Última versión: **`v0.5.0` — Permisos y herramientas con efecto**
+  (2026-10-23):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.5.0
+- Ramas abiertas: ninguna, salvo este cierre. Las integradas se conservan
+  en GitHub.
 
 ## Para la release
 
@@ -43,6 +40,13 @@ Lo más reciente primero.
   `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
   una FIFO. Test primero, con una FIFO real. En verde: 489 tests. Detalle
   en la spec 5, §12.11.
+- **`v0.5.0` publicada, 2026-10-23.** Tag anotado sobre el merge del PR #42
+  (`2f8dc55`), con el CI de `main` en verde; creado y publicado por el
+  agente (el mantenedor pidió "dejar el hito 5 cerrado"). `release.yml` creó
+  la release "v0.5.0 — Permisos y herramientas con efecto". `uvx --from
+  git+https://github.com/ManexMartikorena/m-harness@v0.5.0 maha --version`
+  → `maha 0.5.0`.
+- **PR #42 integrado, 2026-10-23** (merge `2f8dc55`): cierre del hito 5.
 - **Hito 5, PR 5 (cierre), 2026-10-23** (rama `feature/hito-5-cierre`):
   versión 0.5.0 (`47ace04`), nota `docs/guia/05-permisos.md`, specs del
   hito 5 y de la mejora en IMPLEMENTADA, README, MAPA y ESTADO. Verificación
@@ -425,14 +429,10 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (por si
 acaso; no hay dependencias nuevas) y comprobar los tests, mypy y
 lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** integrar el PR 5 (`feature/hito-5-cierre`) con el CI en
-   verde, crear el tag anotado `v0.5.0` sobre su merge y hacer push del tag
-   (pedido por el mantenedor el 2026-10-23: "dejar el hito 5 cerrado").
-   Comprobar la release y anotarla aquí en un PR de docs.
-2. **Agente:** proponer la spec del hito 6 (sesiones e historial) en
+1. **Agente:** proponer la spec del hito 6 (sesiones e historial) en
    `docs/spec-hito-6-<slug>`, tras leer DESIGN §5, §6 y §14. Entran los
    pendientes que DESIGN y las specs asignan al hito 6 (abajo).
-3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -577,7 +577,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 2. Primera conversación. `v0.2.0` (2026-10-20)
 - [x] 3. Streaming. `v0.3.0` (2026-10-21)
 - [x] 4. Tool calling y bucle agéntico. `v0.4.0` (2026-10-21)
-- [ ] 5. Permisos y herramientas con efecto. `v0.5.0`
+- [x] 5. Permisos y herramientas con efecto. `v0.5.0` (2026-10-23)
 - [ ] 6. Sesiones e historial. `v0.6.0`
 - [ ] 7. Trazas y coste. `v0.7.0`
 - [ ] 8. Evals y modo no interactivo. `v0.8.0`
