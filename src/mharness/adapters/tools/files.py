@@ -852,14 +852,39 @@ def _as_shown(
 
 def _write(workspace: Workspace, path: Path, text: str, *, parents: bool) -> None:
     """Write `text` to `path` atomically; `parents` creates its folders. A
-    failure is a clean error (decision A2)."""
+    failure is a clean error (decision A2), and removes the folders it
+    created (spec mejora-2026-10-23-deuda-hito-5, D3)."""
+    created: list[Path] = []
     try:
         if parents:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            _make_folders(path.parent, created)
         _write_atomically(path, text)
-    except OSError as exc:
+    except BaseException as exc:
+        _remove_folders(created)
+        if not isinstance(exc, OSError):
+            raise
         reason = exc.strerror or str(exc)
         raise ToolError(f"cannot write {workspace.shown(path)}: {reason}") from None
+
+
+def _make_folders(folder: Path, created: list[Path]) -> None:
+    """Create `folder` and its missing parents, outermost first, adding to
+    `created` each one as it is made."""
+    missing = []
+    while not folder.exists():
+        missing.append(folder)
+        folder = folder.parent
+    for new in reversed(missing):
+        new.mkdir()
+        created.append(new)
+
+
+def _remove_folders(created: list[Path]) -> None:
+    """Remove the folders a failed write created, innermost first, if they
+    are still empty."""
+    for folder in reversed(created):
+        with contextlib.suppress(OSError):
+            folder.rmdir()
 
 
 class WriteFileParams(BaseModel):

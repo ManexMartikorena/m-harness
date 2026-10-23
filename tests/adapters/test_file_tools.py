@@ -2218,3 +2218,23 @@ async def test_a_long_name_fits_its_temporary_file(root: Path) -> None:
 
     assert (root / name).read_text(encoding="utf-8") == "x\n"
     assert temporaries(root) == []
+
+
+async def test_a_failed_write_removes_the_folders_it_created(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D3: only the ones it created, and only if they stay empty.
+    write(root, "a/old.txt", "")
+    tool = write_tool(root)
+    params = WriteFileParams(path="a/b/c/new.txt", content="x\n")
+    await tool.approval(params)
+
+    def fail(*args: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "replace", fail)
+    with pytest.raises(ToolError, match="No space left on device"):
+        await tool.run(params)
+    monkeypatch.undo()
+
+    assert sorted(p.name for p in (root / "a").iterdir()) == ["old.txt"]
