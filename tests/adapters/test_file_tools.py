@@ -2463,3 +2463,41 @@ async def test_a_diff_too_large_is_summed_up(
     assert detail[1:3] == ["nuevo 0", "nuevo 1"]
     assert len(detail) == 1 + 20 + 1
     assert detail[-1] == "… [10 more lines]"
+
+
+# Searching skips what git ignores (spec mejora-2026-10-23-deuda-hito-5, E6)
+
+
+@pytest.fixture
+def ignoring(root: Path) -> Path:
+    write(root, ".gitignore", "*.log\nbuild/\n")
+    write(root, ".git/info/exclude", "local.txt\n")
+    for name in ("app.py", "x.log", "build/out.py", "local.txt", "sub/keep.log"):
+        write(root, name, "x\n")
+    write(root, "sub/.gitignore", "!keep.log\n")
+    return root
+
+
+async def test_glob_skips_what_git_ignores(ignoring: Path) -> None:
+    result = await Glob(Workspace(ignoring)).run(GlobParams(pattern="**/*"))
+
+    assert result.splitlines() == [
+        ".gitignore",
+        "app.py",
+        "sub/.gitignore",
+        "sub/keep.log",
+    ]
+
+
+async def test_grep_skips_what_git_ignores(ignoring: Path) -> None:
+    result = await Grep(Workspace(ignoring)).run(GrepParams(pattern="x"))
+
+    assert result.splitlines() == ["app.py:1: x", "sub/keep.log:1: x"]
+
+
+async def test_a_search_below_the_root_keeps_the_rules_above(ignoring: Path) -> None:
+    write(ignoring, "sub/other.log", "x\n")
+
+    result = await Grep(Workspace(ignoring)).run(GrepParams(pattern="x", path="sub"))
+
+    assert result.splitlines() == ["sub/keep.log:1: x"]

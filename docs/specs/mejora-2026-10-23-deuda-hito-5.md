@@ -315,3 +315,13 @@ fallar antes del arreglo:
     del PR 2 (un directorio de trabajo dentro de `.git` avisaba en cada
     escritura). Si hay varios, se avisa uno: `.git`, luego lo que ejecuta
     código, luego `.maha`.
+
+**PR 4** (`feature/gitignore`):
+19. E6, traductor (`e1b7ffd`): `domain/gitignore.py`, con 35 casos. Una
+    clase `[...]` nunca coincide con la "/" entre carpetas. Un "[" sin
+    cerrar es literal.
+20. E6, uso (`eb675f1`): el recorrido lee primero `.git/info/exclude` y los
+    `.gitignore` de las carpetas entre el límite y la base, y luego el de
+    cada carpeta que visita; un `.gitignore` de más de 1 MiB, o ilegible, no
+    se lee. Fuera del directorio de trabajo, el límite es la carpeta
+    aprobada.
