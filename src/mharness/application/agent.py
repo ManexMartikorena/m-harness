@@ -27,7 +27,6 @@ from mharness.domain.agent_events import (
     TurnFinished,
 )
 from mharness.domain.approval import ApprovalRequest, Decision
-from mharness.domain.errors import ModelError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import ModelRequest, Usage
@@ -40,6 +39,9 @@ from mharness.ports.tools import Tool
 MAX_STEPS = 25
 
 NOT_RUN_DENIED = "not run: a previous call was denied"
+# What the call in progress gets when its step is cut short.
+CANCELLED = "cancelled by the user"
+INTERRUPTED = "interrupted by an internal error"
 
 # The only answers that run a call that asked, or deny it.
 DECISIONS: tuple[Decision, ...] = ("once", "session", "deny")
@@ -200,14 +202,19 @@ class Agent:
                 tool_calls=calls_run,
                 steps=self._max_steps,
             )
-        except ModelError, asyncio.CancelledError, GeneratorExit:
-            # A failed call to the model, or Ctrl+C: Ctrl+C arrives as
+        except BaseException as exc:
+            # A failed call to the model, Ctrl+C or any error nobody expected
+            # (spec mejora-2026-10-23-deuda-hito-5, E4). Ctrl+C arrives as
             # CancelledError while the loop waits, or as GeneratorExit when
             # the terminal was the one waiting and closes the loop. What ran
             # is kept, so the model does not do it again (spec hito 5, §1.5).
             if executed and not kept:
                 if calls:
-                    blocks = _interrupted(calls, results, denied=denied)
+                    # The model is not called while the calls run: here only
+                    # Ctrl+C or an unexpected error can cut the step.
+                    by_user = isinstance(exc, asyncio.CancelledError | GeneratorExit)
+                    cause = CANCELLED if by_user else INTERRUPTED
+                    blocks = _interrupted(calls, results, denied=denied, cause=cause)
                     turn.append(Message(role="tool", blocks=[*blocks]))
                 self._messages.extend(turn)
             raise
@@ -302,17 +309,21 @@ def _error(
 
 
 def _interrupted(
-    calls: list[ToolCallBlock], results: list[ToolResultBlock], *, denied: bool
+    calls: list[ToolCallBlock],
+    results: list[ToolResultBlock],
+    *,
+    denied: bool,
+    cause: str,
 ) -> list[ToolResultBlock]:
     """The results of a step cut short: the finished calls keep theirs, the
-    one in progress was cancelled, and the rest did not run. Every call keeps
+    one in progress gets `cause`, and the rest did not run. Every call keeps
     its result (spec hito 4, §1.1, and spec hito 5, §1.5)."""
     blocks = list(results)
     for index, call in enumerate(calls[len(results) :]):
         if denied:
             message = NOT_RUN_DENIED
         elif index == 0:
-            message = "cancelled by the user"
+            message = cause
         else:
             message = "not run"
         blocks.append(_error(call, message).result)

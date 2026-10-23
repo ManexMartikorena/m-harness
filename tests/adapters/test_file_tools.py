@@ -433,6 +433,22 @@ async def test_grep_skips_large_files(
     assert await grep(root, "Ane") == "small.txt:1: Ane"
 
 
+async def test_grep_on_one_large_or_binary_file_is_an_error(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Not "(no matches)": that would be a false answer (spec
+    # mejora-2026-10-23-deuda-hito-5, A4).
+    monkeypatch.setattr(files, "GREP_MAX_FILE_BYTES", 10)
+    write(root, "big.txt", "Ane\n" * 10)
+    (root / "img.bin").write_bytes(b"Ane\0")
+    tool = Grep(Workspace(root))
+
+    with pytest.raises(ToolError, match=r"file too large to search \(0\.0 MiB"):
+        await tool.run(GrepParams(pattern="Ane", path="big.txt"))
+    with pytest.raises(ToolError, match=r"binary file, not searchable: img\.bin"):
+        await tool.run(GrepParams(pattern="Ane", path="img.bin"))
+
+
 async def test_grep_cuts_lines_and_results(root: Path) -> None:
     write(root, "long.txt", "x" * 1000 + "\n")
     write(root, "many.txt", "Ane\n" * 150)
@@ -1913,9 +1929,11 @@ GIT_DIR = "git directory: hooks and config here can run code"
     ("path", "for_session", "warning"),
     [
         (".git/hooks/pre-commit", False, GIT_DIR),
-        (".git/config", False, GIT_DIR),
+        # The git config is also a secret (spec mejora-2026-10-23-deuda-hito-5,
+        # E3).
+        (".git/config", False, f"{SECRET_FILE}; {GIT_DIR}"),
         ("src/x.py", True, None),
-        ("../repo/.git/config", False, f"{OUTSIDE}; {GIT_DIR}"),
+        ("../repo/.git/config", False, f"{OUTSIDE}; {SECRET_FILE}; {GIT_DIR}"),
     ],
 )
 def test_changing_git_is_never_for_the_session(
@@ -1941,11 +1959,20 @@ def test_a_link_into_git_is_never_for_the_session(root: Path) -> None:
 
 
 def test_reading_git_does_not_ask(root: Path) -> None:
+    write(root, ".git/HEAD", "ref: refs/heads/main\n")
+
+    assert ReadFile(Workspace(root)).approval(ReadFileParams(path=".git/HEAD")) is None
+
+
+def test_reading_the_git_config_asks(root: Path) -> None:
+    # Its remote URLs can carry a token (spec mejora-2026-10-23-deuda-hito-5,
+    # E3).
     write(root, ".git/config", "[core]\n")
 
-    assert (
-        ReadFile(Workspace(root)).approval(ReadFileParams(path=".git/config")) is None
-    )
+    request = ReadFile(Workspace(root)).approval(ReadFileParams(path=".git/config"))
+
+    assert request is not None
+    assert request.warning == SECRET_FILE
 
 
 # The diff tells when the line endings change (review of PR 2, fix 4)
@@ -2024,18 +2051,16 @@ def test_the_fallback_detail_has_no_note(root: Path) -> None:
 def test_a_failed_stat_of_the_file_to_change_cannot_be_read(
     root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Fix 3 also covers the size check (second review of PR 2).
+    # Fix 3 also covers the size check (second review of PR 2), now made on
+    # the open file (spec mejora-2026-10-23-deuda-hito-5, A3).
     write(root, "app.py", "return 1\n")
     edit = edit_tool(root)
     overwrite = write_tool(root)
-    real_stat = Path.stat
 
-    def failing_stat(self: Path, **kwargs: bool) -> os.stat_result:
-        if self.name == "app.py" and not kwargs:
-            raise OSError(5, "Input/output error")
-        return real_stat(self, **kwargs)
+    def failing_fstat(descriptor: int) -> os.stat_result:
+        raise OSError(5, "Input/output error")
 
-    monkeypatch.setattr(Path, "stat", failing_stat)
+    monkeypatch.setattr(os, "fstat", failing_fstat)
     with pytest.raises(ToolError) as edited:
         edit.approval(edit_params("app.py", "1", "2"))
     with pytest.raises(ToolError) as written:
@@ -2124,6 +2149,26 @@ async def test_grep_checks_the_open_file(swapped: Path) -> None:
     tool = Grep(Workspace(swapped.parent))
 
     walked = await tool.run(GrepParams(pattern="x"))
-    alone = await tool.run(GrepParams(pattern="x", path="pipe"))
+    with pytest.raises(ToolError, match="not a regular file: pipe"):
+        await tool.run(GrepParams(pattern="x", path="pipe"))
 
-    assert (walked, alone) == ("(no matches)", "(no matches)")
+    assert walked == "(no matches)"
+
+
+def test_changing_tools_check_the_open_file(swapped: Path) -> None:
+    # The same race, in write_file and edit_file (spec
+    # mejora-2026-10-23-deuda-hito-5, A3).
+    root = swapped.parent
+
+    with pytest.raises(ToolError, match="not a regular file: pipe"):
+        edit_tool(root).approval(edit_params("pipe", "x", "y"))
+    with pytest.raises(ToolError, match="not a regular file: pipe"):
+        write_tool(root).approval(WriteFileParams(path="pipe", content="y"))
+
+
+async def test_a_path_with_nul_is_the_models_error(root: Path) -> None:
+    # Not an internal error (spec mejora-2026-10-23-deuda-hito-5, A5).
+    tool = ReadFile(Workspace(root))
+
+    with pytest.raises(ToolError, match="invalid path: a\x00b"):
+        tool.approval(ReadFileParams(path="a\x00b"))

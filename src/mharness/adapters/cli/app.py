@@ -5,6 +5,8 @@ import sys
 from collections.abc import Sequence
 from importlib.metadata import version
 
+from mharness.adapters.cli.text import clean
+
 DISTRIBUTION = "m-harness"
 
 
@@ -34,5 +36,5 @@ def parse(argv: Sequence[str] | None = None) -> argparse.Namespace | int:
 
 def fail(message: str) -> int:
     """Report an error that stops `maha` before the conversation opens."""
-    print(f"error: {message}", file=sys.stderr)
+    print(f"error: {clean(message)}", file=sys.stderr)
     return 1

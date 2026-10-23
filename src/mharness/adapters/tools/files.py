@@ -28,6 +28,7 @@ from mharness.domain.approval import ApprovalRequest
 from mharness.domain.paths import SKIPPED_DIRS, is_secret
 from mharness.domain.tools import Permission, ToolError
 
+MIB = 1024 * 1024
 # A file with a NUL byte in its first bytes is binary.
 BINARY_PROBE = 8 * 1024
 READ_MAX_LINES = 2000
@@ -62,7 +63,11 @@ class Workspace:
         `../`, absolute paths and links that point outside do not hide where
         they go: every check runs on the resolved path.
         """
-        return (self.root / raw).resolve()
+        try:
+            return (self.root / raw).resolve()
+        except ValueError:
+            # A NUL in the path (spec mejora-2026-10-23-deuda-hito-5, A5).
+            raise ToolError(f"invalid path: {raw}") from None
 
     def contains(self, path: Path) -> bool:
         return path.is_relative_to(self.root)
@@ -486,8 +491,8 @@ class Glob:
 
 GREP_MAX_MATCHES = 100
 GREP_MAX_LINE = 300
-# Larger files are skipped: a huge log would block the loop while read.
-GREP_MAX_FILE_BYTES = 2 * 1024 * 1024
+# Larger files are not searched: a huge log would block the loop while read.
+GREP_MAX_FILE_BYTES = 2 * MIB
 
 
 class GrepParams(BaseModel):
@@ -540,7 +545,7 @@ class Grep:
         regex = _check_grep(params, base)
         if base.is_file():
             with _reading(params.path):
-                found = _search(base, self._workspace.shown(base), regex)
+                found = _search(base, self._workspace.shown(base), regex, params.path)
             return _grep_result(found, stopped_early=False)
         walk = _Walk(self._workspace, base)
         matches: list[str] = []
@@ -576,7 +581,18 @@ def _check_grep(params: GrepParams, base: Path) -> re.Pattern[str]:
         raise ToolError(f"not found: {params.path}")
     if not base.is_dir() and not base.is_file():
         raise ToolError(f"not a regular file: {params.path}")
+    if base.is_file():
+        with _reading(params.path):
+            _check_search_size(base.stat().st_size, params.path)
     return regex
+
+
+def _check_search_size(size: int, raw: str) -> None:
+    if size > GREP_MAX_FILE_BYTES:
+        raise ToolError(
+            f"file too large to search ({size / MIB:.1f} MiB, "
+            f"max {GREP_MAX_FILE_BYTES // MIB} MiB); use run_command"
+        )
 
 
 def _glob_matches(in_base: PurePath, pattern: str) -> bool:
@@ -586,15 +602,30 @@ def _glob_matches(in_base: PurePath, pattern: str) -> bool:
     return in_base.full_match(pattern)
 
 
-def _search(path: Path, shown: str, regex: re.Pattern[str]) -> list[str]:
-    """The matching lines of one text file, as "path:line: text"."""
-    # A FIFO or a device is skipped: opening it would block.
+def _search(
+    path: Path, shown: str, regex: re.Pattern[str], raw: str | None = None
+) -> list[str]:
+    """The matching lines of one text file, as "path:line: text".
+
+    With `raw`, the one file the model asked for: what cannot be searched is
+    an error, not "(no matches)" (spec mejora-2026-10-23-deuda-hito-5, A4).
+    Without it, walking: it is skipped.
+    """
+    # A FIFO or a device: opening it would block.
     file = _open_regular(path)
     if file is None:
-        return []
+        if raw is None:
+            return []
+        raise ToolError(f"not a regular file: {raw}")
     found = []
     with _as_text(file) as lines:
-        if os.fstat(file.fileno()).st_size > GREP_MAX_FILE_BYTES or is_binary(file):
+        size = os.fstat(file.fileno()).st_size
+        binary = size <= GREP_MAX_FILE_BYTES and is_binary(file)
+        if raw is not None:
+            _check_search_size(size, raw)
+            if binary:
+                raise ToolError(f"binary file, not searchable: {raw}")
+        if size > GREP_MAX_FILE_BYTES or binary:
             return []
         for number, line in enumerate(lines, start=1):
             text = line.rstrip("\r\n")
@@ -624,7 +655,6 @@ DIFF_MAX_LINES = 60
 TEMP_TRIES = 100
 # A larger file is not overwritten or edited: reading it and computing its
 # diff would block the loop (review of PR 2, fix 2).
-MIB = 1024 * 1024
 CHANGE_MAX_FILE_BYTES = 2 * MIB
 
 
@@ -719,14 +749,17 @@ def _current_bytes(path: Path, raw: str, verb: str) -> bytes | None:
     if not path.exists():
         return None
     with _reading(raw):
-        size = path.stat().st_size
-    if size > CHANGE_MAX_FILE_BYTES:
-        raise ToolError(
-            f"file too large to {verb} ({size / MIB:.1f} MiB, "
-            f"max {CHANGE_MAX_FILE_BYTES // MIB} MiB); use run_command"
-        )
-    with _reading(raw):
-        return path.read_bytes()
+        file = _open_regular(path)
+        if file is None:
+            raise ToolError(f"not a regular file: {raw}")
+        with file:
+            size = os.fstat(file.fileno()).st_size
+            if size > CHANGE_MAX_FILE_BYTES:
+                raise ToolError(
+                    f"file too large to {verb} ({size / MIB:.1f} MiB, "
+                    f"max {CHANGE_MAX_FILE_BYTES // MIB} MiB); use run_command"
+                )
+            return file.read()
 
 
 def _decode(data: bytes, raw: str) -> str:

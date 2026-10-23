@@ -355,6 +355,10 @@ async def test_error_as_a_plain_string(client: OpenAIChatClient) -> None:
         httpx.ReadTimeout("read timed out"),
         httpx.ConnectError("Name or service not known"),
         httpx.RemoteProtocolError("Server disconnected"),
+        # Not transport errors, but request errors all the same (spec
+        # mejora-2026-10-23-deuda-hito-5, A7).
+        httpx.DecodingError("bad gzip"),
+        httpx.TooManyRedirects("too many"),
     ],
 )
 @respx.mock
@@ -548,3 +552,15 @@ async def test_translates_tool_calls_of_a_whole_response(
             arguments='{"path": "notas.txt"}',
         )
     ]
+
+
+@respx.mock
+async def test_a_network_failure_never_shows_the_key(client: OpenAIChatClient) -> None:
+    # As stream() already does (spec mejora-2026-10-23-deuda-hito-5, A7).
+    respx.post(ENDPOINT).mock(side_effect=httpx.ConnectError(f"refused {API_KEY}"))
+
+    with pytest.raises(ModelUnavailableError) as error:
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert API_KEY not in str(error.value)
+    assert "[redacted]" in str(error.value)

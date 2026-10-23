@@ -17,6 +17,7 @@ from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
+from mharness.domain.tools import ToolError
 from tests.fakes.approval import FakeApproval
 from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply, tool_calls
 from tests.fakes.tools import FakeTool
@@ -438,6 +439,19 @@ async def test_invalid_json_arguments_are_shown_as_written() -> None:
     assert '  → echo({"text": )\n' in out
 
 
+async def test_deeply_nested_arguments_are_shown_as_written() -> None:
+    # json.loads raises RecursionError, not ValueError (spec
+    # mejora-2026-10-23-deuda-hito-5, A1).
+    nested = "[" * 100_000 + "]" * 100_000
+    fake = FakeModelClient([tool_calls(call("c1", nested)), reply("Vaya.")])
+
+    code, out, _ = await run_with_tools(fake, "Hola", "/exit")
+
+    assert code == 0
+    assert "  → echo([[[[" in out
+    assert "  ✗ error: arguments are not a valid JSON object" in out
+
+
 async def test_long_calls_are_cut() -> None:
     long_text = "x" * 300
     arguments = f'{{"text": "{long_text}"}}'
@@ -506,3 +520,29 @@ async def test_ctrl_c_during_a_tool_goes_back_to_the_prompt() -> None:
     result = agent.messages[-1].blocks[0]
     assert isinstance(result, ToolResultBlock)
     assert (result.content, result.is_error) == ("error: cancelled by the user", True)
+
+
+async def test_control_characters_from_the_model_and_tools_are_escaped() -> None:
+    # ESC and \r could repaint the screen, and bidi controls reorder it: the
+    # question below a call could lie (spec mejora-2026-10-23-deuda-hito-5,
+    # A2).
+    tool = FakeTool("echo", results=[ToolError("bad\x1b[2J")])
+    fake = FakeModelClient(
+        [
+            tool_calls(
+                call("c1", '{"text": "a\\u001b[31mb\\u202ec"}'),
+                text="Mira\x1b]0;title\x07\r",
+            ),
+            reply("Fin\x9b."),
+        ]
+    )
+
+    _, out, _ = await run_with_tools(fake, "Hola", "/exit", tool=tool)
+
+    for unsafe in ("\x1b", "\r", "\u202e", "\x9b", "\x07"):
+        assert unsafe not in out
+    assert "Mira\\x1b]0;title\\x07\\x0d" in out
+    # json.dumps already writes ESC as \u001b; the bidi control is escaped.
+    assert '→ echo(text="a\\u001b[31mb\\u202ec")' in out
+    assert "✗ error: bad\\x1b[2J" in out
+    assert "Fin\\x9b." in out

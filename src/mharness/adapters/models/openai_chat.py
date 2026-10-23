@@ -100,8 +100,10 @@ class OpenAIChatClient:
             )
         except httpx.TimeoutException as exc:
             raise ModelUnavailableError("the provider took too long to answer") from exc
-        except httpx.TransportError as exc:
-            reason = str(exc) or type(exc).__name__
+        except httpx.RequestError as exc:
+            # Every request error, not only transport ones, and without the
+            # key, as in stream() (spec mejora-2026-10-23-deuda-hito-5, A7).
+            reason = self._safe(str(exc)) or type(exc).__name__
             raise ModelUnavailableError(f"cannot reach the provider: {reason}") from exc
         if not response.is_success:
             raise self._status_error(response)

@@ -7,9 +7,17 @@ up at the provider.
 from fnmatch import fnmatchcase
 from pathlib import PurePath
 
-# Everything inside these directories is secret.
+# Everything inside these directories is secret. All names in lower case.
 SECRET_DIRS = frozenset({".ssh", ".aws", ".gnupg", ".docker", ".kube"})
-SECRET_NAMES = ("*.pem", "*.key", "id_rsa*", "id_ed25519*", ".netrc", ".pgpass")
+SECRET_NAMES = (
+    "*.pem",
+    "*.key",
+    "id_rsa*",
+    "id_ed25519*",
+    ".netrc",
+    ".pgpass",
+    ".git-credentials",
+)
 # Templates without values, kept in repositories.
 NOT_SECRET = frozenset({".env.example"})
 
@@ -33,9 +41,15 @@ def is_secret(path: PurePath) -> bool:
 
     `path` is relative to the working directory.
     """
-    if any(part in SECRET_DIRS for part in path.parts):
+    # Without case: a file system that ignores it opens the same file (spec
+    # mejora-2026-10-23-deuda-hito-5, A6).
+    if any(part.casefold() in SECRET_DIRS for part in path.parts):
         return True
-    name = path.name
+    name = path.name.casefold()
+    # Its remote URLs can carry a token (spec mejora-2026-10-23-deuda-hito-5,
+    # E3). The rest of .git is not secret.
+    if name == "config" and len(path.parts) > 1 and path.parts[-2].casefold() == ".git":
+        return True
     if name in NOT_SECRET:
         return False
     if name == ".env" or name.startswith(".env."):

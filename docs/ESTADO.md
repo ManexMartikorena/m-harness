@@ -45,6 +45,11 @@ Lo más reciente primero.
   `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
   una FIFO. Test primero, con una FIFO real. En verde: 489 tests. Detalle
   en la spec 5, §12.11.
+- **Mejora "cero deuda", PR 1, 2026-10-23** (rama `fix/fallos-auditoria`;
+  spec `mejora-2026-10-23-deuda-hito-5`, aprobada en #34): A1 (`7235142`),
+  A2 (`4e908f2`), A3 (`b99573b`), A4 (`ec235c3`), A5 (`4da3ccd`), A6
+  (`52dc6ba`), A7 (`9c7b915`), E3 (`c64207b`) y E4 (`e084fbd`). En verde:
+  519 tests.
 - **PC de Windows al día, 2026-10-23:** pull de 30 commits, `uv sync` sin
   cambios; 487 tests, mypy, lint-imports y ruff en verde; `maha 0.4.0`.
 
@@ -502,11 +507,9 @@ resuelve):
 
 **Pendientes del hito 5** (anotados en su spec; cada uno con el hito que lo
 resuelve):
-- **Excepciones no previstas tras una ejecución** (p. ej., el `gate` falla
-  con `OSError`): el turno no se guarda; solo lo guardan `ModelError`,
-  `CancelledError` y `GeneratorExit` (decisión D4). Hoy tumban `maha` y el
-  historial en memoria se pierde igual. Hito 6, con las sesiones en disco
-  (spec 5, §12.5).
+- ~~**Excepciones no previstas tras una ejecución**~~ **Resuelto**
+  (`e084fbd`, spec `mejora-2026-10-23-deuda-hito-5`, E4): el turno se
+  guarda ante cualquier excepción.
 - ~~**Una FIFO bloquea `read_file` y `grep` al recorrer**~~ **Resuelto**
   (`85c9e26`, spec 5, §12.11).
 - **Pieza 14 (`TerminalApproval`):** sanear los caracteres de control (ESC,
