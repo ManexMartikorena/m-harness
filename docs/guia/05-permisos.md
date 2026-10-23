@@ -93,7 +93,9 @@ secreto letra a letra sin que nadie se enterara.
 **La pregunta no puede mentir.** Todo lo que viene del modelo o de un
 fichero se limpia antes de pintarlo: los caracteres de control (ESC, `\r`)
 y los de dirección del texto (bidi) salen escapados, como `\x1b`. Si no, un
-fichero podría repintar la pantalla justo encima de la pregunta.
+fichero podría repintar la pantalla justo encima de la pregunta. El título
+va siempre en **una línea**: un comando con 80 saltos de línea dejaría su
+principio fuera de la pantalla, y con `a` lo aprobarías para la sesión.
 
 **Sin terminal, se deniega todo.** Con `maha < notas.txt`, la "respuesta"
 sería la línea siguiente del fichero, y una `y` aprobaría un comando:
@@ -152,12 +154,24 @@ sería la línea siguiente del fichero, y una `y` aprobaría un comando:
   (`MI_CLAVE`) tampoco llega, ni `SSH_AUTH_SOCK`. En la verificación, `env`
   vio esto: `HOME LANG LOGNAME PATH PWD SHELL TERM USER XDG_DATA_DIRS
   XDG_RUNTIME_DIR`.
+- **Un hijo en segundo plano** (`servidor &`) no hace esperar al tiempo
+  límite: el comando termina cuando termina su shell, y el hijo se va con
+  el grupo.
 - **Lo que NO protege:** el comando corre con tus permisos y puede hacer
   `cd ..` o borrar lo que tú puedas borrar. Un proceso que sale de su grupo
   (`setsid`) sobrevive. Hasta el sandbox (hito 14), **la única defensa es que
   leas el comando antes de aprobarlo**.
 
-### 6. Lo ejecutado consta
+### 6. La regex del modelo, aparte
+
+`grep` no pregunta dentro del directorio, y ejecuta la regex que escribe el
+modelo. Una regex como `(a+)+$` puede tardar un tiempo exponencial (*ReDoS*,
+*regular expression denial of service*) y, en el mismo proceso, congelaría
+`maha` sin que Ctrl+C respondiera. Por eso `maha` recorre los ficheros (el
+perímetro, los secretos y `.gitignore` siguen siendo suyos) y la búsqueda va
+a un **proceso hijo** con 30 s de límite, que se mata también con Ctrl+C.
+
+### 7. Lo ejecutado consta
 
 Si `maha` editó un fichero y luego falla la red, o pulsas Ctrl+C, el turno
 se guarda **hasta el último resultado completo**. La llamada que corría
@@ -171,7 +185,7 @@ El comando `sleep 30` no llegó a completarse: la canceló el usuario mientras
 estaba en ejecución.
 ```
 
-### 7. La regla en el dominio, el disco en el adaptador
+### 8. La regla en el dominio, el disco en el adaptador
 
 Qué pregunta una ruta (fuera, secreto, ejecuta código) es una regla pura:
 vive en `domain/paths.py`. Qué variables recibe un comando, en

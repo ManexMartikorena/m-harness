@@ -11,8 +11,8 @@ Lo primero al abrir: "Siguiente paso", más abajo.
 ## Fase actual
 
 **Desarrollo. Hito 5 implementado y verificado (PRs #29, #30, #39, #40 y el
-de cierre), con los arreglos #32 y #33 y la mejora "cero deuda" (#34 a
-#38). Siguiente: hito 6 (sesiones e historial), empezando por su spec.**
+de cierre), con los arreglos #32, #33 y #41 y la mejora "cero deuda" (#34
+a #38). Siguiente: hito 6 (sesiones e historial), empezando por su spec.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.4.0` — Tool calling y bucle agéntico**
@@ -59,6 +59,11 @@ Lo más reciente primero.
   13, con B4 y E1 de la mejora): puerto `CommandRunner` (`c1264b0`),
   `command_env()` (`30f1336`), `LocalCommandRunner` (`6991d63`) y
   `run_command` (`9836be4`). En verde: 615 tests.
+- **Verificación a mano repetida tras la auditoría final, 2026-10-23:** los
+  11 puntos de la spec 5 §7 y los 3 de la mejora, otra vez en verde.
+- **PR #41 integrado, 2026-10-23** (merge `56d3072`): arreglos de la
+  auditoría final. El CI destapó que `process.wait()` de Python 3.14.4 espera
+  a las tuberías (`453d8eb`).
 - **Auditoría final, 2026-10-23** (rama `fix/auditoria-final`): 8 hallazgos,
   todos arreglados con su test (mejora, §12.22 a §12.29): título de la
   pregunta en una línea, tope del recorrido, comandos con hijos en segundo
