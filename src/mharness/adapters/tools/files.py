@@ -816,6 +816,11 @@ def _write_atomically(path: Path, text: str, old: bytes | None) -> None:
             file.write(text)
             file.flush()
             os.fsync(file.fileno())
+        # The last check, right before the rename: POSIX has no "compare and
+        # swap" for files, so a change after it still wins (spec
+        # mejora-2026-10-23-deuda-hito-5, D7, accepted by the maintainer).
+        if _now(path) != old:
+            raise _Changed
         os.replace(temporary, path)
     except _InPlace:
         temporary.unlink(missing_ok=True)
@@ -829,6 +834,22 @@ def _write_atomically(path: Path, text: str, old: bytes | None) -> None:
 
 class _InPlace(Exception):
     """The temporary file cannot take the place of the old one."""
+
+
+class _Changed(Exception):
+    """The file is not what the question showed any more."""
+
+
+def _now(path: Path) -> bytes | None:
+    """The bytes of `path` now; None if it does not exist."""
+    try:
+        file = _open_regular(path)
+    except FileNotFoundError:
+        return None
+    if file is None:
+        raise _Changed
+    with file:
+        return file.read()
 
 
 def _copy_identity(descriptor: int, path: Path, info: os.stat_result) -> bool:
@@ -862,11 +883,14 @@ def _write_in_place(path: Path, text: str, old: bytes | None) -> None:
     but it is not atomic. If the write fails, the old bytes are put back, as
     far as the disk lets."""
     # O_NONBLOCK: a FIFO put in its place fails instead of blocking.
-    flags = os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+    flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
     descriptor = os.open(path, flags)
     try:
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-            raise OSError(errno.EINVAL, "not a regular file")
+            raise _Changed
+        # Compared on the descriptor that writes (D7).
+        if _read_all(descriptor) != old:
+            raise _Changed
         try:
             _overwrite(descriptor, text.encode("utf-8"))
         except BaseException:
@@ -876,6 +900,15 @@ def _write_in_place(path: Path, text: str, old: bytes | None) -> None:
             raise
     finally:
         os.close(descriptor)
+
+
+def _read_all(descriptor: int) -> bytes:
+    chunks = []
+    offset = 0
+    while chunk := os.pread(descriptor, 64 * 1024, offset):
+        chunks.append(chunk)
+        offset += len(chunk)
+    return b"".join(chunks)
 
 
 def _overwrite(descriptor: int, data: bytes) -> None:
@@ -934,6 +967,8 @@ def _write(
         _write_atomically(path, text, old)
     except BaseException as exc:
         _remove_folders(created)
+        if isinstance(exc, _Changed):
+            raise _changed(workspace.shown(path)) from None
         if not isinstance(exc, OSError):
             raise
         reason = exc.strerror or str(exc)

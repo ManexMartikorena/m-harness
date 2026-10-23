@@ -2345,3 +2345,51 @@ async def test_a_failed_write_in_place_puts_the_old_bytes_back(
     monkeypatch.undo()
 
     assert first.read_text(encoding="utf-8") == "uno\n"
+
+
+async def test_a_change_just_before_the_rename_is_not_overwritten(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D7: the bytes are compared again right before os.replace.
+    path = write(root, "a.txt", "uno\n")
+    tool = write_tool(root)
+    params = WriteFileParams(path="a.txt", content="dos\n")
+    await tool.approval(params)
+    real_fsync = os.fsync
+
+    def someone_writes(descriptor: int) -> None:
+        # The fsync of the temporary file, just before the rename.
+        path.write_text("tuyo\n", encoding="utf-8")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", someone_writes)
+    with pytest.raises(ToolError, match="changed after the question"):
+        await tool.run(params)
+    monkeypatch.undo()
+
+    assert path.read_text(encoding="utf-8") == "tuyo\n"
+    assert temporaries(root) == []
+
+
+async def test_a_change_just_before_writing_in_place_is_not_overwritten(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D7, in place: compared on the descriptor that writes.
+    path = write(root, "a.txt", "uno\n")
+    os.link(path, root / "b.txt")
+    tool = write_tool(root)
+    params = WriteFileParams(path="a.txt", content="dos\n")
+    await tool.approval(params)
+    real_open = os.open
+
+    def someone_writes(file: object, flags: int, *args: int) -> int:
+        if flags & (os.O_WRONLY | os.O_RDWR):
+            path.write_text("tuyo\n", encoding="utf-8")
+        return real_open(file, flags, *args)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "open", someone_writes)
+    with pytest.raises(ToolError, match="changed after the question"):
+        await tool.run(params)
+    monkeypatch.undo()
+
+    assert path.read_text(encoding="utf-8") == "tuyo\n"
