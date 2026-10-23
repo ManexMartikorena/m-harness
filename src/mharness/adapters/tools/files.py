@@ -544,6 +544,9 @@ GREP_MAX_LINE = 300
 GREP_MAX_FILE_BYTES = 2 * MIB
 # A search that takes longer is killed (final audit, 2026-10-23).
 GREP_TIME_LIMIT = 30.0
+# Files searched per child process: the walk stops once there are enough
+# matches.
+GREP_BATCH_FILES = 500
 
 
 class GrepParams(BaseModel):
@@ -594,21 +597,33 @@ class Grep:
         base = self._workspace.resolve(params.path)
         self._asked.check(params, params.path, base, self._warning(base))
         _check_grep(params, base)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + GREP_TIME_LIMIT
         if base.is_file():
             shown = self._workspace.shown(base)
             found = await _search_apart(
-                params.pattern, [(str(base), shown)], params.path
+                params.pattern, [(str(base), shown)], params.path, GREP_TIME_LIMIT
             )
             return _grep_result(found, stopped_early=False)
         # The walk stays here: its perimeter, secrets and .gitignore rules
-        # are not the child's to decide.
+        # are not the child's to decide. It goes in batches, and stops once
+        # there are enough matches.
         walk = _Walk(self._workspace, base)
-        files = [
-            (str(file.real), file.shown)
-            async for file in walk.files()
-            if not params.glob or _glob_matches(file.in_base, params.glob)
-        ]
-        matches = await _search_apart(params.pattern, files)
+        matches: list[str] = []
+        batch: list[tuple[str, str]] = []
+        async for file in walk.files():
+            if params.glob and not _glob_matches(file.in_base, params.glob):
+                continue
+            batch.append((str(file.real), file.shown))
+            if len(batch) == GREP_BATCH_FILES:
+                time_left = deadline - loop.time()
+                matches += await _search_apart(params.pattern, batch, None, time_left)
+                batch = []
+                if len(matches) > GREP_MAX_MATCHES:
+                    return _grep_result(matches, stopped_early=False)
+        if batch:
+            time_left = deadline - loop.time()
+            matches += await _search_apart(params.pattern, batch, None, time_left)
         return _grep_result(matches, stopped_early=walk.stopped_early)
 
     def summary(self, result: str) -> str:
@@ -687,10 +702,14 @@ def _search(
 
 
 def search_files(
-    pattern: str, files: list[tuple[str, str]], raw: str | None, max_bytes: int
+    pattern: str,
+    files: list[tuple[str, str]],
+    raw: str | None,
+    max_bytes: int,
+    max_matches: int,
 ) -> list[str]:
     """The matches of `pattern` in `files` (resolved path, shown path), at
-    most one more than GREP_MAX_MATCHES. With `raw`, the one file the model
+    most one more than `max_matches`. With `raw`, the one file the model
     asked for, and its failures are errors. It runs in the child process of
     `_search_apart`."""
     regex = re.compile(pattern)
@@ -706,16 +725,16 @@ def search_files(
             # fix 8).
             continue
         # One more than shown: it tells whether something was left out.
-        if len(matches) > GREP_MAX_MATCHES:
+        if len(matches) > max_matches:
             break
     return matches
 
 
 async def _search_apart(
-    pattern: str, files: list[tuple[str, str]], raw: str | None = None
+    pattern: str, files: list[tuple[str, str]], raw: str | None, time_left: float
 ) -> list[str]:
-    """`search_files` in a child process, killed after GREP_TIME_LIMIT or on
-    Ctrl+C: a regex of the model can take exponential time (ReDoS), and in
+    """`search_files` in a child process, killed after `time_left` seconds or
+    on Ctrl+C: a regex of the model can take exponential time (ReDoS), and in
     this process it would freeze the loop (final audit, 2026-10-23, decision
     of the maintainer)."""
     request = json.dumps(
@@ -724,6 +743,7 @@ async def _search_apart(
             "files": files,
             "raw": raw,
             "max_bytes": GREP_MAX_FILE_BYTES,
+            "max_matches": GREP_MAX_MATCHES,
         }
     ).encode()
     process = await asyncio.create_subprocess_exec(
@@ -736,7 +756,7 @@ async def _search_apart(
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        async with asyncio.timeout(GREP_TIME_LIMIT):
+        async with asyncio.timeout(max(time_left, 0)):
             out, err = await process.communicate(request)
     except TimeoutError:
         raise ToolError(

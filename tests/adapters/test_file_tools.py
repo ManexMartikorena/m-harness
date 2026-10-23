@@ -9,6 +9,7 @@ import stat
 import threading
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -2625,3 +2626,31 @@ async def test_a_gitignore_too_large_is_not_read(
 
     # Not half of it: a cut last line would become a wrong rule.
     assert result.splitlines() == [".gitignore", "a.log", "b.txt"]
+
+
+async def test_grep_stops_searching_once_it_has_enough_matches(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # In batches: a search that finds early does not walk the whole tree
+    # first (2026-10-23, decision of the maintainer).
+    monkeypatch.setattr(files, "GREP_BATCH_FILES", 1)
+    monkeypatch.setattr(files, "GREP_MAX_MATCHES", 2)
+    for n in range(5):
+        write(root, f"f{n}.txt", "x\nx\nx\n")
+    spawned = 0
+    real_exec = asyncio.create_subprocess_exec
+
+    async def counting(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
+        nonlocal spawned
+        spawned += 1
+        return await real_exec(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", counting)
+    result = await grep(root, "x")
+
+    assert spawned == 1
+    assert result.splitlines() == [
+        "f0.txt:1: x",
+        "f0.txt:2: x",
+        "… [stopped at 2 matches; narrow the search]",
+    ]
