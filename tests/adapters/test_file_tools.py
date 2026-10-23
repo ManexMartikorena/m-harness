@@ -2501,3 +2501,28 @@ async def test_a_search_below_the_root_keeps_the_rules_above(ignoring: Path) -> 
     result = await Grep(Workspace(ignoring)).run(GrepParams(pattern="x", path="sub"))
 
     assert result.splitlines() == ["sub/keep.log:1: x"]
+
+
+async def test_ignored_files_count_for_the_walk_limit_and_its_yields(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Thousands of ignored *.o must not make the walk endless or deaf to
+    # Ctrl+C (final audit, 2026-10-23).
+    monkeypatch.setattr(files, "WALK_MAX_FILES", 50)
+    monkeypatch.setattr(files, "WALK_YIELD_EVERY", 10)
+    write(root, ".gitignore", "*.o\n")
+    for n in range(200):
+        write(root, f"obj/{n:03}.o", "")
+    yields = 0
+    real_sleep = asyncio.sleep
+
+    async def counting(delay: float) -> None:
+        nonlocal yields
+        yields += 1
+        await real_sleep(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", counting)
+    result = await Glob(Workspace(root)).run(GlobParams(pattern="**/*"))
+
+    assert result.endswith("… [stopped after 50 files; narrow the path]")
+    assert yields >= 5

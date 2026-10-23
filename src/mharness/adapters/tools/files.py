@@ -425,14 +425,16 @@ class _Walk:
                 and not rules.ignores(here / name, is_dir=True)
             )
             for name in sorted(filenames):
-                if rules.ignores(here / name, is_dir=False):
-                    continue
+                # Every file counts, also the ones skipped below: the walk
+                # stays bounded and keeps yielding (final audit, 2026-10-23).
                 seen += 1
                 if seen > WALK_MAX_FILES:
                     self.stopped_early = True
                     return
                 if seen % WALK_YIELD_EVERY == 0:
                     await asyncio.sleep(0)
+                if rules.ignores(here / name, is_dir=False):
+                    continue
                 path = directory / name
                 real = path.resolve()
                 if not real.is_relative_to(self._limit) or workspace.secret(path):
