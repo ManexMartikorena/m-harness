@@ -22,3 +22,9 @@ def _escaped(match: re.Match[str]) -> str:
 def clean(text: str) -> str:
     """`text` with every unsafe character escaped."""
     return _UNSAFE.sub(_escaped, text)
+
+
+def clean_line(text: str) -> str:
+    """`text` clean and on one line: its line breaks and tabs escaped too, so
+    a title cannot push the start of a command off the screen."""
+    return clean(text).replace("\n", "\\n").replace("\t", "\\t")

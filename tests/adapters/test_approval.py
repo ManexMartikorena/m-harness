@@ -137,3 +137,23 @@ async def test_deny_all_denies_without_asking() -> None:
 
     assert decision == "deny"
     assert out.getvalue() == "  (denied: input is not a terminal)\n"
+
+
+async def test_a_title_with_line_breaks_stays_on_one_line() -> None:
+    # A command with 80 line breaks would push its start off the screen,
+    # and "a" would approve it for the session (final audit, 2026-10-23).
+    request = ApprovalRequest(
+        tool="run_command",
+        title="run: rm -rf ~/proyecto #" + "\n" * 80 + "ls -la",
+        detail="in /p",
+        scope="run_command:x",
+        warning="uno\ndos\tfin",
+    )
+
+    _, shown = await ask(request, "n")
+
+    lines = shown.splitlines()
+    assert lines[0].startswith("  ┌ run: rm -rf ~/proyecto #\\n\\n")
+    assert len(lines[0]) <= len("  ┌ ") + 201
+    assert lines[2] == "  │ ! uno\\ndos\\tfin"
+    assert len(lines) == 4
