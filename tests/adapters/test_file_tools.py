@@ -1929,9 +1929,11 @@ GIT_DIR = "git directory: hooks and config here can run code"
     ("path", "for_session", "warning"),
     [
         (".git/hooks/pre-commit", False, GIT_DIR),
-        (".git/config", False, GIT_DIR),
+        # The git config is also a secret (spec mejora-2026-10-23-deuda-hito-5,
+        # E3).
+        (".git/config", False, f"{SECRET_FILE}; {GIT_DIR}"),
         ("src/x.py", True, None),
-        ("../repo/.git/config", False, f"{OUTSIDE}; {GIT_DIR}"),
+        ("../repo/.git/config", False, f"{OUTSIDE}; {SECRET_FILE}; {GIT_DIR}"),
     ],
 )
 def test_changing_git_is_never_for_the_session(
@@ -1957,11 +1959,20 @@ def test_a_link_into_git_is_never_for_the_session(root: Path) -> None:
 
 
 def test_reading_git_does_not_ask(root: Path) -> None:
+    write(root, ".git/HEAD", "ref: refs/heads/main\n")
+
+    assert ReadFile(Workspace(root)).approval(ReadFileParams(path=".git/HEAD")) is None
+
+
+def test_reading_the_git_config_asks(root: Path) -> None:
+    # Its remote URLs can carry a token (spec mejora-2026-10-23-deuda-hito-5,
+    # E3).
     write(root, ".git/config", "[core]\n")
 
-    assert (
-        ReadFile(Workspace(root)).approval(ReadFileParams(path=".git/config")) is None
-    )
+    request = ReadFile(Workspace(root)).approval(ReadFileParams(path=".git/config"))
+
+    assert request is not None
+    assert request.warning == SECRET_FILE
 
 
 # The diff tells when the line endings change (review of PR 2, fix 4)

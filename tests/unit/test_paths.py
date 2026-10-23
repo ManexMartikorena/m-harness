@@ -27,6 +27,11 @@ from mharness.domain.paths import is_secret
         "ID_RSA",
         "X.PEM",
         ".SSH/config",
+        # Remote URLs with a token, and git's stored passwords (E3).
+        ".git/config",
+        "repo/.git/config",
+        ".GIT/CONFIG",
+        ".git-credentials",
     ],
 )
 def test_secret_paths(path: str) -> None:
@@ -43,6 +48,8 @@ def test_secret_paths(path: str) -> None:
         "src/environment.py",
         "notas.txt",
         ".",
+        ".git/HEAD",
+        "src/config",
     ],
 )
 def test_ordinary_paths(path: str) -> None:
