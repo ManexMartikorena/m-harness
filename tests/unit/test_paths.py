@@ -4,7 +4,9 @@ import pytest
 
 from mharness.domain.paths import (
     GIT_DIR,
+    MAHA_CONFIG,
     OUTSIDE,
+    RUNS_CODE,
     SECRET_CHANGE,
     SECRET_DIR,
     SECRET_FILE,
@@ -100,6 +102,34 @@ def test_read_warning(path: str, secret: str | None, warning: str | None) -> Non
 )
 def test_change_warning(path: str, warning: str | None) -> None:
     assert change_warning(PurePath(path), ROOT) == warning
+
+
+@pytest.mark.parametrize(
+    ("path", "warning"),
+    [
+        # D13: what can run code by itself, like .git.
+        (".github/workflows/ci.yml", RUNS_CODE),
+        (".husky/pre-commit", RUNS_CODE),
+        (".vscode/tasks.json", RUNS_CODE),
+        (".pre-commit-config.yaml", RUNS_CODE),
+        ("sub/.envrc", RUNS_CODE),
+        (".GITHUB/workflows/ci.yml", RUNS_CODE),
+        (".maha/config.toml", MAHA_CONFIG),
+        (".git/HEAD", GIT_DIR),
+        ("docs/github.md", None),
+        ("envrc.txt", None),
+    ],
+)
+def test_change_warning_of_what_runs_code(path: str, warning: str | None) -> None:
+    assert change_warning(ROOT / path, ROOT) == warning
+
+
+def test_a_working_directory_inside_git_does_not_warn_every_write() -> None:
+    # Only the path inside the working directory counts (it was a limit of
+    # fix 6 of PR 2).
+    root = PurePath("/home/ane/.git/worktree")
+
+    assert change_warning(root / "src/app.py", root) is None
 
 
 def test_inside_by_the_relative_path() -> None:

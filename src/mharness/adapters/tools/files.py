@@ -655,6 +655,9 @@ WRITE_PREVIEW_LINES = 20
 # The diff shown before an overwrite or an edit (spec hito 5, §1.8).
 DIFF_CONTEXT = 3
 DIFF_MAX_LINES = 60
+# Changed lines, both sides together, past which no diff is computed (spec
+# mejora-2026-10-23-deuda-hito-5, D12).
+DIFF_MAX_WORK = 4000
 # Random names tried for the temporary file before giving up.
 TEMP_TRIES = 100
 # A larger file is not overwritten or edited: reading it and computing its
@@ -688,22 +691,75 @@ def _preview(text: str) -> str:
 
 def _diff(old: str, new: str) -> str:
     """A unified diff from `old` to `new`, without the "---"/"+++" header:
-    the path is in the title of the question."""
-    lines = list(
-        difflib.unified_diff(_split(old), _split(new), n=DIFF_CONTEXT, lineterm="")
-    )[2:]
+    the path is in the title of the question.
+
+    The lines both share at the start and at the end are cut before difflib,
+    which is slow on many changed lines; past `DIFF_MAX_WORK` changed lines
+    it is not called at all (spec mejora-2026-10-23-deuda-hito-5, D12).
+    """
+    before, after = _split(old), _split(new)
+    start = 0
+    while start < min(len(before), len(after)) and before[start] == after[start]:
+        start += 1
+    end = 0
+    while (
+        end < min(len(before), len(after)) - start
+        and before[-1 - end] == after[-1 - end]
+    ):
+        end += 1
+    if (len(before) - start - end) + (len(after) - start - end) > DIFF_MAX_WORK:
+        return _too_large(before, after, start, end)
+    low = max(0, start - DIFF_CONTEXT)
+    lines = [
+        _shift(line, low)
+        for line in list(
+            difflib.unified_diff(
+                before[low : len(before) - end + DIFF_CONTEXT],
+                after[low : len(after) - end + DIFF_CONTEXT],
+                n=DIFF_CONTEXT,
+                lineterm="",
+            )
+        )[2:]
+    ]
     if not lines:
         # Same lines, different bytes: only the line endings change.
         return "(only line endings change)"
     shown = lines[:DIFF_MAX_LINES]
     if len(lines) > DIFF_MAX_LINES:
         shown.append(f"… [{len(lines) - DIFF_MAX_LINES} more diff lines]")
-    before, after = _endings(old), _endings(new)
-    if before and after and before != after:
+    styles = _endings(old), _endings(new)
+    if styles[0] and styles[1] and styles[0] != styles[1]:
         # The diff compares lines without their endings: it would not show it
         # (review of PR 2, fix 4).
-        shown.insert(0, f"(line endings change: {before} → {after})")
+        shown.insert(0, f"(line endings change: {styles[0]} → {styles[1]})")
     return "\n".join(shown)
+
+
+_HUNK = re.compile(r"^@@ -(\d+)(,\d+)? \+(\d+)(,\d+)? @@$")
+
+
+def _shift(line: str, offset: int) -> str:
+    """A hunk header of a diff over lines from `offset` on, with the line
+    numbers of the whole file."""
+    match = _HUNK.match(line)
+    if match is None or offset == 0:
+        return line
+    old, old_count, new, new_count = match.groups()
+    return (
+        f"@@ -{int(old) + offset}{old_count or ''} "
+        f"+{int(new) + offset}{new_count or ''} @@"
+    )
+
+
+def _too_large(before: list[str], after: list[str], start: int, end: int) -> str:
+    """What the question shows instead of a diff too costly to compute."""
+    changed = f"lines {start + 1}-{len(before) - end}"
+    lines = [f"(diff too large: {changed} change, {len(before)} → {len(after)} lines)"]
+    new = after[start : len(after) - end]
+    lines += new[:WRITE_PREVIEW_LINES]
+    if len(new) > WRITE_PREVIEW_LINES:
+        lines.append(f"… [{len(new) - WRITE_PREVIEW_LINES} more lines]")
+    return "\n".join(lines)
 
 
 def _endings(text: str) -> str | None:
@@ -777,7 +833,9 @@ def _create_temporary(path: Path) -> tuple[int, Path]:
     """
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
     for _ in range(TEMP_TRIES):
-        temporary = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
+        # A fixed length: a long name would not fit with a suffix (spec
+        # mejora-2026-10-23-deuda-hito-5, D6).
+        temporary = path.with_name(f".maha-{secrets.token_hex(8)}.tmp")
         try:
             return os.open(temporary, flags, 0o666), temporary
         except FileExistsError:
@@ -785,33 +843,137 @@ def _create_temporary(path: Path) -> tuple[int, Path]:
     raise FileExistsError(errno.EEXIST, "no free temporary file name")
 
 
-def _write_atomically(path: Path, text: str) -> None:
+def _write_atomically(path: Path, text: str, old: bytes | None) -> None:
     """Write `text` to `path` in UTF-8, as is: a reader sees the old file or
     the new one, never half of it.
 
     Written to a temporary file in the same folder, flushed to the disk and
     renamed over `path`; then the folder is flushed too, so the rename
-    survives a power cut. An existing file keeps its mode. On any failure, or
-    a cancellation, before the rename, the temporary file is removed and
-    `path` is untouched.
+    survives a power cut. On any failure, or a cancellation, before the
+    rename, the temporary file is removed and `path` is untouched.
+
+    The new file gets the mode, owner, group and extended attributes (ACLs
+    too, on Linux) of the old one. If the old one has other hard links, or
+    any of that cannot be copied, `path` is rewritten in place instead
+    (spec mejora-2026-10-23-deuda-hito-5, D1 and D2).
     """
     try:
-        mode: int | None = stat.S_IMODE(path.stat().st_mode)
+        info: os.stat_result | None = path.stat()
     except FileNotFoundError:
-        mode = None
+        info = None
+    if info is not None and info.st_nlink > 1:
+        _write_in_place(path, text, old)
+        return
     descriptor, temporary = _create_temporary(path)
     try:
         with open(descriptor, "w", encoding="utf-8", newline="") as file:
-            if mode is not None:
-                os.fchmod(file.fileno(), mode)
+            if info is not None and not _copy_identity(file.fileno(), path, info):
+                raise _InPlace
             file.write(text)
             file.flush()
             os.fsync(file.fileno())
+        # The last check, right before the rename: POSIX has no "compare and
+        # swap" for files, so a change after it still wins (spec
+        # mejora-2026-10-23-deuda-hito-5, D7, accepted by the maintainer).
+        if _now(path) != old:
+            raise _Changed
         os.replace(temporary, path)
+    except _InPlace:
+        temporary.unlink(missing_ok=True)
+        _write_in_place(path, text, old)
+        return
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
     _sync_folder(path.parent)
+
+
+class _InPlace(Exception):
+    """The temporary file cannot take the place of the old one."""
+
+
+class _Changed(Exception):
+    """The file is not what the question showed any more."""
+
+
+def _now(path: Path) -> bytes | None:
+    """The bytes of `path` now; None if it does not exist."""
+    try:
+        file = _open_regular(path)
+    except FileNotFoundError:
+        return None
+    if file is None:
+        raise _Changed
+    with file:
+        return file.read()
+
+
+def _copy_identity(descriptor: int, path: Path, info: os.stat_result) -> bool:
+    """Give the open temporary file the owner, group, mode and extended
+    attributes of `path`; False if something cannot be copied."""
+    try:
+        own = os.fstat(descriptor)
+        if (own.st_uid, own.st_gid) != (info.st_uid, info.st_gid):
+            os.fchown(descriptor, info.st_uid, info.st_gid)
+        # After the owner: changing it can clear the setuid bits.
+        os.fchmod(descriptor, stat.S_IMODE(info.st_mode))
+        for name in _xattr_names(path):
+            os.setxattr(descriptor, name, os.getxattr(path, name))
+    except OSError:
+        return False
+    return True
+
+
+def _xattr_names(path: Path) -> list[str]:
+    try:
+        return os.listxattr(path)
+    except OSError as exc:
+        # A file system without extended attributes: there is none to keep.
+        if exc.errno == errno.ENOTSUP:
+            return []
+        raise
+
+
+def _write_in_place(path: Path, text: str, old: bytes | None) -> None:
+    """Rewrite `path` itself: it keeps its hard links, owner and attributes,
+    but it is not atomic. If the write fails, the old bytes are put back, as
+    far as the disk lets."""
+    # O_NONBLOCK: a FIFO put in its place fails instead of blocking.
+    flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+    descriptor = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise _Changed
+        # Compared on the descriptor that writes (D7).
+        if _read_all(descriptor) != old:
+            raise _Changed
+        try:
+            _overwrite(descriptor, text.encode("utf-8"))
+        except BaseException:
+            if old is not None:
+                with contextlib.suppress(OSError):
+                    _overwrite(descriptor, old)
+            raise
+    finally:
+        os.close(descriptor)
+
+
+def _read_all(descriptor: int) -> bytes:
+    chunks = []
+    offset = 0
+    while chunk := os.pread(descriptor, 64 * 1024, offset):
+        chunks.append(chunk)
+        offset += len(chunk)
+    return b"".join(chunks)
+
+
+def _overwrite(descriptor: int, data: bytes) -> None:
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    view = memoryview(data)
+    while view:
+        view = view[os.write(descriptor, view) :]
+    os.ftruncate(descriptor, len(data))
+    os.fsync(descriptor)
 
 
 def _sync_folder(folder: Path) -> None:
@@ -848,16 +1010,49 @@ def _as_shown(
     return path, data
 
 
-def _write(workspace: Workspace, path: Path, text: str, *, parents: bool) -> None:
+def _write(
+    workspace: Workspace, path: Path, text: str, old: bytes | None, *, parents: bool
+) -> None:
     """Write `text` to `path` atomically; `parents` creates its folders. A
-    failure is a clean error (decision A2)."""
+    failure is a clean error (decision A2), and removes the folders it
+    created (spec mejora-2026-10-23-deuda-hito-5, D3)."""
+    created: list[Path] = []
     try:
         if parents:
-            path.parent.mkdir(parents=True, exist_ok=True)
-        _write_atomically(path, text)
-    except OSError as exc:
+            _make_folders(path.parent, created)
+        _write_atomically(path, text, old)
+    except BaseException as exc:
+        _remove_folders(created)
+        if isinstance(exc, _Changed):
+            raise _changed(workspace.shown(path)) from None
+        if not isinstance(exc, OSError):
+            raise
         reason = exc.strerror or str(exc)
         raise ToolError(f"cannot write {workspace.shown(path)}: {reason}") from None
+    # Each new folder is an entry in its parent (spec
+    # mejora-2026-10-23-deuda-hito-5, D4); innermost first, as the file.
+    for folder in reversed(created):
+        _sync_folder(folder.parent)
+
+
+def _make_folders(folder: Path, created: list[Path]) -> None:
+    """Create `folder` and its missing parents, outermost first, adding to
+    `created` each one as it is made."""
+    missing = []
+    while not folder.exists():
+        missing.append(folder)
+        folder = folder.parent
+    for new in reversed(missing):
+        new.mkdir()
+        created.append(new)
+
+
+def _remove_folders(created: list[Path]) -> None:
+    """Remove the folders a failed write created, innermost first, if they
+    are still empty."""
+    for folder in reversed(created):
+        with contextlib.suppress(OSError):
+            folder.rmdir()
 
 
 class WriteFileParams(BaseModel):
@@ -919,7 +1114,7 @@ class WriteFile:
         path, data = _as_shown(workspace, self._asked, params, "overwrite")
         if data is not None:
             _old_text(data, params)
-        _write(workspace, path, params.content, parents=True)
+        _write(workspace, path, params.content, data, parents=True)
         lines = _count(len(_split(params.content)), "line")
         return f"wrote {workspace.shown(path)} ({lines})"
 
@@ -938,8 +1133,8 @@ def _old_text(data: bytes, params: WriteFileParams) -> str:
 
 # Editing (spec hito 5, §1.8).
 
-# A "\n" with no "\r" before it.
-_LONE_LF = re.compile(r"(?<!\r)\n")
+# A line break, as `read_file` splits the lines.
+_BREAK = re.compile(r"\r\n|\r|\n")
 
 
 class EditFileParams(BaseModel):
@@ -966,16 +1161,21 @@ def _check_strings(params: EditFileParams) -> None:
 def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
     """`text` after the edit, and how many replacements it makes.
 
-    Exact matches first. With none, in a file with CRLF, the lone "\\n" of
-    both strings become "\\r\\n": the model sees the lines without their
-    endings (decision 9b).
+    Exact matches first. With none, each line break of old_string matches
+    any line break ("\\n", "\\r\\n" or "\\r"), and the breaks of new_string
+    take the style of the first break matched: `read_file` shows the lines
+    without their endings (spec mejora-2026-10-23-deuda-hito-5, D9 and D10;
+    it replaces decision 9b). Overlapping matches count (D8).
     """
     old, new = params.old_string, params.new_string
-    found = text.count(old)
-    if found == 0 and "\r\n" in text and _LONE_LF.search(old):
-        old = _LONE_LF.sub("\r\n", old)
-        new = _LONE_LF.sub("\r\n", new)
-        found = text.count(old)
+    pattern = re.compile(re.escape(old))
+    flexible = False
+    found = _occurrences(pattern, text)
+    if found == 0 and _BREAK.search(old):
+        parts = (re.escape(part) for part in _BREAK.split(old))
+        pattern = re.compile(f"(?:{_BREAK.pattern})".join(parts))
+        flexible = True
+        found = _occurrences(pattern, text)
     if found == 0:
         raise ToolError(
             f"old_string not found in {params.path}; "
@@ -986,7 +1186,26 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
             f"old_string appears {found} times in {params.path}; "
             "add context to make it unique or use replace_all"
         )
-    return text.replace(old, new), found
+
+    def replacement(match: re.Match[str]) -> str:
+        style = _BREAK.search(match.group()) if flexible else None
+        if style is None:
+            return new
+        return _BREAK.sub(lambda _: style.group(), new)
+
+    # Left to right and without overlaps, also with replace_all.
+    return pattern.subn(replacement, text)
+
+
+def _occurrences(pattern: re.Pattern[str], text: str) -> int:
+    """Where `pattern` starts in `text`, overlaps included: "aa" is twice in
+    "aaa", and editing one of them is ambiguous (D8)."""
+    found = 0
+    match = pattern.search(text)
+    while match is not None:
+        found += 1
+        match = pattern.search(text, match.start() + 1)
+    return found
 
 
 def _edited(data: bytes, params: EditFileParams) -> tuple[str, str, int]:
@@ -1065,7 +1284,7 @@ class EditFile:
             # approval() refuses a missing file, so it appeared.
             raise _changed(params.path)
         _, new, found = _edited(data, params)
-        _write(workspace, path, new, parents=False)
+        _write(workspace, path, new, data, parents=False)
         return f"edited {workspace.shown(path)} ({_count(found, 'replacement')})"
 
     def summary(self, result: str) -> str:

@@ -70,6 +70,13 @@ SECRET_CHANGE = "secret file: it may hold credentials"
 # Writing in .git always asks: a hook or the config can run code (review of
 # PR 2, fix 6). Reading it does not.
 GIT_DIR = "git directory: hooks and config here can run code"
+# Other places whose files run by themselves: hooks, CI, editor tasks,
+# direnv. Writing there always asks too (spec mejora-2026-10-23-deuda-hito-5,
+# D13). All names in lower case.
+RUNS_CODE = "runs code: hooks, CI or editor tasks here can run code"
+CODE_DIRS = frozenset({".github", ".husky", ".vscode"})
+CODE_FILES = frozenset({".pre-commit-config.yaml", ".envrc"})
+MAHA_CONFIG = "maha configuration: it chooses the provider and the model"
 
 
 def is_inside(path: PurePath, root: PurePath) -> bool:
@@ -99,8 +106,20 @@ def read_warning(path: PurePath, root: PurePath, *, secret: str | None) -> str |
 
 def change_warning(path: PurePath, root: PurePath) -> str | None:
     """Why changing the resolved `path` cannot be approved for the whole
-    session: the warnings of reading it, and .git anywhere in it."""
+    session: the warnings of reading it, and what can run code.
+
+    Inside, only the path below the root counts: a working directory inside
+    a `.git` folder does not make every write warn.
+    """
     found = [read_warning(path, root, secret=SECRET_CHANGE)]
-    if ".git" in path.parts:
+    seen = path.relative_to(root) if is_inside(path, root) else path
+    parts = [part.casefold() for part in seen.parts]
+    if ".git" in parts:
         found.append(GIT_DIR)
+    elif any(part in CODE_DIRS for part in parts) or (
+        parts and parts[-1] in CODE_FILES
+    ):
+        found.append(RUNS_CODE)
+    elif ".maha" in parts:
+        found.append(MAHA_CONFIG)
     return "; ".join(warning for warning in found if warning) or None

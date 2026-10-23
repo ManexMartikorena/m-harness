@@ -1296,16 +1296,6 @@ async def test_replace_all_with_no_occurrence_fails(root: Path) -> None:
     assert str(caught.value) == NOT_FOUND.format("app.py")
 
 
-async def test_occurrences_do_not_overlap(root: Path) -> None:
-    # Decision 10: counted as str.count does, the same as str.replace.
-    write(root, "a.txt", "aaa\n")
-
-    _, result = await edit(root, edit_params("a.txt", "aa", "b"))
-
-    assert result == "edited a.txt (1 replacement)"
-    assert (root / "a.txt").read_text(encoding="utf-8") == "ba\n"
-
-
 async def test_crlf_is_kept(root: Path) -> None:
     write(root, "win.txt", "")
     (root / "win.txt").write_bytes(b"uno\r\ndos\r\ntres\r\n")
@@ -1505,7 +1495,8 @@ async def test_editing_without_a_question_is_refused(root: Path) -> None:
     assert (root / "app.py").read_text(encoding="utf-8") == "return 1\n"
 
 
-# edit_file: an old_string with "\n" in a CRLF file (decision 9b)
+# edit_file: an old_string with "\n" in a CRLF file (decision 9b, made
+# general by spec mejora-2026-10-23-deuda-hito-5, D9 and D10)
 
 
 def crlf(root: Path, name: str, text: bytes) -> Path:
@@ -1537,14 +1528,12 @@ async def test_an_exact_match_comes_before_the_crlf_one(root: Path) -> None:
     assert path.read_bytes() == b"x\ny\r\na\r\nb\r\n"
 
 
-async def test_an_lf_file_is_not_adapted(root: Path) -> None:
+async def test_a_crlf_old_string_matches_an_lf_file(root: Path) -> None:
+    # D9: any break matches any break, and new_string takes the file's.
     path = write(root, "unix.txt", "uno\ndos\n")
-    tool = edit_tool(root)
 
-    with pytest.raises(ToolError) as caught:
-        await tool.approval(edit_params("unix.txt", "uno\r\ndos", "x"))
-    assert str(caught.value) == NOT_FOUND.format("unix.txt")
-    _, result = await edit(root, edit_params("unix.txt", "uno\ndos", "UNO\nDOS"))
+    _, result = await edit(root, edit_params("unix.txt", "uno\r\ndos", "UNO\r\nDOS"))
+
     assert result == "edited unix.txt (1 replacement)"
     assert path.read_bytes() == b"UNO\nDOS\n"
 
@@ -1600,15 +1589,17 @@ async def test_an_edit_that_leaves_the_text_equal_is_nothing_to_change(
     assert path.read_bytes() == b"a\r\nb\r\n"
 
 
-async def test_a_mixed_file_old_string_across_lf_and_crlf_is_not_found(
+async def test_a_mixed_file_old_string_across_lf_and_crlf_matches(
     root: Path,
 ) -> None:
-    # Case A1: neither exact ("b\n" is "b\r\n") nor adapted ("a\r\n" is "a\n").
-    crlf(root, "mixed.txt", b"a\nb\r\nc\r\n")
+    # Case A1, a limit until D9: neither exact nor adapted to CRLF. Now the
+    # break of "X\n" takes the style of the first break found, "\n".
+    path = crlf(root, "mixed.txt", b"a\nb\r\nc\r\n")
 
-    with pytest.raises(ToolError) as caught:
-        await edit_tool(root).approval(edit_params("mixed.txt", "a\nb\n", "X\n"))
-    assert str(caught.value) == NOT_FOUND.format("mixed.txt")
+    _, result = await edit(root, edit_params("mixed.txt", "a\nb\n", "X\n"))
+
+    assert result == "edited mixed.txt (1 replacement)"
+    assert path.read_bytes() == b"X\nc\r\n"
 
 
 async def test_a_mixed_file_edits_only_its_crlf_part(root: Path) -> None:
@@ -2197,3 +2188,278 @@ async def test_a_path_with_nul_is_the_models_error(root: Path) -> None:
 
     with pytest.raises(ToolError, match="invalid path: a\x00b"):
         await tool.approval(ReadFileParams(path="a\x00b"))
+
+
+# Writing without loose ends (spec mejora-2026-10-23-deuda-hito-5, D)
+
+
+async def write_through(root: Path, path: str, content: str) -> str:
+    tool = write_tool(root)
+    params = WriteFileParams(path=path, content=content)
+    await tool.approval(params)
+    return await tool.run(params)
+
+
+async def test_a_long_name_fits_its_temporary_file(root: Path) -> None:
+    # D6: the temporary name has a fixed length; a name of 250 characters
+    # (the limit is 255) still fits.
+    name = "n" * 246 + ".txt"
+
+    await write_through(root, name, "x\n")
+
+    assert (root / name).read_text(encoding="utf-8") == "x\n"
+    assert temporaries(root) == []
+
+
+async def test_a_failed_write_removes_the_folders_it_created(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D3: only the ones it created, and only if they stay empty.
+    write(root, "a/old.txt", "")
+    tool = write_tool(root)
+    params = WriteFileParams(path="a/b/c/new.txt", content="x\n")
+    await tool.approval(params)
+
+    def fail(*args: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "replace", fail)
+    with pytest.raises(ToolError, match="No space left on device"):
+        await tool.run(params)
+    monkeypatch.undo()
+
+    assert sorted(p.name for p in (root / "a").iterdir()) == ["old.txt"]
+
+
+async def test_new_folders_are_flushed_to_the_disk(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D4: a new folder is an entry in its parent, which needs its own fsync.
+    tool = write_tool(root)
+    params = WriteFileParams(path="a/b/new.txt", content="x\n")
+    await tool.approval(params)
+    synced: list[os.stat_result] = []
+    real_fsync = os.fsync
+
+    def spy(descriptor: int) -> None:
+        synced.append(os.fstat(descriptor))
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", spy)
+    await tool.run(params)
+    monkeypatch.undo()
+
+    folders = [root / "a/b", root / "a", root]
+    assert len(synced) == 4
+    assert same_file(synced[0], (root / "a/b/new.txt").stat())
+    for result, folder in zip(synced[1:], folders, strict=True):
+        assert same_file(result, folder.stat())
+
+
+def xattrs_work(folder: Path) -> bool:
+    probe = folder / ".probe"
+    probe.write_text("")
+    try:
+        os.setxattr(probe, "user.maha", b"1")
+    except OSError:
+        return False
+    finally:
+        probe.unlink()
+    return True
+
+
+async def test_a_hard_link_keeps_seeing_the_file(root: Path) -> None:
+    # D1: os.replace would leave the other name with the old content.
+    first = write(root, "a.txt", "uno\n")
+    os.link(first, root / "b.txt")
+    inode = first.stat().st_ino
+
+    await write_through(root, "a.txt", "dos\n")
+
+    assert (root / "b.txt").read_text(encoding="utf-8") == "dos\n"
+    assert first.stat().st_ino == inode
+    assert temporaries(root) == []
+
+
+async def test_an_overwrite_keeps_the_extended_attributes(root: Path) -> None:
+    # D2: on Linux, ACLs are extended attributes too.
+    if not xattrs_work(root):
+        pytest.skip("no extended attributes here")
+    path = write(root, "a.txt", "uno\n")
+    os.setxattr(path, "user.maha", b"kept")
+
+    await write_through(root, "a.txt", "dos\n")
+
+    assert os.getxattr(path, "user.maha") == b"kept"
+    assert path.read_text(encoding="utf-8") == "dos\n"
+
+
+async def test_what_cannot_be_copied_is_kept_writing_in_place(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D2: an owner or an attribute the new file cannot get.
+    if not xattrs_work(root):
+        pytest.skip("no extended attributes here")
+    path = write(root, "a.txt", "uno\n")
+    os.setxattr(path, "user.maha", b"kept")
+    inode = path.stat().st_ino
+
+    def refuse(*args: object) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "setxattr", refuse)
+    await write_through(root, "a.txt", "dos\n")
+    monkeypatch.undo()
+
+    assert path.stat().st_ino == inode
+    assert os.getxattr(path, "user.maha") == b"kept"
+    assert path.read_text(encoding="utf-8") == "dos\n"
+    assert temporaries(root) == []
+
+
+async def test_a_failed_write_in_place_puts_the_old_bytes_back(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Writing in place is not atomic: on a failure, the old content returns.
+    first = write(root, "a.txt", "uno\n")
+    os.link(first, root / "b.txt")
+    tool = write_tool(root)
+    params = WriteFileParams(path="a.txt", content="dos, más largo\n")
+    await tool.approval(params)
+
+    def fail(descriptor: int) -> None:
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(os, "fsync", fail)
+    with pytest.raises(ToolError, match=r"cannot write a\.txt: Input/output error"):
+        await tool.run(params)
+    monkeypatch.undo()
+
+    assert first.read_text(encoding="utf-8") == "uno\n"
+
+
+async def test_a_change_just_before_the_rename_is_not_overwritten(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D7: the bytes are compared again right before os.replace.
+    path = write(root, "a.txt", "uno\n")
+    tool = write_tool(root)
+    params = WriteFileParams(path="a.txt", content="dos\n")
+    await tool.approval(params)
+    real_fsync = os.fsync
+
+    def someone_writes(descriptor: int) -> None:
+        # The fsync of the temporary file, just before the rename.
+        path.write_text("tuyo\n", encoding="utf-8")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", someone_writes)
+    with pytest.raises(ToolError, match="changed after the question"):
+        await tool.run(params)
+    monkeypatch.undo()
+
+    assert path.read_text(encoding="utf-8") == "tuyo\n"
+    assert temporaries(root) == []
+
+
+async def test_a_change_just_before_writing_in_place_is_not_overwritten(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D7, in place: compared on the descriptor that writes.
+    path = write(root, "a.txt", "uno\n")
+    os.link(path, root / "b.txt")
+    tool = write_tool(root)
+    params = WriteFileParams(path="a.txt", content="dos\n")
+    await tool.approval(params)
+    real_open = os.open
+
+    def someone_writes(file: object, flags: int, *args: int) -> int:
+        if flags & (os.O_WRONLY | os.O_RDWR):
+            path.write_text("tuyo\n", encoding="utf-8")
+        return real_open(file, flags, *args)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "open", someone_writes)
+    with pytest.raises(ToolError, match="changed after the question"):
+        await tool.run(params)
+    monkeypatch.undo()
+
+    assert path.read_text(encoding="utf-8") == "tuyo\n"
+
+
+async def test_overlapping_occurrences_are_ambiguous(root: Path) -> None:
+    # D8: "aa" is twice in "aaa", at 0 and at 1: which one is meant?
+    write(root, "a.txt", "aaa\n")
+
+    with pytest.raises(ToolError, match="old_string appears 2 times"):
+        await edit_tool(root).approval(edit_params("a.txt", "aa", "X"))
+
+
+async def test_replace_all_with_overlaps_replaces_left_to_right(root: Path) -> None:
+    write(root, "a.txt", "aaa\n")
+
+    _, result = await edit(root, edit_params("a.txt", "aa", "X", replace_all=True))
+
+    assert result == "edited a.txt (1 replacement)"
+    assert (root / "a.txt").read_text(encoding="utf-8") == "Xa\n"
+
+
+async def test_an_edit_across_mixed_line_endings_matches(root: Path) -> None:
+    # D9: each line break of old_string matches "\n", "\r\n" or "\r"; the new
+    # breaks take the style of the first break found.
+    path = crlf(root, "m.txt", b"uno\ndos\r\ntres\n")
+
+    _, result = await edit(root, edit_params("m.txt", "uno\ndos\ntres", "1\n2\n3"))
+
+    assert result == "edited m.txt (1 replacement)"
+    assert path.read_bytes() == b"1\n2\n3\n"
+
+
+async def test_an_edit_with_lone_carriage_returns_matches(root: Path) -> None:
+    # D10: old Mac files end their lines in a lone "\r".
+    path = crlf(root, "mac.txt", b"uno\rdos\rtres\r")
+
+    _, result = await edit(root, edit_params("mac.txt", "uno\ndos", "a\nb"))
+
+    assert result == "edited mac.txt (1 replacement)"
+    assert path.read_bytes() == b"a\rb\rtres\r"
+
+
+async def test_flexible_matches_that_overlap_are_ambiguous(root: Path) -> None:
+    # D8 with D9: "a\ra" is not there as is, but "a<break>a" is twice in
+    # "a\na\r\na", at 0 and at 2, sharing the "a" in the middle.
+    crlf(root, "o.txt", b"a\na\r\na")
+
+    with pytest.raises(ToolError, match="old_string appears 2 times"):
+        await edit_tool(root).approval(edit_params("o.txt", "a\ra", "x"))
+
+
+async def test_a_change_deep_in_a_file_keeps_its_line_numbers(root: Path) -> None:
+    # D12: the common start and end are cut before difflib; the hunk still
+    # tells the real lines.
+    lines = [f"línea {n}\n" for n in range(1, 101)]
+    write(root, "big.txt", "".join(lines))
+    lines[49] = "cambiada\n"
+
+    request = await ask_write(write_tool(root), "big.txt", "".join(lines))
+
+    assert request.detail.splitlines()[0] == "@@ -47,7 +47,7 @@"
+    assert "-línea 50" in request.detail
+    assert "+cambiada" in request.detail
+
+
+async def test_a_diff_too_large_is_summed_up(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D12: difflib can take very long on many changed lines; past the limit,
+    # the question tells what changes and shows the start of the new text.
+    monkeypatch.setattr(files, "DIFF_MAX_WORK", 10)
+    write(root, "a.txt", "igual\n" + "".join(f"viejo {n}\n" for n in range(8)))
+    new = "igual\n" + "".join(f"nuevo {n}\n" for n in range(30))
+
+    request = await ask_write(write_tool(root), "a.txt", new)
+
+    detail = request.detail.splitlines()
+    assert detail[0] == "(diff too large: lines 2-9 change, 9 → 31 lines)"
+    assert detail[1:3] == ["nuevo 0", "nuevo 1"]
+    assert len(detail) == 1 + 20 + 1
+    assert detail[-1] == "… [10 more lines]"
