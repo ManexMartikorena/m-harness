@@ -1,7 +1,8 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-23. **Hito 5 (permisos y herramientas con
-efecto) cerrado: `v0.5.0`, más el arreglo `v0.5.1`. Cero deuda conocida.**
+Última actualización: 2026-10-23 (cierre de sesión). **Hito 5 (permisos y
+herramientas con efecto) cerrado: `v0.5.0`, más el arreglo `v0.5.1`. Cero
+deuda conocida.**
 Siguiente: la spec del hito 6 (sesiones e historial), cuando el mantenedor
 dé paso. **Sesión en el PC del
 trabajo (el WSL del PC de Windows).**
@@ -25,92 +26,90 @@ paso.**
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
 
-- Nada pendiente. `v0.4.0` salió sin pasos fuera de lo normal.
+- Nada pendiente. `v0.5.1` salió sin pasos fuera de lo normal. El arreglo
+  del PR #47 está en `main` y sale con la próxima versión (`v0.6.0`), salvo
+  que el mantenedor pida un `v0.5.2`.
 
 ## Hecho
 
 Lo más reciente primero.
 
-- **Hueco de la FIFO cerrado, 2026-10-23, PC de Windows (WSL)** (rama
-  `fix/fifo-sin-carrera`, `7f329ee`): el tipo se mira con `fstat` sobre el
-  fichero ya abierto. Regla nueva del mantenedor en `AGENTS.md`: ningún
-  fallo conocido se deja sin arreglar por decisión del agente. En verde: 491
-  tests.
-- **PR #32 integrado, 2026-10-23** (merge `dfa2425`).
-- **Arreglo de la FIFO, 2026-10-23, PC de Windows (WSL)** (rama
-  `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
-  una FIFO. Test primero, con una FIFO real. En verde: 489 tests. Detalle
-  en la spec 5, §12.11.
+- **Cierre de sesión, 2026-10-23, PC de Windows (WSL).** Hito 5 cerrado:
+  `v0.5.0` y el arreglo `v0.5.1` publicados. Una auditoría de fin de sesión
+  encontró un fallo más, arreglado en `main` tras `v0.5.1` (PR #47): un
+  proceso escapado que no se puede matar ya no corta la limpieza del
+  comando. Sin ramas ni PRs abiertos; 750 tests, mypy, ruff e import-linter
+  en verde. Método de la sesión: tres auditorías independientes del código
+  (la última, sin hallazgos de arquitectura) y la regla nueva de
+  `AGENTS.md`: ningún fallo conocido se deja sin arreglar por decisión del
+  agente.
+- **PRs #43, #44 y #46, 2026-10-23:** docs del cierre (release `v0.5.0`,
+  ramas abiertas y release `v0.5.1`).
 - **`v0.5.1` publicada, 2026-10-23.** Tag anotado sobre el merge del PR #45
   (`f688169`), con el CI de `main` en verde; creado por el agente con el
   visto bueno del mantenedor. `uvx --from
   git+https://github.com/ManexMartikorena/m-harness@v0.5.1 maha --version`
   → `maha 0.5.1`. Verificado a mano: un `setsid sleep 300` aprobado no
   queda vivo, y `grep` sobre 300 ficheros para en 100 resultados.
-- **PR #45 integrado, 2026-10-23** (merge `f688169`).
-- **Arreglos tras `v0.5.0`, 2026-10-23** (rama
-  `fix/procesos-escapados-y-grep`, para `v0.5.1`, aprobados por el
-  mantenedor): los procesos que salen de su grupo mueren con el comando
-  (`96db36c`, E2 adelantado del hito 14) y `grep` busca por tandas
-  (`f249080`). `AGENTS.md` gana la regla `v0.N.M` para un arreglo entre
-  hitos. En verde: 749 tests.
+- **PR #45 integrado, 2026-10-23** (merge `f688169`; rama
+  `fix/procesos-escapados-y-grep`): los procesos que salen de su grupo
+  mueren con el comando (`96db36c`, E2 adelantado del hito 14) y `grep`
+  busca por tandas (`f249080`). `AGENTS.md` gana la regla `v0.N.M` para un
+  arreglo entre hitos.
 - **`v0.5.0` publicada, 2026-10-23.** Tag anotado sobre el merge del PR #42
-  (`2f8dc55`), con el CI de `main` en verde; creado y publicado por el
-  agente (el mantenedor pidió "dejar el hito 5 cerrado"). `release.yml` creó
-  la release "v0.5.0 — Permisos y herramientas con efecto". `uvx --from
+  (`2f8dc55`), con el CI de `main` en verde; creado por el agente (el
+  mantenedor pidió "dejar el hito 5 cerrado"). `uvx --from
   git+https://github.com/ManexMartikorena/m-harness@v0.5.0 maha --version`
   → `maha 0.5.0`.
-- **PR #42 integrado, 2026-10-23** (merge `2f8dc55`): cierre del hito 5.
-- **Hito 5, PR 5 (cierre), 2026-10-23** (rama `feature/hito-5-cierre`):
-  versión 0.5.0 (`47ace04`), nota `docs/guia/05-permisos.md`, specs del
-  hito 5 y de la mejora en IMPLEMENTADA, README, MAPA y ESTADO. Verificación
-  a mano en una pseudoterminal con el modelo real: los 11 puntos de la spec
-  5 §7 y los 3 de la mejora, en verde (spec 5, §12.23).
-- **Hito 5, PR 4 integrado (#40), 2026-10-23.**
-- **Hito 5, PR 4, 2026-10-23** (rama `feature/hito-5-terminal`; piezas 14 a
-  18, con A2 y B3 de la mejora): un solo lector (`3ae659d`),
+- **PR #42 integrado, 2026-10-23** (merge `2f8dc55`; rama
+  `feature/hito-5-cierre`): versión 0.5.0, nota `docs/guia/05-permisos.md`,
+  specs del hito 5 y de la mejora en IMPLEMENTADA, README, MAPA y ESTADO.
+  Verificación a mano en una pseudoterminal con el modelo real: los 11
+  puntos de la spec 5 §7 y los 3 de la mejora, en verde (spec 5, §12.23),
+  repetida tras la auditoría final.
+- **PR #41 integrado, 2026-10-23** (merge `56d3072`; rama
+  `fix/auditoria-final`): los 8 hallazgos de la segunda auditoría (mejora,
+  §12.22 a §12.29): título de la pregunta en una línea, tope del recorrido,
+  comandos con hijos en segundo plano, `grep` en un proceso hijo contra
+  ReDoS (decisión del mantenedor), caracteres invisibles, tests que
+  faltaban, `collect()` a los fakes, DESIGN y MAPA. El CI destapó que
+  `process.wait()` de Python 3.14.4 espera a las tuberías (`453d8eb`).
+- **PR #40 integrado, 2026-10-23** (merge `c084629`; hito 5, PR 4, piezas 14
+  a 18, con A2 y B3 de la mejora): un solo lector (`3ae659d`),
   `TerminalApproval` y `DenyAll` (`ea93db2`), la negativa en la conversación
-  (`50725f3`), `refusal` (`89e0fec`) y el cableado (`e60101c`). En verde:
-  637 tests.
-- **Hito 5, PR 3 integrado (#39), 2026-10-23.**
-- **Hito 5, PR 3, 2026-10-23** (rama `feature/hito-5-comandos`; piezas 10 a
-  13, con B4 y E1 de la mejora): puerto `CommandRunner` (`c1264b0`),
+  (`50725f3`), `refusal` (`89e0fec`) y el cableado (`e60101c`).
+- **PR #39 integrado, 2026-10-23** (merge `b3294ce`; hito 5, PR 3, piezas 10
+  a 13, con B4 y E1 de la mejora): puerto `CommandRunner` (`c1264b0`),
   `command_env()` (`30f1336`), `LocalCommandRunner` (`6991d63`) y
-  `run_command` (`9836be4`). En verde: 615 tests.
-- **Verificación a mano repetida tras la auditoría final, 2026-10-23:** los
-  11 puntos de la spec 5 §7 y los 3 de la mejora, otra vez en verde.
-- **PR #41 integrado, 2026-10-23** (merge `56d3072`): arreglos de la
-  auditoría final. El CI destapó que `process.wait()` de Python 3.14.4 espera
-  a las tuberías (`453d8eb`).
-- **Auditoría final, 2026-10-23** (rama `fix/auditoria-final`): 8 hallazgos,
-  todos arreglados con su test (mejora, §12.22 a §12.29): título de la
-  pregunta en una línea, tope del recorrido, comandos con hijos en segundo
-  plano, `grep` en un proceso hijo contra ReDoS (decisión del mantenedor),
-  caracteres invisibles, tests que faltaban, `collect()` a los fakes, DESIGN
-  y MAPA. En verde: 745 tests.
-- **Mejora "cero deuda", PR 4 integrado (#38), 2026-10-23.**
-- **Mejora "cero deuda", PR 4, 2026-10-23** (rama `feature/gitignore`): E6
+  `run_command` (`9836be4`).
+- **PR #38 integrado, 2026-10-23** (merge `ff3c79f`; mejora, PR 4): E6,
   `.gitignore` traducido a mano (`e1b7ffd`) y usado en `glob` y `grep`
-  (`eb675f1`). En verde: 594 tests.
-- **Mejora "cero deuda", PR 3 integrado (#37), 2026-10-23.**
-- **Mejora "cero deuda", PR 3, 2026-10-23** (rama `feature/deuda-escritura`):
-  D6 (`689adf7`), D3 (`b5bd7d3`), D4 (`fb79e82`), D1 y D2 (`bbce66e`), D7
+  (`eb675f1`).
+- **PR #37 integrado, 2026-10-23** (merge `2be2a23`; mejora, PR 3): D6
+  (`689adf7`), D3 (`b5bd7d3`), D4 (`fb79e82`), D1 y D2 (`bbce66e`), D7
   (`7a871a6`), D8 (`552804b`), D9 y D10 (`909a863`), D12 (`d6631a1`) y D13
-  (`9eade8d`). En verde: 556 tests.
-- **Mejora "cero deuda", PR 2 integrado (#36), 2026-10-23.**
-- **Mejora "cero deuda", PR 2, 2026-10-23** (rama
-  `feature/deuda-arquitectura`): B2 `approval()` asíncrono (`f8b38f8`), B1
-  reglas de ruta en el dominio (`9d95f18`) y la limpieza C (`95014d5`,
-  `eaddf2f`, `ea20fa2`, `397e5e4`, `bb98770`). En verde: 530 tests.
-- **Mejora "cero deuda", PR 1 integrado (#35), 2026-10-23.**
-- **Mejora "cero deuda", PR 1, 2026-10-23** (rama `fix/fallos-auditoria`;
-  spec `mejora-2026-10-23-deuda-hito-5`, aprobada en #34): A1 (`7235142`),
-  A2 (`4e908f2`), A3 (`b99573b`), A4 (`ec235c3`), A5 (`4da3ccd`), A6
-  (`52dc6ba`), A7 (`9c7b915`), E3 (`c64207b`) y E4 (`e084fbd`). En verde:
-  519 tests.
+  (`9eade8d`).
+- **PR #36 integrado, 2026-10-23** (merge `6101881`; mejora, PR 2): B2
+  `approval()` asíncrono (`f8b38f8`), B1 reglas de ruta en el dominio
+  (`9d95f18`) y la limpieza C (`95014d5`, `eaddf2f`, `ea20fa2`, `397e5e4`,
+  `bb98770`).
+- **PR #35 integrado, 2026-10-23** (merge `618ea13`; mejora, PR 1): A1
+  (`7235142`), A2 (`4e908f2`), A3 (`b99573b`), A4 (`ec235c3`), A5
+  (`4da3ccd`), A6 (`52dc6ba`), A7 (`9c7b915`), E3 (`c64207b`) y E4
+  (`e084fbd`).
+- **PR #34 integrado, 2026-10-23** (merge `0e944d7`): spec
+  `mejora-2026-10-23-deuda-hito-5` APROBADA. El mantenedor aprobó todas las
+  recomendaciones del agente sobre los fallos de la primera auditoría y los
+  límites conocidos, y pidió cerrar el hito 5 con cero deuda.
+- **PR #33 integrado, 2026-10-23** (merge `b8b5c14`; rama
+  `fix/fifo-sin-carrera`, `7f329ee`): el tipo de fichero se mira con `fstat`
+  sobre el fichero ya abierto. Regla nueva del mantenedor en `AGENTS.md`:
+  ningún fallo conocido se deja sin arreglar por decisión del agente.
+- **PR #32 integrado, 2026-10-23** (merge `dfa2425`; rama
+  `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
+  una FIFO.
 - **PC de Windows al día, 2026-10-23:** pull de 30 commits, `uv sync` sin
   cambios; 487 tests, mypy, lint-imports y ruff en verde; `maha 0.4.0`.
-
 - **Cierre de sesión, 2026-10-21, Ubuntu de casa.** Todo integrado y con
   push: `main` en `0f2317a` más este cierre; sin ramas abiertas ni cambios
   sin commitear; 487 tests en verde. Se mantiene para el hito 5 el permiso
