@@ -2024,18 +2024,16 @@ def test_the_fallback_detail_has_no_note(root: Path) -> None:
 def test_a_failed_stat_of_the_file_to_change_cannot_be_read(
     root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Fix 3 also covers the size check (second review of PR 2).
+    # Fix 3 also covers the size check (second review of PR 2), now made on
+    # the open file (spec mejora-2026-10-23-deuda-hito-5, A3).
     write(root, "app.py", "return 1\n")
     edit = edit_tool(root)
     overwrite = write_tool(root)
-    real_stat = Path.stat
 
-    def failing_stat(self: Path, **kwargs: bool) -> os.stat_result:
-        if self.name == "app.py" and not kwargs:
-            raise OSError(5, "Input/output error")
-        return real_stat(self, **kwargs)
+    def failing_fstat(descriptor: int) -> os.stat_result:
+        raise OSError(5, "Input/output error")
 
-    monkeypatch.setattr(Path, "stat", failing_stat)
+    monkeypatch.setattr(os, "fstat", failing_fstat)
     with pytest.raises(ToolError) as edited:
         edit.approval(edit_params("app.py", "1", "2"))
     with pytest.raises(ToolError) as written:
@@ -2127,3 +2125,14 @@ async def test_grep_checks_the_open_file(swapped: Path) -> None:
     alone = await tool.run(GrepParams(pattern="x", path="pipe"))
 
     assert (walked, alone) == ("(no matches)", "(no matches)")
+
+
+def test_changing_tools_check_the_open_file(swapped: Path) -> None:
+    # The same race, in write_file and edit_file (spec
+    # mejora-2026-10-23-deuda-hito-5, A3).
+    root = swapped.parent
+
+    with pytest.raises(ToolError, match="not a regular file: pipe"):
+        edit_tool(root).approval(edit_params("pipe", "x", "y"))
+    with pytest.raises(ToolError, match="not a regular file: pipe"):
+        write_tool(root).approval(WriteFileParams(path="pipe", content="y"))

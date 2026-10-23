@@ -719,14 +719,17 @@ def _current_bytes(path: Path, raw: str, verb: str) -> bytes | None:
     if not path.exists():
         return None
     with _reading(raw):
-        size = path.stat().st_size
-    if size > CHANGE_MAX_FILE_BYTES:
-        raise ToolError(
-            f"file too large to {verb} ({size / MIB:.1f} MiB, "
-            f"max {CHANGE_MAX_FILE_BYTES // MIB} MiB); use run_command"
-        )
-    with _reading(raw):
-        return path.read_bytes()
+        file = _open_regular(path)
+        if file is None:
+            raise ToolError(f"not a regular file: {raw}")
+        with file:
+            size = os.fstat(file.fileno()).st_size
+            if size > CHANGE_MAX_FILE_BYTES:
+                raise ToolError(
+                    f"file too large to {verb} ({size / MIB:.1f} MiB, "
+                    f"max {CHANGE_MAX_FILE_BYTES // MIB} MiB); use run_command"
+                )
+            return file.read()
 
 
 def _decode(data: bytes, raw: str) -> str:
