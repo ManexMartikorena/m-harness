@@ -1,11 +1,11 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-21. **Hito 4 (tool calling y bucle agéntico)
+Última actualización: 2026-10-23. **Hito 4 (tool calling y bucle agéntico)
 cerrado y publicado como `v0.4.0`.** Hito 5 (permisos y herramientas con
 efecto): spec APROBADA (PR #27); PR 1 integrado (#29); PR 2 integrado (#30).
-Antes del PR 3 (comandos, desde la pieza 10, sin empezar) va el PR `fix/` de
-la FIFO. **Sesión cerrada en el Ubuntu de casa; se sigue en el PC del
-trabajo (el WSL del PC de Windows).**
+Arreglo de la FIFO en el PR `fix/fifo-bloquea-lectura`. Después, el PR 3
+(comandos, desde la pieza 10, sin empezar). **Sesión en el PC del trabajo
+(el WSL del PC de Windows).**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
@@ -15,7 +15,7 @@ Lo primero al abrir: "Siguiente paso", más abajo.
 efecto): spec APROBADA (PR #27); PR 1 (contrato de aprobación y el bucle que
 pregunta) integrado (#29); PR 2 (ficheros con aprobación, `write_file` y
 `edit_file`) integrado (#30). Va por la pieza 10 (PR 3, comandos), sin
-empezar; antes, el PR `fix/` de la FIFO.**
+empezar; antes, el PR `fix/fifo-bloquea-lectura`.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.4.0` — Tool calling y bucle agéntico**
@@ -33,6 +33,13 @@ un paso fuera de lo normal.
 ## Hecho
 
 Lo más reciente primero.
+
+- **Arreglo de la FIFO, 2026-10-23, PC de Windows (WSL)** (rama
+  `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
+  una FIFO. Test primero, con una FIFO real. En verde: 489 tests. Detalle
+  en la spec 5, §12.11.
+- **PC de Windows al día, 2026-10-23:** pull de 30 commits, `uv sync` sin
+  cambios; 487 tests, mypy, lint-imports y ruff en verde; `maha 0.4.0`.
 
 - **Cierre de sesión, 2026-10-21, Ubuntu de casa.** Todo integrado y con
   push: `main` en `0f2317a` más este cierre; sin ramas abiertas ni cambios
@@ -362,14 +369,12 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-Al abrir en el PC del trabajo: `git switch main && git pull`, `uv sync` (por
-si acaso; no hay dependencias nuevas) y comprobar 487 tests, mypy y
-lint-imports en verde; después, el punto 1.
+Al abrir en otro PC: `git switch main && git pull`, `uv sync` (por si
+acaso; no hay dependencias nuevas) y comprobar los tests, mypy y
+lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** PR `fix/` de la FIFO (`read_file`, `grep` al recorrer e
-   `is_binary`; spec 5, §12.11) desde `main` actualizado, con el test que lo
-   reproduce primero. Push e integración con el CI en verde, con permiso del
-   mantenedor.
+1. **Agente:** integrar el PR `fix/fifo-bloquea-lectura` con el CI en
+   verde, con permiso del mantenedor.
 2. **Agente:** PR 3 (`feature/hito-5-comandos`) desde `main` actualizado,
    empezando por la pieza 10 de la spec §6 (puerto `CommandRunner` y
    `FakeRunner`). Push e integración con el CI en verde, con permiso del
@@ -491,9 +496,8 @@ resuelve):
   `CancelledError` y `GeneratorExit` (decisión D4). Hoy tumban `maha` y el
   historial en memoria se pierde igual. Hito 6, con las sesiones en disco
   (spec 5, §12.5).
-- **Una FIFO bloquea `read_file` y `grep` al recorrer** (por `is_binary`;
-  viene del hito 4): PR `fix/` justo después del PR 2, con su test primero
-  (spec 5, §12.11).
+- ~~**Una FIFO bloquea `read_file` y `grep` al recorrer**~~ **Resuelto**
+  (`85c9e26`, spec 5, §12.11).
 - **Pieza 14 (`TerminalApproval`):** sanear los caracteres de control (ESC,
   `\r`…) de `title`, `detail` y `warning` antes de pintarlos, para que no se
   pueda falsear la pregunta (spec 5, §1.10 y §12.12).

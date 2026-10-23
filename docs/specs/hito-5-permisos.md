@@ -806,6 +806,13 @@ decidido por el mantenedor al implementar. Todo en
     las dos usan para mirar los primeros bytes. Irá en un PR `fix/` justo
     después del PR 2, con su test primero. `write_file` y `edit_file` no se
     ven afectadas: una FIFO no es un fichero normal y falla antes de leer.
+    **Resuelto** en `85c9e26` (PR `fix/fifo-bloquea-lectura`, 2026-10-23):
+    `read_file` y `grep` sobre un solo fichero dan `not a regular file`
+    antes de abrir (y antes de preguntar, como error de metadatos); `grep`
+    al recorrer salta lo que no es un fichero normal. El test usa una FIFO
+    real con un escritor en un hilo, para que el fallo se vea sin colgar la
+    batería. Límite aceptado: si alguien cambia el fichero por una FIFO
+    entre la comprobación y la apertura, se bloquea igual.
 12. **Revisión del PR 2** (2026-10-21). Arreglos decididos por el
     mantenedor, un commit cada uno; el código los cita como "review of PR 2,
     fix N":
