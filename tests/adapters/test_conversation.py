@@ -9,11 +9,13 @@ from pathlib import Path
 
 import pytest
 
+from mharness.adapters.cli.approval import TerminalApproval
 from mharness.adapters.cli.conversation import EXIT_INTERRUPTED, converse
 from mharness.adapters.cli.input import StdinLines
 from mharness.adapters.cli.spinner import CLEAR_LINE
 from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
+from mharness.domain.approval import ApprovalRequest
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
@@ -536,3 +538,63 @@ async def test_control_characters_from_the_model_and_tools_are_escaped() -> None
     assert '→ echo(text="a\\u001b[31mb\\u202ec")' in out
     assert "✗ error: bad\\x1b[2J" in out
     assert "Fin\\x9b." in out
+
+
+# The question in the conversation (spec hito 5, §1.10 and §4.6.3)
+
+
+async def converse_asking(
+    fake: FakeModelClient, tool: FakeTool, *lines: str
+) -> tuple[int, str]:
+    """The conversation and the question read the same input."""
+    out = io.StringIO()
+    read = ScriptedInput(*lines)
+    gate = TerminalApproval(read, out)
+    code = await converse(
+        Agent(fake, ToolRegistry([tool]), gate=gate, model="m"),
+        provider="p",
+        model="m",
+        read_line=read,
+        out=out,
+        err=io.StringIO(),
+    )
+    return code, out.getvalue()
+
+
+WRITE_REQUEST = ApprovalRequest(
+    tool="write", title="create notas.txt (1 line)", detail="Hola", scope="write"
+)
+
+
+async def test_an_approved_call_runs_after_the_question() -> None:
+    tool = FakeTool("write", permission="effect", requests=[WRITE_REQUEST])
+    fake_calls = [ToolCallBlock(id="c1", name="write", arguments='{"text": "Hola"}')]
+    fake = FakeModelClient([tool_calls(*fake_calls), reply("Hecho.")])
+
+    code, out = await converse_asking(fake, tool, "Escribe", "y", "/exit")
+
+    assert code == 0
+    assert (
+        '  → write(text="Hola")\n'
+        "  ┌ create notas.txt (1 line)\n"
+        "  │ Hola\n"
+        "  └ Allow? [y] yes · [a] always this session · [n] no: "
+        "  ✓ 10 chars\n"
+        "Hecho.\n"
+    ) in out
+
+
+async def test_a_denied_call_ends_the_turn_and_says_so() -> None:
+    tool = FakeTool("write", permission="effect", requests=[WRITE_REQUEST])
+    calls = [ToolCallBlock(id="c1", name="write", arguments='{"text": "Hola"}')]
+    fake = FakeModelClient([tool_calls(*calls)])
+
+    code, out = await converse_asking(fake, tool, "Escribe", "n", "/exit")
+
+    assert code == 0
+    assert (
+        "  └ Allow? [y] yes · [a] always this session · [n] no: "
+        "  ✗ error: the user denied this call\n"
+        "  [denied: tell maha how to continue]\n"
+    ) in out
+    assert tool.calls == []

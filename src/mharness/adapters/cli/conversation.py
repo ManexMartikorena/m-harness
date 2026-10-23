@@ -189,6 +189,10 @@ def _call(call: ToolCallBlock) -> str:
 def _show_turn(turn: TurnFinished, out: TextIO) -> None:
     if turn.reason == "max_steps":
         print(f"  [step limit reached: {turn.steps}]", file=out)
+    elif turn.reason == "denied":
+        # The model is not called again: the person writes next (spec hito
+        # 5, §1.4).
+        print("  [denied: tell maha how to continue]", file=out)
     usage = turn.usage
     # All zeros means the provider did not report them: nothing to show.
     if usage == Usage():
