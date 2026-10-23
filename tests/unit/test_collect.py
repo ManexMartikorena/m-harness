@@ -2,11 +2,11 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from mharness.application.collect import collect
 from mharness.domain.errors import ModelResponseError
 from mharness.domain.events import MessageEnd, ModelEvent, TextDelta, ToolCallDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock
 from mharness.domain.model import ModelResponse, Usage
+from tests.fakes.model import collect
 
 MODEL = "glm-5.3-flash"
 END = MessageEnd(
