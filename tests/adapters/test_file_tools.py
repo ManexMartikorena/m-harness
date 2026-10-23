@@ -2092,3 +2092,38 @@ async def test_grep_does_not_open_a_fifo(fifo: Path) -> None:
     assert walked == "ok.txt:1: x"
     with pytest.raises(ToolError, match="not a regular file: pipe"):
         await tool.run(GrepParams(pattern="x", path="pipe"))
+
+
+@pytest.fixture
+def swapped(fifo: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The FIFO, but the checks before opening see a regular file: as if
+    it had replaced the file between the check and the open."""
+    regular = write(fifo.parent, "regular.txt", "")
+    real_stat = Path.stat
+    real_is_file = Path.is_file
+
+    def stat(self: Path, **kwargs: bool) -> os.stat_result:
+        return real_stat(regular if self == fifo else self, **kwargs)
+
+    def is_file(self: Path, **kwargs: bool) -> bool:
+        return True if self == fifo else real_is_file(self, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stat)
+    monkeypatch.setattr(Path, "is_file", is_file)
+    return fifo
+
+
+async def test_read_file_checks_the_open_file(swapped: Path) -> None:
+    tool = ReadFile(Workspace(swapped.parent))
+
+    with pytest.raises(ToolError, match="not a regular file: pipe"):
+        await tool.run(ReadFileParams(path="pipe"))
+
+
+async def test_grep_checks_the_open_file(swapped: Path) -> None:
+    tool = Grep(Workspace(swapped.parent))
+
+    walked = await tool.run(GrepParams(pattern="x"))
+    alone = await tool.run(GrepParams(pattern="x", path="pipe"))
+
+    assert (walked, alone) == ("(no matches)", "(no matches)")

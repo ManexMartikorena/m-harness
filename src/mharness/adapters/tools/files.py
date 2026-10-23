@@ -141,9 +141,34 @@ def _reading(raw: str) -> Iterator[None]:
         raise ToolError(f"cannot read {raw}: {reason}") from None
 
 
-def is_binary(path: Path) -> bool:
-    with path.open("rb") as file:
-        return b"\0" in file.read(BINARY_PROBE)
+def _open_regular(path: Path) -> IO[bytes] | None:
+    """`path` open for reading, or None if it is not a regular file.
+
+    Opened without waiting and checked on the open file, not before: a FIFO
+    that replaces the file after a check would block a plain open (spec
+    hito 5, §12.11).
+    """
+    descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY)
+    try:
+        regular = stat.S_ISREG(os.fstat(descriptor).st_mode)
+    except OSError:
+        os.close(descriptor)
+        raise
+    if not regular:
+        os.close(descriptor)
+        return None
+    return open(descriptor, "rb")
+
+
+def is_binary(file: IO[bytes]) -> bool:
+    """Whether the open `file` is binary; it is left at the start."""
+    binary = b"\0" in file.read(BINARY_PROBE)
+    file.seek(0)
+    return binary
+
+
+def _as_text(file: IO[bytes]) -> IO[str]:
+    return io.TextIOWrapper(file, encoding="utf-8", errors="replace", newline="")
 
 
 class ReadFileParams(BaseModel):
@@ -188,9 +213,14 @@ class ReadFile:
         self._asked.check(params, params.path, path, warning)
         limit = min(params.limit or READ_MAX_LINES, READ_MAX_LINES)
         with _reading(params.path):
-            _check_file(path, params.path)
-            with path.open(encoding="utf-8", errors="replace", newline="") as file:
-                return _numbered_lines(file, params.offset, limit)
+            _check_exists(path, params.path)
+            file = _open_regular(path)
+            if file is None:
+                raise ToolError(f"not a regular file: {params.path}")
+            with _as_text(file) as text:
+                if is_binary(file):
+                    raise ToolError(f"binary file, not readable: {params.path}")
+                return _numbered_lines(text, params.offset, limit)
 
     def summary(self, result: str) -> str:
         lines = sum(1 for line in result.splitlines() if _NUMBERED.match(line))
@@ -206,15 +236,9 @@ def _check_exists(path: Path, raw: str) -> None:
         raise ToolError(f"file not found: {raw}")
     if path.is_dir():
         raise ToolError(f"is a directory, use list_dir: {raw}")
-    # A FIFO or a device would block the open (spec hito 5, §12.11).
+    # Before asking; `_open_regular()` checks again on the open file.
     if not path.is_file():
         raise ToolError(f"not a regular file: {raw}")
-
-
-def _check_file(path: Path, raw: str) -> None:
-    _check_exists(path, raw)
-    if is_binary(path):
-        raise ToolError(f"binary file, not readable: {raw}")
 
 
 def _numbered_lines(file: IO[str], offset: int, limit: int) -> str:
@@ -564,16 +588,15 @@ def _glob_matches(in_base: PurePath, pattern: str) -> bool:
 
 def _search(path: Path, shown: str, regex: re.Pattern[str]) -> list[str]:
     """The matching lines of one text file, as "path:line: text"."""
-    info = path.stat()
-    # A FIFO or a device is skipped: opening it would block (spec hito 5,
-    # §12.11).
-    if not stat.S_ISREG(info.st_mode) or info.st_size > GREP_MAX_FILE_BYTES:
-        return []
-    if is_binary(path):
+    # A FIFO or a device is skipped: opening it would block.
+    file = _open_regular(path)
+    if file is None:
         return []
     found = []
-    with path.open(encoding="utf-8", errors="replace", newline="") as file:
-        for number, line in enumerate(file, start=1):
+    with _as_text(file) as lines:
+        if os.fstat(file.fileno()).st_size > GREP_MAX_FILE_BYTES or is_binary(file):
+            return []
+        for number, line in enumerate(lines, start=1):
             text = line.rstrip("\r\n")
             if regex.search(text):
                 found.append(f"{shown}:{number}: {text[:GREP_MAX_LINE]}")
