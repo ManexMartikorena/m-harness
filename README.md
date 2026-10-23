@@ -21,7 +21,7 @@ Lo que lo diferencia es cómo se construye:
 > en [`docs/ESTADO.md`](docs/ESTADO.md).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.5.0
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.5.1
 ```
 
 Necesita un proveedor con formato OpenAI (de serie, OpenCode Go o Zen) y su
