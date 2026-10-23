@@ -25,6 +25,7 @@ from typing import IO
 from pydantic import BaseModel, Field
 
 from mharness.domain.approval import ApprovalRequest
+from mharness.domain.gitignore import GitIgnore
 from mharness.domain.paths import (
     SECRET_DIR,
     SECRET_FILE,
@@ -379,9 +380,10 @@ class _Found:
 
 
 class _Walk:
-    """The files under a directory. Skips SKIPPED_DIRS, secrets, and links
-    that leave the limit: the working directory, or the approved directory
-    when the search is outside (spec hito 5, §1.6)."""
+    """The files under a directory. Skips SKIPPED_DIRS, secrets, what git
+    ignores (spec mejora-2026-10-23-deuda-hito-5, E6), and links that leave
+    the limit: the working directory, or the approved directory when the
+    search is outside (spec hito 5, §1.6)."""
 
     def __init__(self, workspace: Workspace, base: Path) -> None:
         self._workspace = workspace
@@ -395,18 +397,36 @@ class _Walk:
         # working directory.
         return self._workspace.shown(path) if self._inside else str(path)
 
+    def _rules_above(self) -> GitIgnore:
+        """The rules that already apply at the base: `.git/info/exclude` and
+        the `.gitignore` of the folders from the limit down to the base."""
+        rules = GitIgnore()
+        _add_rules(rules, PurePath(), self._limit / ".git" / "info" / "exclude")
+        # Outermost first; the base's own file is read by the walk.
+        below = PurePath(self._base.relative_to(self._limit))
+        for folder in reversed(below.parents):
+            _add_rules(rules, folder, self._limit / folder / ".gitignore")
+        return rules
+
     async def files(self) -> AsyncIterator[_Found]:
         seen = 0
         workspace = self._workspace
+        rules = self._rules_above()
         for dirpath, dirnames, filenames in os.walk(self._base):
             directory = Path(dirpath)
+            here = PurePath(directory.relative_to(self._limit))
+            _add_rules(rules, here, directory / ".gitignore")
             # Pruned in place, so os.walk does not go into them.
             dirnames[:] = sorted(
                 name
                 for name in dirnames
-                if name not in SKIPPED_DIRS and not workspace.secret(directory / name)
+                if name not in SKIPPED_DIRS
+                and not workspace.secret(directory / name)
+                and not rules.ignores(here / name, is_dir=True)
             )
             for name in sorted(filenames):
+                if rules.ignores(here / name, is_dir=False):
+                    continue
                 seen += 1
                 if seen > WALK_MAX_FILES:
                     self.stopped_early = True
@@ -421,6 +441,21 @@ class _Walk:
                     continue
                 in_base = PurePath(path.relative_to(self._base))
                 yield _Found(real, self._shown(path), in_base)
+
+
+# A larger .gitignore is not read.
+GITIGNORE_MAX_BYTES = MIB
+
+
+def _add_rules(rules: GitIgnore, base: PurePath, path: Path) -> None:
+    """The rules of the ignore file `path`, if it can be read."""
+    with contextlib.suppress(OSError):
+        file = _open_regular(path)
+        if file is None:
+            return
+        with file:
+            data = file.read(GITIGNORE_MAX_BYTES)
+        rules.add(base, data.decode("utf-8", errors="replace"))
 
 
 def _check_pattern(pattern: str) -> None:
