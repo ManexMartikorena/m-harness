@@ -3,11 +3,9 @@
 import argparse
 import sys
 from collections.abc import Sequence
-from importlib.metadata import version
 
+from mharness import __version__
 from mharness.adapters.cli.text import clean
-
-DISTRIBUTION = "m-harness"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version",
         action="version",
-        version=f"%(prog)s {version(DISTRIBUTION)}",
+        version=f"%(prog)s {__version__}",
     )
     return parser
 

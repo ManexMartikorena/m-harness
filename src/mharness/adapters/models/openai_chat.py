@@ -10,13 +10,13 @@ about the agent.
 import codecs
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
-from importlib.metadata import version
 from types import TracebackType
 from typing import Any, Self
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
+from mharness import __version__
 from mharness.adapters.models.sse import parse_sse
 from mharness.domain.errors import (
     ModelAuthError,
@@ -36,9 +36,7 @@ from mharness.domain.messages import (
 )
 from mharness.domain.model import ModelRequest, ModelResponse, StopReason, Usage
 
-USER_AGENT = (
-    f"maha/{version('m-harness')} (+https://github.com/ManexMartikorena/m-harness)"
-)
+USER_AGENT = f"maha/{__version__} (+https://github.com/ManexMartikorena/m-harness)"
 # `read` is the longest silence between two chunks, not the time of the whole
 # answer: a long answer that keeps arriving is never cut (spec hito 3, §1.8).
 TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0)

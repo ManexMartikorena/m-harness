@@ -11,9 +11,9 @@ import signal
 import sys
 from collections.abc import Awaitable, Callable
 from contextlib import aclosing
-from importlib.metadata import version
 from typing import TextIO
 
+from mharness import __version__
 from mharness.adapters.cli.spinner import Spinner, use_color
 from mharness.adapters.cli.text import clean
 from mharness.application.agent import Agent
@@ -23,7 +23,6 @@ from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import Usage
 
-DISTRIBUTION = "m-harness"
 # Terminal convention for a program stopped by Ctrl+C: 128 + SIGINT.
 EXIT_INTERRUPTED = 130
 # A tool call is shown in one line, cut to this length.
@@ -133,7 +132,7 @@ async def _turns(
     sigint: _Sigint,
 ) -> int:
     print(
-        f"maha {version(DISTRIBUTION)} · {provider} · {model} · /exit to quit",
+        f"maha {__version__} · {provider} · {model} · /exit to quit",
         file=out,
     )
     while True:
