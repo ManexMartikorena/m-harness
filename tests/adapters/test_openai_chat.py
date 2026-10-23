@@ -564,3 +564,24 @@ async def test_a_network_failure_never_shows_the_key(client: OpenAIChatClient) -
 
     assert API_KEY not in str(error.value)
     assert "[redacted]" in str(error.value)
+
+
+@respx.mock
+async def test_a_refusal_comes_as_text(client: OpenAIChatClient) -> None:
+    # OpenAI sends it in `refusal`, not in `content`; lost before (spec hito
+    # 5, §1.11).
+    respx.post(ENDPOINT).respond(
+        json={
+            "model": "m",
+            "choices": [
+                {
+                    "message": {"content": None, "refusal": "No puedo ayudar."},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+    )
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.message.text == "No puedo ayudar."
