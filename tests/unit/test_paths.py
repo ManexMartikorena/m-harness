@@ -2,7 +2,17 @@ from pathlib import PurePath
 
 import pytest
 
-from mharness.domain.paths import is_secret
+from mharness.domain.paths import (
+    GIT_DIR,
+    OUTSIDE,
+    SECRET_DIR,
+    SECRET_FILE,
+    change_warning,
+    is_inside,
+    is_secret,
+    is_secret_at,
+    read_warning,
+)
 
 
 @pytest.mark.parametrize(
@@ -54,3 +64,47 @@ def test_secret_paths(path: str) -> None:
 )
 def test_ordinary_paths(path: str) -> None:
     assert not is_secret(PurePath(path))
+
+
+# The rules about what needs a question, on resolved paths and without the
+# disk (spec mejora-2026-10-23-deuda-hito-5, B1).
+
+ROOT = PurePath("/home/ane/project")
+
+
+@pytest.mark.parametrize(
+    ("path", "secret", "warning"),
+    [
+        ("/home/ane/project/src/app.py", SECRET_FILE, None),
+        ("/home/ane/project/.env", SECRET_FILE, SECRET_FILE),
+        ("/home/ane/project/.env", None, None),
+        ("/home/ane/notes.txt", SECRET_FILE, OUTSIDE),
+        ("/home/ane/.ssh", SECRET_DIR, f"{OUTSIDE}; {SECRET_DIR}"),
+        # Outside, by the absolute path: an approved ~/.ssh is still secret.
+        ("/home/ane/.ssh/config", SECRET_FILE, f"{OUTSIDE}; {SECRET_FILE}"),
+    ],
+)
+def test_read_warning(path: str, secret: str | None, warning: str | None) -> None:
+    assert read_warning(PurePath(path), ROOT, secret=secret) == warning
+
+
+@pytest.mark.parametrize(
+    ("path", "warning"),
+    [
+        ("/home/ane/project/src/app.py", None),
+        ("/home/ane/project/.git/hooks/pre-commit", GIT_DIR),
+        ("/home/ane/project/.env", SECRET_FILE),
+        ("/home/ane/other/.git/config", f"{OUTSIDE}; {SECRET_FILE}; {GIT_DIR}"),
+    ],
+)
+def test_change_warning(path: str, warning: str | None) -> None:
+    assert change_warning(PurePath(path), ROOT) == warning
+
+
+def test_inside_by_the_relative_path() -> None:
+    # ".ssh" above the root is not part of the relative path.
+    root = PurePath("/home/ane/.ssh/project")
+
+    assert is_inside(PurePath("/home/ane/.ssh/project/a.txt"), root)
+    assert not is_secret_at(PurePath("/home/ane/.ssh/project/a.txt"), root)
+    assert is_secret_at(PurePath("/home/ane/.ssh/a.txt"), root)

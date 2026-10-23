@@ -25,7 +25,15 @@ from typing import IO
 from pydantic import BaseModel, Field
 
 from mharness.domain.approval import ApprovalRequest
-from mharness.domain.paths import SKIPPED_DIRS, is_secret
+from mharness.domain.paths import (
+    SECRET_DIR,
+    SECRET_FILE,
+    SKIPPED_DIRS,
+    change_warning,
+    is_inside,
+    is_secret_at,
+    read_warning,
+)
 from mharness.domain.tools import Permission, ToolError
 
 MIB = 1024 * 1024
@@ -36,14 +44,6 @@ READ_MAX_CHARS = 100_000
 # A longer line is cut: one huge line must not fill the context.
 READ_MAX_LINE = 2000
 
-# The warnings of a question (spec hito 5, §1.6).
-OUTSIDE = "outside the working directory"
-SECRET_FILE = "secret file: its content goes to the model provider"
-SECRET_DIR = "secret directory: its file names go to the model provider"
-# Writing in .git always asks: a hook or the config can run code (review of
-# PR 2, fix 6). Reading it does not.
-GIT_DIR = "git directory: hooks and config here can run code"
-
 
 def _count(number: int, singular: str, plural: str | None = None) -> str:
     """ "1 line", "3 lines": the summaries the terminal shows."""
@@ -52,7 +52,8 @@ def _count(number: int, singular: str, plural: str | None = None) -> str:
 
 
 class Workspace:
-    """The working directory: the tools see it without asking."""
+    """The working directory: the tools see it without asking. The rules of
+    what asks live in `domain.paths`; this resolves paths on the disk."""
 
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
@@ -70,14 +71,10 @@ class Workspace:
             raise ToolError(f"invalid path: {raw}") from None
 
     def contains(self, path: Path) -> bool:
-        return path.is_relative_to(self.root)
+        return is_inside(path, self.root)
 
     def secret(self, path: Path) -> bool:
-        """Inside, by the path relative to the root; outside, by the absolute
-        path, so an approved `~/.ssh` still counts as secret."""
-        if self.contains(path):
-            return is_secret(PurePath(path.relative_to(self.root)))
-        return is_secret(PurePath(path))
+        return is_secret_at(path, self.root)
 
     def shown(self, path: Path) -> str:
         """What the model and the user see: relative inside, absolute
@@ -87,14 +84,7 @@ class Workspace:
         return str(path)
 
     def warning(self, path: Path, secret: str | None) -> str | None:
-        """Why reading `path` needs a question, or None. `secret` is the
-        warning for a secret path, or None if secrets do not ask."""
-        found = []
-        if not self.contains(path):
-            found.append(OUTSIDE)
-        if secret is not None and self.secret(path):
-            found.append(secret)
-        return "; ".join(found) or None
+        return read_warning(path, self.root, secret=secret)
 
 
 class _Asked:
@@ -717,15 +707,6 @@ def _endings(text: str) -> str | None:
     return None
 
 
-def _change_warning(workspace: Workspace, path: Path) -> str | None:
-    """Why changing `path` cannot be approved for the whole session: the
-    warnings of reading it, and .git anywhere in its resolved path."""
-    found = [workspace.warning(path, SECRET_FILE)]
-    if ".git" in path.parts:
-        found.append(GIT_DIR)
-    return "; ".join(warning for warning in found if warning) or None
-
-
 def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
     """What would make writing `path` fail, found before asking."""
     if path.is_dir():
@@ -909,7 +890,7 @@ class WriteFile:
             params.content.encode("utf-8")
         except UnicodeEncodeError:
             raise ToolError("content is not valid UTF-8") from None
-        warning = _change_warning(workspace, path)
+        warning = change_warning(path, workspace.root)
         data = _current_bytes(path, params.path, "overwrite")
         shown = workspace.shown(path)
         if data is None:
@@ -1062,7 +1043,7 @@ class EditFile:
         data = _current_bytes(path, params.path, "edit")
         if data is None:
             raise ToolError(f"file not found: {params.path}")
-        warning = _change_warning(workspace, path)
+        warning = change_warning(path, workspace.root)
         try:
             old, new, _ = _edited(data, params)
             body = _diff(old, new)
