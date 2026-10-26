@@ -1,4 +1,5 @@
-Estado: PROPUESTA (2026-10-26)
+Estado: PROPUESTA (2026-10-26) → APROBADA (2026-10-26, por el humano, sin
+cambios)
 
 # Spec — Mejora: cero deuda antes del hito 6
 
@@ -225,5 +226,7 @@ Del humano (2026-10-26):
 3. B7: los casos raros de `.gitignore` se arreglan; no son un límite
    aceptado.
 
-Propuestas del agente, pendientes de aprobación con esta spec: los arreglos
-de A1–A6, B1–B3, B5, B6, B8 y C1, y los dos PRs de §6.
+Propuestas del agente, aprobadas por el humano (2026-10-26, "acepto"): los
+arreglos de A1–A6, B1–B3, B5, B6, B8 y C1, y los dos PRs de §6. El
+mantenedor da permiso al agente para push, PRs, integrarlos con el CI en
+verde y publicar `v0.5.2` con estos arreglos.

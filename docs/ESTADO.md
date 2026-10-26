@@ -2,7 +2,7 @@
 
 Última actualización: 2026-10-26. **Antes del hito 6, una mejora de cero
 deuda:** dos auditorías del código encontraron fallos nuevos (spec
-`mejora-2026-10-26-deuda-pre-hito-6`, PROPUESTA). La spec del hito 6 está
+`mejora-2026-10-26-deuda-pre-hito-6`, APROBADA). La spec del hito 6 está
 escrita en la rama `docs/spec-hito-6-sesiones` y espera a la mejora.
 **Sesión en el PC del trabajo (el WSL del PC de Windows).**
 
@@ -455,12 +455,12 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (por si
 acaso; no hay dependencias nuevas) y comprobar los tests, mypy y
 lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Mantenedor:** revisar y aprobar la spec
-   `mejora-2026-10-26-deuda-pre-hito-6` (PR de
-   `docs/spec-mejora-deuda-pre-hito-6`).
+1. ~~**Mantenedor:** aprobar la spec de mejora~~ Aprobada el 2026-10-26;
+   permiso al agente para push, PRs, integrar con el CI en verde y
+   publicar `v0.5.2`.
 2. **Agente:** implementarla en dos PRs (`fix/seguridad-pre-hito-6` y
    `fix/correccion-pre-hito-6`), test primero en cada fallo.
-3. **Mantenedor:** decidir si sale `v0.5.2` con esos arreglos.
+3. **Agente:** publicar `v0.5.2` con esos arreglos (decidido).
 4. **Agente:** abrir el PR de la spec del hito 6 (`docs/spec-hito-6-sesiones`)
    y **mantenedor:** responder sus cinco dudas (§11).
 5. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
