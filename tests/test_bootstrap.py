@@ -352,3 +352,49 @@ def test_in_a_terminal_a_command_asks_and_runs_without_the_key(
     assert "PATH=" in result["content"]
     assert KEY not in result["content"]
     assert "OPENCODE_API_KEY" not in result["content"]
+
+
+def test_sessions_go_to_the_data_home_of_the_test(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    data_home: Path,
+) -> None:
+    # Never into the real home (spec hito 6, §1.3).
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(return_value=sse_response(streamed("Hola.", 1, 1)))
+        stdin("Hola\n/exit\n")
+
+        assert main([]) == 0
+
+    assert len(list((data_home / "maha" / "sessions").glob("*.jsonl"))) == 1
+
+
+@respx.mock
+def test_a_second_maha_resumes_the_first_one(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Spec hito 6, §4.8: the history is read back from the disk.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            sse_response(streamed("Hola, Ane.", 12, 9)),
+            sse_response(streamed("Te llamas Ane.", 31, 5)),
+        ]
+    )
+    stdin("Hola, soy Ane\n/exit\n")
+    assert main([]) == 0
+    capsys.readouterr()
+
+    stdin("/resume\n¿Cómo me llamo?\n/exit\n")
+    assert main([]) == 0
+
+    out = capsys.readouterr().out
+    assert " · 2 messages · glm-5.3-flash]\n" in out
+    assert json.loads(route.calls.last.request.content)["messages"] == [
+        {"role": "user", "content": "Hola, soy Ane"},
+        {"role": "assistant", "content": "Hola, Ane."},
+        {"role": "user", "content": "¿Cómo me llamo?"},
+    ]

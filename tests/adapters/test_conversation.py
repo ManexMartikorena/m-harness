@@ -18,6 +18,7 @@ from mharness.adapters.cli.spinner import CLEAR_LINE
 from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.tools import RunCommand
 from mharness.application.agent import Agent
+from mharness.application.sessions import Sessions
 from mharness.application.tools import ToolRegistry
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
@@ -28,18 +29,32 @@ from mharness.domain.tools import ToolError
 from tests.adapters.test_local_runner import gone, written_pid
 from tests.fakes.approval import FakeApproval
 from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply, tool_calls
+from tests.fakes.sessions import MemorySessionStore
 from tests.fakes.terminal import ScriptedInput
 from tests.fakes.tools import FakeTool
 
-HEADER = f"maha {version('m-harness')} · opencode-go · glm-5.3-flash · /exit to quit"
+HEADER = (
+    f"maha {version('m-harness')} · opencode-go · glm-5.3-flash · /help for commands"
+)
+
+
+def solo(agent: Agent) -> Sessions:
+    """Sessions in memory whose new conversation is `agent`."""
+    return Sessions(
+        MemorySessionStore(),
+        lambda model, history: agent,
+        cwd="/home/ana/proyecto",
+        provider="opencode-go",
+        model=agent.model,
+        version="0.6.0",
+    )
 
 
 async def run(fake: FakeModelClient, *lines: str) -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
     code = await converse(
-        Agent(fake, ToolRegistry(), gate=FakeApproval(), model="glm-5.3-flash"),
+        solo(Agent(fake, ToolRegistry(), gate=FakeApproval(), model="glm-5.3-flash")),
         provider="opencode-go",
-        model="glm-5.3-flash",
         read_line=ScriptedInput(*lines),
         out=out,
         err=err,
@@ -109,9 +124,10 @@ async def test_ctrl_c_ends_with_130() -> None:
 
     out = io.StringIO()
     code = await converse(
-        Agent(FakeModelClient([]), ToolRegistry(), gate=FakeApproval(), model="m"),
+        solo(
+            Agent(FakeModelClient([]), ToolRegistry(), gate=FakeApproval(), model="m")
+        ),
         provider="p",
-        model="m",
         read_line=interrupt,
         out=out,
         err=io.StringIO(),
@@ -135,9 +151,10 @@ async def test_closing_signals_end_with_128_plus_the_signal(
         raise AssertionError("not cancelled")
 
     result = await converse(
-        Agent(FakeModelClient([]), ToolRegistry(), gate=FakeApproval(), model="m"),
+        solo(
+            Agent(FakeModelClient([]), ToolRegistry(), gate=FakeApproval(), model="m")
+        ),
         provider="p",
-        model="m",
         read_line=close,
         out=io.StringIO(),
         err=io.StringIO(),
@@ -169,9 +186,8 @@ async def test_sigterm_during_a_command_kills_it(tmp_path: Path) -> None:
 
     closing = asyncio.create_task(close_when_it_runs())
     result = await converse(
-        agent,
+        solo(agent),
         provider="p",
-        model="m",
         read_line=ScriptedInput("ejecuta"),
         out=io.StringIO(),
         err=io.StringIO(),
@@ -192,9 +208,12 @@ async def test_other_cancellations_propagate() -> None:
 
     task = asyncio.create_task(
         converse(
-            Agent(FakeModelClient([]), ToolRegistry(), gate=FakeApproval(), model="m"),
+            solo(
+                Agent(
+                    FakeModelClient([]), ToolRegistry(), gate=FakeApproval(), model="m"
+                )
+            ),
             provider="p",
-            model="m",
             read_line=wait_forever,
             out=io.StringIO(),
             err=io.StringIO(),
@@ -297,9 +316,8 @@ async def test_text_is_shown_before_the_stream_ends() -> None:
     out = io.StringIO()
     task = asyncio.ensure_future(
         converse(
-            Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m"),
+            solo(Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m")),
             provider="p",
-            model="m",
             read_line=ScriptedInput("Hola"),
             out=out,
             err=io.StringIO(),
@@ -350,9 +368,8 @@ async def converse_until_spinning(
 ) -> int:
     task = asyncio.ensure_future(
         converse(
-            Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m"),
+            solo(Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m")),
             provider="p",
-            model="m",
             read_line=ScriptedInput("Hola"),
             out=out,
             err=err,
@@ -429,9 +446,8 @@ async def test_ctrl_c_during_an_answer_goes_back_to_the_prompt() -> None:
     pressing = asyncio.ensure_future(interrupt_when(out, "Esperando"))
 
     code = await converse(
-        Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m"),
+        solo(Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m")),
         provider="p",
-        model="m",
         read_line=ScriptedInput("Cuéntame algo", "Hola", "/exit"),
         out=out,
         err=io.StringIO(),
@@ -455,9 +471,8 @@ async def test_ctrl_c_while_the_spinner_spins() -> None:
     pressing = asyncio.ensure_future(interrupt_when(out, "⠋"))
 
     code = await converse(
-        Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m"),
+        solo(Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m")),
         provider="p",
-        model="m",
         read_line=ScriptedInput("Hola"),
         out=out,
         err=io.StringIO(),
@@ -481,9 +496,8 @@ async def run_with_tools(
     out, err = io.StringIO(), io.StringIO()
     registry = ToolRegistry([tool or FakeTool()])
     code = await converse(
-        Agent(fake, registry, gate=FakeApproval(), model="m", max_steps=steps),
+        solo(Agent(fake, registry, gate=FakeApproval(), model="m", max_steps=steps)),
         provider="p",
-        model="m",
         read_line=ScriptedInput(*lines),
         out=out,
         err=err,
@@ -605,9 +619,8 @@ async def test_an_unexpected_error_ends_only_the_answer() -> None:
     out, err = io.StringIO(), io.StringIO()
 
     code = await converse(
-        Agent(fake, ToolRegistry([tool]), gate=BrokenGate(), model="m"),
+        solo(Agent(fake, ToolRegistry([tool]), gate=BrokenGate(), model="m")),
         provider="p",
-        model="m",
         read_line=ScriptedInput("Hola", "Otra", "/exit"),
         out=out,
         err=err,
@@ -628,9 +641,8 @@ async def test_ctrl_c_during_a_tool_goes_back_to_the_prompt() -> None:
     )
 
     code = await converse(
-        agent,
+        solo(agent),
         provider="p",
-        model="m",
         read_line=ScriptedInput("Usa la herramienta", "/exit"),
         out=out,
         err=io.StringIO(),
@@ -662,9 +674,8 @@ async def test_ctrl_c_during_the_question_starts_a_new_line() -> None:
     )
 
     await converse(
-        agent,
+        solo(agent),
         provider="p",
-        model="m",
         read_line=ScriptedInput("Usa la herramienta", "/exit"),
         out=out,
         err=io.StringIO(),
@@ -711,9 +722,8 @@ async def converse_asking(
     read = ScriptedInput(*lines)
     gate = TerminalApproval(read, out)
     code = await converse(
-        Agent(fake, ToolRegistry([tool]), gate=gate, model="m"),
+        solo(Agent(fake, ToolRegistry([tool]), gate=gate, model="m")),
         provider="p",
-        model="m",
         read_line=read,
         out=out,
         err=io.StringIO(),

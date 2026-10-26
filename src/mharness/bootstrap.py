@@ -10,10 +10,11 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from mharness import config
+from mharness import __version__, config
 from mharness.adapters import cli
 from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.models import OpenAIChatClient
+from mharness.adapters.storage import JsonlSessionStore
 from mharness.adapters.tools import (
     EditFile,
     Glob,
@@ -25,8 +26,10 @@ from mharness.adapters.tools import (
     WriteFile,
 )
 from mharness.application.agent import Agent
+from mharness.application.sessions import Sessions
 from mharness.application.tools import ToolRegistry
 from mharness.domain.environment import command_env
+from mharness.domain.messages import Message
 from mharness.ports.approval import ApprovalGate
 
 
@@ -39,7 +42,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         settings = config.load(cwd=Path.cwd(), env=os.environ)
     except config.ConfigError as exc:
         return cli.fail(str(exc))
-    return asyncio.run(_converse(settings, Path.cwd()))
+    # Resolved once: the tools and the sessions name it the same way.
+    return asyncio.run(_converse(settings, Path.cwd().resolve()))
 
 
 def _tools(cwd: Path, env: Mapping[str, str]) -> ToolRegistry:
@@ -76,15 +80,29 @@ async def _converse(settings: config.Settings, cwd: Path) -> int:
     env = command_env(os.environ, drop=drop)
     # One reader for the conversation and the questions (B3).
     lines = cli.StdinLines()
+    tools = _tools(cwd, env)
+    gate = _gate(lines)
     async with OpenAIChatClient(
         base_url=provider.base_url,
         api_key=settings.api_key,
         session_header=provider.session_header,
     ) as client:
-        agent = Agent(client, _tools(cwd, env), gate=_gate(lines), model=settings.model)
-        return await cli.converse(
-            agent,
+
+        def new_agent(model: str, history: Sequence[Message]) -> Agent:
+            return Agent(client, tools, gate=gate, model=model, history=history)
+
+        sessions = Sessions(
+            JsonlSessionStore(config.data_dir(os.environ) / "sessions"),
+            new_agent,
+            cwd=str(cwd),
             provider=settings.provider_name,
             model=settings.model,
+            version=__version__,
+        )
+        return await cli.converse(
+            sessions,
+            provider=settings.provider_name,
             read_line=lines.readline,
+            # Only a terminal has typed-ahead input to drop.
+            discard=lines.discard if os.isatty(0) else None,
         )

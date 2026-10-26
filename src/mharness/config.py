@@ -79,6 +79,15 @@ def user_config_path(env: Mapping[str, str]) -> Path:
     return base / "maha" / "config.toml"
 
 
+def data_dir(env: Mapping[str, str]) -> Path:
+    """`$XDG_DATA_HOME/maha`, by default under `~/.local/share`: sessions,
+    and later traces and memory (DESIGN §7, spec hito 6, §1.1)."""
+    xdg = env.get("XDG_DATA_HOME", "")
+    # The XDG spec says to ignore relative paths.
+    base = Path(xdg) if Path(xdg).is_absolute() else Path.home() / ".local" / "share"
+    return base / "maha"
+
+
 def load(*, cwd: Path, env: Mapping[str, str]) -> Settings:
     """Read, validate and combine the configuration; raise `ConfigError`."""
     user_path = user_config_path(env)
