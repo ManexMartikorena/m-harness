@@ -396,7 +396,9 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
 - **Ficheros que ejecutan código:** escribir en `.git`, `.github`, `.husky`,
   `.vscode`, `.maha`, `.pre-commit-config.yaml` o `.envrc` pregunta siempre,
   sin "toda la sesión". *(Añadido el 23/10/2026, spec `mejora-2026-10-23-deuda-hito-5`,
-  D13.)*
+  D13.)* *(Ampliado el 26/10/2026, spec `mejora-2026-10-26-deuda-pre-hito-6`, A6:
+  también `.gitlab-ci.yml`, `.gitlab`, `.circleci`, `.forgejo`, `.gitea`,
+  `.githooks`, `.devcontainer`, `.idea` y `.claude`.)*
 - **Sin terminal:** si la entrada no es una terminal (`maha < fichero`), toda
   petición de aprobación se deniega sin preguntar. *(Añadido el 21/10/2026, spec
   del hito 5, §1.10: la siguiente línea del fichero podría "aprobar".)*

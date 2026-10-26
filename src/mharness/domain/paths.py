@@ -97,10 +97,24 @@ SECRET_CHANGE = "secret file: it may hold credentials"
 GIT_DIR = "git directory: hooks and config here can run code"
 # Other places whose files run by themselves: hooks, CI, editor tasks,
 # direnv. Writing there always asks too (spec mejora-2026-10-23-deuda-hito-5,
-# D13). All names in lower case.
+# D13, and mejora-2026-10-26-deuda-pre-hito-6, A6). All names in lower case.
 RUNS_CODE = "runs code: hooks, CI or editor tasks here can run code"
-CODE_DIRS = frozenset({".github", ".husky", ".vscode"})
-CODE_FILES = frozenset({".pre-commit-config.yaml", ".envrc"})
+CODE_DIRS = frozenset(
+    {
+        ".github",
+        ".gitlab",
+        ".circleci",
+        ".forgejo",
+        ".gitea",
+        ".husky",
+        ".githooks",
+        ".vscode",
+        ".idea",
+        ".devcontainer",
+        ".claude",
+    }
+)
+CODE_FILES = frozenset({".pre-commit-config.yaml", ".envrc", ".gitlab-ci.yml"})
 MAHA_CONFIG = "maha configuration: it chooses the provider and the model"
 
 

@@ -144,6 +144,17 @@ def test_change_warning(path: str, warning: str | None) -> None:
         # Secret too: it often exports credentials (A5).
         ("sub/.envrc", f"{SECRET_CHANGE}; {RUNS_CODE}"),
         (".GITHUB/workflows/ci.yml", RUNS_CODE),
+        # More CI, hooks and editors (spec mejora-2026-10-26-deuda-pre-hito-6,
+        # A6).
+        (".gitlab-ci.yml", RUNS_CODE),
+        (".circleci/config.yml", RUNS_CODE),
+        (".forgejo/workflows/ci.yml", RUNS_CODE),
+        (".gitea/workflows/ci.yml", RUNS_CODE),
+        (".githooks/pre-commit", RUNS_CODE),
+        (".devcontainer/devcontainer.json", RUNS_CODE),
+        (".idea/workspace.xml", RUNS_CODE),
+        (".claude/settings.json", RUNS_CODE),
+        ("docs/gitlab-ci.md", None),
         (".maha/config.toml", MAHA_CONFIG),
         (".git/HEAD", GIT_DIR),
         ("docs/github.md", None),
