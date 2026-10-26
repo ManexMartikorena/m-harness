@@ -239,6 +239,46 @@ async def test_a_link_to_a_secret_asks_with_the_real_path(root: Path) -> None:
     assert request.warning == SECRET_FILE
 
 
+async def test_a_secret_name_that_is_a_link_asks(root: Path) -> None:
+    # The path the model asks for is secret, though the file it points to
+    # has a plain name (spec mejora-2026-10-26-deuda-pre-hito-6, A1).
+    write(root, "config/app.env.txt", "API_KEY=sk-inventada")
+    (root / ".env").symlink_to(root / "config/app.env.txt")
+    (root / ".ssh").symlink_to(root / "config", target_is_directory=True)
+
+    for tool, params in [
+        (ReadFile(Workspace(root)), ReadFileParams(path=".env")),
+        (Grep(Workspace(root)), GrepParams(pattern="API", path=".env")),
+        (ListDir(Workspace(root)), ListDirParams(path=".ssh")),
+        (
+            ReadFile(Workspace(root)),
+            ReadFileParams(path=".ssh/app.env.txt"),
+        ),
+    ]:
+        request = await tool.approval(params)  # type: ignore[attr-defined]
+        assert request is not None, params
+        assert request.warning is not None
+        assert "secret" in request.warning
+
+
+async def test_writing_a_secret_name_that_is_a_link_warns(root: Path) -> None:
+    write(root, "config/app.env.txt", "API_KEY=sk-inventada")
+    (root / ".env").symlink_to(root / "config/app.env.txt")
+
+    write_request = await WriteFile(Workspace(root)).approval(
+        WriteFileParams(path=".env", content="API_KEY=otra")
+    )
+    edit_request = await EditFile(Workspace(root)).approval(
+        EditFileParams(path=".env", old_string="sk-inventada", new_string="otra")
+    )
+
+    for request in (write_request, edit_request):
+        assert request is not None
+        assert request.scope is None
+        assert request.warning is not None
+        assert "secret" in request.warning
+
+
 async def test_env_example_is_readable(root: Path) -> None:
     write(root, ".env.example", "OPENCODE_API_KEY=\n")
 

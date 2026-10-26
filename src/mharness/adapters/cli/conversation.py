@@ -28,12 +28,20 @@ EXIT_INTERRUPTED = 130
 MAX_CALL = 100
 
 
+# Closing the window (SIGHUP) or `kill` (SIGTERM) end maha the way Ctrl+C
+# cancels: what runs is killed on the way out (spec
+# mejora-2026-10-26-deuda-pre-hito-6, A4).
+CLOSING = (signal.SIGHUP, signal.SIGTERM)
+
+
 class _Sigint:
     """Whether Ctrl+C asked to cancel the task, and that request was not
-    handled yet. Tells it apart from any other cancellation."""
+    handled yet; or the closing signal that asked to end. Tells them apart
+    from any other cancellation."""
 
     def __init__(self) -> None:
         self.pending = False
+        self.closing: int | None = None
 
 
 async def converse(
@@ -59,10 +67,19 @@ async def converse(
         sigint.pending = True
         task.cancel()
 
+    def on_closing(number: int) -> None:
+        sigint.closing = number
+        task.cancel()
+
     loop.add_signal_handler(signal.SIGINT, on_sigint)
+    for number in CLOSING:
+        loop.add_signal_handler(number, on_closing, number)
     try:
         return await _turns(agent, provider, model, read, out, err, sigint)
     except asyncio.CancelledError:
+        if sigint.closing is not None:
+            task.uncancel()
+            return 128 + sigint.closing
         # Ctrl+C at the prompt ends `maha`; an answer handles its own.
         if not sigint.pending:
             raise
@@ -71,6 +88,8 @@ async def converse(
         return EXIT_INTERRUPTED
     finally:
         loop.remove_signal_handler(signal.SIGINT)
+        for number in CLOSING:
+            loop.remove_signal_handler(number)
 
 
 async def _turns(
@@ -153,7 +172,8 @@ async def _answer(
             print(file=out)
         print(f"error: {clean(str(exc))}", file=err, flush=True)
     except asyncio.CancelledError:
-        if not sigint.pending:
+        # A closing signal goes on up: maha ends, not just the answer.
+        if not sigint.pending or sigint.closing is not None:
             raise
         sigint.pending = False
         # Without this, asyncio would keep treating the task as cancelled.
