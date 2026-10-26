@@ -368,3 +368,33 @@ def test_sessions_go_to_the_data_home_of_the_test(
         assert main([]) == 0
 
     assert len(list((data_home / "maha" / "sessions").glob("*.jsonl"))) == 1
+
+
+@respx.mock
+def test_a_second_maha_resumes_the_first_one(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Spec hito 6, §4.8: the history is read back from the disk.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            sse_response(streamed("Hola, Ane.", 12, 9)),
+            sse_response(streamed("Te llamas Ane.", 31, 5)),
+        ]
+    )
+    stdin("Hola, soy Ane\n/exit\n")
+    assert main([]) == 0
+    capsys.readouterr()
+
+    stdin("/resume\n¿Cómo me llamo?\n/exit\n")
+    assert main([]) == 0
+
+    out = capsys.readouterr().out
+    assert " · 2 messages · glm-5.3-flash]\n" in out
+    assert json.loads(route.calls.last.request.content)["messages"] == [
+        {"role": "user", "content": "Hola, soy Ane"},
+        {"role": "assistant", "content": "Hola, Ane."},
+        {"role": "user", "content": "¿Cómo me llamo?"},
+    ]
