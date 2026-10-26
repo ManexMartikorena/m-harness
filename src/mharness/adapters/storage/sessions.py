@@ -12,6 +12,7 @@ import fcntl
 import json
 import os
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
@@ -27,6 +28,7 @@ from mharness.domain.session import (
     SessionSummary,
     is_session_id,
     replay,
+    summarize,
 )
 
 VERSION = 1
@@ -116,10 +118,66 @@ class JsonlSessionStore:
         return session, log
 
     async def summaries(self) -> list[SessionSummary]:
-        raise NotImplementedError
+        """Every session that can be read, newest first, without locking
+        them: an open one is listed too."""
+        try:
+            names = [entry.name for entry in os.scandir(self._folder)]
+        except FileNotFoundError:
+            return []
+        except OSError as exc:
+            raise SessionError(f"cannot list sessions: {exc.strerror}") from None
+        found = []
+        for name in names:
+            session_id = name.removesuffix(".jsonl")
+            if name == session_id or not is_session_id(session_id):
+                continue
+            summary = self._summary(session_id)
+            if summary is not None:
+                found.append(summary)
+        return sorted(found, key=lambda summary: summary.updated_at, reverse=True)
 
     async def delete(self, session_id: str) -> None:
-        raise NotImplementedError
+        path = self._path(session_id)
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except FileNotFoundError:
+            raise _not_found(session_id) from None
+        except OSError as exc:
+            raise SessionError(
+                f"cannot delete session {session_id}: {exc.strerror}"
+            ) from None
+        try:
+            # Locked while it goes: nobody opens it in between.
+            _lock(fd, session_id)
+            if not _still_named(fd, path):
+                raise _not_found(session_id)
+            path.unlink()
+            _sync_folder(self._folder)
+        except OSError as exc:
+            raise SessionError(
+                f"cannot delete session {session_id}: {exc.strerror}"
+            ) from None
+        finally:
+            os.close(fd)
+
+    def _summary(self, session_id: str) -> SessionSummary | None:
+        """The line of /sessions, or None if the file cannot be read."""
+        path = self._folder / f"{session_id}.jsonl"
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError:
+            return None
+        try:
+            data = _read(fd)
+            updated = datetime.fromtimestamp(os.fstat(fd).st_mtime, UTC)
+            header, entries = _parse(data[: _whole_lines(data)], session_id)
+        except OSError, SessionError:
+            return None
+        finally:
+            os.close(fd)
+        if header.id != session_id:
+            return None
+        return summarize(header, entries, updated)
 
     def _path(self, session_id: str) -> Path:
         # Checked before it becomes a file name (spec hito 6, §1.2).

@@ -282,3 +282,96 @@ async def test_a_session_deleted_while_opening_is_not_found(
 
     with pytest.raises(SessionNotFound):
         await JsonlSessionStore(folder).open(HEADER.id)
+
+
+# /sessions and /delete (spec hito 6, §1.5 and §4.3.7).
+
+
+def header(session_id: str, cwd: str = "/home/ana/proyecto") -> SessionHeader:
+    return HEADER.model_copy(update={"id": session_id, "cwd": cwd})
+
+
+def touch(path: Path, seconds: float) -> None:
+    os.utime(path, (seconds, seconds))
+
+
+async def test_without_sessions_the_list_is_empty(folder: Path) -> None:
+    assert await JsonlSessionStore(folder).summaries() == []
+
+
+async def test_the_list_is_newest_first_with_title_and_messages(folder: Path) -> None:
+    store = JsonlSessionStore(folder)
+    for session_id, cwd, text in [
+        ("20261025-174233-b01c", "/home/ana/web", "explícame el router"),
+        ("20261026-091502-3fa2", "/home/ana/proyecto", "arregla el test\ny más"),
+    ]:
+        log = await store.create(header(session_id, cwd))
+        user = Message(role="user", blocks=[TextBlock(text=text)])
+        await log.append([MessageEntry(message=user), MessageEntry(message=ANSWER)])
+        await log.close()
+    # The older file was used last.
+    touch(file_of(folder, "20261026-091502-3fa2"), 1_000)
+    touch(file_of(folder, "20261025-174233-b01c"), 2_000)
+
+    found = await store.summaries()
+
+    assert [(s.id, s.cwd, s.messages, s.title) for s in found] == [
+        ("20261025-174233-b01c", "/home/ana/web", 2, "explícame el router"),
+        ("20261026-091502-3fa2", "/home/ana/proyecto", 2, "arregla el test"),
+    ]
+    assert found[0].updated_at == datetime.fromtimestamp(2_000, UTC)
+
+
+async def test_the_list_skips_what_it_cannot_read(folder: Path) -> None:
+    await saved(folder, HOLA, ANSWER)
+    set_lines(file_of(folder, "20261026-091502-0000"), ["no es json"])
+    set_lines(folder / "notas.jsonl", ["{}"])
+    set_lines(folder / "20261026-091502-1111.txt", ["{}"])
+
+    found = await JsonlSessionStore(folder).summaries()
+
+    assert [s.id for s in found] == [HEADER.id]
+
+
+async def test_an_open_session_is_listed_and_a_broken_history_too(
+    folder: Path,
+) -> None:
+    # Listed, so it can be deleted.
+    await saved(folder, HOLA, CALL)
+    log = await JsonlSessionStore(folder).create(header("20261026-091502-2222"))
+
+    found = await JsonlSessionStore(folder).summaries()
+    await log.close()
+
+    assert sorted(s.id for s in found) == ["20261026-091502-2222", HEADER.id]
+
+
+async def test_delete_removes_the_file(folder: Path) -> None:
+    path = await saved(folder, HOLA, ANSWER)
+    store = JsonlSessionStore(folder)
+
+    await store.delete(HEADER.id)
+
+    assert not exists(path)
+    assert await store.summaries() == []
+    with pytest.raises(SessionNotFound):
+        await store.delete(HEADER.id)
+
+
+async def test_an_open_session_is_not_deleted(folder: Path) -> None:
+    await saved(folder, HOLA, ANSWER)
+    _, log = await JsonlSessionStore(folder).open(HEADER.id)
+
+    with pytest.raises(SessionInUse):
+        await JsonlSessionStore(folder).delete(HEADER.id)
+
+    await log.close()
+    assert exists(file_of(folder))
+
+
+async def test_delete_with_another_form_of_id_touches_nothing(folder: Path) -> None:
+    await saved(folder, HOLA, ANSWER)
+
+    with pytest.raises(SessionNotFound):
+        await JsonlSessionStore(folder).delete(f"../sessions/{HEADER.id}")
+    assert exists(file_of(folder))
