@@ -53,3 +53,12 @@ def test_request_carries_the_tool_specs() -> None:
     assert request.tools == [spec]
     with pytest.raises(ValidationError):
         spec.name = "grep"  # type: ignore[misc]
+
+
+def test_usage_adds_field_by_field() -> None:
+    first = Usage(input_tokens=700, output_tokens=30, cache_read_tokens=1)
+    second = Usage(input_tokens=800, output_tokens=5, cache_write_tokens=2)
+
+    assert first + second == Usage(
+        input_tokens=1500, output_tokens=35, cache_read_tokens=1, cache_write_tokens=2
+    )
