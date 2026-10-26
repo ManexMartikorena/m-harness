@@ -2694,3 +2694,103 @@ async def test_grep_stops_searching_once_it_has_enough_matches(
         "f0.txt:2: x",
         "… [stopped at 2 matches; narrow the search]",
     ]
+
+
+# A read-only file is not replaced (spec mejora-2026-10-26-deuda-pre-hito-6,
+# B4, decision of the maintainer).
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes any file")
+async def test_a_read_only_file_is_not_changed(root: Path) -> None:
+    path = write(root, "notas.txt", "Comprar pan\n")
+    path.chmod(0o444)
+    workspace = Workspace(root)
+
+    with pytest.raises(ToolError, match=r"^read-only file: notas.txt$"):
+        await WriteFile(workspace).approval(
+            WriteFileParams(path="notas.txt", content="otra cosa\n")
+        )
+    with pytest.raises(ToolError, match=r"^read-only file: notas.txt$"):
+        await EditFile(workspace).approval(
+            EditFileParams(path="notas.txt", old_string="pan", new_string="leche")
+        )
+    assert path.read_text(encoding="utf-8") == "Comprar pan\n"
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes any file")
+async def test_made_read_only_after_the_question_it_is_not_changed(root: Path) -> None:
+    path = write(root, "notas.txt", "Comprar pan\n")
+    tool = WriteFile(Workspace(root))
+    params = WriteFileParams(path="notas.txt", content="otra cosa\n")
+    assert await tool.approval(params) is not None
+
+    path.chmod(0o444)
+
+    with pytest.raises(ToolError, match="read-only file"):
+        await tool.run(params)
+    assert path.read_text(encoding="utf-8") == "Comprar pan\n"
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes in any folder")
+async def test_a_writable_file_in_a_locked_folder_is_edited_in_place(
+    root: Path,
+) -> None:
+    # The temporary file cannot be created next to it, but the file itself
+    # can be written (spec mejora-2026-10-26-deuda-pre-hito-6, B5).
+    path = write(root, "fijo/app.py", "return 1\n")
+    path.parent.chmod(0o555)
+    try:
+        tool = edit_tool(root)
+        params = edit_params("fijo/app.py", "1", "2")
+        await tool.approval(params)
+
+        await tool.run(params)
+
+        assert path.read_text(encoding="utf-8") == "return 2\n"
+        assert sorted(p.name for p in path.parent.iterdir()) == ["app.py"]
+    finally:
+        path.parent.chmod(0o755)
+
+
+# A huge file or folder does not freeze the loop (spec
+# mejora-2026-10-26-deuda-pre-hito-6, B6). The limits are lowered.
+
+
+async def test_reading_stops_at_the_scan_limit(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(files, "READ_MAX_SCAN_CHARS", 10_000)
+    write(root, "min.js", "x" * 50_000)
+    write(root, "log.txt", "".join(f"línea {n}\n" for n in range(5_000)))
+
+    with pytest.raises(
+        ToolError, match=r"^min\.js: read stopped after 10000 characters"
+    ):
+        await read(root, "min.js", offset=2)
+    with pytest.raises(
+        ToolError, match=r"^log\.txt: read stopped after 10000 characters"
+    ):
+        await read(root, "log.txt", offset=4_000)
+    # What fits before the limit is read as always.
+    write(root, "small.js", "x" * 5_000)
+    assert (await read(root, "small.js")).endswith("x … [line cut]")
+    assert (
+        await read(root, "log.txt", offset=3, limit=1)
+        == "     3\tlínea 2\n… [truncated at line 3; use offset=4 to read more]"
+    )
+
+
+async def test_listing_stops_reading_past_the_scan_limit(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(files, "LIST_MAX_SCAN", 30)
+    monkeypatch.setattr(files, "LIST_MAX_ENTRIES", 10)
+    for n in range(40):
+        write(root, f"f{n:02}.txt", "")
+
+    lines = (await list_dir(root)).splitlines()
+
+    assert len(lines) == 11
+    assert (
+        lines[-1] == "… [truncated: 10 shown; the directory has more than 30 entries]"
+    )

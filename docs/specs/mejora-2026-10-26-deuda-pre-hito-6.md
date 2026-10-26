@@ -254,3 +254,34 @@ fallar antes del arreglo:
    `*.env` no casa `prod.env.example`. *(Corregido al implementarlo.)*
 6. A6 (`f6d9d0a`): también `.gitlab` (plantillas e `include` del CI de
    GitLab), además de `.gitlab-ci.yml`.
+
+**PR 2** (`fix/correccion-pre-hito-6`), un commit por punto, cada test visto
+fallar antes del arreglo:
+1. B1 (`e031fc7`): `error: internal: <tipo>: <mensaje>` en stderr; el turno
+   siguiente funciona.
+2. B2 (`10e9926`): `extra="forbid"` en las siete; un test de arquitectura
+   nuevo (`tests/architecture/test_tool_params.py`) las recorre desde
+   `bootstrap._tools()`.
+3. B3 (`bcd4ce3`): `run() returned NoneType, not str` como error interno.
+4. B4 (`f3c18ee`): la comprobación vive en `_check_target`, que corre al
+   preguntar y otra vez en `run()`: un `chmod a-w` entre medias también se
+   respeta. Un fichero que tampoco se puede leer sigue dando `cannot read`,
+   que dice más.
+5. B5 (`da9e872`): solo si el fichero ya existe; uno nuevo en una carpeta
+   bloqueada sigue fallando, como debe.
+6. B6 (`cdf9887`): un fichero de una sola línea de más de 64 MiB da el error
+   también sin `offset`: saltar el resto de la línea es recorrerla. Con
+   `list_dir`, si hay más de `LIST_MAX_SCAN` entradas, las 500 que salen son
+   las primeras en orden de las 10 000 leídas, no de toda la carpeta, y el
+   aviso lo dice.
+7. B7 (`451958c`): el analizador de clases se reescribió siguiendo el
+   wildmatch de git. Un test antiguo de la mejora del 2026-10-23 esperaba
+   que `[a` casara el nombre `[a`; git dice que no, y se corrigió. Prueba
+   diferencial local (no entra en CI) contra `git check-ignore` 2.53.0:
+   0 diferencias en unos 16 600 casos al azar. Un nombre que empieza por `:`
+   es *pathspec* mágica en `git check-ignore --stdin`: se dejó fuera de la
+   prueba.
+8. B8 (`16b4eb6`): la terminal recuerda la pregunta abierta con
+   `ApprovalRequested`.
+9. C1 (`c8e01c0`): DESIGN §5 dice que `max_tokens` se decide con los
+   límites de tokens (hitos 8 y 11), como la spec 2, §1.6.

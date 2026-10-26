@@ -188,6 +188,9 @@ Message(role: "user" | "assistant" | "tool", blocks: list[Block])
 
 # Petición al modelo
 ModelRequest(model, system, messages, tools: list[ToolSpec], max_tokens)
+# (Anotado el 26/10/2026, spec mejora-2026-10-26-deuda-pre-hito-6, C1:
+#  `max_tokens` no existe todavía; la spec del hito 2, §1.6, lo aplazó. Se
+#  decide con los límites de tokens: por turno, hito 8; contexto, hito 11.)
 ToolSpec(name, description, input_schema)       # JSON Schema generado por Pydantic
 
 # Respuesta del modelo, en streaming             (adaptador → bucle)

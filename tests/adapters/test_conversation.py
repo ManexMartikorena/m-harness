@@ -19,7 +19,7 @@ from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.tools import RunCommand
 from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
-from mharness.domain.approval import ApprovalRequest
+from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
@@ -584,6 +584,35 @@ async def test_internal_tool_error_goes_to_stderr() -> None:
     assert err == "warning: tool \"echo\" failed: KeyError: 'boom'\n"
 
 
+class BrokenGate:
+    """The terminal fails while asking, as an EIO would."""
+
+    async def decide(self, request: ApprovalRequest) -> Decision:
+        raise OSError(5, "Input/output error")
+
+
+async def test_an_unexpected_error_ends_only_the_answer() -> None:
+    # Not a ModelError: maha says so and goes back to the prompt, keeping
+    # what the agent kept (spec mejora-2026-10-26-deuda-pre-hito-6, B1).
+    request = ApprovalRequest(tool="echo", title="echo", detail="", scope=None)
+    tool = FakeTool(permission="effect", requests=[request])
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Sigo.")])
+    out, err = io.StringIO(), io.StringIO()
+
+    code = await converse(
+        Agent(fake, ToolRegistry([tool]), gate=BrokenGate(), model="m"),
+        provider="p",
+        model="m",
+        read_line=ScriptedInput("Hola", "Otra", "/exit"),
+        out=out,
+        err=err,
+    )
+
+    assert code == 0
+    assert err.getvalue() == "error: internal: OSError: [Errno 5] Input/output error\n"
+    assert "Sigo." in out.getvalue()
+
+
 async def test_ctrl_c_during_a_tool_goes_back_to_the_prompt() -> None:
     gate = asyncio.Event()  # never set: the tool waits
     fake = FakeModelClient([tool_calls(call("c1")), reply("Hola.")])
@@ -609,6 +638,35 @@ async def test_ctrl_c_during_a_tool_goes_back_to_the_prompt() -> None:
     result = agent.messages[-1].blocks[0]
     assert isinstance(result, ToolResultBlock)
     assert (result.content, result.is_error) == ("error: cancelled by the user", True)
+
+
+async def test_ctrl_c_during_the_question_starts_a_new_line() -> None:
+    # The question leaves the cursor after "Allow? …:" (spec
+    # mejora-2026-10-26-deuda-pre-hito-6, B8).
+    async def no_answer() -> str:
+        await asyncio.Event().wait()
+        raise AssertionError("not cancelled")
+
+    request = ApprovalRequest(tool="echo", title="echo", detail="", scope=None)
+    tool = FakeTool(permission="effect", requests=[request])
+    fake = FakeModelClient([tool_calls(call("c1"))])
+    out = io.StringIO()
+    pressing = asyncio.ensure_future(interrupt_when(out, "Allow?"))
+    agent = Agent(
+        fake, ToolRegistry([tool]), gate=TerminalApproval(no_answer, out), model="m"
+    )
+
+    await converse(
+        agent,
+        provider="p",
+        model="m",
+        read_line=ScriptedInput("Usa la herramienta", "/exit"),
+        out=out,
+        err=io.StringIO(),
+    )
+    await pressing
+
+    assert "  └ Allow? [y] yes · [n] no: \n  [interrupted]\n" in out.getvalue()
 
 
 async def test_control_characters_from_the_model_and_tools_are_escaped() -> None:

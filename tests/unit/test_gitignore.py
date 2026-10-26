@@ -47,7 +47,8 @@ def ignores(text: str, path: str, *, is_dir: bool = False, base: str = "") -> bo
         ("[]a].txt", "].txt", False, True),
         ("[!]a].txt", "b.txt", False, True),
         ("[!]a].txt", "].txt", False, False),
-        ("[a", "[a", False, True),
+        # Corrected 2026-10-26 (B7): git matches nothing with an unclosed "[".
+        ("[a", "[a", False, False),
         ("\\#notes", "#notes", False, True),
         ("\\!important", "!important", False, True),
         ("name\\ ", "name ", False, True),
@@ -88,3 +89,48 @@ def test_rules_of_a_deeper_file_are_relative_to_it() -> None:
 
 def test_crlf_files_are_read() -> None:
     assert ignores("*.log\r\nbuild/\r\n", "build", is_dir=True)
+
+
+# Rare cases, as `git check-ignore --no-index` (git 2.53.0) answered them on
+# 2026-10-26 (spec mejora-2026-10-26-deuda-pre-hito-6, B7). CI does not call
+# git: the answers are kept here.
+@pytest.mark.parametrize(
+    ("pattern", "path", "ignored"),
+    [
+        # POSIX classes.
+        ("a[[:digit:]]", "a1", True),
+        ("a[[:digit:]]", "ab", False),
+        ("a[[:digit:]]", "a[", False),
+        ("f[[:alpha:]]x", "fbx", True),
+        ("f[[:alpha:]]x", "f1x", False),
+        ("[[:space:]]", " ", True),
+        ("[[:space:]]", "x", False),
+        # "\" escapes inside a class.
+        ("[\\]]r", "]r", True),
+        ("[\\]]r", "\\r", False),
+        ("[\\]]r", "xr", False),
+        # A "[" that never closes matches nothing.
+        ("s[", "s[", False),
+        ("s[", "s", False),
+        ("ab[c", "ab[c", False),
+        ("ab[c", "abc", False),
+        # A "\" at the end matches nothing.
+        ("x\\", "x\\", False),
+        ("x\\", "x", False),
+        # "\\" is a "\": the space after it is not escaped, and goes.
+        ("trail\\\\ ", "trail\\", True),
+        ("trail\\\\ ", "trail\\ ", False),
+        ("trail\\\\ ", "trail", False),
+        ("sp\\ ", "sp ", True),
+        ("sp\\ ", "sp", False),
+        # A "]" first is part of the class, also negated; "-" at the end too.
+        ("[!]a]", "b", True),
+        ("[!]a]", "]", False),
+        ("[!]a]", "a", False),
+        ("[a-]", "a", True),
+        ("[a-]", "-", True),
+        ("[a-]", "b", False),
+    ],
+)
+def test_like_git(pattern: str, path: str, ignored: bool) -> None:
+    assert ignores(pattern, path) is ignored
