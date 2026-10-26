@@ -230,3 +230,27 @@ Propuestas del agente, aprobadas por el humano (2026-10-26, "acepto"): los
 arreglos de A1–A6, B1–B3, B5, B6, B8 y C1, y los dos PRs de §6. El
 mantenedor da permiso al agente para push, PRs, integrarlos con el CI en
 verde y publicar `v0.5.2` con estos arreglos.
+
+## 12. Aprendido al implementar (2026-10-26)
+
+**PR 1** (`fix/seguridad-pre-hito-6`), un commit por punto, cada test visto
+fallar antes del arreglo:
+1. A1 (`d284799`): `Workspace.asked()` da la ruta pedida sin resolver
+   (`os.path.normpath`), y `read_warning`/`change_warning` miran las dos.
+   Vale también para lo que ejecuta código: escribir por un enlace llamado
+   `.github` avisa.
+2. A2 (`f30a68a`): `StdinLines.discard()`. `select` dice si hay una línea
+   entera esperando y `tcflush` tira también la que está a medias. La
+   prueba de punta a punta tecleaba la `y` antes de la pregunta: ahora la
+   teclea tras el descarte, y comprueba que la de antes se descartó.
+3. A3 (`bd87b88`): `v` pinta **el resto** del detalle (no las 60 primeras
+   otra vez) y vuelve a preguntar. *(Corregido al implementarlo: §1 decía
+   "lo pinta entero".)*
+4. A4 (`de7a5da`): sin el arreglo, el SIGTERM del test mataba a pytest
+   entero. El test del comando real reutiliza los ayudantes de
+   `test_local_runner.py`.
+5. A5 (`b3bdcde`): `.envrc` es ahora secreto y además ejecuta código: su
+   aviso de escritura lleva los dos motivos. No hizo falta `*.env.example`:
+   `*.env` no casa `prod.env.example`. *(Corregido al implementarlo.)*
+6. A6 (`f6d9d0a`): también `.gitlab` (plantillas e `include` del CI de
+   GitLab), además de `.gitlab-ci.yml`.

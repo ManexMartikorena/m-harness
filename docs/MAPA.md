@@ -3,7 +3,8 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-23 (hito 5 cerrado, con la mejora "cero
+Última actualización: 2026-10-26 (mejora "cero deuda antes del hito 6", PR 1;
+antes: hito 5 cerrado, con la mejora "cero
 deuda" y los arreglos de la auditoría final).
 
 ## Raíz
@@ -69,7 +70,7 @@ import-linter (`pyproject.toml`).
 | `domain/approval.py` | domain | `Decision` (`once`, `session` o `deny`) y `ApprovalRequest` (`tool`, `title`, `detail`, `scope`, `warning`): la pregunta antes de ejecutar y la respuesta |
 | `domain/agent_events.py` | domain | `ToolCallProposed`, `ApprovalRequested`, `ToolFinished` (con `decision`), `ModelCallFinished`, `TurnFinished` (`end_turn`, `max_steps` o `denied`) y `AgentEvent`: lo que el bucle cuenta a la terminal |
 | `domain/gitignore.py` | domain | `GitIgnore`: las reglas de `.gitignore` (gitignore(5)) traducidas a mano a expresiones regulares, sin tocar el disco (spec `mejora-2026-10-23-deuda-hito-5`, E6) |
-| `domain/paths.py` | domain | `is_secret()` y `SKIPPED_DIRS`: qué ficheros no ve el modelo y qué carpetas no se recorren, sin tocar el disco. Las reglas de lo que pregunta una ruta ya resuelta: `is_inside()`, `is_secret_at()`, `read_warning()` y `change_warning()` (también `.git` y lo que ejecuta código: `.github`, `.husky`, `.vscode`, `.maha`, `.pre-commit-config.yaml`, `.envrc`), con los textos de los avisos |
+| `domain/paths.py` | domain | `is_secret()` y `SKIPPED_DIRS`: qué ficheros no ve el modelo y qué carpetas no se recorren, sin tocar el disco. Las reglas de lo que pregunta una ruta ya resuelta, y también la pedida (`asked`: un `.env` que es un enlace): `is_inside()`, `is_secret_at()`, `read_warning()` y `change_warning()` (también `.git` y lo que ejecuta código: CI, hooks, editores, `.claude`, `.maha`, `.pre-commit-config.yaml`, `.envrc`), con los textos de los avisos |
 | `domain/errors.py` | domain | `ModelError` y sus cinco tipos (autenticación, límite, petición, no disponible, respuesta) |
 | `ports/commands.py` | ports | `CommandRunner`: `run(command, *, cwd, time_limit, env) -> CommandResult`; mata el comando al pasar el tiempo o al cancelar |
 | `ports/tools.py` | ports | `Tool`: nombre, descripción, modelo Pydantic de parámetros, permiso, `approval()` asíncrono (qué preguntar antes, o `None`), `run()` y `summary()` |
@@ -87,9 +88,9 @@ import-linter (`pyproject.toml`).
 | `adapters/tools/shell.py` | adapters | `RunCommand` (`run_command`, `effect`): pregunta con el comando, el directorio y "with your permissions", `scope` del comando exacto; usa el puerto `CommandRunner`, nunca el adaptador local. |
 | `adapters/commands/local.py` | adapters | `LocalCommandRunner`: `create_subprocess_shell` en un grupo de procesos propio, stdin cerrado, stderr con stdout, salida leída mientras corre y cortada a 30 000 caracteres, y `killpg(SIGKILL)` del grupo entero al pasar el tiempo, al cancelar y al terminar; como *subreaper*, mata también lo que el comando sacó de su grupo (`_kill_escaped`). Sin hilos |
 | `adapters/cli/app.py` | adapters | Línea de comandos con argparse: `parse()` (`--version`, la ayuda) y `fail()` |
-| `adapters/cli/conversation.py` | adapters | `converse()`: leer, enviar al `Agent` y mostrar la respuesta según llega, cada llamada a herramienta (`→`, `✓`/`✗`), la negativa (`[denied: …]`) y la línea de tokens con las llamadas, con `/exit`, Ctrl+D y Ctrl+C (a mitad de respuesta, solo la corta). Todo texto no confiable pasa por `clean()` |
-| `adapters/cli/approval.py` | adapters | `TerminalApproval`: la pregunta (`┌`, `│`, `└ Allow?`), `y`/`a`/`n`, Ctrl+D deniega, aviso en amarillo, detalle cortado y saneado con `clean()`. `DenyAll`: sin terminal, deniega sin preguntar |
-| `adapters/cli/input.py` | adapters | `StdinLines` (lectura de stdin sin hilos) y `ReadLine`: un solo lector para la conversación y las preguntas |
+| `adapters/cli/conversation.py` | adapters | `converse()`: leer, enviar al `Agent` y mostrar la respuesta según llega, cada llamada a herramienta (`→`, `✓`/`✗`), la negativa (`[denied: …]`) y la línea de tokens con las llamadas, con `/exit`, Ctrl+D y Ctrl+C (a mitad de respuesta, solo la corta); SIGHUP y SIGTERM cancelan y terminan `maha` con `128 + señal`. Todo texto no confiable pasa por `clean()` |
+| `adapters/cli/approval.py` | adapters | `TerminalApproval`: descarta lo tecleado antes (`discard`), la pregunta (`┌`, `│`, `└ Allow?`), `y`/`a`/`n`, Ctrl+D deniega, aviso en amarillo; nada se corta (las líneas largas siguen con `↪`) y un detalle de más de 60 líneas ofrece `v`; saneado con `clean()`. `DenyAll`: sin terminal, deniega sin preguntar |
+| `adapters/cli/input.py` | adapters | `StdinLines` (lectura de stdin sin hilos; `discard()` vacía su búfer y la cola de la terminal) y `ReadLine`: un solo lector para la conversación y las preguntas |
 | `adapters/cli/text.py` | adapters | `clean()`: escapa los caracteres de control y bidi del texto no confiable antes de pintarlo (spec `mejora-2026-10-23-deuda-hito-5`, A2) |
 | `adapters/cli/spinner.py` | adapters | `Spinner` y `frame()`: spinner braille con "maha" en colores ANSI mientras llega el primer token; solo en una terminal real, y `NO_COLOR` |
 
@@ -98,10 +99,10 @@ import-linter (`pyproject.toml`).
 | Fichero | Qué comprueba |
 |---|---|
 | `test_entry_point.py` | El script `maha` entra por `bootstrap.main`; `python -m mharness --version` |
-| `test_bootstrap.py` | `maha` de punta a punta con respx (streams SSE) y un pipe o una pseudoterminal como stdin: dos turnos, un stream cortado, las siete herramientas, una llamada a `read_file` sobre un fichero real, sin terminal una escritura se deniega sin preguntar, en una terminal `run_command` pregunta y su `env` no ve la clave; errores de configuración y `--version` |
+| `test_bootstrap.py` | `maha` de punta a punta con respx (streams SSE) y un pipe o una pseudoterminal como stdin: dos turnos, un stream cortado, las siete herramientas, una llamada a `read_file` sobre un fichero real, sin terminal una escritura se deniega sin preguntar, en una terminal `run_command` pregunta (tras descartar lo tecleado antes) y su `env` no ve la clave; errores de configuración y `--version` |
 | `adapters/test_cli.py` | `--version`, la ayuda, sin argumentos devuelve las opciones, el error de uso y `fail()` |
-| `adapters/test_conversation.py` | Respuesta en directo y tokens, llamadas a herramientas (marcas, argumentos cortados, plural, límite de pasos, fallo interno, Ctrl+C durante una herramienta, que guarda el turno con la llamada cancelada), `/exit`, Ctrl+D, Ctrl+C en el prompt y a mitad de respuesta, errores a mitad, spinner y `StdinLines` |
-| `adapters/test_approval.py` | `TerminalApproval`: la pregunta, cada respuesta, repetir, Ctrl+D, sin `scope` no hay `a`, aviso con y sin color, detalle cortado y caracteres de control escapados; `DenyAll` |
+| `adapters/test_conversation.py` | Respuesta en directo y tokens, llamadas a herramientas (marcas, argumentos cortados, plural, límite de pasos, fallo interno, Ctrl+C durante una herramienta, que guarda el turno con la llamada cancelada), `/exit`, Ctrl+D, Ctrl+C en el prompt y a mitad de respuesta, errores a mitad, spinner, SIGHUP y SIGTERM (también durante un comando real, que no sobrevive) y `StdinLines` (también `discard()`, con una tubería y una pseudoterminal) |
+| `adapters/test_approval.py` | `TerminalApproval`: lo tecleado antes se descarta, la pregunta, cada respuesta, repetir, Ctrl+D, sin `scope` no hay `a`, aviso con y sin color, nada se corta y `v` enseña el resto, caracteres de control escapados; `DenyAll` |
 | `adapters/test_spinner.py` | Fotogramas con y sin color, `NO_COLOR`, solo en terminal, borrado de la línea |
 | `adapters/test_sse.py` | Analizador SSE: eventos, comentarios, saltos de línea, trozos partidos, U+2028 y el tope de 1 MiB |
 | `adapters/test_local_runner.py` | `LocalCommandRunner` con comandos reales e inocuos: salida y código, stderr mezclado, directorio, stdin cerrado, corte sin bloquear, tiempo límite con salida parcial, Ctrl+C y fin normal matan el grupo, un hijo en segundo plano no hace esperar al límite, un proceso que sale del grupo (`setsid`) muere también con Ctrl+C y uno que no se puede matar no corta la limpieza, entorno exacto |
@@ -114,7 +115,7 @@ import-linter (`pyproject.toml`).
 | `unit/test_model.py` | `Usage` a 0 por defecto; petición sin `system` y sin herramientas; `ToolSpec`; `StopReason` válido |
 | `unit/test_events.py` | Eventos inmutables (también `ToolCallDelta`), `type` por defecto y `StopReason` válido |
 | `unit/test_collect.py` | `Accumulator` (por el `collect()` del fake) junta el texto y las llamadas (argumentos partidos, varios `index`), toma el final de `MessageEnd` y falla sin él |
-| `unit/test_paths.py` | `is_secret()`: qué rutas son secretas y cuáles no (sin distinguir mayúsculas); `read_warning()` y `change_warning()`, sin disco |
+| `unit/test_paths.py` | `is_secret()`: qué rutas son secretas y cuáles no (sin distinguir mayúsculas); `read_warning()` y `change_warning()`, también por la ruta pedida, sin disco |
 | `unit/test_gitignore.py` | `GitIgnore`: 35 casos de las reglas de gitignore(5), la última regla gana, `!`, ficheros más hondos y CRLF |
 | `unit/test_environment.py` | `command_env()`: solo pasan las variables permitidas, nunca una credencial con prefijo permitido, y `drop` |
 | `unit/test_fake_runner.py` | `FakeRunner` cumple el puerto, sigue el guion, guarda lo que se ejecutó y falla al agotarse |
