@@ -1,25 +1,24 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-23 (cierre de sesión). **Hito 5 (permisos y
-herramientas con efecto) cerrado: `v0.5.0`, más el arreglo `v0.5.1`. Cero
-deuda conocida.**
-Siguiente: la spec del hito 6 (sesiones e historial), cuando el mantenedor
-dé paso. **Sesión en el PC del
-trabajo (el WSL del PC de Windows).**
+Última actualización: 2026-10-26. **Antes del hito 6, una mejora de cero
+deuda:** dos auditorías del código encontraron fallos nuevos (spec
+`mejora-2026-10-26-deuda-pre-hito-6`, APROBADA). La spec del hito 6 está
+escrita en la rama `docs/spec-hito-6-sesiones` y espera a la mejora.
+**Sesión en el PC del trabajo (el WSL del PC de Windows).**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 5 cerrado (`v0.5.0` y `v0.5.1`). Siguiente: hito 6
-(sesiones e historial), empezando por su spec, cuando el mantenedor dé
-paso.**
+**Desarrollo. Hito 5 cerrado (`v0.5.0` y `v0.5.1`). En curso: mejora de
+cero deuda antes del hito 6 (sesiones e historial).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.5.1` — Procesos escapados y grep por tandas**
   (2026-10-23):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.5.1
-- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
+- Ramas abiertas (sin push aún): `docs/spec-mejora-deuda-pre-hito-6` y
+  `docs/spec-hito-6-sesiones`. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -33,6 +32,20 @@ un paso fuera de lo normal.
 ## Hecho
 
 Lo más reciente primero.
+
+- **Auditoría previa al hito 6, 2026-10-26, PC de Windows (WSL).** El
+  mantenedor pidió no dejar deuda antes del hito 6. Dos auditorías
+  independientes (bucle, aplicación y terminal; herramientas, comandos y
+  OpenAI) encontraron 6 fallos de seguridad (secreto tras un enlace,
+  entrada adelantada que aprueba, pregunta que corta lo aprobado, comando
+  huérfano al cerrar la terminal, listas de secretos y de código
+  incompletas), 8 de corrección y 1 de docs. El agente reprodujo el del
+  enlace. Spec `mejora-2026-10-26-deuda-pre-hito-6` propuesta; el
+  mantenedor ya decidió la forma (spec de mejora), B4 (solo lectura → error)
+  y B7 (arreglar `.gitignore`). Spec del hito 6 escrita en
+  `docs/spec-hito-6-sesiones` (`db20643`, `3eae639`), con cinco dudas en
+  §11. Dependencias: ruff 0.17.2 y pytest-asyncio 1.4.1 disponibles (dev,
+  parches).
 
 - **Cierre de sesión, 2026-10-23, PC de Windows (WSL).** Hito 5 cerrado:
   `v0.5.0` y el arreglo `v0.5.1` publicados. Una auditoría de fin de sesión
@@ -442,11 +455,15 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (por si
 acaso; no hay dependencias nuevas) y comprobar los tests, mypy y
 lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Mantenedor:** dar paso al hito 6 (pidió parar aquí el 2026-10-23).
-2. **Agente:** proponer la spec del hito 6 (sesiones e historial) en
-   `docs/spec-hito-6-<slug>`, tras leer DESIGN §5, §6 y §14. Entran los
-   pendientes que DESIGN y las specs asignan al hito 6 (abajo).
-3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+1. ~~**Mantenedor:** aprobar la spec de mejora~~ Aprobada el 2026-10-26;
+   permiso al agente para push, PRs, integrar con el CI en verde y
+   publicar `v0.5.2`.
+2. **Agente:** implementarla en dos PRs (`fix/seguridad-pre-hito-6` y
+   `fix/correccion-pre-hito-6`), test primero en cada fallo.
+3. **Agente:** publicar `v0.5.2` con esos arreglos (decidido).
+4. **Agente:** abrir el PR de la spec del hito 6 (`docs/spec-hito-6-sesiones`)
+   y **mantenedor:** responder sus cinco dudas (§11).
+5. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
