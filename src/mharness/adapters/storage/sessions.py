@@ -17,6 +17,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from mharness.domain.session import (
     Session,
+    SessionCorrupt,
     SessionEntry,
     SessionError,
     SessionHeader,
@@ -95,8 +96,14 @@ class JsonlSessionStore:
             ) from None
         log = JsonlLog(fd, path)
         try:
-            header, entries = _parse(_read(fd), session_id)
+            data = _read(fd)
+            whole = _whole_lines(data)
+            header, entries = _parse(data[:whole], session_id)
             session = replay(header, entries)
+            if whole < len(data):
+                # A line cut by a crash: dropped, so the next append does not
+                # leave it in the middle (spec hito 6, §1.3).
+                os.ftruncate(fd, whole)
         except BaseException:
             await log.close()
             raise
@@ -138,18 +145,50 @@ def _read(fd: int) -> bytes:
     return b"".join(chunks)
 
 
+def _whole_lines(data: bytes) -> int:
+    """How many bytes of `data` are whole lines: a last line without its
+    "\n" was cut by a crash, because each write ends in one."""
+    return data.rfind(b"\n") + 1
+
+
 def _parse(data: bytes, session_id: str) -> tuple[SessionHeader, list[SessionEntry]]:
-    """The header and the entries of a file."""
-    lines = data.decode("utf-8").splitlines()
+    """The header and the entries of whole lines. Raises `SessionCorrupt`."""
+
+    def corrupt(problem: str) -> SessionCorrupt:
+        return SessionCorrupt(f"session {session_id}: {problem}")
+
+    lines = data.split(b"\n")[:-1]
+    if not lines:
+        raise corrupt("empty file")
     try:
         first = json.loads(lines[0])
-        first.pop("type")
-        first.pop("version")
+    except ValueError:
+        raise corrupt("line 1 is not a header") from None
+    if not isinstance(first, dict) or first.pop("type", None) != "session":
+        raise corrupt("line 1 is not a header")
+    version = first.pop("version", None)
+    if isinstance(version, int) and version > VERSION:
+        raise corrupt(f"version {version}, made by a newer maha")
+    if version != VERSION:
+        raise corrupt(f"unknown version {version!r}")
+    try:
         header = SessionHeader.model_validate(first)
-        entries = [_ENTRY.validate_json(line) for line in lines[1:]]
-    except (IndexError, KeyError, ValueError, ValidationError) as exc:
-        raise SessionError(f"session {session_id} cannot be read: {exc}") from None
+    except ValidationError as exc:
+        raise corrupt(f"line 1 is not a valid header: {_first(exc)}") from None
+    entries = []
+    for number, line in enumerate(lines[1:], start=2):
+        try:
+            entries.append(_ENTRY.validate_json(line))
+        except ValidationError as exc:
+            raise corrupt(f"line {number} is not valid: {_first(exc)}") from None
     return header, entries
+
+
+def _first(exc: ValidationError) -> str:
+    """The first problem, without echoing the input."""
+    error = exc.errors(include_url=False, include_input=False)[0]
+    location = ".".join(str(part) for part in error["loc"])
+    return f"{location}: {error['msg']}" if location else error["msg"]
 
 
 def _sync_folder(folder: Path) -> None:

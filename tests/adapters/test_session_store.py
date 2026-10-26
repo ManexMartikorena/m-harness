@@ -14,6 +14,7 @@ from mharness.domain.model import Usage
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
+    SessionCorrupt,
     SessionError,
     SessionHeader,
     SessionNotFound,
@@ -143,3 +144,92 @@ async def test_a_failed_fsync_is_an_error(
     with pytest.raises(SessionError, match=r"cannot save session .*Input/output error"):
         await log.append([MessageEntry(message=HOLA)])
     await log.close()
+
+
+# A file cut by a crash, or that is not a session (spec hito 6, §1.3).
+
+
+async def saved(folder: Path, *messages: Message) -> Path:
+    log = await JsonlSessionStore(folder).create(HEADER)
+    await log.append([MessageEntry(message=m) for m in messages])
+    await log.close()
+    return file_of(folder)
+
+
+def add_bytes(path: Path, data: bytes) -> None:
+    with path.open("ab") as file:
+        file.write(data)
+
+
+def set_lines(path: Path, lines: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+
+
+def lines_of(path: Path) -> list[str]:
+    return path.read_text(encoding="utf-8").splitlines()
+
+
+async def test_a_last_line_cut_by_a_crash_is_ignored_and_dropped(folder: Path) -> None:
+    path = await saved(folder, HOLA, ANSWER)
+    add_bytes(path, b'{"type": "message", "message": {"role": "us')
+    store = JsonlSessionStore(folder)
+
+    session, log = await store.open(HEADER.id)
+    assert session.messages == [HOLA, ANSWER]
+    # Dropped before appending, so it never ends up in the middle.
+    await log.append([MessageEntry(message=HOLA)])
+    await log.close()
+
+    again, log = await store.open(HEADER.id)
+    await log.close()
+    assert again.messages == [HOLA, ANSWER, HOLA]
+    assert len(lines_of(path)) == 4
+
+
+async def test_a_broken_line_in_the_middle_is_corrupt(folder: Path) -> None:
+    path = await saved(folder, HOLA, ANSWER)
+    lines = lines_of(path)
+    set_lines(path, [lines[0], '{"type": "message", "mess', lines[2]])
+
+    with pytest.raises(SessionCorrupt, match=f"^session {HEADER.id}: line 2 "):
+        await JsonlSessionStore(folder).open(HEADER.id)
+
+
+async def test_a_newer_version_is_refused_with_a_clear_message(folder: Path) -> None:
+    path = await saved(folder, HOLA, ANSWER)
+    lines = lines_of(path)
+    first = json.loads(lines[0]) | {"version": 2}
+    set_lines(path, [json.dumps(first), *lines[1:]])
+
+    with pytest.raises(
+        SessionCorrupt, match=f"^session {HEADER.id}: version 2, made by a newer maha$"
+    ):
+        await JsonlSessionStore(folder).open(HEADER.id)
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        [],
+        ["no es json"],
+        ['{"type": "message"}'],
+        ['{"type": "session", "version": 1, "id": "x"}'],
+        ['{"type": "session", "id": "x"}'],
+        ['{"type": "session", "version": "1"}'],
+    ],
+)
+async def test_without_a_valid_header_it_is_corrupt(
+    folder: Path, lines: list[str]
+) -> None:
+    set_lines(file_of(folder), lines)
+
+    with pytest.raises(SessionCorrupt, match=f"^session {HEADER.id}: "):
+        await JsonlSessionStore(folder).open(HEADER.id)
+
+
+async def test_a_history_the_model_would_refuse_is_corrupt(folder: Path) -> None:
+    await saved(folder, HOLA, CALL)
+
+    with pytest.raises(SessionCorrupt, match="call c1 has no result"):
+        await JsonlSessionStore(folder).open(HEADER.id)
