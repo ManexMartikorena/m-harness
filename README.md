@@ -60,6 +60,12 @@ todo.
 Mientras espera el primer token, gira un spinner con "maha". Ctrl+C a mitad
 de una respuesta la corta y vuelve al prompt; en el prompt, sale.
 
+Cada conversación se guarda sola en `~/.local/share/maha/sessions/`, turno a
+turno, también la respuesta que cortas (el modelo sabe que la cortaste).
+`/sessions` lista las de todos los directorios, `/resume [ID]` retoma una,
+`/delete ID` la borra y `/model [ID]` cambia de modelo; `/help` los
+enseña. Al retomar, las aprobaciones empiezan de cero.
+
 ## Cómo funciona un agente
 
 ```
@@ -109,8 +115,8 @@ detalle está en [`docs/DESIGN.md`](docs/DESIGN.md).
 | 2 | Primera conversación con un modelo | ✅ `v0.2.0` |
 | 3 | Streaming | ✅ `v0.3.0` |
 | 4 | Tool calling y bucle agéntico | ✅ `v0.4.0` |
-| 5 | Permisos y herramientas con efecto | ✅ `v0.5.0` |
-| 6 | Sesiones e historial | ⬜ |
+| 5 | Permisos y herramientas con efecto | ✅ `v0.5.0` (y `v0.5.1`, `v0.5.2`) |
+| 6 | Sesiones e historial | ✅ `v0.6.0` |
 | 7 | Trazas y coste | ⬜ |
 | 8 | Evals y modo no interactivo | ⬜ |
 | 9 | Adaptador de Anthropic | ⬜ |

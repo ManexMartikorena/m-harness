@@ -130,8 +130,9 @@ Cómo funciona, con `asyncio`:
 - *`uncancel()`:* retira una petición de cancelación de una tarea. Sin él, la
   tarea seguiría marcada y la siguiente espera podría fallar.
 
-El modelo **no** recuerda la respuesta cortada. Guardarla, marcada como
-cortada, es del hito 6 (sesiones).
+Hasta el hito 5, el modelo **no** recordaba la respuesta cortada. Desde el
+hito 6 (`v0.6.0`) se guarda, marcada como cortada, y el modelo sabe que no
+terminó (nota 06, punto 4).
 
 ### 5. Los tokens de más: el razonamiento
 

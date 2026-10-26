@@ -15,7 +15,7 @@ Cada nota se escribe en el mismo PR que cierra su hito.
 | 03 | [Streaming: el texto que llega a trozos](03-streaming.md) | Escrita (hito 3, `v0.3.0`) |
 | 04 | [Tool calling y el bucle agéntico](04-tool-calling.md) | Escrita (hito 4, `v0.4.0`) |
 | 05 | [Permisos: el modelo propone, el código decide](05-permisos.md) | Escrita (hito 5, `v0.5.0`) |
-| 06 | Historial y sesiones | Pendiente (hito 6) |
+| 06 | [Historial y sesiones: el modelo no recuerda, el disco sí](06-historial.md) | Escrita (hito 6, `v0.6.0`) |
 | 07 | Trazas y coste | Pendiente (hito 7) |
 | 08 | Cómo se evalúa un agente | Pendiente (hito 8) |
 | 09 | En qué se diferencian los formatos de API | Pendiente (hito 9) |

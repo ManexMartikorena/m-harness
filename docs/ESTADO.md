@@ -1,36 +1,61 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-26. **Mejora "cero deuda antes del hito 6"
-implementada** (PRs #48 a #50; spec `mejora-2026-10-26-deuda-pre-hito-6`,
-IMPLEMENTADA) y publicada como `v0.5.2`. **Hito 6 en curso**: spec
-`hito-6-sesiones` APROBADA (PR #52).
+Última actualización: 2026-10-26. **Hito 6 (sesiones e historial)
+implementado** (PRs #52 a #56 y el de cierre; spec `hito-6-sesiones`,
+IMPLEMENTADA), con su verificación a mano en verde. Falta el tag `v0.6.0`,
+cuando el mantenedor lo pida. Antes, la mejora "cero deuda antes del hito
+6" salió como `v0.5.2`.
 **Sesión en el PC del trabajo (el WSL del PC de Windows).**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 5 cerrado (`v0.5.0`, `v0.5.1` y `v0.5.2`). En curso:
-hito 6 (sesiones e historial), spec APROBADA.**
+**Desarrollo. Hito 6 (sesiones e historial) implementado; falta el tag
+`v0.6.0`. Siguiente: hito 7 (trazas y coste), empezando por su spec.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.5.2` — Cero deuda antes del hito 6** (2026-10-26):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.5.2
-- Ramas abiertas: las del hito 6, según avance. Las integradas se conservan
-  en GitHub.
+- Ramas abiertas: ninguna tras integrar `feature/hito-6-cierre`. Las
+  integradas se conservan en GitHub.
 
 ## Para la release
 
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
 
-- Nada fuera de lo normal. `v0.5.2` lleva el arreglo del PR #47 y la mejora
-  (PRs #49 y #50): tag anotado sobre el merge del PR de la versión.
+- Nada fuera de lo normal para `v0.6.0`: ninguna variable nueva. Desde esta
+  versión `maha` escribe en `~/.local/share/maha/sessions/`
+  (`PUESTA_EN_MARCHA` §3). Tag anotado sobre el merge del PR de cierre.
 
 ## Hecho
 
 Lo más reciente primero.
 
+- **Hito 6 implementado, 2026-10-26, PC de Windows (WSL)** (spec
+  `hito-6-sesiones`, IMPLEMENTADA; el detalle, en su §12):
+  - PR #52 (merge `74605b0`): spec APROBADA; el mantenedor cambió la duda 2
+    (sesiones de todos los directorios) y aceptó las otras cuatro;
+  - PR #53 (merge `9395ded`): tipos, `check_history()`, `replay()`,
+    `summarize()`, `Usage.__add__`, puerto `SessionStore` y
+    `MemorySessionStore`;
+  - PR #54 (merge `dd8e433`): `JsonlSessionStore` (fsync por turno,
+    `0700`/`0600`, última línea cortada, versión, `flock`, lista y borrado);
+  - PR #55 (merge `555f48f`): `Message.interrupted` y la marca en OpenAI, el
+    parcial cortado en el bucle, `history=` y `model`, `Sessions` y
+    `Conversation`, y un arreglo del PR 2 (todo fallo del disco es
+    `SessionError`);
+  - PR #56 (merge `dd70ee9`): comandos `/sessions`, `/resume`, `/delete`,
+    `/model` y `/help`, `config.data_dir()` y el cableado. Los tests de punta
+    a punta escribían sesiones de prueba en el `HOME` real del puesto: se
+    borraron y `tests/conftest.py` da a cada test su `XDG_DATA_HOME`;
+  - PR de cierre (`feature/hito-6-cierre`): versión 0.6.0, verificación a
+    mano (los 10 puntos de la spec §7 en verde, con el modelo real), nota
+    `docs/guia/06-historial.md`, README, MAPA y ESTADO.
+
+  993 tests, mypy, ruff e import-linter en verde. El mantenedor pidió
+  respetar siempre la arquitectura hexagonal y dejar cero deuda técnica.
 - **`v0.5.2` publicada, 2026-10-26.** Tag anotado sobre el merge del PR #51
   (`3266867`), con el CI de `main` en verde; creado por el agente con el
   permiso del mantenedor. `uvx --from
@@ -470,17 +495,12 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (por si
 acaso; no hay dependencias nuevas) y comprobar los tests, mypy y
 lint-imports en verde; después, el primer punto sin hacer.
 
-1. ~~**Agente:** publicar `v0.5.2`~~ Hecho el 2026-10-26 (PR #51, merge
-   `3266867`).
-2. ~~**Mantenedor:** responder las dudas de la spec del hito 6~~ APROBADA el
-   2026-10-26 (PR #52): acepta 1, 3, 4 y 5; cambia la 2 (sesiones de todos
-   los directorios).
-3. **Agente:** implementar el hito 6 por el orden de la spec §6: PR 1
-   (`feature/hito-6-contrato`), PR 2 (`feature/hito-6-jsonl`), PR 3
-   (`feature/hito-6-conversacion`), PR 4 (`feature/hito-6-terminal`) y PR 5
-   (`feature/hito-6-cierre`, `v0.6.0`). Permiso del mantenedor para push,
-   PRs e integrar con el CI en verde.
-4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+1. **Mantenedor:** pedir el tag `v0.6.0` (sobre el merge del PR de
+   cierre del hito 6). El agente lo crea y comprueba la release.
+2. **Agente:** proponer la spec del hito 7 (trazas y coste) en
+   `docs/spec-hito-7-<slug>`, tras leer DESIGN §6, §11 y §14. Entran los
+   pendientes que DESIGN y las specs asignan al hito 7 (abajo).
+3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -507,7 +527,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.5.2`).
+   `maha 0.6.0`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -548,8 +568,8 @@ resuelve):
 - ~~**`refusal` del stream se ignora**~~ **Resuelto** en el hito 5
   (`89e0fec`): llega como texto. Sigue POR VERIFICAR en OpenCode, que no la
   ha mandado nunca (spec 5, §10).
-- **Respuesta cortada con Ctrl+C:** queda en pantalla, pero el modelo no la
-  recuerda. Guardarla marcada como cortada: hito 6 (spec 3, §1.6).
+- ~~**Respuesta cortada con Ctrl+C**~~ **Resuelto** en el hito 6 (`d12ea22`):
+  se guarda marcada y el modelo lo sabe (spec 6, §1.7 y §12).
 - **Sin reintentos** ante 429 o 5xx: se valoran en el hito 7 o el 8 (spec 3,
   §1.9).
 - **Lo que se teclea mientras gira el spinner se mezcla con él** en pantalla
@@ -614,6 +634,17 @@ resuelve):
   terminan o llegan al tiempo límite. Es el diseño (spec 5, §10); la
   descripción pide comandos no interactivos.
 
+**Del hito 6** (anotados en su spec; ningún fallo conocido):
+- **Coste por sesión:** cada turno guarda sus tokens (`UsageEntry`) para el
+  hito 7, que trae el catálogo y los precios.
+- **Retomar al arrancar** (`maha --continue`, `--resume ID`): hito 8, con
+  las opciones de línea de comandos (spec 6, §11, duda 5).
+- **El modelo no sabe en qué directorio trabaja** tras retomar una sesión de
+  otro: el aviso es para la persona. El directorio entra en el system prompt
+  en el hito 10 (spec 6, §1.8).
+- **La marca `[interrupted by the user]`** es texto para el modelo:
+  candidata a la batería de evals del hito 8.
+
 **Por medir:**
 - Línea base de las evals (hito 8).
 - Ahorro de tokens de la memoria (hito 13).
@@ -628,7 +659,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 4. Tool calling y bucle agéntico. `v0.4.0` (2026-10-21)
 - [x] 5. Permisos y herramientas con efecto. `v0.5.0` (2026-10-23) y los
   arreglos `v0.5.1` (2026-10-23) y `v0.5.2` (2026-10-26)
-- [ ] 6. Sesiones e historial. `v0.6.0`
+- [x] 6. Sesiones e historial. `v0.6.0` (2026-10-26, tag pendiente)
 - [ ] 7. Trazas y coste. `v0.7.0`
 - [ ] 8. Evals y modo no interactivo. `v0.8.0`
 - [ ] 9. Adaptador de Anthropic. `v0.9.0`
