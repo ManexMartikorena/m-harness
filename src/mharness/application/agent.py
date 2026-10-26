@@ -108,7 +108,7 @@ class Agent:
                         if isinstance(event, TextDelta):
                             yield event
                 response = accumulator.response()
-                usage = _add(usage, response.usage)
+                usage += response.usage
                 yield ModelCallFinished(usage=response.usage, model=response.model)
                 turn.append(response.message)
                 calls = [
@@ -347,12 +347,3 @@ def _describe(exc: ValidationError) -> str:
         location = ".".join(str(part) for part in error["loc"]) or "arguments"
         parts.append(f"{location}: {error['msg']}")
     return "; ".join(parts)
-
-
-def _add(total: Usage, more: Usage) -> Usage:
-    return Usage(
-        input_tokens=total.input_tokens + more.input_tokens,
-        output_tokens=total.output_tokens + more.output_tokens,
-        cache_read_tokens=total.cache_read_tokens + more.cache_read_tokens,
-        cache_write_tokens=total.cache_write_tokens + more.cache_write_tokens,
-    )

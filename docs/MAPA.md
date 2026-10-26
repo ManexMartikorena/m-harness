@@ -3,9 +3,8 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-26 (mejora "cero deuda antes del hito 6", PRs 1 y 2;
-antes: hito 5 cerrado, con la mejora "cero
-deuda" y los arreglos de la auditoría final).
+Última actualización: 2026-10-26 (hito 6, PR 1: tipos, puerto y fake de las
+sesiones).
 
 ## Raíz
 
@@ -63,7 +62,8 @@ import-linter (`pyproject.toml`).
 | `bootstrap.py` | raíz de composición | `main()` del comando `maha`: lee la configuración, crea el adaptador, las siete herramientas sobre el directorio de arranque (`run_command` con `LocalCommandRunner` y el entorno de `command_env()`, sin la clave del proveedor), un solo `StdinLines` para la conversación y las preguntas, y el gate: `TerminalApproval` en una terminal, `DenyAll` sin ella; el único que conoce todas las piezas |
 | `config.py` | configuración (hermana de `adapters`) | `load()`: proveedores predefinidos, del usuario y del proyecto (este, solo `provider` y `model`); la clave, del entorno |
 | `domain/messages.py` | domain | `TextBlock`, `ToolCallBlock`, `ToolResultBlock` y `Message`: mensajes hechos de bloques, validados por `type` |
-| `domain/model.py` | domain | `ModelRequest` (con `tools`), `ToolSpec`, `ModelResponse`, `Usage` y `StopReason` |
+| `domain/model.py` | domain | `ModelRequest` (con `tools`), `ToolSpec`, `ModelResponse`, `Usage` (se suma con `+`) y `StopReason` |
+| `domain/session.py` | domain | La sesión guardada (spec hito 6, §1.2): `SessionHeader`, las líneas del fichero (`MessageEntry`, `UsageEntry`, `ModelEntry`, unidas por `type` en `SessionEntry`), `Session` y `SessionSummary`; `session_id()` e `is_session_id()` (fecha UTC y 4 hex; nada más llega al disco); `check_history()` (cada llamada con su resultado), `replay()` y `summarize()`; errores `SessionNotFound`, `SessionInUse` y `SessionCorrupt` |
 | `domain/events.py` | domain | `TextDelta`, `ToolCallDelta`, `MessageEnd` y `ModelEvent`: lo que llega mientras el modelo responde |
 | `domain/commands.py` | domain | `CommandResult` (`exit_code`, `output`, `truncated`, `timed_out`) y `OUTPUT_MAX_CHARS` (30 000) |
 | `domain/environment.py` | domain | `command_env()`: las variables que recibe un comando, por lista de permitidas (spec `mejora-2026-10-23-deuda-hito-5`, E1) |
@@ -77,6 +77,7 @@ import-linter (`pyproject.toml`).
 | `ports/tools.py` | ports | `Tool`: nombre, descripción, modelo Pydantic de parámetros, permiso, `approval()` asíncrono (qué preguntar antes, o `None`), `run()` y `summary()` |
 | `ports/approval.py` | ports | `ApprovalGate`: `decide(request) -> Decision`; quien aprueba una llamada |
 | `ports/model.py` | ports | `ModelClient`: `complete(request) -> response` y `stream(request) -> eventos` |
+| `ports/sessions.py` | ports | `SessionStore` (`create`, `open`, `summaries`, `delete`) y `SessionLog` (`append`, `close`): una sesión abierta queda bloqueada hasta `close()` |
 | `application/collect.py` | application | `Accumulator`: la respuesta entera a partir de los eventos, con las llamadas a herramientas juntadas por `index` |
 | `application/tools.py` | application | `ToolRegistry`: herramientas por nombre y sus `ToolSpec`; acepta las de efecto (el bucle pregunta antes) |
 | `application/approvals.py` | application | `SessionApprovals`: los `scope` aprobados para toda la sesión, en memoria (`covers()` y `record()`); un `scope` `None` nunca se guarda |
@@ -113,7 +114,9 @@ import-linter (`pyproject.toml`).
 | `adapters/test_openai_chat_stream.py` | `stream()`: petición con `stream` y herramientas, traducción de los trozos medidos (también `tool_calls`), errores antes y a mitad del stream, y cierre de la conexión al cancelar (con respx) |
 | `fixtures/openai_chat/` | Respuestas de ejemplo de Chat Completions (JSON) y streams SSE (`.sse`), también con llamadas a herramientas, con la forma medida en OpenCode Go, con datos inventados |
 | `unit/test_messages.py` | `Message.text` une los bloques de texto; bloques de llamada y resultado; validación por `type`; mensajes inmutables |
-| `unit/test_model.py` | `Usage` a 0 por defecto; petición sin `system` y sin herramientas; `ToolSpec`; `StopReason` válido |
+| `unit/test_session.py` | Ids de sesión (y lo que no es un id), líneas validadas por `type`, cabecera, errores, `check_history()` (válidos y rotos), `replay()` y `summarize()` |
+| `unit/test_fake_sessions.py` | `MemorySessionStore` cumple el puerto, devuelve lo añadido, bloquea la sesión abierta y no encuentra ids desconocidos |
+| `unit/test_model.py` | `Usage` a 0 por defecto y su suma; petición sin `system` y sin herramientas; `ToolSpec`; `StopReason` válido |
 | `unit/test_events.py` | Eventos inmutables (también `ToolCallDelta`), `type` por defecto y `StopReason` válido |
 | `unit/test_collect.py` | `Accumulator` (por el `collect()` del fake) junta el texto y las llamadas (argumentos partidos, varios `index`), toma el final de `MessageEnd` y falla sin él |
 | `unit/test_paths.py` | `is_secret()`: qué rutas son secretas y cuáles no (sin distinguir mayúsculas); `read_warning()` y `change_warning()`, también por la ruta pedida, sin disco |
@@ -133,6 +136,7 @@ import-linter (`pyproject.toml`).
 | `fakes/terminal.py` | `ScriptedInput`: lo que teclea una persona, línea a línea, y luego Ctrl+D |
 | `fakes/commands.py` | `FakeRunner`: un `CommandRunner` que responde con un guion de `CommandResult` y guarda cada comando en `ran` |
 | `fakes/approval.py` | `FakeApproval`: un `ApprovalGate` que responde con un guion de decisiones, guarda las peticiones en `requests` y falla si se agota. `HangingApproval`: nunca responde, para probar Ctrl+C durante la pregunta |
+| `fakes/sessions.py` | `MemorySessionStore` y `MemoryLog`: las sesiones en memoria, con el mismo bloqueo que el adaptador real |
 | `architecture/test_no_hidden_characters.py` | Ningún carácter bidi o de control invisible en `src`, `tests` ni `docs` |
 | `architecture/test_tool_params.py` | Las siete herramientas rechazan argumentos de más (`additionalProperties: false`) |
 | `architecture/test_core_imports.py` | `domain`, `ports` y `application` solo usan la biblioteca estándar y Pydantic |
