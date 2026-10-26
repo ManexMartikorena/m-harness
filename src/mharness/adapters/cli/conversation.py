@@ -16,7 +16,12 @@ from mharness.adapters.cli.input import ReadLine, StdinLines
 from mharness.adapters.cli.spinner import Spinner, use_color
 from mharness.adapters.cli.text import clean
 from mharness.application.agent import Agent
-from mharness.domain.agent_events import ToolCallProposed, ToolFinished, TurnFinished
+from mharness.domain.agent_events import (
+    ApprovalRequested,
+    ToolCallProposed,
+    ToolFinished,
+    TurnFinished,
+)
 from mharness.domain.errors import ModelError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock
@@ -129,6 +134,9 @@ async def _answer(
     """
     # True while the cursor is after text, not at the start of a line.
     wrote = False
+    # True while a question waits after "Allow? …:" (spec
+    # mejora-2026-10-26-deuda-pre-hito-6, B8).
+    asking = False
     # Covers each wait for the model (spec hito 3, §1.12).
     spinner = Spinner(out, color=use_color())
     spinner.start()
@@ -147,7 +155,10 @@ async def _answer(
                             print(file=out)
                             wrote = False
                         print(f"  → {_call(call)}", file=out, flush=True)
+                    case ApprovalRequested():
+                        asking = True
                     case ToolFinished():
+                        asking = False
                         mark = "✗" if event.result.is_error else "✓"
                         print(f"  {mark} {clean(event.summary)}", file=out, flush=True)
                         if event.internal_error:
@@ -189,7 +200,7 @@ async def _answer(
         assert task is not None
         task.uncancel()
         await spinner.stop()
-        if wrote:
+        if wrote or asking:
             print(file=out)
         print("  [interrupted]", file=out, flush=True)
     finally:

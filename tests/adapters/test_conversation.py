@@ -640,6 +640,35 @@ async def test_ctrl_c_during_a_tool_goes_back_to_the_prompt() -> None:
     assert (result.content, result.is_error) == ("error: cancelled by the user", True)
 
 
+async def test_ctrl_c_during_the_question_starts_a_new_line() -> None:
+    # The question leaves the cursor after "Allow? …:" (spec
+    # mejora-2026-10-26-deuda-pre-hito-6, B8).
+    async def no_answer() -> str:
+        await asyncio.Event().wait()
+        raise AssertionError("not cancelled")
+
+    request = ApprovalRequest(tool="echo", title="echo", detail="", scope=None)
+    tool = FakeTool(permission="effect", requests=[request])
+    fake = FakeModelClient([tool_calls(call("c1"))])
+    out = io.StringIO()
+    pressing = asyncio.ensure_future(interrupt_when(out, "Allow?"))
+    agent = Agent(
+        fake, ToolRegistry([tool]), gate=TerminalApproval(no_answer, out), model="m"
+    )
+
+    await converse(
+        agent,
+        provider="p",
+        model="m",
+        read_line=ScriptedInput("Usa la herramienta", "/exit"),
+        out=out,
+        err=io.StringIO(),
+    )
+    await pressing
+
+    assert "  └ Allow? [y] yes · [n] no: \n  [interrupted]\n" in out.getvalue()
+
+
 async def test_control_characters_from_the_model_and_tools_are_escaped() -> None:
     # ESC and \r could repaint the screen, and bidi controls reorder it: the
     # question below a call could lie (spec mejora-2026-10-23-deuda-hito-5,
