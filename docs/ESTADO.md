@@ -1,38 +1,49 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-26. **Antes del hito 6, una mejora de cero
-deuda:** dos auditorías del código encontraron fallos nuevos (spec
-`mejora-2026-10-26-deuda-pre-hito-6`, APROBADA). La spec del hito 6 está
-escrita en la rama `docs/spec-hito-6-sesiones` y espera a la mejora.
+Última actualización: 2026-10-26. **Mejora "cero deuda antes del hito 6"
+implementada** (PRs #48 a #50; spec `mejora-2026-10-26-deuda-pre-hito-6`,
+IMPLEMENTADA) y sale como `v0.5.2`. Siguiente: el PR de la spec del hito 6
+(rama `docs/spec-hito-6-sesiones`, ya con push).
 **Sesión en el PC del trabajo (el WSL del PC de Windows).**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 5 cerrado (`v0.5.0` y `v0.5.1`). En curso: mejora de
-cero deuda antes del hito 6 (sesiones e historial).**
+**Desarrollo. Hito 5 cerrado (`v0.5.0`, `v0.5.1` y `v0.5.2`). Siguiente:
+hito 6 (sesiones e historial), empezando por su spec.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.5.1` — Procesos escapados y grep por tandas**
   (2026-10-23):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.5.1
-- Ramas abiertas (sin push aún): `docs/spec-mejora-deuda-pre-hito-6` y
-  `docs/spec-hito-6-sesiones`. Las integradas se conservan en GitHub.
+- Ramas abiertas: `docs/spec-hito-6-sesiones` (con push, sin PR) y
+  `fix/release-v0-5-2` (este cierre). Las integradas se conservan en GitHub.
 
 ## Para la release
 
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
 
-- Nada pendiente. `v0.5.1` salió sin pasos fuera de lo normal. El arreglo
-  del PR #47 está en `main` y sale con la próxima versión (`v0.6.0`), salvo
-  que el mantenedor pida un `v0.5.2`.
+- Nada fuera de lo normal. `v0.5.2` lleva el arreglo del PR #47 y la mejora
+  (PRs #49 y #50): tag anotado sobre el merge del PR de la versión.
 
 ## Hecho
 
 Lo más reciente primero.
 
+- **Mejora "cero deuda antes del hito 6" implementada, 2026-10-26** (PR #48
+  la spec, merge `ae36187`; PR #49 seguridad, merge `3bc416d`; PR #50
+  corrección, merge `4356765`). Un commit por fallo, con su test visto
+  fallar antes: A1 (`d284799`), A2 (`f30a68a`), A3 (`bd87b88`), A4
+  (`de7a5da`), A5 (`b3bdcde`), A6 (`f6d9d0a`), B1 (`e031fc7`), B2
+  (`10e9926`), B3 (`bcd4ce3`), B4 (`f3c18ee`), B5 (`da9e872`), B6
+  (`cdf9887`), B7 (`451958c`), B8 (`16b4eb6`) y C1 (`c8e01c0`). 844 tests,
+  mypy, ruff e import-linter en verde. Verificación a mano con el modelo
+  real: los cinco puntos de la spec §7, en verde. `.gitignore` comparado
+  en local con `git check-ignore`: 0 diferencias en ~16 600 casos. El
+  mantenedor dio permiso al agente para push, PRs, integrar con el CI en
+  verde y publicar `v0.5.2`.
 - **Auditoría previa al hito 6, 2026-10-26, PC de Windows (WSL).** El
   mantenedor pidió no dejar deuda antes del hito 6. Dos auditorías
   independientes (bucle, aplicación y terminal; herramientas, comandos y
@@ -455,15 +466,13 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (por si
 acaso; no hay dependencias nuevas) y comprobar los tests, mypy y
 lint-imports en verde; después, el primer punto sin hacer.
 
-1. ~~**Mantenedor:** aprobar la spec de mejora~~ Aprobada el 2026-10-26;
-   permiso al agente para push, PRs, integrar con el CI en verde y
-   publicar `v0.5.2`.
-2. **Agente:** implementarla en dos PRs (`fix/seguridad-pre-hito-6` y
-   `fix/correccion-pre-hito-6`), test primero en cada fallo.
-3. **Agente:** publicar `v0.5.2` con esos arreglos (decidido).
-4. **Agente:** abrir el PR de la spec del hito 6 (`docs/spec-hito-6-sesiones`)
-   y **mantenedor:** responder sus cinco dudas (§11).
-5. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+1. **Agente:** integrar el PR de `fix/release-v0-5-2`, crear el tag
+   `v0.5.2` sobre su merge y comprobar la release (permiso del mantenedor,
+   2026-10-26).
+2. **Agente:** abrir el PR de la spec del hito 6 (`docs/spec-hito-6-sesiones`;
+   hay que traer `main` a la rama). **Mantenedor:** responder sus cinco
+   dudas (§11); integrar el PR es aprobarla.
+3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -490,7 +499,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.5.1`).
+   `maha 0.5.2`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -609,8 +618,8 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 2. Primera conversación. `v0.2.0` (2026-10-20)
 - [x] 3. Streaming. `v0.3.0` (2026-10-21)
 - [x] 4. Tool calling y bucle agéntico. `v0.4.0` (2026-10-21)
-- [x] 5. Permisos y herramientas con efecto. `v0.5.0` (2026-10-23) y el
-  arreglo `v0.5.1` (2026-10-23)
+- [x] 5. Permisos y herramientas con efecto. `v0.5.0` (2026-10-23) y los
+  arreglos `v0.5.1` (2026-10-23) y `v0.5.2` (2026-10-26)
 - [ ] 6. Sesiones e historial. `v0.6.0`
 - [ ] 7. Trazas y coste. `v0.7.0`
 - [ ] 8. Evals y modo no interactivo. `v0.8.0`

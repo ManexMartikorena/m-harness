@@ -38,7 +38,7 @@ deuda" y los arreglos de la auditoría final).
 | `guia/README.md` | Índice de la guía de conceptos (una nota por hito) |
 | `guia/01-arquitectura-hexagonal.md` | Nota del hito 1: capas, raíz de composición y la base que lo vigila |
 | `guia/02-llamada-a-un-llm.md` | Nota del hito 2: la llamada HTTP, por qué el modelo no recuerda, el adaptador y lo que puede salir mal |
-| `guia/05-permisos.md` | Nota del hito 5: leer frente a efecto, la pregunta y sus ámbitos, lo que nunca es para la sesión, escribir sin romper nada, ejecutar comandos (y lo que no protege), lo ejecutado consta y las reglas en el dominio |
+| `guia/05-permisos.md` | Nota del hito 5 (con `v0.5.1` y `v0.5.2`): leer frente a efecto, la pregunta (lo tecleado antes se descarta, nada se corta) y sus ámbitos, lo que nunca es para la sesión, escribir sin romper nada, ejecutar comandos (y lo que no protege), lo ejecutado consta y las reglas en el dominio |
 | `guia/04-tool-calling.md` | Nota del hito 4: herramientas con JSON Schema, el viaje de una llamada, el bucle y su límite, errores devueltos al modelo, perímetro y secretos |
 | `guia/03-streaming.md` | Nota del hito 3: SSE, eventos propios, fallos a mitad, cancelar con Ctrl+C, tokens de razonamiento y el spinner |
 | `specs/PLANTILLA.md` | Formato de las specs de hito y de mejora |
@@ -47,7 +47,7 @@ deuda" y los arreglos de la auditoría final).
 | `specs/hito-5-permisos.md` | Spec del hito 5 (IMPLEMENTADA): contrato de aprobación, ámbitos de sesión, `write_file`, `edit_file`, `run_command` con `CommandRunner`, lo ejecutado consta y `refusal` |
 | `specs/hito-4-bucle-agentico.md` | Spec del hito 4 (IMPLEMENTADA): bloques de llamada y resultado, `ToolCallDelta`, puerto `Tool`, cuatro herramientas de solo lectura, el bucle `Agent` y la terminal con llamadas |
 | `specs/mejora-2026-10-23-deuda-hito-5.md` | Mejora (IMPLEMENTADA): cero deuda antes de cerrar el hito 5 — fallos de la auditoría, arquitectura, escritura de ficheros, entorno de los comandos y `.gitignore` |
-| `specs/mejora-2026-10-26-deuda-pre-hito-6.md` | Mejora (APROBADA): cero deuda antes del hito 6 — los fallos de dos auditorías del 2026-10-26: secretos tras un enlace, entrada adelantada, pregunta que corta, señales de cierre, listas de secretos y de código, y corrección |
+| `specs/mejora-2026-10-26-deuda-pre-hito-6.md` | Mejora (IMPLEMENTADA, `v0.5.2`): cero deuda antes del hito 6 — los fallos de dos auditorías del 2026-10-26: secretos tras un enlace, entrada adelantada, pregunta que corta, señales de cierre, listas de secretos y de código, y corrección |
 | `specs/hito-3-streaming.md` | Spec del hito 3 (IMPLEMENTADA): eventos del modelo, `stream()` en el puerto junto a `complete()`, `collect()`, SSE a mano, spinner de espera y Ctrl+C por respuesta |
 
 ## Código: `src/mharness/`
