@@ -1,38 +1,40 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-26. **Hito 6 (sesiones e historial)
-implementado** (PRs #52 a #56 y el de cierre; spec `hito-6-sesiones`,
-IMPLEMENTADA), con su verificación a mano en verde. Falta el tag `v0.6.0`,
-cuando el mantenedor lo pida. Antes, la mejora "cero deuda antes del hito
-6" salió como `v0.5.2`.
+Última actualización: 2026-10-26 (cierre de sesión). **Hito 6 (sesiones e
+historial) cerrado: `v0.6.0`, con los arreglos de su auditoría final. Cero
+deuda conocida.** Siguiente: la spec del hito 7 (trazas y coste).
 **Sesión en el PC del trabajo (el WSL del PC de Windows).**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 6 (sesiones e historial) implementado; falta el tag
-`v0.6.0`. Siguiente: hito 7 (trazas y coste), empezando por su spec.**
+**Desarrollo. Hito 6 cerrado (`v0.6.0`). Siguiente: hito 7 (trazas y
+coste), empezando por su spec.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.5.2` — Cero deuda antes del hito 6** (2026-10-26):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.5.2
-- Ramas abiertas: ninguna tras integrar `feature/hito-6-cierre`. Las
-  integradas se conservan en GitHub.
+- Última versión: **`v0.6.0` — Sesiones e historial** (2026-10-26):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.6.0
+- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
 
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
 
-- Nada fuera de lo normal para `v0.6.0`: ninguna variable nueva. Desde esta
-  versión `maha` escribe en `~/.local/share/maha/sessions/`
-  (`PUESTA_EN_MARCHA` §3). Tag anotado sobre el merge del PR de cierre.
+- Nada pendiente. `v0.6.0` salió sin pasos fuera de lo normal: ninguna
+  variable nueva. Desde esta versión `maha` escribe en
+  `~/.local/share/maha/sessions/` (`PUESTA_EN_MARCHA` §3).
 
 ## Hecho
 
 Lo más reciente primero.
 
+- **`v0.6.0` publicada, 2026-10-26.** Tag anotado sobre el merge del PR #59
+  (`84df610`), con el CI de `main` en verde y la alerta de Dependabot ya
+  cerrada (`fixed`); creado por el agente a petición del mantenedor.
+  `uvx --from git+https://github.com/ManexMartikorena/m-harness@v0.6.0 maha
+  --version` → `maha 0.6.0`.
 - **Auditoría final del hito 6, 2026-10-26, antes del tag `v0.6.0`.** El
   mantenedor pidió dejarlo todo listo, con cero deuda y la arquitectura
   respetada. Dos auditores independientes del código del hito (disco y
@@ -503,13 +505,11 @@ Lo más reciente primero.
 
 ## Siguiente paso
 
-Al abrir en otro PC: `git switch main && git pull`, `uv sync` (por si
-acaso; no hay dependencias nuevas) y comprobar los tests, mypy y
-lint-imports en verde; después, el primer punto sin hacer.
+Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
+subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
+mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** crear el tag `v0.6.0` sobre el merge del PR de la auditoría
-   final (`fix/sesiones-auditoria`) y comprobar la release (el mantenedor
-   lo pidió el 2026-10-26).
+1. **Mantenedor:** dar paso al hito 7.
 2. **Agente:** proponer la spec del hito 7 (trazas y coste) en
    `docs/spec-hito-7-<slug>`, tras leer DESIGN §6, §11 y §14. Entran los
    pendientes que DESIGN y las specs asignan al hito 7 (abajo).
@@ -672,7 +672,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 4. Tool calling y bucle agéntico. `v0.4.0` (2026-10-21)
 - [x] 5. Permisos y herramientas con efecto. `v0.5.0` (2026-10-23) y los
   arreglos `v0.5.1` (2026-10-23) y `v0.5.2` (2026-10-26)
-- [x] 6. Sesiones e historial. `v0.6.0` (2026-10-26, tag pendiente)
+- [x] 6. Sesiones e historial. `v0.6.0` (2026-10-26)
 - [ ] 7. Trazas y coste. `v0.7.0`
 - [ ] 8. Evals y modo no interactivo. `v0.8.0`
 - [ ] 9. Adaptador de Anthropic. `v0.9.0`
