@@ -597,5 +597,5 @@ Dudas que se plantearon al mantenedor (registro):
    `check_history()`; `summarize()` no, para que una sesión rota salga en
    `/sessions` y se pueda borrar. Para sumar los tokens, `Usage.__add__`
    (`434c463`), que sustituye al `_add` del bucle.
-4. Puerto y fake (commit "Añadir el puerto de las sesiones"). El fake usa
+4. Puerto y fake (`55b6e5f`). El fake usa
    `replay()` y `summarize()`, como hará el adaptador.
