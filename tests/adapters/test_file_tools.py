@@ -2729,3 +2729,24 @@ async def test_made_read_only_after_the_question_it_is_not_changed(root: Path) -
     with pytest.raises(ToolError, match="read-only file"):
         await tool.run(params)
     assert path.read_text(encoding="utf-8") == "Comprar pan\n"
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes in any folder")
+async def test_a_writable_file_in_a_locked_folder_is_edited_in_place(
+    root: Path,
+) -> None:
+    # The temporary file cannot be created next to it, but the file itself
+    # can be written (spec mejora-2026-10-26-deuda-pre-hito-6, B5).
+    path = write(root, "fijo/app.py", "return 1\n")
+    path.parent.chmod(0o555)
+    try:
+        tool = edit_tool(root)
+        params = edit_params("fijo/app.py", "1", "2")
+        await tool.approval(params)
+
+        await tool.run(params)
+
+        assert path.read_text(encoding="utf-8") == "return 2\n"
+        assert sorted(p.name for p in path.parent.iterdir()) == ["app.py"]
+    finally:
+        path.parent.chmod(0o755)

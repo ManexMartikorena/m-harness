@@ -1010,7 +1010,8 @@ def _write_atomically(path: Path, text: str, old: bytes | None) -> None:
     The new file gets the mode, owner, group and extended attributes (ACLs
     too, on Linux) of the old one. If the old one has other hard links, or
     any of that cannot be copied, `path` is rewritten in place instead
-    (spec mejora-2026-10-23-deuda-hito-5, D1 and D2).
+    (spec mejora-2026-10-23-deuda-hito-5, D1 and D2); also when the folder
+    does not let the temporary file be created.
     """
     try:
         info: os.stat_result | None = path.stat()
@@ -1019,7 +1020,15 @@ def _write_atomically(path: Path, text: str, old: bytes | None) -> None:
     if info is not None and info.st_nlink > 1:
         _write_in_place(path, text, old)
         return
-    descriptor, temporary = _create_temporary(path)
+    try:
+        descriptor, temporary = _create_temporary(path)
+    except PermissionError:
+        if info is None:
+            raise
+        # The folder is locked but the file is not: what `echo > file` does
+        # (spec mejora-2026-10-26-deuda-pre-hito-6, B5).
+        _write_in_place(path, text, old)
+        return
     try:
         with open(descriptor, "w", encoding="utf-8", newline="") as file:
             if info is not None and not _copy_identity(file.fileno(), path, info):
