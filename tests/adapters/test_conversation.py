@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import io
+import json
 import os
 import pty
 import signal
@@ -14,6 +15,8 @@ from mharness.adapters.cli.approval import TerminalApproval
 from mharness.adapters.cli.conversation import EXIT_INTERRUPTED, converse
 from mharness.adapters.cli.input import StdinLines
 from mharness.adapters.cli.spinner import CLEAR_LINE
+from mharness.adapters.commands import LocalCommandRunner
+from mharness.adapters.tools import RunCommand
 from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
 from mharness.domain.approval import ApprovalRequest
@@ -22,6 +25,7 @@ from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from mharness.domain.tools import ToolError
+from tests.adapters.test_local_runner import gone, written_pid
 from tests.fakes.approval import FakeApproval
 from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply, tool_calls
 from tests.fakes.terminal import ScriptedInput
@@ -114,6 +118,68 @@ async def test_ctrl_c_ends_with_130() -> None:
     )
 
     assert code == EXIT_INTERRUPTED
+
+
+@pytest.mark.parametrize(
+    ("number", "code"), [(signal.SIGTERM, 143), (signal.SIGHUP, 129)]
+)
+async def test_closing_signals_end_with_128_plus_the_signal(
+    number: signal.Signals, code: int
+) -> None:
+    # Closing the window (SIGHUP) or `kill` (SIGTERM) end maha like Ctrl+C
+    # does, without going back to the prompt (spec
+    # mejora-2026-10-26-deuda-pre-hito-6, A4).
+    async def close() -> str:
+        signal.raise_signal(number)
+        await asyncio.Event().wait()
+        raise AssertionError("not cancelled")
+
+    result = await converse(
+        Agent(FakeModelClient([]), ToolRegistry(), gate=FakeApproval(), model="m"),
+        provider="p",
+        model="m",
+        read_line=close,
+        out=io.StringIO(),
+        err=io.StringIO(),
+    )
+
+    assert result == code
+
+
+async def test_sigterm_during_a_command_kills_it(tmp_path: Path) -> None:
+    # The command runs in its own group, so the terminal's SIGHUP never
+    # reaches it: maha has to kill it on its way out.
+    pidfile = tmp_path / "pid"
+    command = f"sleep 30 & echo $! > {pidfile}; wait"
+    call = ToolCallBlock(
+        id="c1", name="run_command", arguments=json.dumps({"command": command})
+    )
+    tools = ToolRegistry([RunCommand(tmp_path, LocalCommandRunner(), {})])
+    agent = Agent(
+        FakeModelClient([tool_calls(call)]),
+        tools,
+        gate=FakeApproval(["once"]),
+        model="m",
+    )
+
+    async def close_when_it_runs() -> int:
+        pid = await written_pid(pidfile)
+        signal.raise_signal(signal.SIGTERM)
+        return pid
+
+    closing = asyncio.create_task(close_when_it_runs())
+    result = await converse(
+        agent,
+        provider="p",
+        model="m",
+        read_line=ScriptedInput("ejecuta"),
+        out=io.StringIO(),
+        err=io.StringIO(),
+    )
+    grandchild = await closing
+
+    assert result == 143
+    assert await gone(grandchild)
 
 
 async def test_other_cancellations_propagate() -> None:
