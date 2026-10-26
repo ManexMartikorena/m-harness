@@ -599,3 +599,23 @@ Dudas que se plantearon al mantenedor (registro):
    (`434c463`), que sustituye al `_add` del bucle.
 4. Puerto y fake (`55b6e5f`). El fake usa
    `replay()` y `summarize()`, como hará el adaptador.
+
+**PR 2** (`feature/hito-6-jsonl`, piezas 5 a 9):
+5. Crear, añadir y abrir (`e30b65a`). La carpeta se crea con `mkdir` y se
+   le pone `0700` después, porque `mkdir` sigue al umask. Un `OSError` al
+   escribir o al hacer `fsync` sale como `SessionError("cannot save session
+   …")`, para que la aplicación (PR 3) solo tenga que capturar
+   `SessionError`. `summaries` y `delete` quedaron sin implementar hasta la
+   pieza 8.
+6. Líneas rotas y versión (`ca400c1`). Cada escritura acaba en `\n`, así
+   que una última línea sin él está cortada aunque sea JSON válido: se
+   ignora siempre. Una versión mayor dice "made by a newer maha"; una que
+   falta o no es un número, "unknown version".
+7. Bloqueo (`db3b828`). Fuera de plan: entre abrir el fichero y bloquearlo,
+   otro `maha` puede borrarlo; se compara el inodo del fichero bloqueado con
+   el del nombre (`_still_named`), y si no es el mismo, `SessionNotFound`.
+   Sin eso, el turno se escribiría en un fichero sin nombre y se perdería.
+8. Lista y borrado (`3652d68`). La
+   lista no bloquea (una sesión abierta también sale) y no comprueba el
+   historial, para que una rota se pueda borrar. Salta lo que no casa con
+   un id, lo que no puede leer y una cabecera con otro id.
