@@ -1,5 +1,5 @@
 Estado: PROPUESTA (2026-10-26) → APROBADA (2026-10-26, por el humano, sin
-cambios)
+cambios) → IMPLEMENTADA (2026-10-26, `v0.5.2`)
 
 # Spec — Mejora: cero deuda antes del hito 6
 
@@ -285,3 +285,18 @@ fallar antes del arreglo:
    `ApprovalRequested`.
 9. C1 (`c8e01c0`): DESIGN §5 dice que `max_tokens` se decide con los
    límites de tokens (hitos 8 y 11), como la spec 2, §1.6.
+
+**Verificación a mano** (§7), 2026-10-26, por el agente en una
+pseudoterminal con `opencode-go` y `glm-5.3-flash`, en un directorio
+desechable con datos inventados. Los cinco puntos, en verde:
+1. `.env -> config/app.txt`: "lee .env" pregunta `read config/app.txt …
+   (asked: .env)` con el aviso de secreto y sin `a`.
+2. Pegar la petición y una `y` de una vez: `(discarded typed input)` y la
+   pregunta espera.
+3. `echo` con 300 caracteres y `FIN` al final: la pregunta lo enseña entero,
+   en dos líneas (`↪`). La línea `→` de la llamada sigue cortada a 100: no es
+   lo que se aprueba.
+4. `sleep 317` aprobado y la pseudoterminal cerrada: `maha` sale con 129 y
+   no queda ningún `sleep`.
+5. `notas.txt` con `chmod a-w`: `✗ error: read-only file: notas.txt`, sin
+   pregunta.

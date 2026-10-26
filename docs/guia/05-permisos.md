@@ -1,7 +1,8 @@
 # 05. Permisos: el modelo propone, el código decide
 
-Hito 5 (`v0.5.0`). Specs: `docs/specs/hito-5-permisos.md` y
-`docs/specs/mejora-2026-10-23-deuda-hito-5.md`. Diseño: `docs/DESIGN.md` §5,
+Hito 5 (`v0.5.0`, con los arreglos de `v0.5.1` y `v0.5.2`). Specs:
+`docs/specs/hito-5-permisos.md`, `docs/specs/mejora-2026-10-23-deuda-hito-5.md`
+y `docs/specs/mejora-2026-10-26-deuda-pre-hito-6.md`. Diseño: `docs/DESIGN.md` §5,
 §6, §8 y §10.
 
 ## El problema
@@ -62,6 +63,22 @@ Salida real con `glm-5.3-flash`:
 - El modelo se entera: en el turno siguiente contestó "la edición fue
   denegada, así que `notas.txt` sigue conteniendo 'uno' y 'dos'".
 
+**Solo cuenta lo que escribes viendo la pregunta** (desde `v0.5.2`). Si
+pegas "ejecuta ls" y una `y` de una vez, la `y` se queda guardada en el
+lector y contestaría sola. Antes de preguntar, `maha` vacía su búfer y la
+cola de la terminal (`termios.tcflush`):
+
+```
+> Ejecuta el comando ls con run_command
+y
+  (discarded typed input)
+  ┌ run: ls
+```
+
+**Nada se corta** (desde `v0.5.2`). Una línea larga sigue en la siguiente
+con `↪`; si no, un `; curl … | sh` tras el carácter 200 se aprobaría sin
+verse. Un detalle de más de 60 líneas ofrece `[v] view all`.
+
 **Ámbitos de "toda la sesión":**
 
 | Herramienta | Qué cubre `a` |
@@ -73,11 +90,17 @@ Salida real con `glm-5.3-flash`:
 
 Sin opción `a`, una a una:
 - **Fuera del directorio de trabajo**, también para leer.
-- **Secretos:** `.env`, claves, `~/.ssh`… sin distinguir mayúsculas
-  (`.ENV` en `/mnt/c` es el mismo fichero), y también `.git/config`, que
-  puede llevar un token en la URL.
-- **Lo que ejecuta código solo:** `.git`, `.github`, `.husky`, `.vscode`,
-  `.pre-commit-config.yaml`, `.envrc` y la configuración `.maha`.
+- **Secretos:** `.env`, `*.env`, claves, `~/.ssh`, `.npmrc`, `.pypirc`,
+  `.envrc`, los tokens de `gh`, `gcloud`, Azure, Cargo y Terraform… sin
+  distinguir mayúsculas (`.ENV` en `/mnt/c` es el mismo fichero), y también
+  `.git/config` (y el de los submódulos), que puede llevar un token en la
+  URL.
+- **Por el nombre pedido y por el real:** un `.env` que es un enlace a
+  `config/app.txt` sigue siendo secreto (desde `v0.5.2`).
+- **Lo que ejecuta código solo:** `.git`, el CI (`.github`, `.gitlab-ci.yml`,
+  `.circleci`…), los hooks (`.husky`, `.githooks`, `.pre-commit-config.yaml`),
+  los editores (`.vscode`, `.idea`, `.devcontainer`), `.claude`, `.envrc` y
+  la configuración `.maha`.
 
 ```
   ┌ read /etc/hostname
@@ -154,6 +177,10 @@ sería la línea siguiente del fichero, y una `y` aprobaría un comando:
   (`MI_CLAVE`) tampoco llega, ni `SSH_AUTH_SOCK`. En la verificación, `env`
   vio esto: `HOME LANG LOGNAME PATH PWD SHELL TERM USER XDG_DATA_DIRS
   XDG_RUNTIME_DIR`.
+- **Al cerrar la ventana o con `kill`** (SIGHUP, SIGTERM), `maha` cancela
+  como con Ctrl+C, mata el comando y sale con `128 + señal` (desde
+  `v0.5.2`). El comando está en su propio grupo y la terminal no le avisa:
+  si `maha` no lo matara, quedaría huérfano.
 - **Un hijo en segundo plano** (`servidor &`) no hace esperar al tiempo
   límite: el comando termina cuando termina su shell, y el hijo se va con
   el grupo.
