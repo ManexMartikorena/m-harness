@@ -1,6 +1,6 @@
 Estado: PROPUESTA (2026-10-26; ajustada tras `v0.5.2` y con la duda 2
 cambiada por el mantenedor) → APROBADA (2026-10-26, por el humano, con el
-cambio de la duda 2)
+cambio de la duda 2) → IMPLEMENTADA (2026-10-26, `v0.6.0`)
 
 # Spec — Hito 6: Sesiones e historial
 
@@ -677,3 +677,35 @@ Dudas que se plantearon al mantenedor (registro):
     fija.
     La prueba de punta a punta de §4.8, en su commit (`d163657`).
 18. Mapa y `PUESTA_EN_MARCHA` §0 y §3.
+
+**PR 5** (`feature/hito-6-cierre`): versión 0.6.0, verificación, nota 06 de
+la guía (y la corrección de la 03), spec IMPLEMENTADA, README, MAPA y
+ESTADO.
+
+**Verificación a mano** (§7), 2026-10-26, por el agente en una
+pseudoterminal con `opencode-go` y `glm-5.3-flash` (y `kimi-k3` en el
+punto 5), en directorios desechables y con un `XDG_DATA_HOME` desechable,
+para no dejar sesiones de prueba en el `HOME` del mantenedor. Los diez
+puntos, en verde:
+1. `maha --version` → `maha 0.6.0`.
+2. Dos turnos ("Me llamo Ana", "¿Cómo me llamo?" → "Ana") y `/exit`: un
+   fichero `0600` en `sessions/`.
+3. `/sessions` lo enseña con `*` y su título; `/resume` y "¿Cómo me
+   llamo?" → "Ana".
+4. Ctrl+C a mitad de un texto largo; `/exit`; `/resume` →
+   `[the last answer was interrupted]`; "¿Terminaste o te corté?" → "Me
+   cortaste, así que el texto quedó inacabado justo cuando llegaba al siglo
+   XVI". POR VERIFICAR de §10, resuelto: `glm-5.3-flash` entiende la marca.
+5. `/model kimi-k3` y un turno; otro `maha`, `/resume` → `· kimi-k3]`. En el
+   fichero, el `ModelEntry` va entre los dos turnos.
+6. Una escritura aprobada con `a`; `/exit`; `/resume` y otra escritura →
+   vuelve a preguntar.
+7. Con la sesión abierta en un `maha`, `/resume` en otro → `error: session
+   … is open in another maha`.
+8. `/delete` de otra sesión: `n` → `[not deleted]`; `y` → `[deleted …]` y
+   ya no sale en `/sessions`.
+9. `/sesions` → `unknown command: /sesions (see /help)`; no va al modelo.
+10. Desde otro directorio, `/sessions` enseña la del primero (sin `*`);
+    `/resume` sin id → `no session in this directory (see /sessions)`;
+    `/resume ID` → `[this session was in …/proyecto; tools work in …/web]`,
+    y los ficheros que creó la sesión siguen en `proyecto`.

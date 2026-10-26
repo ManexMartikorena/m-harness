@@ -21,7 +21,7 @@ Lo que lo diferencia es cómo se construye:
 > en [`docs/ESTADO.md`](docs/ESTADO.md).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.5.2
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.6.0
 ```
 
 Necesita un proveedor con formato OpenAI (de serie, OpenCode Go o Zen) y su
@@ -36,7 +36,7 @@ model = "glm-5.3-flash"
 ```
 $ export OPENCODE_API_KEY=...
 $ maha
-maha 0.5.2 · opencode-go · glm-5.3-flash · /exit to quit
+maha 0.6.0 · opencode-go · glm-5.3-flash · /help for commands
 > Cambia la segunda línea de notas.txt por 'tres' con edit_file.
   → edit_file(new_string="tres", old_string="dos", path="notas.txt")
   ┌ edit notas.txt
@@ -59,6 +59,12 @@ todo.
 
 Mientras espera el primer token, gira un spinner con "maha". Ctrl+C a mitad
 de una respuesta la corta y vuelve al prompt; en el prompt, sale.
+
+Cada conversación se guarda sola en `~/.local/share/maha/sessions/`, turno a
+turno, también la respuesta que cortas (el modelo sabe que la cortaste).
+`/sessions` lista las de todos los directorios, `/resume [ID]` retoma una,
+`/delete ID` la borra y `/model [ID]` cambia de modelo; `/help` los
+enseña. Al retomar, las aprobaciones empiezan de cero.
 
 ## Cómo funciona un agente
 
@@ -109,8 +115,8 @@ detalle está en [`docs/DESIGN.md`](docs/DESIGN.md).
 | 2 | Primera conversación con un modelo | ✅ `v0.2.0` |
 | 3 | Streaming | ✅ `v0.3.0` |
 | 4 | Tool calling y bucle agéntico | ✅ `v0.4.0` |
-| 5 | Permisos y herramientas con efecto | ✅ `v0.5.0` |
-| 6 | Sesiones e historial | ⬜ |
+| 5 | Permisos y herramientas con efecto | ✅ `v0.5.0` (y `v0.5.1`, `v0.5.2`) |
+| 6 | Sesiones e historial | ✅ `v0.6.0` |
 | 7 | Trazas y coste | ⬜ |
 | 8 | Evals y modo no interactivo | ⬜ |
 | 9 | Adaptador de Anthropic | ⬜ |
