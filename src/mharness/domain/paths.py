@@ -7,18 +7,33 @@ path is decided here too, on paths already resolved, so every tool shares it
 """
 
 from fnmatch import fnmatchcase
+from itertools import pairwise
 from pathlib import PurePath
 
 # Everything inside these directories is secret. All names in lower case.
-SECRET_DIRS = frozenset({".ssh", ".aws", ".gnupg", ".docker", ".kube"})
+SECRET_DIRS = frozenset({".ssh", ".aws", ".gnupg", ".docker", ".kube", ".azure"})
+# Two directories in a row: everything inside them is secret (spec
+# mejora-2026-10-26-deuda-pre-hito-6, A5).
+SECRET_SUBDIRS = frozenset({(".config", "gh"), (".config", "gcloud")})
 SECRET_NAMES = (
     "*.pem",
     "*.key",
+    "*.p12",
+    "*.pfx",
+    "*.env",
     "id_rsa*",
     "id_ed25519*",
+    "id_ecdsa*",
+    "id_dsa*",
     ".netrc",
     ".pgpass",
     ".git-credentials",
+    ".envrc",
+    ".npmrc",
+    ".pypirc",
+    ".vault-token",
+    ".terraformrc",
+    "credentials.tfrc.json",
 )
 # Templates without values, kept in repositories.
 NOT_SECRET = frozenset({".env.example"})
@@ -46,12 +61,22 @@ def is_secret(path: PurePath) -> bool:
     """
     # Without case: a file system that ignores it opens the same file (spec
     # mejora-2026-10-23-deuda-hito-5, A6).
-    if any(part.casefold() in SECRET_DIRS for part in path.parts):
+    parts = [part.casefold() for part in path.parts]
+    if any(part in SECRET_DIRS for part in parts):
+        return True
+    if any(pair in SECRET_SUBDIRS for pair in pairwise(parts)):
         return True
     name = path.name.casefold()
+    parent = parts[-2] if len(parts) > 1 else ""
     # Its remote URLs can carry a token (spec mejora-2026-10-23-deuda-hito-5,
-    # E3). The rest of .git is not secret.
-    if name == "config" and len(path.parts) > 1 and path.parts[-2].casefold() == ".git":
+    # E3), also a submodule's, kept in .git/modules (A5). The rest of .git
+    # is not secret.
+    if name == "config" and (
+        parent == ".git" or (".git" in parts and "modules" in parts)
+    ):
+        return True
+    # Cargo's registry tokens.
+    if parent == ".cargo" and name.startswith("credentials"):
         return True
     if name in NOT_SECRET:
         return False

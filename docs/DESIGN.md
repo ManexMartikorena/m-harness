@@ -376,7 +376,12 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   nube y similares quedan denegados salvo aprobación explícita, para que su
   contenido no acabe en el modelo. *(Añadido el 23/10/2026, spec
   `mejora-2026-10-23-deuda-hito-5`, A6 y E3: sin distinguir mayúsculas, y también
-  `.git/config` y `.git-credentials`.)*
+  `.git/config` y `.git-credentials`.)* *(Añadido el 26/10/2026, spec
+  `mejora-2026-10-26-deuda-pre-hito-6`, A1 y A5: cuenta también la ruta
+  pedida, no solo la resuelta (un `.env` que es un enlace), y la lista crece
+  con `.npmrc`, `.pypirc`, `.envrc`, `*.env`, `*.p12`, los tokens de `gh`,
+  `gcloud`, `.azure`, Cargo y Terraform, y la configuración de los
+  submódulos.)*
 - **Terminal:** cada comando es `EFFECT`. Desde el hito 14 corre además en un
   entorno aislado.
   *(Añadido el 21/10/2026, spec del hito 5, §1.9: el comando corre en su propio
