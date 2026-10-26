@@ -8,6 +8,7 @@ Disk calls are synchronous inside `async def`, as in the file tools: small
 writes, and no threads (spec hito 2, §12).
 """
 
+import fcntl
 import json
 import os
 from collections.abc import Sequence
@@ -21,6 +22,7 @@ from mharness.domain.session import (
     SessionEntry,
     SessionError,
     SessionHeader,
+    SessionInUse,
     SessionNotFound,
     SessionSummary,
     is_session_id,
@@ -70,6 +72,7 @@ class JsonlSessionStore:
             raise _cannot_save(path, exc) from None
         log = JsonlLog(fd, path)
         try:
+            _lock(fd, header.id)
             os.fchmod(fd, 0o600)
             line = {
                 "type": "session",
@@ -96,6 +99,9 @@ class JsonlSessionStore:
             ) from None
         log = JsonlLog(fd, path)
         try:
+            _lock(fd, session_id)
+            if not _still_named(fd, path):
+                raise _not_found(session_id)
             data = _read(fd)
             whole = _whole_lines(data)
             header, entries = _parse(data[:whole], session_id)
@@ -124,6 +130,26 @@ class JsonlSessionStore:
 
 _CREATE = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_APPEND | os.O_NOFOLLOW
 _OPEN = os.O_RDWR | os.O_APPEND | os.O_NOFOLLOW
+
+
+def _lock(fd: int, session_id: str) -> None:
+    """Lock the open file, or raise `SessionInUse` at once. The lock goes
+    when the file is closed or maha dies (spec hito 6, §1.1)."""
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise SessionInUse(f"session {session_id} is open in another maha") from None
+
+
+def _still_named(fd: int, path: Path) -> bool:
+    """Whether `path` is still the file that `fd` locked: another maha may
+    have deleted it between the open and the lock."""
+    try:
+        named = path.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    held = os.fstat(fd)
+    return (named.st_dev, named.st_ino) == (held.st_dev, held.st_ino)
 
 
 def _write(fd: int, path: Path, data: bytes) -> None:

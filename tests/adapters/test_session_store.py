@@ -1,5 +1,6 @@
 """`JsonlSessionStore` over `tmp_path` (spec hito 6, §1.3, §1.5 and §4.3)."""
 
+import fcntl
 import json
 import os
 import stat
@@ -17,6 +18,7 @@ from mharness.domain.session import (
     SessionCorrupt,
     SessionError,
     SessionHeader,
+    SessionInUse,
     SessionNotFound,
     UsageEntry,
 )
@@ -232,4 +234,51 @@ async def test_a_history_the_model_would_refuse_is_corrupt(folder: Path) -> None
     await saved(folder, HOLA, CALL)
 
     with pytest.raises(SessionCorrupt, match="call c1 has no result"):
+        await JsonlSessionStore(folder).open(HEADER.id)
+
+
+# The lock: one maha per session (spec hito 6, §1.4 and §4.3.5). Two stores
+# over the same folder stand for two maha: flock locks open files, not
+# processes.
+
+
+async def test_a_new_session_is_locked_until_it_is_closed(folder: Path) -> None:
+    log = await JsonlSessionStore(folder).create(HEADER)
+    other = JsonlSessionStore(folder)
+
+    with pytest.raises(SessionInUse, match="is open in another maha"):
+        await other.open(HEADER.id)
+
+    await log.close()
+    _, reopened = await other.open(HEADER.id)
+    await reopened.close()
+
+
+async def test_an_opened_session_is_locked_until_it_is_closed(folder: Path) -> None:
+    await saved(folder, HOLA, ANSWER)
+    _, log = await JsonlSessionStore(folder).open(HEADER.id)
+
+    with pytest.raises(SessionInUse):
+        await JsonlSessionStore(folder).open(HEADER.id)
+
+    await log.close()
+    _, again = await JsonlSessionStore(folder).open(HEADER.id)
+    await again.close()
+
+
+async def test_a_session_deleted_while_opening_is_not_found(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Between opening the file and locking it, another maha deleted it: the
+    # lock is on a file that no name points to any more.
+    path = await saved(folder, HOLA, ANSWER)
+    lock = fcntl.flock
+
+    def deleted_first(fd: int, operation: int) -> None:
+        path.unlink()
+        lock(fd, operation)
+
+    monkeypatch.setattr(fcntl, "flock", deleted_first)
+
+    with pytest.raises(SessionNotFound):
         await JsonlSessionStore(folder).open(HEADER.id)
