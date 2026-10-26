@@ -254,6 +254,17 @@ async def test_a_crash_is_hidden_from_the_model_but_reported() -> None:
     assert finished.internal_error == "KeyError: 'boom'"
 
 
+async def test_a_result_that_is_not_text_is_an_internal_error() -> None:
+    # A tool that breaks its contract (an MCP one, hito 16) does not cut the
+    # turn (spec mejora-2026-10-26-deuda-pre-hito-6, B3).
+    echo = FakeTool(results=[cast(str, None)])
+
+    finished, _ = await first_result(call("c1"), echo)
+
+    assert finished.result.content == 'error: internal error in tool "echo"'
+    assert finished.internal_error == "run() returned NoneType, not str"
+
+
 async def test_validation_errors_do_not_echo_the_input() -> None:
     finished, _ = await first_result(
         ToolCallBlock(id="c1", name="echo", arguments='{"text": ["secret-value"]}')
