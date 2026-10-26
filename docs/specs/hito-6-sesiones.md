@@ -583,3 +583,19 @@ Dudas que se plantearon al mantenedor (registro):
 5. **Retomar solo con `/resume`** (§0). Propuesta: las opciones al arrancar
    (`--continue`) van al hito 8, con `maha -p`. Alternativa: añadir ya
    `maha --continue`.
+
+## 12. Aprendido al implementar (2026-10-26)
+
+**PR 1** (`feature/hito-6-contrato`, piezas 1 a 4):
+1. Tipos (`839f54e`). `session_id(created_at, token)` es pura: la hora y
+   el azar los pone quien crea la sesión (la aplicación, PR 3). El test de
+   `Message.interrupted` (4.1.3) va con su pieza, la 10.
+2. `check_history()` (`acd219b`): da el primer problema, con el id.
+3. Fuera de plan: `replay()` y `summarize()` en el dominio (`ffbd2f4`).
+   Reconstruir una sesión desde sus líneas lo necesitan el fake y el
+   adaptador JSONL; así no se escribe dos veces. `replay()` llama a
+   `check_history()`; `summarize()` no, para que una sesión rota salga en
+   `/sessions` y se pueda borrar. Para sumar los tokens, `Usage.__add__`
+   (`434c463`), que sustituye al `_add` del bucle.
+4. Puerto y fake (commit "Añadir el puerto de las sesiones"). El fake usa
+   `replay()` y `summarize()`, como hará el adaptador.
