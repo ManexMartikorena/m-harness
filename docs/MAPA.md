@@ -47,6 +47,7 @@ deuda" y los arreglos de la auditoría final).
 | `specs/hito-4-bucle-agentico.md` | Spec del hito 4 (IMPLEMENTADA): bloques de llamada y resultado, `ToolCallDelta`, puerto `Tool`, cuatro herramientas de solo lectura, el bucle `Agent` y la terminal con llamadas |
 | `specs/mejora-2026-10-23-deuda-hito-5.md` | Mejora (IMPLEMENTADA): cero deuda antes de cerrar el hito 5 — fallos de la auditoría, arquitectura, escritura de ficheros, entorno de los comandos y `.gitignore` |
 | `specs/hito-3-streaming.md` | Spec del hito 3 (IMPLEMENTADA): eventos del modelo, `stream()` en el puerto junto a `complete()`, `collect()`, SSE a mano, spinner de espera y Ctrl+C por respuesta |
+| `specs/hito-6-sesiones.md` | Spec del hito 6 (PROPUESTA): sesiones en JSONL, puerto `SessionStore`, guardado por turno, respuesta cortada marcada y los comandos `/sessions`, `/resume`, `/delete`, `/model` y `/help` |
 
 ## Código: `src/mharness/`
 
