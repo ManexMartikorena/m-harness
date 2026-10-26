@@ -8,12 +8,15 @@ Qué hay que hacer para dejar este proyecto funcionando en una máquina nueva o
 en otra de las que se usan. **El `.env` no viaja por git**, así que todo lo que
 hay aquí es exactamente lo que no se arregla con un `git pull`.
 
-Última revisión: 2026-10-20 (hito 2).
+Última revisión: 2026-10-26 (hito 6).
 
 ## 0. Tras cada `git pull`
 
 Lo último que hay que hacer, lo más reciente arriba:
 
+- **Hito 6, PR 4 (2026-10-26):** nada que hacer. Desde aquí `maha` guarda
+  cada conversación en `~/.local/share/maha/sessions/` (§3). Las sesiones
+  de un PC no están en el otro.
 - **Hito 2, PR 3 (2026-10-20):** para conversar con `maha`, crear
   `~/.config/maha/config.toml` (§3.1) y el `.env` con `OPENCODE_API_KEY`
   (§2). Los tests no necesitan ninguno de los dos.
@@ -65,7 +68,10 @@ shell.
 No hay servicios ni base de datos. Cada máquina tiene sus propios datos, y nada
 de esto entra en git:
 - `~/.config/maha/`: configuración del usuario (§3.1).
-- `~/.local/share/maha/`: sesiones, trazas y memoria.
+- `~/.local/share/maha/`: sesiones (desde el hito 6, en `sessions/`, un
+  fichero `.jsonl` por sesión, solo legibles por el usuario), trazas y
+  memoria. Respeta `XDG_DATA_HOME`. Una sesión guarda todo lo que leyó el
+  agente, también un secreto que aprobaste leer: se borra con `/delete`.
 - `~/.local/state/maha/`: registro de la aplicación.
 
 Lo que se haga en una máquina no está en la otra.

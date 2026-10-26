@@ -651,3 +651,29 @@ Dudas que se plantearon al mantenedor (registro):
     fallo del disco es `SessionError`, y una sesión que no se pudo crear
     entera se borra (si no, quedaría vacía en `/sessions`, porque el
     reintento usa otro id).
+
+**PR 4** (`feature/hito-6-terminal`, piezas 15 a 18):
+15. Parsear comandos (`3309dbf`). Un `/tmp` solo es un comando desconocido,
+    como dice la regla (`^/[a-z]+$` como primera palabra); `/tmp/x` es texto.
+16. y 17. Comandos y cableado, en un commit (`dbd6036`): `converse` recibe
+    `Sessions`, y sin cambiar `bootstrap` a la vez el commit no quedaba en
+    verde. Antes, `data_dir()` en su propio commit (`b2211c1`). Lo que la
+    spec no fijaba:
+    - los comandos se ejecutan en `adapters/cli/commands.py` (`Commands`),
+      junto al parser, y no en `conversation.py`, que sigue dedicado a la
+      respuesta. *(Corregido al implementarlo: §1.8 decía
+      `conversation.py`.)*
+    - la fecha de `/sessions` va en hora local, `2026-10-26 09:15`, no "hoy"
+      o "ayer" como el ejemplo de §0: la interfaz está en inglés y no hace
+      falta un reloj para pintarla;
+    - la cabecera dice `/help for commands` en lugar de `/exit to quit`;
+    - `/delete` de la sesión actual se rechaza antes de preguntar `[y/N]`;
+    - Ctrl+C durante la confirmación de `/delete` termina `maha`, como en el
+      prompt.
+    Fuera de plan (`6b089f9`): al cablear, los tests de punta a punta
+    escribieron seis sesiones de prueba en el `~/.local/share/maha` real del
+    puesto. Se borraron (eran todas de carpetas temporales de pytest) y
+    `tests/conftest.py` da a cada test su propio `XDG_DATA_HOME`; un test lo
+    fija.
+    La prueba de punta a punta de §4.8, en su commit (`d163657`).
+18. Mapa y `PUESTA_EN_MARCHA` §0 y §3.

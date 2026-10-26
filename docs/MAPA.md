@@ -3,8 +3,8 @@
 Dónde está cada cosa. Se actualiza en el mismo PR que crea, mueve o borra
 ficheros.
 
-Última actualización: 2026-10-26 (hito 6, PR 3: el bucle y la aplicación de
-las sesiones).
+Última actualización: 2026-10-26 (hito 6, PR 4: los comandos y el cableado
+de las sesiones).
 
 ## Raíz
 
@@ -59,8 +59,8 @@ import-linter (`pyproject.toml`).
 |---|---|---|
 | `__init__.py` | paquete | `DISTRIBUTION` y `__version__`: el nombre y la versión de `maha`, en un solo sitio |
 | `__main__.py` | entrada | `python -m mharness`: igual que `maha` |
-| `bootstrap.py` | raíz de composición | `main()` del comando `maha`: lee la configuración, crea el adaptador, las siete herramientas sobre el directorio de arranque (`run_command` con `LocalCommandRunner` y el entorno de `command_env()`, sin la clave del proveedor), un solo `StdinLines` para la conversación y las preguntas, y el gate: `TerminalApproval` en una terminal, `DenyAll` sin ella; el único que conoce todas las piezas |
-| `config.py` | configuración (hermana de `adapters`) | `load()`: proveedores predefinidos, del usuario y del proyecto (este, solo `provider` y `model`); la clave, del entorno |
+| `bootstrap.py` | raíz de composición | `main()` del comando `maha`: lee la configuración, resuelve el directorio de arranque, crea el adaptador, las siete herramientas sobre ese directorio (`run_command` con `LocalCommandRunner` y el entorno de `command_env()`, sin la clave del proveedor), un solo `StdinLines` para la conversación y las preguntas, el gate (`TerminalApproval` en una terminal, `DenyAll` sin ella) y `Sessions` sobre `JsonlSessionStore` en `data_dir()/sessions`, con la fábrica del `Agent`; el único que conoce todas las piezas |
+| `config.py` | configuración (hermana de `adapters`) | `load()`: proveedores predefinidos, del usuario y del proyecto (este, solo `provider` y `model`); la clave, del entorno. `data_dir()`: `$XDG_DATA_HOME/maha`, por defecto `~/.local/share/maha` |
 | `domain/messages.py` | domain | `TextBlock`, `ToolCallBlock`, `ToolResultBlock` y `Message`: mensajes hechos de bloques, validados por `type`; `interrupted` marca una respuesta cortada con Ctrl+C |
 | `domain/model.py` | domain | `ModelRequest` (con `tools`), `ToolSpec`, `ModelResponse`, `Usage` (se suma con `+`) y `StopReason` |
 | `domain/session.py` | domain | La sesión guardada (spec hito 6, §1.2): `SessionHeader`, las líneas del fichero (`MessageEntry`, `UsageEntry`, `ModelEntry`, unidas por `type` en `SessionEntry`), `Session` y `SessionSummary`; `session_id()` e `is_session_id()` (fecha UTC y 4 hex; nada más llega al disco); `check_history()` (cada llamada con su resultado), `replay()` y `summarize()`; errores `SessionNotFound`, `SessionInUse` y `SessionCorrupt` |
@@ -93,7 +93,8 @@ import-linter (`pyproject.toml`).
 | `adapters/storage/__init__.py` | adapters | Exporta `JsonlSessionStore` |
 | `adapters/storage/sessions.py` | adapters | `JsonlSessionStore` y `JsonlLog`: una sesión por fichero `<id>.jsonl` (cabecera con `version` y una línea por entrada), carpeta `0700` y ficheros `0600`; cada `append` es una escritura con `fsync`; `flock` mientras está abierta (`SessionInUse`), y comprobación de que el nombre sigue siendo ese fichero; una última línea cortada se ignora y se recorta; una rota en medio, una cabecera inválida o una versión desconocida dan `SessionCorrupt`; la lista salta lo que no puede leer; el borrado bloquea antes de borrar |
 | `adapters/cli/app.py` | adapters | Línea de comandos con argparse: `parse()` (`--version`, la ayuda) y `fail()` |
-| `adapters/cli/conversation.py` | adapters | `converse()`: leer, enviar al `Agent` y mostrar la respuesta según llega, cada llamada a herramienta (`→`, `✓`/`✗`), la negativa (`[denied: …]`) y la línea de tokens con las llamadas, con `/exit`, Ctrl+D y Ctrl+C (a mitad de respuesta o de la pregunta, solo la corta); un error no previsto se enseña y vuelve al prompt; SIGHUP y SIGTERM cancelan y terminan `maha` con `128 + señal`. Todo texto no confiable pasa por `clean()` |
+| `adapters/cli/conversation.py` | adapters | `converse()`: empieza una sesión (`Sessions.start()`), lee, separa los comandos (`parse_command`) del texto, envía el texto a la `Conversation` y muestra la respuesta según llega, cada llamada a herramienta (`→`, `✓`/`✗`), la negativa (`[denied: …]`) y la línea de tokens con las llamadas; avisa si la sesión no se guardó y la cierra al salir. `/exit`, Ctrl+D y Ctrl+C (a mitad de respuesta o de la pregunta, solo la corta); un error no previsto se enseña y vuelve al prompt; SIGHUP y SIGTERM cancelan y terminan `maha` con `128 + señal`. Todo texto no confiable pasa por `clean()` |
+| `adapters/cli/commands.py` | adapters | `parse_command()` (`/` y minúsculas como primera palabra; `/etc/hosts …` es texto), `COMMANDS` y `Commands`: `/help`, `/sessions` (las 20 últimas de todos los directorios, `*` en las de este, `~` para el `HOME`), `/resume [ID]` (con los avisos de otro directorio, otro proveedor y respuesta cortada), `/delete ID` (nunca la actual; confirma `[y/N]` tras descartar lo tecleado) y `/model [ID]`; un comando desconocido no va al modelo; todo lo leído del disco pasa por `clean()` |
 | `adapters/cli/approval.py` | adapters | `TerminalApproval`: descarta lo tecleado antes (`discard`), la pregunta (`┌`, `│`, `└ Allow?`), `y`/`a`/`n`, Ctrl+D deniega, aviso en amarillo; nada se corta (las líneas largas siguen con `↪`) y un detalle de más de 60 líneas ofrece `v`; saneado con `clean()`. `DenyAll`: sin terminal, deniega sin preguntar |
 | `adapters/cli/input.py` | adapters | `StdinLines` (lectura de stdin sin hilos; `discard()` vacía su búfer y la cola de la terminal) y `ReadLine`: un solo lector para la conversación y las preguntas |
 | `adapters/cli/text.py` | adapters | `clean()`: escapa los caracteres de control y bidi del texto no confiable antes de pintarlo (spec `mejora-2026-10-23-deuda-hito-5`, A2) |
@@ -104,9 +105,11 @@ import-linter (`pyproject.toml`).
 | Fichero | Qué comprueba |
 |---|---|
 | `test_entry_point.py` | El script `maha` entra por `bootstrap.main`; `python -m mharness --version` |
-| `test_bootstrap.py` | `maha` de punta a punta con respx (streams SSE) y un pipe o una pseudoterminal como stdin: dos turnos, un stream cortado, las siete herramientas, una llamada a `read_file` sobre un fichero real, sin terminal una escritura se deniega sin preguntar, en una terminal `run_command` pregunta (tras descartar lo tecleado antes) y su `env` no ve la clave; errores de configuración y `--version` |
+| `conftest.py` | Para todos los tests: cada uno con su propio `XDG_DATA_HOME`, para que nada se escriba en el `HOME` real |
+| `test_bootstrap.py` | `maha` de punta a punta con respx (streams SSE) y un pipe o una pseudoterminal como stdin: dos turnos, un segundo `maha` que retoma al primero, las sesiones en el `XDG_DATA_HOME` del test, un stream cortado, las siete herramientas, una llamada a `read_file` sobre un fichero real, sin terminal una escritura se deniega sin preguntar, en una terminal `run_command` pregunta (tras descartar lo tecleado antes) y su `env` no ve la clave; errores de configuración y `--version` |
 | `adapters/test_cli.py` | `--version`, la ayuda, sin argumentos devuelve las opciones, el error de uso y `fail()` |
 | `adapters/test_conversation.py` | Respuesta en directo y tokens, llamadas a herramientas (marcas, argumentos cortados, plural, límite de pasos, fallo interno, Ctrl+C durante una herramienta, que guarda el turno con la llamada cancelada), `/exit`, Ctrl+D, Ctrl+C en el prompt y a mitad de respuesta, errores a mitad, spinner, SIGHUP y SIGTERM (también durante un comando real, que no sobrevive) y `StdinLines` (también `discard()`, con una tubería y una pseudoterminal) |
+| `adapters/test_commands.py` | Qué es un comando y qué va al modelo; `/help`, comando desconocido, `/sessions` (vacía, de todos los directorios, orden, marca), `/resume` (historial, otro directorio, respuesta cortada, errores), `/delete` (`n`, `y`, sin id, la actual, lo tecleado se descarta), `/model`, títulos escapados y aviso de sesión no guardada |
 | `adapters/test_approval.py` | `TerminalApproval`: lo tecleado antes se descarta, la pregunta, cada respuesta, repetir, Ctrl+D, sin `scope` no hay `a`, aviso con y sin color, nada se corta y `v` enseña el resto, caracteres de control escapados; `DenyAll` |
 | `adapters/test_spinner.py` | Fotogramas con y sin color, `NO_COLOR`, solo en terminal, borrado de la línea |
 | `adapters/test_sse.py` | Analizador SSE: eventos, comentarios, saltos de línea, trozos partidos, U+2028 y el tope de 1 MiB |
