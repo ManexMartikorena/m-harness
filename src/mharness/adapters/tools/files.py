@@ -97,8 +97,18 @@ class Workspace:
             return str(path.relative_to(self.root))
         return str(path)
 
-    def warning(self, path: Path, secret: str | None) -> str | None:
-        return read_warning(path, self.root, secret=secret)
+    def asked(self, raw: str) -> Path:
+        """`raw` made absolute, without resolving links: the name the model
+        asked for (spec mejora-2026-10-26-deuda-pre-hito-6, A1)."""
+        return Path(os.path.normpath(self.root / raw))
+
+    def warning(self, path: Path, secret: str | None, raw: str) -> str | None:
+        """Why reading needs a question: by the resolved path and by the one
+        asked for."""
+        return read_warning(path, self.root, secret=secret, asked=self.asked(raw))
+
+    def change_warning(self, path: Path, raw: str) -> str | None:
+        return change_warning(path, self.root, asked=self.asked(raw))
 
 
 class _Asked:
@@ -216,7 +226,7 @@ class ReadFile:
     async def approval(self, params: ReadFileParams) -> ApprovalRequest | None:
         self._asked.forget()
         path = self._workspace.resolve(params.path)
-        warning = self._workspace.warning(path, SECRET_FILE)
+        warning = self._workspace.warning(path, SECRET_FILE, params.path)
         if warning is None:
             return None
         # Before asking: no useless question (spec hito 5, §1.2). Only what
@@ -230,7 +240,7 @@ class ReadFile:
 
     async def run(self, params: ReadFileParams) -> str:
         path = self._workspace.resolve(params.path)
-        warning = self._workspace.warning(path, SECRET_FILE)
+        warning = self._workspace.warning(path, SECRET_FILE, params.path)
         self._asked.check(params, params.path, path, warning)
         limit = min(params.limit or READ_MAX_LINES, READ_MAX_LINES)
         with _reading(params.path):
@@ -326,7 +336,7 @@ class ListDir:
     async def approval(self, params: ListDirParams) -> ApprovalRequest | None:
         self._asked.forget()
         path = self._workspace.resolve(params.path)
-        warning = self._workspace.warning(path, SECRET_DIR)
+        warning = self._workspace.warning(path, SECRET_DIR, params.path)
         if warning is None:
             return None
         _check_dir(path, params.path)
@@ -338,7 +348,7 @@ class ListDir:
 
     async def run(self, params: ListDirParams) -> str:
         path = self._workspace.resolve(params.path)
-        warning = self._workspace.warning(path, SECRET_DIR)
+        warning = self._workspace.warning(path, SECRET_DIR, params.path)
         self._asked.check(params, params.path, path, warning)
         _check_dir(path, params.path)
         with _reading(params.path):
@@ -505,7 +515,7 @@ class Glob:
         self._asked.forget()
         base = self._workspace.resolve(params.path)
         # Secrets found while walking are skipped, never asked about.
-        warning = self._workspace.warning(base, None)
+        warning = self._workspace.warning(base, None, params.path)
         if warning is None:
             return None
         _check_glob(params.pattern, base, params.path)
@@ -516,7 +526,7 @@ class Glob:
     async def run(self, params: GlobParams) -> str:
         base = self._workspace.resolve(params.path)
         self._asked.check(
-            params, params.path, base, self._workspace.warning(base, None)
+            params, params.path, base, self._workspace.warning(base, None, params.path)
         )
         _check_glob(params.pattern, base, params.path)
         walk = _Walk(self._workspace, base)
@@ -577,7 +587,7 @@ class Grep:
     async def approval(self, params: GrepParams) -> ApprovalRequest | None:
         self._asked.forget()
         base = self._workspace.resolve(params.path)
-        warning = self._warning(base)
+        warning = self._warning(base, params.path)
         if warning is None:
             return None
         _check_grep(params, base)
@@ -587,15 +597,15 @@ class Grep:
             title += f" (glob: {params.glob})"
         return _request(self.name, title, self._workspace, base, params.path, warning)
 
-    def _warning(self, base: Path) -> str | None:
+    def _warning(self, base: Path, raw: str) -> str | None:
         # One secret file asks, as read_file; a secret directory is walked,
         # and the walk skips its secrets without asking.
         secret = SECRET_FILE if base.is_file() else None
-        return self._workspace.warning(base, secret)
+        return self._workspace.warning(base, secret, raw)
 
     async def run(self, params: GrepParams) -> str:
         base = self._workspace.resolve(params.path)
-        self._asked.check(params, params.path, base, self._warning(base))
+        self._asked.check(params, params.path, base, self._warning(base, params.path))
         _check_grep(params, base)
         loop = asyncio.get_running_loop()
         deadline = loop.time() + GREP_TIME_LIMIT
@@ -1219,7 +1229,7 @@ class WriteFile:
             params.content.encode("utf-8")
         except UnicodeEncodeError:
             raise ToolError("content is not valid UTF-8") from None
-        warning = change_warning(path, workspace.root)
+        warning = workspace.change_warning(path, params.path)
         data = _current_bytes(path, params.path, "overwrite")
         shown = workspace.shown(path)
         if data is None:
@@ -1393,7 +1403,7 @@ class EditFile:
         data = _current_bytes(path, params.path, "edit")
         if data is None:
             raise ToolError(f"file not found: {params.path}")
-        warning = change_warning(path, workspace.root)
+        warning = workspace.change_warning(path, params.path)
         try:
             old, new, _ = _edited(data, params)
             body = _diff(old, new)

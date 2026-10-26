@@ -139,3 +139,20 @@ def test_inside_by_the_relative_path() -> None:
     assert is_inside(PurePath("/home/ane/.ssh/project/a.txt"), root)
     assert not is_secret_at(PurePath("/home/ane/.ssh/project/a.txt"), root)
     assert is_secret_at(PurePath("/home/ane/.ssh/a.txt"), root)
+
+
+def test_the_asked_path_counts_too() -> None:
+    # A `.env` that links to a plain name, or a plain name inside a linked
+    # `.github` (spec mejora-2026-10-26-deuda-pre-hito-6, A1).
+    resolved = ROOT / "config/app.txt"
+
+    assert read_warning(resolved, ROOT, secret=SECRET_FILE) is None
+    assert (
+        read_warning(resolved, ROOT, secret=SECRET_FILE, asked=ROOT / ".env")
+        == SECRET_FILE
+    )
+    assert change_warning(resolved, ROOT, asked=ROOT / ".env") == SECRET_CHANGE
+    assert (
+        change_warning(resolved, ROOT, asked=ROOT / ".github/workflows/ci.yml")
+        == RUNS_CODE
+    )

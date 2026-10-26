@@ -93,33 +93,56 @@ def is_secret_at(path: PurePath, root: PurePath) -> bool:
     return is_secret(path)
 
 
-def read_warning(path: PurePath, root: PurePath, *, secret: str | None) -> str | None:
+def read_warning(
+    path: PurePath,
+    root: PurePath,
+    *,
+    secret: str | None,
+    asked: PurePath | None = None,
+) -> str | None:
     """Why reading the resolved `path` needs a question, or None. `secret` is
-    the warning for a secret path, or None if secrets do not ask."""
+    the warning for a secret path, or None if secrets do not ask.
+
+    `asked` is the path as the model wrote it, made absolute but not
+    resolved: a `.env` that links to `config/app.txt` is still secret (spec
+    mejora-2026-10-26-deuda-pre-hito-6, A1).
+    """
     found = []
     if not is_inside(path, root):
         found.append(OUTSIDE)
-    if secret is not None and is_secret_at(path, root):
+    if secret is not None and any(
+        is_secret_at(seen, root) for seen in _both(path, asked)
+    ):
         found.append(secret)
     return "; ".join(found) or None
 
 
-def change_warning(path: PurePath, root: PurePath) -> str | None:
+def change_warning(
+    path: PurePath, root: PurePath, *, asked: PurePath | None = None
+) -> str | None:
     """Why changing the resolved `path` cannot be approved for the whole
-    session: the warnings of reading it, and what can run code.
+    session: the warnings of reading it, and what can run code. `asked`, as
+    in `read_warning`.
 
     Inside, only the path below the root counts: a working directory inside
     a `.git` folder does not make every write warn.
     """
-    found = [read_warning(path, root, secret=SECRET_CHANGE)]
-    seen = path.relative_to(root) if is_inside(path, root) else path
-    parts = [part.casefold() for part in seen.parts]
+    found = [read_warning(path, root, secret=SECRET_CHANGE, asked=asked)]
+    seen = [
+        each.relative_to(root) if is_inside(each, root) else each
+        for each in _both(path, asked)
+    ]
+    parts = {part.casefold() for each in seen for part in each.parts}
+    names = {each.name.casefold() for each in seen}
     if ".git" in parts:
         found.append(GIT_DIR)
-    elif any(part in CODE_DIRS for part in parts) or (
-        parts and parts[-1] in CODE_FILES
-    ):
+    elif any(part in CODE_DIRS for part in parts) or names & CODE_FILES:
         found.append(RUNS_CODE)
     elif ".maha" in parts:
         found.append(MAHA_CONFIG)
     return "; ".join(warning for warning in found if warning) or None
+
+
+def _both(path: PurePath, asked: PurePath | None) -> list[PurePath]:
+    """The resolved path and, if given, the asked one."""
+    return [path] if asked is None else [path, asked]
