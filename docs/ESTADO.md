@@ -2,8 +2,8 @@
 
 Última actualización: 2026-10-26. **Mejora "cero deuda antes del hito 6"
 implementada** (PRs #48 a #50; spec `mejora-2026-10-26-deuda-pre-hito-6`,
-IMPLEMENTADA) y sale como `v0.5.2`. Siguiente: el PR de la spec del hito 6
-(rama `docs/spec-hito-6-sesiones`, ya con push).
+IMPLEMENTADA) y publicada como `v0.5.2`. Siguiente: aprobar la spec del
+hito 6 (su PR, rama `docs/spec-hito-6-sesiones`).
 **Sesión en el PC del trabajo (el WSL del PC de Windows).**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
@@ -14,11 +14,10 @@ Lo primero al abrir: "Siguiente paso", más abajo.
 hito 6 (sesiones e historial), empezando por su spec.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.5.1` — Procesos escapados y grep por tandas**
-  (2026-10-23):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.5.1
-- Ramas abiertas: `docs/spec-hito-6-sesiones` (con push, sin PR) y
-  `fix/release-v0-5-2` (este cierre). Las integradas se conservan en GitHub.
+- Última versión: **`v0.5.2` — Cero deuda antes del hito 6** (2026-10-26):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.5.2
+- Ramas abiertas: `docs/spec-hito-6-sesiones` (PR de la spec, esperando las
+  dudas). Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -32,6 +31,11 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **`v0.5.2` publicada, 2026-10-26.** Tag anotado sobre el merge del PR #51
+  (`3266867`), con el CI de `main` en verde; creado por el agente con el
+  permiso del mantenedor. `uvx --from
+  git+https://github.com/ManexMartikorena/m-harness@v0.5.2 maha --version`
+  → `maha 0.5.2`.
 - **Mejora "cero deuda antes del hito 6" implementada, 2026-10-26** (PR #48
   la spec, merge `ae36187`; PR #49 seguridad, merge `3bc416d`; PR #50
   corrección, merge `4356765`). Un commit por fallo, con su test visto
@@ -466,12 +470,11 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (por si
 acaso; no hay dependencias nuevas) y comprobar los tests, mypy y
 lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** integrar el PR de `fix/release-v0-5-2`, crear el tag
-   `v0.5.2` sobre su merge y comprobar la release (permiso del mantenedor,
-   2026-10-26).
-2. **Agente:** abrir el PR de la spec del hito 6 (`docs/spec-hito-6-sesiones`;
-   hay que traer `main` a la rama). **Mantenedor:** responder sus cinco
-   dudas (§11); integrar el PR es aprobarla.
+1. ~~**Agente:** publicar `v0.5.2`~~ Hecho el 2026-10-26 (PR #51, merge
+   `3266867`).
+2. **Mantenedor:** responder las cinco dudas de la spec del hito 6 (§11),
+   en su PR (rama `docs/spec-hito-6-sesiones`). Con las respuestas, el
+   agente la pasa a APROBADA y la integra (integrar es aprobarla).
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.

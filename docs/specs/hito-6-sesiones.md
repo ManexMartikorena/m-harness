@@ -1,4 +1,4 @@
-Estado: PROPUESTA (2026-10-26)
+Estado: PROPUESTA (2026-10-26; ajustada tras `v0.5.2`)
 
 # Spec — Hito 6: Sesiones e historial
 
@@ -305,6 +305,10 @@ Cierra la pendiente de la spec 3, §1.6.
 - **`/model`** no valida el id: no hay catálogo hasta el hito 7. Un id que no
   existe da el error del proveedor en el turno siguiente. El cambio se
   guarda como `ModelEntry`.
+- **La confirmación de `/delete` es una pregunta:** como la de aprobación,
+  descarta antes lo tecleado (`StdinLines.discard()`, spec
+  `mejora-2026-10-26-deuda-pre-hito-6`, A2). Un `y` pegado detrás de
+  `/delete ID` no borra nada.
 - Todo texto de una sesión (títulos, ids leídos del disco) pasa por
   `clean()` antes de pintarse.
 
@@ -415,8 +419,8 @@ mensaje con `interrupted=True` lleva la marca en `content`.
 **4.7 Terminal** (`tests/adapters/test_commands.py` y
 `test_conversation.py`)
 1. Parseo: comandos, argumentos, desconocido, `/etc/hosts …` va al modelo.
-2. `/sessions` (vacío y con varias), `/resume`, `/delete` con `y` y con `n`,
-   `/model` con y sin id, `/help`.
+2. `/sessions` (vacío y con varias), `/resume`, `/delete` con `y` y con `n`
+   (y un `y` tecleado antes se descarta), `/model` con y sin id, `/help`.
 3. Títulos con caracteres de control salen escapados.
 
 **4.8 De punta a punta** (`tests/test_bootstrap.py`): dos `maha` seguidos
