@@ -94,6 +94,7 @@ m-harness/
 │   │   ├── tools.py       #   el registro de herramientas
 │   │   ├── approvals.py   #   las aprobaciones de la sesión
 │   │   ├── prompt.py      #   composición del system prompt
+│   │   ├── sessions.py    #   guardar, retomar, listar y borrar sesiones
 │   │   ├── context.py     #   conteo y compactación
 │   │   └── subagents.py
 │   ├── adapters/          # Implementaciones de los puertos: el contacto real con el exterior
@@ -101,7 +102,7 @@ m-harness/
 │   │   ├── tools/         #   files.py, search_worker.py, shell.py, web.py…
 │   │   ├── commands/      #   local.py; el aislado, en el hito 14
 │   │   ├── mcp/
-│   │   ├── storage/       #   sesiones (JSONL), memoria (SQLite)
+│   │   ├── storage/       #   sessions.py (JSONL), memoria (SQLite)
 │   │   ├── skills/
 │   │   ├── tracing/       #   jsonl_traces.py, otel.py
 │   │   └── cli/           #   adaptador de entrada: terminal interactiva y modo no interactivo
@@ -118,6 +119,8 @@ m-harness/
 
 *(Corregido el 23/10/2026, spec `mejora-2026-10-23-deuda-hito-5`, C: el árbol
 usa los nombres reales de los ficheros que ya existen.)*
+*(Anotado el 26/10/2026, spec del hito 6, §3.1: `application/sessions.py` y
+`adapters/storage/sessions.py`.)*
 
 El árbol muestra el destino: cada carpeta nace en el hito que la necesita
 (§14). `docs/MAPA.md` describe lo que existe en cada momento y se actualiza en
@@ -224,6 +227,10 @@ Decision = "once" | "session" | "deny"
 
 # Sesión
 Session(id, created_at, cwd, model, messages, usage)
+# (Corregido el 26/10/2026, spec del hito 6, §1.2: `Session(header, messages,
+#  model, usage)`. La cabecera lleva id, fecha, directorio, proveedor, modelo
+#  inicial y versión de maha; `model` es el actual, tras los /model. Un mensaje
+#  cortado con Ctrl+C se guarda con `Message.interrupted`.)
 ```
 
 **Decisiones del contrato:**

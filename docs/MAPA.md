@@ -49,6 +49,7 @@ deuda" y los arreglos de la auditoría final).
 | `specs/mejora-2026-10-23-deuda-hito-5.md` | Mejora (IMPLEMENTADA): cero deuda antes de cerrar el hito 5 — fallos de la auditoría, arquitectura, escritura de ficheros, entorno de los comandos y `.gitignore` |
 | `specs/mejora-2026-10-26-deuda-pre-hito-6.md` | Mejora (IMPLEMENTADA, `v0.5.2`): cero deuda antes del hito 6 — los fallos de dos auditorías del 2026-10-26: secretos tras un enlace, entrada adelantada, pregunta que corta, señales de cierre, listas de secretos y de código, y corrección |
 | `specs/hito-3-streaming.md` | Spec del hito 3 (IMPLEMENTADA): eventos del modelo, `stream()` en el puerto junto a `complete()`, `collect()`, SSE a mano, spinner de espera y Ctrl+C por respuesta |
+| `specs/hito-6-sesiones.md` | Spec del hito 6 (APROBADA): sesiones en JSONL, puerto `SessionStore`, guardado por turno, respuesta cortada marcada y los comandos `/sessions` (de todos los directorios), `/resume`, `/delete`, `/model` y `/help` |
 
 ## Código: `src/mharness/`
 
