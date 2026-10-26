@@ -14,6 +14,9 @@ hay aquí es exactamente lo que no se arregla con un `git pull`.
 
 Lo último que hay que hacer, lo más reciente arriba:
 
+- **PR #58 (2026-10-26):** `uv sync`. Suben ruff (0.17.2), pytest-asyncio
+  (1.4.1) y virtualenv (21.14.13, por una alerta de seguridad), todas de
+  desarrollo.
 - **Hito 6, PR 4 (2026-10-26):** nada que hacer. Desde aquí `maha` guarda
   cada conversación en `~/.local/share/maha/sessions/` (§3). Las sesiones
   de un PC no están en el otro.
