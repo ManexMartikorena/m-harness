@@ -1,7 +1,9 @@
 """Commands in the terminal: what is a command and what goes to the model
 (spec hito 6, §1.8 and §4.7.1)."""
 
+import asyncio
 import io
+import signal
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -18,6 +20,7 @@ from mharness.domain.session import (
     MessageEntry,
     SessionError,
     SessionHeader,
+    SessionSummary,
 )
 from tests.fakes.approval import FakeApproval
 from tests.fakes.model import FakeModelClient, reply
@@ -346,6 +349,61 @@ async def test_resume_warns_of_what_the_session_left_could_not_save() -> None:
         "warning: session 20261026-091502-7777 was not saved, its last turns are lost: "
         "cannot save session: No space left on device\n"
     ) in err
+
+
+async def test_an_unexpected_error_in_a_command_is_shown_and_maha_goes_on() -> None:
+    class Broken(MemorySessionStore):
+        async def summaries(self) -> list[SessionSummary]:
+            raise RecursionError("maximum recursion depth exceeded")
+
+    maha = Maha(Broken(), [reply("Sigo.")])
+
+    code, out, err = await maha.run("/sessions", "Hola", "/exit")
+
+    assert code == 0
+    assert "error: internal: RecursionError: maximum recursion depth exceeded\n" in err
+    assert "Sigo." in out
+
+
+async def test_end_of_input_at_the_delete_question_keeps_the_session() -> None:
+    store = MemorySessionStore()
+    await Maha(store, [reply("Hola.")]).run("Hola", "/exit")
+
+    code, out, _ = await Maha(store, [], tokens=("9999",)).run(
+        "/delete 20261026-091502-3fa2"
+    )
+
+    assert code == 0
+    assert "  [not deleted]\n" in out
+    assert "20261026-091502-3fa2" in store.sessions
+
+
+async def test_ctrl_c_at_the_delete_question_ends_maha_and_keeps_the_session() -> None:
+    store = MemorySessionStore()
+    await Maha(store, [reply("Hola.")]).run("Hola", "/exit")
+    maha = Maha(store, [], tokens=("9999",))
+    lines = iter(["/delete 20261026-091502-3fa2"])
+
+    async def read() -> str:
+        line = next(lines, None)
+        if line is not None:
+            return line
+        signal.raise_signal(signal.SIGINT)
+        await asyncio.Event().wait()
+        raise AssertionError("not cancelled")
+
+    code = await converse(
+        maha.sessions,
+        provider="opencode-go",
+        read_line=read,
+        discard=maha.discard,
+        out=io.StringIO(),
+        err=io.StringIO(),
+        home=HOME,
+    )
+
+    assert code == 130
+    assert "20261026-091502-3fa2" in store.sessions
 
 
 async def test_leaving_a_conversation_never_saved_says_so() -> None:

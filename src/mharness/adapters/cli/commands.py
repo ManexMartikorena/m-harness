@@ -83,6 +83,11 @@ class Commands:
                     self._say(f"unknown command: /{command.name} (see /help)")
         except SessionError as exc:
             print(f"error: {clean(str(exc))}", file=self._err, flush=True)
+        except Exception as exc:
+            # A bug, or the disk failing in a way nobody expected: said, and
+            # maha goes on, as with an answer (final audit of hito 6).
+            detail = clean(f"{type(exc).__name__}: {exc}")
+            print(f"error: internal: {detail}", file=self._err, flush=True)
         self.warn_unsaved()
 
     def warn_unsaved(self) -> None:
