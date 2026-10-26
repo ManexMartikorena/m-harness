@@ -20,9 +20,11 @@ from mharness.domain.model import Usage
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
+    Session,
     SessionEntry,
     SessionError,
     SessionHeader,
+    SessionInUse,
     SessionNotFound,
     SessionSummary,
     UsageEntry,
@@ -49,10 +51,12 @@ class _Origin:
 class Conversation:
     """An `Agent` and the session where its turns go.
 
-    The file is created with the first turn: opening maha and leaving does
-    not leave an empty session. A save that fails does not cut the
-    conversation: `unsaved` says why, and the next turn tries again with
-    everything not saved yet.
+    What happens goes to one queue, in order: the messages and tokens of
+    each turn, and each model change. The queue is written at the end of
+    every turn, on `/model` and on `close()`; a write that fails keeps it
+    whole for the next try (the store undoes a half write), and `unsaved`
+    says why. The file is created with the first turn: opening maha and
+    leaving does not leave an empty session.
     """
 
     def __init__(
@@ -69,10 +73,12 @@ class Conversation:
         self._origin = origin
         self._log = log
         self.id = session
-        # How many messages of the agent are in the file.
-        self._saved = len(agent.messages)
-        # Tokens of finished turns not in the file yet.
-        self._usage: list[Usage] = []
+        # The model a new session's header names: the one it started with.
+        self._first_model = agent.model
+        # How many messages of the agent are already queued or saved.
+        self._queued = len(agent.messages)
+        # What happened and is not in the file yet, in order.
+        self._pending: list[SessionEntry] = []
         # Why the last save failed; None once it works.
         self.unsaved: str | None = None
 
@@ -86,22 +92,27 @@ class Conversation:
 
     async def run(self, text: str) -> AsyncGenerator[AgentEvent]:
         """`Agent.run()`, and then the turn saved, however it ends."""
+        usage: Usage | None = None
         try:
             async with aclosing(self._agent.run(text)) as events:
                 async for event in events:
                     if isinstance(event, TurnFinished):
-                        self._usage.append(event.usage)
+                        usage = event.usage
                     yield event
         finally:
+            fresh = self._agent.messages[self._queued :]
+            self._queued += len(fresh)
+            self._pending += [MessageEntry(message=m) for m in fresh]
+            if usage is not None:
+                self._pending.append(UsageEntry(usage=usage))
             await self._save()
 
     async def switch_model(self, model: str) -> None:
-        """Use `model` from the next turn on. Saved at once, so the file
-        keeps its place among the turns; before the first turn the header
-        will carry it."""
+        """Use `model` from the next turn on; the change keeps its place
+        among the turns (final audit of hito 6, 4)."""
         self._agent.model = model
-        if self._log is not None:
-            await self._write([ModelEntry(model=model)])
+        self._pending.append(ModelEntry(model=model))
+        await self._save()
 
     async def close(self) -> None:
         """Save what is still pending, and let other maha resume or delete
@@ -112,27 +123,22 @@ class Conversation:
             self._log = None
 
     async def _save(self) -> None:
-        messages = self._agent.messages[self._saved :]
-        if not messages and not self._usage:
+        if not self._pending:
             return
-        entries: list[SessionEntry] = [MessageEntry(message=m) for m in messages]
-        entries += [UsageEntry(usage=usage) for usage in self._usage]
-        if await self._write(entries):
-            self._saved += len(messages)
-            self._usage = []
-
-    async def _write(self, entries: list[SessionEntry]) -> bool:
-        """Append `entries`, creating the session first if needed. False,
-        and `unsaved` set, if the store failed."""
+        if self._log is None and not any(
+            isinstance(entry, MessageEntry) for entry in self._pending
+        ):
+            # No turn yet: a model change alone does not make a session.
+            return
         try:
             if self._log is None:
                 self._log = await self._create()
-            await self._log.append(entries)
+            await self._log.append(self._pending)
         except SessionError as exc:
             self.unsaved = str(exc)
-            return False
+            return
+        self._pending = []
         self.unsaved = None
-        return True
 
     async def _create(self) -> SessionLog:
         origin = self._origin
@@ -142,7 +148,7 @@ class Conversation:
             created_at=created,
             cwd=origin.cwd,
             provider=origin.provider,
-            model=self._agent.model,
+            model=self._first_model,
             maha=origin.version,
         )
         log = await self._store.create(header)
@@ -164,6 +170,9 @@ class Resumed:
     fallback_from: str | None
     # Whether the last answer was cut by Ctrl+C.
     interrupted: bool
+    # Why the session left behind could not save what it still had; it is
+    # lost (final audit of hito 6, 5).
+    left_unsaved: str | None = None
 
 
 class Sessions:
@@ -196,14 +205,15 @@ class Sessions:
         return Conversation(self._store, self._new_agent(self._model, ()), self._origin)
 
     async def resume(self, session: str | None, *, current: Conversation) -> Resumed:
-        """Open `session` (without id, the last one of this directory) and
-        close `current`. A fresh agent: the approvals do not come back
-        (spec hito 6, §1.9)."""
+        """Open `session` and close `current`. Without id, the newest other
+        session of this directory that no other maha has open. A fresh
+        agent: the approvals do not come back (spec hito 6, §1.9)."""
         if session is None:
-            session = await self._last_here()
-        if session == current.id:
-            raise SessionError("this is the current session")
-        loaded, log = await self._store.open(session)
+            loaded, log = await self._open_last_here(current)
+        else:
+            if session == current.id:
+                raise SessionError("this is the current session")
+            loaded, log = await self._store.open(session)
         header = loaded.header
         same_provider = header.provider == self._origin.provider
         model = loaded.model if same_provider else self._model
@@ -224,6 +234,7 @@ class Sessions:
             other_cwd=None if header.cwd == self._origin.cwd else header.cwd,
             fallback_from=None if same_provider else loaded.model,
             interrupted=last is not None and last.interrupted,
+            left_unsaved=current.unsaved,
         )
 
     async def summaries(self) -> list[SessionSummary]:
@@ -239,8 +250,19 @@ class Sessions:
             raise SessionError("this is the current session")
         await self._store.delete(session)
 
-    async def _last_here(self) -> str:
+    async def _open_last_here(
+        self, current: Conversation
+    ) -> tuple[Session, SessionLog]:
+        """The newest session of this directory but the current one, skipping
+        those open in another maha (final audit of hito 6, 3)."""
+        busy = False
         for summary in await self._store.summaries():
-            if self.here(summary):
-                return summary.id
-        raise SessionNotFound("no session in this directory")
+            if not self.here(summary) or summary.id == current.id:
+                continue
+            try:
+                return await self._store.open(summary.id)
+            except SessionInUse:
+                busy = True
+        if busy:
+            raise SessionInUse("the other sessions here are open in another maha")
+        raise SessionNotFound("no other session in this directory")

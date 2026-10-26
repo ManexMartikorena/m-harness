@@ -221,15 +221,80 @@ async def test_switching_the_model_is_saved() -> None:
     assert fake.requests[1].model == "kimi-k3"
 
 
-async def test_switching_the_model_before_any_turn_goes_in_the_header() -> None:
+async def test_switching_the_model_before_any_turn_is_saved_in_order() -> None:
+    # The header keeps the model the conversation started with; the change
+    # goes before the first turn (final audit of hito 6, 4).
     store = MemorySessionStore()
     conversation = await World(store, FakeModelClient([reply("Uno.")])).sessions.start()
 
     await conversation.switch_model("kimi-k3")
+    assert store.sessions == {}
     await turn(conversation, "A")
 
-    assert store.sessions[FIRST].header.model == "kimi-k3"
-    assert not any(isinstance(e, ModelEntry) for e in entries(store))
+    assert store.sessions[FIRST].header.model == "glm-5.3-flash"
+    assert entries(store)[0] == ModelEntry(model="kimi-k3")
+
+
+def kinds(store: MemorySessionStore) -> list[str]:
+    return [
+        e.message.text if isinstance(e, MessageEntry) else type(e).__name__
+        for e in entries(store)
+    ]
+
+
+async def test_a_model_change_that_fails_to_save_is_tried_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("tests.fakes.sessions.MemoryLog", BrokenLog)
+    store = MemorySessionStore()
+    fake = FakeModelClient([reply("Uno."), reply("Dos.")])
+    conversation = await World(store, fake).sessions.start()
+    monkeypatch.setattr(BrokenLog, "failures", 0)
+    await turn(conversation, "A")
+
+    monkeypatch.setattr(BrokenLog, "failures", 1)
+    await conversation.switch_model("kimi-k3")
+    assert conversation.unsaved is not None
+    await turn(conversation, "B")
+
+    assert kinds(store) == [
+        "A",
+        "Uno.",
+        "UsageEntry",
+        "ModelEntry",
+        "B",
+        "Dos.",
+        "UsageEntry",
+    ]
+
+
+async def test_a_model_change_after_an_unsaved_turn_stays_after_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("tests.fakes.sessions.MemoryLog", BrokenLog)
+    store = MemorySessionStore()
+    fake = FakeModelClient([reply("Uno."), reply("Dos."), reply("Tres.")])
+    conversation = await World(store, fake).sessions.start()
+    monkeypatch.setattr(BrokenLog, "failures", 0)
+    await turn(conversation, "A")
+    monkeypatch.setattr(BrokenLog, "failures", 1)
+    await turn(conversation, "B")
+
+    await conversation.switch_model("kimi-k3")
+    await turn(conversation, "C")
+
+    assert kinds(store) == [
+        "A",
+        "Uno.",
+        "UsageEntry",
+        "B",
+        "Dos.",
+        "UsageEntry",
+        "ModelEntry",
+        "C",
+        "Tres.",
+        "UsageEntry",
+    ]
 
 
 # Resuming (spec hito 6, §1.8 and §1.9).
@@ -332,8 +397,63 @@ async def test_resume_without_an_id_and_nothing_here_is_not_found() -> None:
     await saved(store, cwd="/home/ana/web")
     world = World(store, FakeModelClient([]))
 
-    with pytest.raises(SessionNotFound, match=r"^no session in this directory$"):
+    with pytest.raises(SessionNotFound, match=r"^no other session in this directory$"):
         await world.sessions.resume(None, current=await world.sessions.start())
+
+
+async def test_resume_without_an_id_skips_the_current_session() -> None:
+    # After a turn, the current one is the newest here (final audit of
+    # hito 6, 3).
+    store = MemorySessionStore()
+    before = await saved(store, text="antes")
+    world = World(store, FakeModelClient([reply("Uno.")]), tokens=["7777"])
+    current = await world.sessions.start()
+    await turn(current, "ahora")
+
+    resumed = await world.sessions.resume(None, current=current)
+
+    assert resumed.conversation.id == before
+
+
+async def test_resume_without_an_id_skips_a_session_open_elsewhere() -> None:
+    store = MemorySessionStore()
+    before = await saved(store, text="antes")
+    other = await World(
+        store, FakeModelClient([reply("Uno.")]), tokens=["8888"]
+    ).sessions.start()
+    await turn(other, "en otro maha")
+    world = World(store, FakeModelClient([]), tokens=["9999"])
+
+    resumed = await world.sessions.resume(None, current=await world.sessions.start())
+
+    assert resumed.conversation.id == before
+
+
+async def test_resume_without_an_id_and_only_the_current_is_not_found() -> None:
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Uno.")]))
+    current = await world.sessions.start()
+    await turn(current, "A")
+
+    with pytest.raises(SessionNotFound, match=r"^no other session in this directory$"):
+        await world.sessions.resume(None, current=current)
+
+
+async def test_resume_tells_what_the_session_it_leaves_could_not_save(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Lost in silence otherwise (final audit of hito 6, 5).
+    store = MemorySessionStore()
+    target = await saved(store)
+    monkeypatch.setattr("tests.fakes.sessions.MemoryLog", BrokenLog)
+    monkeypatch.setattr(BrokenLog, "failures", 2)
+    world = World(store, FakeModelClient([reply("Uno.")]), tokens=["7777"])
+    current = await world.sessions.start()
+    await turn(current, "A")
+
+    resumed = await world.sessions.resume(target, current=current)
+
+    assert resumed.left_unsaved == "cannot save session: No space left on device"
 
 
 async def test_resuming_the_current_session_is_refused() -> None:

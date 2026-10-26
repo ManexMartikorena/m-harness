@@ -41,10 +41,35 @@ class JsonlLog:
     def __init__(self, fd: int, path: Path) -> None:
         self._fd: int | None = fd
         self._path = path
+        # A failed write that could not be undone: the end of the file is
+        # unknown, and nothing more is written after it.
+        self._damaged = False
 
     async def append(self, entries: Sequence[SessionEntry]) -> None:
-        data = "".join(_ENTRY.dump_json(entry).decode() + "\n" for entry in entries)
-        _write(self._descriptor(), self._path, data.encode())
+        """All the entries or none: a write that fails is cut back, so the
+        caller can try again without doubling anything."""
+        fd = self._descriptor()
+        if self._damaged:
+            raise SessionError(
+                f"cannot save session {self._path.stem}: "
+                "its file could not be repaired after a failed write"
+            )
+        data = b"".join(
+            _line(_ENTRY.dump_python(entry, mode="json")) for entry in entries
+        )
+        try:
+            size = os.fstat(fd).st_size
+        except OSError as exc:
+            raise _cannot_save(self._path, exc) from None
+        try:
+            _write(fd, self._path, data)
+        except SessionError:
+            try:
+                os.ftruncate(fd, size)
+                os.fsync(fd)
+            except OSError:
+                self._damaged = True
+            raise
 
     async def close(self) -> None:
         if self._fd is not None:
@@ -81,7 +106,7 @@ class JsonlSessionStore:
                 "version": VERSION,
                 **header.model_dump(mode="json"),
             }
-            _write(fd, path, (json.dumps(line, ensure_ascii=False) + "\n").encode())
+            _write(fd, path, _line(line))
             # The new name survives a power cut too.
             _sync_folder(self._folder)
         except BaseException as exc:
@@ -183,8 +208,6 @@ class JsonlSessionStore:
             return None
         finally:
             os.close(fd)
-        if header.id != session_id:
-            return None
         return summarize(header, entries, updated)
 
     def _path(self, session_id: str) -> Path:
@@ -216,6 +239,17 @@ def _still_named(fd: int, path: Path) -> bool:
         return False
     held = os.fstat(fd)
     return (named.st_dev, named.st_ino) == (held.st_dev, held.st_ino)
+
+
+def _line(data: object) -> bytes:
+    """One JSON line, readable UTF-8. Text that is not valid UTF-8 (a file
+    name with Latin-1 bytes comes as surrogates) goes escaped, `\\udce9`, and
+    reads back the same (final audit of hito 6, 2)."""
+    text = json.dumps(data, ensure_ascii=False)
+    try:
+        return (text + "\n").encode("utf-8")
+    except UnicodeEncodeError:
+        return (json.dumps(data) + "\n").encode("ascii")
 
 
 def _write(fd: int, path: Path, data: bytes) -> None:
@@ -254,25 +288,32 @@ def _parse(data: bytes, session_id: str) -> tuple[SessionHeader, list[SessionEnt
         raise corrupt("empty file")
     try:
         first = json.loads(lines[0])
-    except ValueError:
+    except ValueError, RecursionError:
         raise corrupt("line 1 is not a header") from None
     if not isinstance(first, dict) or first.pop("type", None) != "session":
         raise corrupt("line 1 is not a header")
     version = first.pop("version", None)
-    if isinstance(version, int) and version > VERSION:
+    # A bool is an int in Python, but not a version.
+    if type(version) is int and version > VERSION:
         raise corrupt(f"version {version}, made by a newer maha")
-    if version != VERSION:
+    if type(version) is not int or version != VERSION:
         raise corrupt(f"unknown version {version!r}")
     try:
         header = SessionHeader.model_validate(first)
     except ValidationError as exc:
         raise corrupt(f"line 1 is not a valid header: {_first(exc)}") from None
+    if header.id != session_id:
+        # A copy under another name would carry the old id along.
+        raise corrupt(f"its header says {header.id}")
     entries = []
     for number, line in enumerate(lines[1:], start=2):
         try:
-            entries.append(_ENTRY.validate_json(line))
+            entries.append(_ENTRY.validate_python(json.loads(line)))
+        # First: a ValidationError is also a ValueError.
         except ValidationError as exc:
             raise corrupt(f"line {number} is not valid: {_first(exc)}") from None
+        except ValueError, RecursionError:
+            raise corrupt(f"line {number} is not valid JSON") from None
     return header, entries
 
 

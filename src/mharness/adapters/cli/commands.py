@@ -9,7 +9,7 @@ from typing import TextIO
 from mharness.adapters.cli.input import Discard, ReadLine
 from mharness.adapters.cli.text import clean, clean_line
 from mharness.application.sessions import Conversation, Sessions
-from mharness.domain.session import SessionError
+from mharness.domain.session import SessionError, SessionNotFound
 
 # What each command does, for /help.
 COMMANDS = {
@@ -82,10 +82,12 @@ class Commands:
                 case _:
                     self._say(f"unknown command: /{command.name} (see /help)")
         except SessionError as exc:
-            message = str(exc)
-            if message == "no session in this directory":
-                message += " (see /sessions)"
-            print(f"error: {clean(message)}", file=self._err, flush=True)
+            print(f"error: {clean(str(exc))}", file=self._err, flush=True)
+        except Exception as exc:
+            # A bug, or the disk failing in a way nobody expected: said, and
+            # maha goes on, as with an answer (final audit of hito 6).
+            detail = clean(f"{type(exc).__name__}: {exc}")
+            print(f"error: internal: {detail}", file=self._err, flush=True)
         self.warn_unsaved()
 
     def warn_unsaved(self) -> None:
@@ -112,8 +114,23 @@ class Commands:
         self._out.flush()
 
     async def _resume(self, session: str | None) -> None:
-        resumed = await self._sessions.resume(session, current=self.conversation)
+        left = self.conversation.id
+        try:
+            resumed = await self._sessions.resume(session, current=self.conversation)
+        except SessionNotFound as exc:
+            if session is None:
+                raise SessionNotFound(f"{exc} (see /sessions)") from None
+            raise
         self.conversation = resumed.conversation
+        if resumed.left_unsaved is not None:
+            # Without id: its session could not even be created.
+            what = f"session {clean_line(left)}" if left else "the conversation"
+            print(
+                f"warning: {what} was not saved, its last turns are lost: "
+                f"{clean(resumed.left_unsaved)}",
+                file=self._err,
+                flush=True,
+            )
         self._say(
             f"[resumed {clean_line(resumed.conversation.id or '')} · "
             f"{resumed.messages} messages · {clean_line(resumed.conversation.model)}]"

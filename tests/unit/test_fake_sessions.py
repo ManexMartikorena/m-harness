@@ -9,6 +9,7 @@ from mharness.domain.model import Usage
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
+    SessionError,
     SessionHeader,
     SessionInUse,
     SessionNotFound,
@@ -75,3 +76,47 @@ async def test_an_unknown_id_is_not_found() -> None:
         await store.open("20261026-091502-0000")
     with pytest.raises(SessionNotFound):
         await store.delete("../../etc/passwd")
+
+
+# Behaves as JsonlSessionStore where application tests rely on it (final
+# audit of hito 6, 8).
+
+
+async def test_creating_an_existing_session_is_a_session_error() -> None:
+    store = MemorySessionStore()
+    await (await store.create(HEADER)).close()
+
+    with pytest.raises(SessionError):
+        await store.create(HEADER)
+
+
+async def test_a_closed_log_takes_no_more() -> None:
+    log = await MemorySessionStore().create(HEADER)
+    await log.close()
+
+    with pytest.raises(SessionError, match="is closed"):
+        await log.append([MessageEntry(message=HOLA)])
+
+
+async def test_closing_twice_does_not_free_another_lock() -> None:
+    store = MemorySessionStore()
+    first = await store.create(HEADER)
+    await first.close()
+    _, second = await store.open(HEADER.id)
+
+    await first.close()
+
+    with pytest.raises(SessionInUse):
+        await store.open(HEADER.id)
+    await second.close()
+
+
+async def test_entries_go_through_json() -> None:
+    # As on the disk: what cannot be written as JSON fails here too.
+    store = MemorySessionStore()
+    log = await store.create(HEADER)
+    odd = Message(role="user", blocks=[TextBlock(text="caf\udce9.txt")])
+
+    await log.append([MessageEntry(message=odd)])
+
+    assert store.sessions[HEADER.id].entries == [MessageEntry(message=odd)]

@@ -219,6 +219,10 @@ async def test_a_newer_version_is_refused_with_a_clear_message(folder: Path) -> 
         ['{"type": "session", "version": 1, "id": "x"}'],
         ['{"type": "session", "id": "x"}'],
         ['{"type": "session", "version": "1"}'],
+        # A bool is not a version, though Python counts True as 1.
+        ['{"type": "session", "version": true}'],
+        # Nested without end: json gives up with RecursionError.
+        ["[" * 200_000],
     ],
 )
 async def test_without_a_valid_header_it_is_corrupt(
@@ -407,3 +411,130 @@ async def test_a_disk_failure_opening_is_a_session_error(
 
     with pytest.raises(SessionError, match=r"cannot open session .*Input/output"):
         await JsonlSessionStore(folder).open(HEADER.id)
+
+
+# A save that fails leaves the file as it was: the conversation tries again
+# with the same entries (final audit of hito 6, 1).
+
+
+async def test_a_failed_fsync_leaves_nothing_behind(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = await JsonlSessionStore(folder).create(HEADER)
+    sync = os.fsync
+    failures = [OSError(5, "Input/output error")]
+
+    def once(fd: int) -> None:
+        if failures:
+            raise failures.pop()
+        sync(fd)
+
+    monkeypatch.setattr(os, "fsync", once)
+    turn = [MessageEntry(message=HOLA), MessageEntry(message=ANSWER)]
+    with pytest.raises(SessionError):
+        await log.append(turn)
+    await log.append(turn)
+    await log.close()
+
+    session, again = await JsonlSessionStore(folder).open(HEADER.id)
+    await again.close()
+    assert session.messages == [HOLA, ANSWER]
+
+
+async def test_a_write_cut_halfway_leaves_nothing_behind(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = await JsonlSessionStore(folder).create(HEADER)
+    write = os.write
+    cut = [True]
+
+    def half_then_full(fd: int, data: bytes | memoryview) -> int:
+        if cut:
+            cut.pop()
+            write(fd, bytes(data[: len(data) // 2]))
+            raise OSError(28, "No space left on device")
+        return write(fd, data)
+
+    monkeypatch.setattr(os, "write", half_then_full)
+    turn = [MessageEntry(message=HOLA), MessageEntry(message=ANSWER)]
+    with pytest.raises(SessionError, match="No space left on device"):
+        await log.append(turn)
+    await log.append(turn)
+    await log.close()
+
+    session, again = await JsonlSessionStore(folder).open(HEADER.id)
+    await again.close()
+    assert session.messages == [HOLA, ANSWER]
+
+
+async def test_a_file_that_cannot_be_repaired_takes_no_more(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = await JsonlSessionStore(folder).create(HEADER)
+
+    def broken(*args: object) -> None:
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(os, "fsync", broken)
+    monkeypatch.setattr(os, "ftruncate", broken)
+    with pytest.raises(SessionError):
+        await log.append([MessageEntry(message=HOLA)])
+    monkeypatch.undo()
+
+    with pytest.raises(SessionError, match="could not be repaired"):
+        await log.append([MessageEntry(message=HOLA)])
+    await log.close()
+
+
+# Text that is not valid UTF-8 (a file name with Latin-1 bytes comes to Python
+# as surrogates) is saved and comes back as it was (final audit of hito 6, 2).
+
+ODD = "caf\udce9.txt"
+
+
+async def test_text_with_surrogates_is_saved_and_comes_back(folder: Path) -> None:
+    listing = Message(role="user", blocks=[TextBlock(text=ODD)])
+    log = await JsonlSessionStore(folder).create(
+        HEADER.model_copy(update={"cwd": f"/tmp/{ODD}"})
+    )
+    await log.append([MessageEntry(message=listing)])
+    await log.close()
+
+    session, again = await JsonlSessionStore(folder).open(HEADER.id)
+    await again.close()
+
+    assert session.messages == [listing]
+    assert session.header.cwd == f"/tmp/{ODD}"
+    # The file stays valid UTF-8: the surrogate is written escaped.
+    file_of(folder).read_bytes().decode("utf-8")
+
+
+async def test_a_line_with_the_wrong_shape_says_what_is_wrong(folder: Path) -> None:
+    path = await saved(folder, HOLA, ANSWER)
+    lines = lines_of(path)
+    set_lines(path, [lines[0], '{"type": "usage", "usage": {"input_tokens": "x"}}'])
+
+    with pytest.raises(
+        SessionCorrupt,
+        match=r"line 2 is not valid: .*input_tokens: Input should be a valid integer",
+    ):
+        await JsonlSessionStore(folder).open(HEADER.id)
+
+
+async def test_a_nested_header_does_not_break_the_list(folder: Path) -> None:
+    await saved(folder, HOLA, ANSWER)
+    set_lines(file_of(folder, "20261026-091502-0000"), ["[" * 200_000])
+
+    found = await JsonlSessionStore(folder).summaries()
+
+    assert [s.id for s in found] == [HEADER.id]
+
+
+async def test_a_file_whose_header_names_another_id_is_corrupt(folder: Path) -> None:
+    # A session copied under another name would take the old id with it.
+    path = await saved(folder, HOLA, ANSWER)
+    copy = file_of(folder, "20261026-091502-0000")
+    copy.write_bytes(path.read_bytes())
+
+    with pytest.raises(SessionCorrupt, match="its header says 20261026-091502-3fa2"):
+        await JsonlSessionStore(folder).open("20261026-091502-0000")

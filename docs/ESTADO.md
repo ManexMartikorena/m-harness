@@ -33,6 +33,17 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Auditoría final del hito 6, 2026-10-26, antes del tag `v0.6.0`.** El
+  mantenedor pidió dejarlo todo listo, con cero deuda y la arquitectura
+  respetada. Dos auditores independientes del código del hito (disco y
+  aplicación; terminal, bucle y cableado): capas sin violaciones y el bucle
+  sin fallos, pero diez hallazgos en las sesiones, todos arreglados con su
+  test (spec 6, §12, "Auditoría final"; rama `fix/sesiones-auditoria`). Los
+  más graves: un guardado que fallaba a medias duplicaba o corrompía la
+  sesión, y un nombre de fichero no UTF-8 impedía guardar el resto de la
+  conversación. Además, una alerta de Dependabot (alta) en `virtualenv`,
+  arreglada en el PR #58 con los parches de ruff y pytest-asyncio.
+  Verificado de nuevo con el modelo real. 1018 tests en verde.
 - **Hito 6 implementado, 2026-10-26, PC de Windows (WSL)** (spec
   `hito-6-sesiones`, IMPLEMENTADA; el detalle, en su §12):
   - PR #52 (merge `74605b0`): spec APROBADA; el mantenedor cambió la duda 2
@@ -50,11 +61,12 @@ Lo más reciente primero.
     `/model` y `/help`, `config.data_dir()` y el cableado. Los tests de punta
     a punta escribían sesiones de prueba en el `HOME` real del puesto: se
     borraron y `tests/conftest.py` da a cada test su `XDG_DATA_HOME`;
-  - PR de cierre (`feature/hito-6-cierre`): versión 0.6.0, verificación a
+  - PR #57 (merge `2acc803`, `feature/hito-6-cierre`): versión 0.6.0, verificación a
     mano (los 10 puntos de la spec §7 en verde, con el modelo real), nota
     `docs/guia/06-historial.md`, README, MAPA y ESTADO.
 
-  993 tests, mypy, ruff e import-linter en verde. El mantenedor pidió
+  993 tests (1018 tras la auditoría final), mypy, ruff e import-linter en
+  verde. El mantenedor pidió
   respetar siempre la arquitectura hexagonal y dejar cero deuda técnica.
 - **`v0.5.2` publicada, 2026-10-26.** Tag anotado sobre el merge del PR #51
   (`3266867`), con el CI de `main` en verde; creado por el agente con el
@@ -495,8 +507,9 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (por si
 acaso; no hay dependencias nuevas) y comprobar los tests, mypy y
 lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Mantenedor:** pedir el tag `v0.6.0` (sobre el merge del PR de
-   cierre del hito 6). El agente lo crea y comprueba la release.
+1. **Agente:** crear el tag `v0.6.0` sobre el merge del PR de la auditoría
+   final (`fix/sesiones-auditoria`) y comprobar la release (el mantenedor
+   lo pidió el 2026-10-26).
 2. **Agente:** proponer la spec del hito 7 (trazas y coste) en
    `docs/spec-hito-7-<slug>`, tras leer DESIGN §6, §11 y §14. Entran los
    pendientes que DESIGN y las specs asignan al hito 7 (abajo).

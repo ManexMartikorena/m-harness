@@ -1,13 +1,18 @@
-"""A `SessionStore` in memory, with the same lock as the real one (spec
-hito 6, §1.4)."""
+"""A `SessionStore` in memory, that behaves as the real one where the
+application relies on it (spec hito 6, §1.4; final audit of hito 6, 8): the
+lock, the errors, and the entries going through JSON."""
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from pydantic import TypeAdapter
+
 from mharness.domain.session import (
     Session,
     SessionEntry,
+    SessionError,
     SessionHeader,
     SessionInUse,
     SessionNotFound,
@@ -16,6 +21,8 @@ from mharness.domain.session import (
     replay,
     summarize,
 )
+
+_ENTRY: TypeAdapter[SessionEntry] = TypeAdapter(SessionEntry)
 
 
 @dataclass
@@ -29,14 +36,27 @@ class MemoryLog:
     def __init__(self, store: MemorySessionStore, session_id: str) -> None:
         self._store = store
         self._id = session_id
+        self._closed = False
 
     async def append(self, entries: Sequence[SessionEntry]) -> None:
+        if self._closed:
+            raise SessionError(f"session {self._id} is closed")
         stored = self._store.sessions[self._id]
-        stored.entries.extend(entries)
+        # Through JSON, as on the disk; all or none, as the port says.
+        done = [
+            _ENTRY.validate_python(
+                json.loads(json.dumps(_ENTRY.dump_python(e, mode="json")))
+            )
+            for e in entries
+        ]
+        stored.entries.extend(done)
         stored.updated_at = datetime.now(UTC)
 
     async def close(self) -> None:
-        self._store.locked.discard(self._id)
+        # Only its own lock: closing twice frees nobody else's.
+        if not self._closed:
+            self._closed = True
+            self._store.locked.discard(self._id)
 
 
 class MemorySessionStore:
@@ -47,7 +67,8 @@ class MemorySessionStore:
         self.locked: set[str] = set()
 
     async def create(self, header: SessionHeader) -> MemoryLog:
-        assert header.id not in self.sessions, f"session {header.id} exists"
+        if header.id in self.sessions:
+            raise SessionError(f"cannot save session {header.id}: File exists")
         self.sessions[header.id] = _Stored(header)
         self.locked.add(header.id)
         return MemoryLog(self, header.id)

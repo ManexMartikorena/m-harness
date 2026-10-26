@@ -255,7 +255,10 @@ class Conversation:
   (`model` con setter). Retomar es crear un `Agent` nuevo con ese historial.
 - **Un fallo al guardar no corta la conversación:** se avisa en la terminal
   (`warning: session not saved: …`) y se sigue. Perder el disco no debe
-  perder la respuesta que ya está en pantalla.
+  perder la respuesta que ya está en pantalla. *(Corregido tras la
+  auditoría final: mensajes, tokens y cambios de modelo van a una sola cola,
+  en orden, que se reintenta entera; un `append` que falla se deshace en el
+  disco. Ver §12.)*
 - La terminal usa `Conversation`, no `Agent` (`adapters/cli` llama a
   `application`, DESIGN §3).
 
@@ -283,8 +286,9 @@ Cierra la pendiente de la spec 3, §1.6.
 
 ### 1.8 Comandos en la terminal
 
-**Dónde:** `adapters/cli/commands.py` (parsear) y `conversation.py`
-(ejecutar).
+**Dónde:** `adapters/cli/commands.py` (parsear y ejecutar, `Commands`).
+*(Corregido al implementarlo: decía `conversation.py` para ejecutar; ver
+§12, PR 4.)*
 
 | Comando | Qué hace |
 |---|---|
@@ -309,7 +313,10 @@ Cierra la pendiente de la spec 3, §1.6.
   es para ti.
 - **`/resume` sin ID** retoma la última de este directorio; si aquí no hay
   ninguna, `no session in this directory (see /sessions)`. La última de
-  todas sería una sorpresa: otro proyecto sin pedirlo.
+  todas sería una sorpresa: otro proyecto sin pedirlo. *(Corregido tras la
+  auditoría final: la más reciente de aquí que no sea la actual ni esté
+  abierta en otro `maha`; si no hay, `no other session in this directory`.
+  Ver §12.)*
 - **Un comando no se manda al modelo.** Una línea cuya primera palabra es
   `/` y letras (`^/[a-z]+$`) es un comando; si no existe, `unknown command:
   /foo (see /help)`. Una línea como `/etc/hosts no existe` sí va al modelo.
@@ -709,3 +716,41 @@ puntos, en verde:
     `/resume` sin id → `no session in this directory (see /sessions)`;
     `/resume ID` → `[this session was in …/proyecto; tools work in …/web]`,
     y los ficheros que creó la sesión siguen en `proyecto`.
+
+**Auditoría final** (2026-10-26, antes del tag `v0.6.0`; rama
+`fix/sesiones-auditoria`). Dos auditores independientes, uno del disco y la
+aplicación y otro de la terminal, el bucle y el cableado. Del bucle, nada.
+Capas, sin violaciones. Lo que encontraron, arreglado con su test visto
+fallar antes:
+1. Un `append` que fallaba a medias (EIO en `fsync`, ENOSPC a mitad)
+   duplicaba mensajes al reintentar o dejaba media línea en medio, y la
+   sesión desaparecía de `/sessions` (`6900046`). Ahora se recorta al
+   tamaño de antes; si ni eso puede, el log no escribe más.
+2. Un nombre de fichero con bytes Latin-1 (surrogates) hacía fallar el
+   guardado de todos los turnos siguientes (`ccf3eec`). Se escribe escapado
+   (`\udce9`) y vuelve igual. De paso, una línea con el esquema mal dice el
+   motivo (antes lo tapaba el `ValueError`).
+3. `/resume` sin id elegía siempre la sesión actual tras el primer turno
+   (`3d9f295`).
+4. Un `/model` que no se pudo escribir se perdía, o quedaba antes de un
+   turno sin guardar (`4d711e3`). Una sola cola ordenada; la cabecera lleva
+   el modelo con el que empezó la conversación, y un cambio antes del primer
+   turno va como `ModelEntry` delante. *(Corrige el PR 3: "`/model` antes
+   del primer turno va en la cabecera".)*
+5. `/resume` perdía sin avisar lo que la sesión que se deja no pudo guardar
+   (`3d9f295`): `Resumed.left_unsaved` y un aviso.
+6. y 7. Una cabecera anidada sin fin rompía `/sessions`; una copia con otro
+   nombre se abría con el id viejo; `version: true` valía como 1
+   (`b96f92e`).
+8. El fake difería del real: `assert` al crear una que existe, `append`
+   tras `close()`, un segundo `close()` que soltaba el bloqueo de otro, y
+   sin pasar por JSON (`03c92d9`; atómico en `4d711e3`).
+9. Un fallo no previsto en un comando cerraba `maha` (`8b04cdc`), con los
+   tests de Ctrl+D y Ctrl+C en la confirmación de `/delete`, que faltaban.
+10. §1.8 decía `conversation.py` para ejecutar los comandos (corregido
+    arriba).
+
+Fuera de las sesiones, en el mismo repaso: una alerta de Dependabot (alta)
+en `virtualenv` 21.14.11, dependencia de desarrollo por `pre-commit`,
+arreglada en el PR #58 (21.14.13), con los parches de ruff y
+pytest-asyncio.
