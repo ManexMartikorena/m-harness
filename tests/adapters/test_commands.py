@@ -14,7 +14,11 @@ from mharness.application.sessions import Sessions
 from mharness.application.tools import ToolRegistry
 from mharness.domain.messages import Message, TextBlock
 from mharness.domain.model import ModelResponse
-from mharness.domain.session import MessageEntry, SessionError, SessionHeader
+from mharness.domain.session import (
+    MessageEntry,
+    SessionError,
+    SessionHeader,
+)
 from tests.fakes.approval import FakeApproval
 from tests.fakes.model import FakeModelClient, reply
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
@@ -229,7 +233,7 @@ async def test_resume_errors_are_shown_and_the_conversation_goes_on() -> None:
     )
 
     assert err == (
-        "error: no session in this directory (see /sessions)\n"
+        "error: no other session in this directory (see /sessions)\n"
         "error: no session 20261026-091502-0000\n"
     )
     assert "Sigo." in out
@@ -310,3 +314,56 @@ async def test_a_session_not_saved_is_a_warning() -> None:
         "warning: session not saved: cannot save session: No space left on device\n"
         in err
     )
+
+
+# From the final audit of hito 6.
+
+
+class LosingStore(MemorySessionStore):
+    """A store whose disk fills up after the session is created."""
+
+    async def create(self, header: SessionHeader) -> MemoryLog:
+        log = await super().create(header)
+
+        async def full(entries: object) -> None:
+            raise SessionError("cannot save session: No space left on device")
+
+        log.append = full  # type: ignore[method-assign]
+        return log
+
+
+async def test_resume_warns_of_what_the_session_left_could_not_save() -> None:
+    # A session to go to, saved while the disk still worked.
+    good = MemorySessionStore()
+    await Maha(good, [reply("Antes.")]).run("antes", "/exit")
+    store = LosingStore()
+    store.sessions.update(good.sessions)
+    maha = Maha(store, [reply("Ahora.")], tokens=("7777",))
+
+    _, _, err = await maha.run("ahora", "/resume 20261026-091502-3fa2", "/exit")
+
+    assert (
+        "warning: session 20261026-091502-7777 was not saved, its last turns are lost: "
+        "cannot save session: No space left on device\n"
+    ) in err
+
+
+async def test_leaving_a_conversation_never_saved_says_so() -> None:
+    good = MemorySessionStore()
+    await Maha(good, [reply("Antes.")]).run("antes", "/exit")
+
+    class Full(MemorySessionStore):
+        async def create(self, header: SessionHeader) -> MemoryLog:
+            raise SessionError("cannot save session: No space left on device")
+
+    store = Full()
+    store.sessions.update(good.sessions)
+
+    _, _, err = await Maha(store, [reply("Ahora.")]).run(
+        "ahora", "/resume 20261026-091502-3fa2", "/exit"
+    )
+
+    assert (
+        "warning: the conversation was not saved, its last turns are lost: "
+        "cannot save session: No space left on device\n"
+    ) in err

@@ -397,8 +397,63 @@ async def test_resume_without_an_id_and_nothing_here_is_not_found() -> None:
     await saved(store, cwd="/home/ana/web")
     world = World(store, FakeModelClient([]))
 
-    with pytest.raises(SessionNotFound, match=r"^no session in this directory$"):
+    with pytest.raises(SessionNotFound, match=r"^no other session in this directory$"):
         await world.sessions.resume(None, current=await world.sessions.start())
+
+
+async def test_resume_without_an_id_skips_the_current_session() -> None:
+    # After a turn, the current one is the newest here (final audit of
+    # hito 6, 3).
+    store = MemorySessionStore()
+    before = await saved(store, text="antes")
+    world = World(store, FakeModelClient([reply("Uno.")]), tokens=["7777"])
+    current = await world.sessions.start()
+    await turn(current, "ahora")
+
+    resumed = await world.sessions.resume(None, current=current)
+
+    assert resumed.conversation.id == before
+
+
+async def test_resume_without_an_id_skips_a_session_open_elsewhere() -> None:
+    store = MemorySessionStore()
+    before = await saved(store, text="antes")
+    other = await World(
+        store, FakeModelClient([reply("Uno.")]), tokens=["8888"]
+    ).sessions.start()
+    await turn(other, "en otro maha")
+    world = World(store, FakeModelClient([]), tokens=["9999"])
+
+    resumed = await world.sessions.resume(None, current=await world.sessions.start())
+
+    assert resumed.conversation.id == before
+
+
+async def test_resume_without_an_id_and_only_the_current_is_not_found() -> None:
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Uno.")]))
+    current = await world.sessions.start()
+    await turn(current, "A")
+
+    with pytest.raises(SessionNotFound, match=r"^no other session in this directory$"):
+        await world.sessions.resume(None, current=current)
+
+
+async def test_resume_tells_what_the_session_it_leaves_could_not_save(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Lost in silence otherwise (final audit of hito 6, 5).
+    store = MemorySessionStore()
+    target = await saved(store)
+    monkeypatch.setattr("tests.fakes.sessions.MemoryLog", BrokenLog)
+    monkeypatch.setattr(BrokenLog, "failures", 2)
+    world = World(store, FakeModelClient([reply("Uno.")]), tokens=["7777"])
+    current = await world.sessions.start()
+    await turn(current, "A")
+
+    resumed = await world.sessions.resume(target, current=current)
+
+    assert resumed.left_unsaved == "cannot save session: No space left on device"
 
 
 async def test_resuming_the_current_session_is_refused() -> None:

@@ -20,9 +20,11 @@ from mharness.domain.model import Usage
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
+    Session,
     SessionEntry,
     SessionError,
     SessionHeader,
+    SessionInUse,
     SessionNotFound,
     SessionSummary,
     UsageEntry,
@@ -168,6 +170,9 @@ class Resumed:
     fallback_from: str | None
     # Whether the last answer was cut by Ctrl+C.
     interrupted: bool
+    # Why the session left behind could not save what it still had; it is
+    # lost (final audit of hito 6, 5).
+    left_unsaved: str | None = None
 
 
 class Sessions:
@@ -200,14 +205,15 @@ class Sessions:
         return Conversation(self._store, self._new_agent(self._model, ()), self._origin)
 
     async def resume(self, session: str | None, *, current: Conversation) -> Resumed:
-        """Open `session` (without id, the last one of this directory) and
-        close `current`. A fresh agent: the approvals do not come back
-        (spec hito 6, §1.9)."""
+        """Open `session` and close `current`. Without id, the newest other
+        session of this directory that no other maha has open. A fresh
+        agent: the approvals do not come back (spec hito 6, §1.9)."""
         if session is None:
-            session = await self._last_here()
-        if session == current.id:
-            raise SessionError("this is the current session")
-        loaded, log = await self._store.open(session)
+            loaded, log = await self._open_last_here(current)
+        else:
+            if session == current.id:
+                raise SessionError("this is the current session")
+            loaded, log = await self._store.open(session)
         header = loaded.header
         same_provider = header.provider == self._origin.provider
         model = loaded.model if same_provider else self._model
@@ -228,6 +234,7 @@ class Sessions:
             other_cwd=None if header.cwd == self._origin.cwd else header.cwd,
             fallback_from=None if same_provider else loaded.model,
             interrupted=last is not None and last.interrupted,
+            left_unsaved=current.unsaved,
         )
 
     async def summaries(self) -> list[SessionSummary]:
@@ -243,8 +250,19 @@ class Sessions:
             raise SessionError("this is the current session")
         await self._store.delete(session)
 
-    async def _last_here(self) -> str:
+    async def _open_last_here(
+        self, current: Conversation
+    ) -> tuple[Session, SessionLog]:
+        """The newest session of this directory but the current one, skipping
+        those open in another maha (final audit of hito 6, 3)."""
+        busy = False
         for summary in await self._store.summaries():
-            if self.here(summary):
-                return summary.id
-        raise SessionNotFound("no session in this directory")
+            if not self.here(summary) or summary.id == current.id:
+                continue
+            try:
+                return await self._store.open(summary.id)
+            except SessionInUse:
+                busy = True
+        if busy:
+            raise SessionInUse("the other sessions here are open in another maha")
+        raise SessionNotFound("no other session in this directory")
