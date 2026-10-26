@@ -208,8 +208,6 @@ class JsonlSessionStore:
             return None
         finally:
             os.close(fd)
-        if header.id != session_id:
-            return None
         return summarize(header, entries, updated)
 
     def _path(self, session_id: str) -> Path:
@@ -290,19 +288,23 @@ def _parse(data: bytes, session_id: str) -> tuple[SessionHeader, list[SessionEnt
         raise corrupt("empty file")
     try:
         first = json.loads(lines[0])
-    except ValueError:
+    except ValueError, RecursionError:
         raise corrupt("line 1 is not a header") from None
     if not isinstance(first, dict) or first.pop("type", None) != "session":
         raise corrupt("line 1 is not a header")
     version = first.pop("version", None)
-    if isinstance(version, int) and version > VERSION:
+    # A bool is an int in Python, but not a version.
+    if type(version) is int and version > VERSION:
         raise corrupt(f"version {version}, made by a newer maha")
-    if version != VERSION:
+    if type(version) is not int or version != VERSION:
         raise corrupt(f"unknown version {version!r}")
     try:
         header = SessionHeader.model_validate(first)
     except ValidationError as exc:
         raise corrupt(f"line 1 is not a valid header: {_first(exc)}") from None
+    if header.id != session_id:
+        # A copy under another name would carry the old id along.
+        raise corrupt(f"its header says {header.id}")
     entries = []
     for number, line in enumerate(lines[1:], start=2):
         try:

@@ -219,6 +219,10 @@ async def test_a_newer_version_is_refused_with_a_clear_message(folder: Path) -> 
         ['{"type": "session", "version": 1, "id": "x"}'],
         ['{"type": "session", "id": "x"}'],
         ['{"type": "session", "version": "1"}'],
+        # A bool is not a version, though Python counts True as 1.
+        ['{"type": "session", "version": true}'],
+        # Nested without end: json gives up with RecursionError.
+        ["[" * 200_000],
     ],
 )
 async def test_without_a_valid_header_it_is_corrupt(
@@ -515,3 +519,22 @@ async def test_a_line_with_the_wrong_shape_says_what_is_wrong(folder: Path) -> N
         match=r"line 2 is not valid: .*input_tokens: Input should be a valid integer",
     ):
         await JsonlSessionStore(folder).open(HEADER.id)
+
+
+async def test_a_nested_header_does_not_break_the_list(folder: Path) -> None:
+    await saved(folder, HOLA, ANSWER)
+    set_lines(file_of(folder, "20261026-091502-0000"), ["[" * 200_000])
+
+    found = await JsonlSessionStore(folder).summaries()
+
+    assert [s.id for s in found] == [HEADER.id]
+
+
+async def test_a_file_whose_header_names_another_id_is_corrupt(folder: Path) -> None:
+    # A session copied under another name would take the old id with it.
+    path = await saved(folder, HOLA, ANSWER)
+    copy = file_of(folder, "20261026-091502-0000")
+    copy.write_bytes(path.read_bytes())
+
+    with pytest.raises(SessionCorrupt, match="its header says 20261026-091502-3fa2"):
+        await JsonlSessionStore(folder).open("20261026-091502-0000")
