@@ -2694,3 +2694,38 @@ async def test_grep_stops_searching_once_it_has_enough_matches(
         "f0.txt:2: x",
         "… [stopped at 2 matches; narrow the search]",
     ]
+
+
+# A read-only file is not replaced (spec mejora-2026-10-26-deuda-pre-hito-6,
+# B4, decision of the maintainer).
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes any file")
+async def test_a_read_only_file_is_not_changed(root: Path) -> None:
+    path = write(root, "notas.txt", "Comprar pan\n")
+    path.chmod(0o444)
+    workspace = Workspace(root)
+
+    with pytest.raises(ToolError, match=r"^read-only file: notas.txt$"):
+        await WriteFile(workspace).approval(
+            WriteFileParams(path="notas.txt", content="otra cosa\n")
+        )
+    with pytest.raises(ToolError, match=r"^read-only file: notas.txt$"):
+        await EditFile(workspace).approval(
+            EditFileParams(path="notas.txt", old_string="pan", new_string="leche")
+        )
+    assert path.read_text(encoding="utf-8") == "Comprar pan\n"
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes any file")
+async def test_made_read_only_after_the_question_it_is_not_changed(root: Path) -> None:
+    path = write(root, "notas.txt", "Comprar pan\n")
+    tool = WriteFile(Workspace(root))
+    params = WriteFileParams(path="notas.txt", content="otra cosa\n")
+    assert await tool.approval(params) is not None
+
+    path.chmod(0o444)
+
+    with pytest.raises(ToolError, match="read-only file"):
+        await tool.run(params)
+    assert path.read_text(encoding="utf-8") == "Comprar pan\n"

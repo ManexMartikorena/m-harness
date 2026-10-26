@@ -932,6 +932,12 @@ def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
         raise ToolError(f"is a directory: {raw}")
     if path.exists() and not path.is_file():
         raise ToolError(f"not a regular file: {raw}")
+    # Protected on purpose: replacing it would undo that (spec
+    # mejora-2026-10-26-deuda-pre-hito-6, B4). `chmod` goes by run_command.
+    # One that cannot be read either gets "cannot read", which says more.
+    readable = path.is_file() and os.access(path, os.R_OK)
+    if readable and not os.access(path, os.W_OK):
+        raise ToolError(f"read-only file: {raw}")
     for parent in path.parents:
         if parent.exists():
             if not parent.is_dir():
