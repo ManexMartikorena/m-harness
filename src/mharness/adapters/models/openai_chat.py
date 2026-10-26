@@ -272,6 +272,10 @@ def _to_openai(request: ModelRequest) -> dict[str, Any]:
     return body
 
 
+# Added to an answer cut by Ctrl+C.
+INTERRUPTED_MARK = "\n\n[interrupted by the user]"
+
+
 def _message_to_openai(message: Message) -> list[dict[str, Any]]:
     """One domain message as OpenAI messages: a `tool` message becomes one
     message per result."""
@@ -283,13 +287,17 @@ def _message_to_openai(message: Message) -> list[dict[str, Any]]:
             if isinstance(block, ToolResultBlock)
         ]
     calls = [block for block in message.blocks if isinstance(block, ToolCallBlock)]
+    text = message.text
+    if message.interrupted:
+        # So the model knows it did not finish (spec hito 6, §1.7).
+        text += INTERRUPTED_MARK
     if not calls:
-        return [{"role": message.role, "content": message.text}]
+        return [{"role": message.role, "content": text}]
     return [
         {
             "role": message.role,
             # Required unless there are tool calls: null when there is no text.
-            "content": message.text or None,
+            "content": text or None,
             "tool_calls": [
                 {
                     "id": call.id,

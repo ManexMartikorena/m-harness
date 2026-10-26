@@ -110,6 +110,24 @@ async def test_text_blocks_are_joined_with_a_newline(client: OpenAIChatClient) -
 
 
 @respx.mock
+async def test_an_interrupted_answer_carries_the_mark(client: OpenAIChatClient) -> None:
+    # The model knows it did not finish (spec hito 6, §1.7).
+    route = respx.post(ENDPOINT).respond(json=fixture("completion.json"))
+    cut = Message(
+        role="assistant", blocks=[TextBlock(text="La capital es")], interrupted=True
+    )
+
+    await client.complete(
+        ModelRequest(model="glm-5.3-flash", messages=[CONVERSATION[0], cut])
+    )
+
+    assert sent_json(route)["messages"][1] == {
+        "role": "assistant",
+        "content": "La capital es\n\n[interrupted by the user]",
+    }
+
+
+@respx.mock
 async def test_sends_key_user_agent_and_session(client: OpenAIChatClient) -> None:
     route = respx.post(ENDPOINT).respond(json=fixture("completion.json"))
 
