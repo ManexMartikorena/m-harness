@@ -191,6 +191,9 @@ Message(role: "user" | "assistant" | "tool", blocks: list[Block])
 
 # Petición al modelo
 ModelRequest(model, system, messages, tools: list[ToolSpec], max_tokens)
+# (Anotado el 26/10/2026, spec mejora-2026-10-26-deuda-pre-hito-6, C1:
+#  `max_tokens` no existe todavía; la spec del hito 2, §1.6, lo aplazó. Se
+#  decide con los límites de tokens: por turno, hito 8; contexto, hito 11.)
 ToolSpec(name, description, input_schema)       # JSON Schema generado por Pydantic
 
 # Respuesta del modelo, en streaming             (adaptador → bucle)
@@ -383,7 +386,12 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   nube y similares quedan denegados salvo aprobación explícita, para que su
   contenido no acabe en el modelo. *(Añadido el 23/10/2026, spec
   `mejora-2026-10-23-deuda-hito-5`, A6 y E3: sin distinguir mayúsculas, y también
-  `.git/config` y `.git-credentials`.)*
+  `.git/config` y `.git-credentials`.)* *(Añadido el 26/10/2026, spec
+  `mejora-2026-10-26-deuda-pre-hito-6`, A1 y A5: cuenta también la ruta
+  pedida, no solo la resuelta (un `.env` que es un enlace), y la lista crece
+  con `.npmrc`, `.pypirc`, `.envrc`, `*.env`, `*.p12`, los tokens de `gh`,
+  `gcloud`, `.azure`, Cargo y Terraform, y la configuración de los
+  submódulos.)*
 - **Terminal:** cada comando es `EFFECT`. Desde el hito 14 corre además en un
   entorno aislado.
   *(Añadido el 21/10/2026, spec del hito 5, §1.9: el comando corre en su propio
@@ -398,7 +406,9 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
 - **Ficheros que ejecutan código:** escribir en `.git`, `.github`, `.husky`,
   `.vscode`, `.maha`, `.pre-commit-config.yaml` o `.envrc` pregunta siempre,
   sin "toda la sesión". *(Añadido el 23/10/2026, spec `mejora-2026-10-23-deuda-hito-5`,
-  D13.)*
+  D13.)* *(Ampliado el 26/10/2026, spec `mejora-2026-10-26-deuda-pre-hito-6`, A6:
+  también `.gitlab-ci.yml`, `.gitlab`, `.circleci`, `.forgejo`, `.gitea`,
+  `.githooks`, `.devcontainer`, `.idea` y `.claude`.)*
 - **Sin terminal:** si la entrada no es una terminal (`maha < fichero`), toda
   petición de aprobación se deniega sin preguntar. *(Añadido el 21/10/2026, spec
   del hito 5, §1.10: la siguiente línea del fichero podría "aprobar".)*

@@ -270,6 +270,10 @@ class Agent:
             return _error(call, str(exc))
         except Exception as exc:
             return _crash(call, f"{type(exc).__name__}: {exc}")
+        if not isinstance(content, str):
+            # A tool that breaks its contract does not cut the turn (spec
+            # mejora-2026-10-26-deuda-pre-hito-6, B3).
+            return _crash(call, f"run() returned {type(content).__name__}, not str")
         result = ToolResultBlock(call_id=call.id, content=content)
         try:
             summary = ready.tool.summary(content)

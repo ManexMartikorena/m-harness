@@ -12,6 +12,7 @@ import contextlib
 import difflib
 import errno
 import io
+import itertools
 import json
 import os
 import re
@@ -46,6 +47,9 @@ READ_MAX_LINES = 2000
 READ_MAX_CHARS = 100_000
 # A longer line is cut: one huge line must not fill the context.
 READ_MAX_LINE = 2000
+# Reading never goes through more than this: a huge line or a far offset
+# would hold the loop (spec mejora-2026-10-26-deuda-pre-hito-6, B6).
+READ_MAX_SCAN_CHARS = 64 * MIB
 
 
 def _count(number: int, singular: str, plural: str | None = None) -> str:
@@ -97,8 +101,18 @@ class Workspace:
             return str(path.relative_to(self.root))
         return str(path)
 
-    def warning(self, path: Path, secret: str | None) -> str | None:
-        return read_warning(path, self.root, secret=secret)
+    def asked(self, raw: str) -> Path:
+        """`raw` made absolute, without resolving links: the name the model
+        asked for (spec mejora-2026-10-26-deuda-pre-hito-6, A1)."""
+        return Path(os.path.normpath(self.root / raw))
+
+    def warning(self, path: Path, secret: str | None, raw: str) -> str | None:
+        """Why reading needs a question: by the resolved path and by the one
+        asked for."""
+        return read_warning(path, self.root, secret=secret, asked=self.asked(raw))
+
+    def change_warning(self, path: Path, raw: str) -> str | None:
+        return change_warning(path, self.root, asked=self.asked(raw))
 
 
 class _Asked:
@@ -192,7 +206,9 @@ def _as_text(file: IO[bytes]) -> IO[str]:
     return io.TextIOWrapper(file, encoding="utf-8", errors="replace", newline="")
 
 
-class ReadFileParams(BaseModel):
+# extra="forbid" in every tool: an unknown field is an error for the
+# model, not ignored (spec mejora-2026-10-26-deuda-pre-hito-6, B2).
+class ReadFileParams(BaseModel, extra="forbid"):
     path: str = Field(description="Path relative to the working directory")
     offset: int = Field(default=1, ge=1, description="First line to read, from 1")
     limit: int | None = Field(
@@ -216,7 +232,7 @@ class ReadFile:
     async def approval(self, params: ReadFileParams) -> ApprovalRequest | None:
         self._asked.forget()
         path = self._workspace.resolve(params.path)
-        warning = self._workspace.warning(path, SECRET_FILE)
+        warning = self._workspace.warning(path, SECRET_FILE, params.path)
         if warning is None:
             return None
         # Before asking: no useless question (spec hito 5, §1.2). Only what
@@ -230,7 +246,7 @@ class ReadFile:
 
     async def run(self, params: ReadFileParams) -> str:
         path = self._workspace.resolve(params.path)
-        warning = self._workspace.warning(path, SECRET_FILE)
+        warning = self._workspace.warning(path, SECRET_FILE, params.path)
         self._asked.check(params, params.path, path, warning)
         limit = min(params.limit or READ_MAX_LINES, READ_MAX_LINES)
         with _reading(params.path):
@@ -241,7 +257,14 @@ class ReadFile:
             with _as_text(file) as text:
                 if is_binary(file):
                     raise ToolError(f"binary file, not readable: {params.path}")
-                return _numbered_lines(text, params.offset, limit)
+                try:
+                    return _numbered_lines(text, params.offset, limit)
+                except _ScanLimit:
+                    raise ToolError(
+                        f"{params.path}: read stopped after "
+                        f"{READ_MAX_SCAN_CHARS} characters; use grep to find "
+                        "what you need"
+                    ) from None
 
     def summary(self, result: str) -> str:
         lines = sum(1 for line in result.splitlines() if _NUMBERED.match(line))
@@ -262,12 +285,30 @@ def _check_exists(path: Path, raw: str) -> None:
         raise ToolError(f"not a regular file: {raw}")
 
 
+class _ScanLimit(Exception):
+    """Reading went past `READ_MAX_SCAN_CHARS`."""
+
+
+class _Scanned:
+    """The characters read so far; raises `_ScanLimit` past the limit."""
+
+    def __init__(self) -> None:
+        self.chars = 0
+
+    def add(self, text: str) -> str:
+        self.chars += len(text)
+        if self.chars > READ_MAX_SCAN_CHARS:
+            raise _ScanLimit
+        return text
+
+
 def _numbered_lines(file: IO[str], offset: int, limit: int) -> str:
     """Lines `offset` to `offset + limit - 1`, numbered like `cat -n`."""
     shown: list[str] = []
     chars = 0
     number = 0
-    while (line := _next_line(file)) is not None:
+    scanned = _Scanned()
+    while (line := _next_line(file, scanned)) is not None:
         number += 1
         if number < offset:
             continue
@@ -288,23 +329,27 @@ def _numbered_lines(file: IO[str], offset: int, limit: int) -> str:
     return "\n".join(shown)
 
 
-def _next_line(file: IO[str]) -> str | None:
+def _next_line(file: IO[str], scanned: _Scanned) -> str | None:
     """The next line without its line ending, cut if it is too long."""
-    line = file.readline(READ_MAX_LINE + 1)
+    line = scanned.add(file.readline(READ_MAX_LINE + 1))
     if not line:
         return None
     if len(line) > READ_MAX_LINE and not line.endswith(("\n", "\r")):
         # Skip the rest of the long line.
-        while (rest := file.readline(64 * 1024)) and not rest.endswith(("\n", "\r")):
+        while (rest := scanned.add(file.readline(64 * 1024))) and not rest.endswith(
+            ("\n", "\r")
+        ):
             pass
         return line[:READ_MAX_LINE] + " … [line cut]"
     return line.rstrip("\r\n")
 
 
 LIST_MAX_ENTRIES = 500
+# A folder is read up to this many entries, then sorted (B6).
+LIST_MAX_SCAN = 10_000
 
 
-class ListDirParams(BaseModel):
+class ListDirParams(BaseModel, extra="forbid"):
     path: str = Field(
         default=".", description="Directory relative to the working directory"
     )
@@ -326,7 +371,7 @@ class ListDir:
     async def approval(self, params: ListDirParams) -> ApprovalRequest | None:
         self._asked.forget()
         path = self._workspace.resolve(params.path)
-        warning = self._workspace.warning(path, SECRET_DIR)
+        warning = self._workspace.warning(path, SECRET_DIR, params.path)
         if warning is None:
             return None
         _check_dir(path, params.path)
@@ -338,15 +383,26 @@ class ListDir:
 
     async def run(self, params: ListDirParams) -> str:
         path = self._workspace.resolve(params.path)
-        warning = self._workspace.warning(path, SECRET_DIR)
+        warning = self._workspace.warning(path, SECRET_DIR, params.path)
         self._asked.check(params, params.path, path, warning)
         _check_dir(path, params.path)
-        with _reading(params.path):
-            entries = sorted(path.iterdir(), key=lambda entry: entry.name)
+        with _reading(params.path), os.scandir(path) as found:
+            # One more than the limit says that there are more.
+            read = list(itertools.islice(found, LIST_MAX_SCAN + 1))
+        more = len(read) > LIST_MAX_SCAN
+        entries = sorted(
+            (Path(entry.path) for entry in read[:LIST_MAX_SCAN]),
+            key=lambda entry: entry.name,
+        )
         if not entries:
             return "(empty directory)"
         lines = [self._entry(entry) for entry in entries[:LIST_MAX_ENTRIES]]
-        if len(entries) > LIST_MAX_ENTRIES:
+        if more:
+            lines.append(
+                f"… [truncated: {LIST_MAX_ENTRIES} shown; the directory has more "
+                f"than {LIST_MAX_SCAN} entries]"
+            )
+        elif len(entries) > LIST_MAX_ENTRIES:
             lines.append(
                 f"… [truncated: {LIST_MAX_ENTRIES} of {len(entries)} entries shown]"
             )
@@ -480,7 +536,7 @@ def _check_glob(pattern: str, base: Path, raw: str) -> None:
 GLOB_MAX_RESULTS = 200
 
 
-class GlobParams(BaseModel):
+class GlobParams(BaseModel, extra="forbid"):
     pattern: str = Field(description='Pattern like "**/*.py" or "src/*.md"')
     path: str = Field(
         default=".",
@@ -505,7 +561,7 @@ class Glob:
         self._asked.forget()
         base = self._workspace.resolve(params.path)
         # Secrets found while walking are skipped, never asked about.
-        warning = self._workspace.warning(base, None)
+        warning = self._workspace.warning(base, None, params.path)
         if warning is None:
             return None
         _check_glob(params.pattern, base, params.path)
@@ -516,7 +572,7 @@ class Glob:
     async def run(self, params: GlobParams) -> str:
         base = self._workspace.resolve(params.path)
         self._asked.check(
-            params, params.path, base, self._workspace.warning(base, None)
+            params, params.path, base, self._workspace.warning(base, None, params.path)
         )
         _check_glob(params.pattern, base, params.path)
         walk = _Walk(self._workspace, base)
@@ -549,7 +605,7 @@ GREP_TIME_LIMIT = 30.0
 GREP_BATCH_FILES = 500
 
 
-class GrepParams(BaseModel):
+class GrepParams(BaseModel, extra="forbid"):
     pattern: str = Field(description="Python regular expression")
     path: str = Field(
         default=".",
@@ -577,7 +633,7 @@ class Grep:
     async def approval(self, params: GrepParams) -> ApprovalRequest | None:
         self._asked.forget()
         base = self._workspace.resolve(params.path)
-        warning = self._warning(base)
+        warning = self._warning(base, params.path)
         if warning is None:
             return None
         _check_grep(params, base)
@@ -587,15 +643,15 @@ class Grep:
             title += f" (glob: {params.glob})"
         return _request(self.name, title, self._workspace, base, params.path, warning)
 
-    def _warning(self, base: Path) -> str | None:
+    def _warning(self, base: Path, raw: str) -> str | None:
         # One secret file asks, as read_file; a secret directory is walked,
         # and the walk skips its secrets without asking.
         secret = SECRET_FILE if base.is_file() else None
-        return self._workspace.warning(base, secret)
+        return self._workspace.warning(base, secret, raw)
 
     async def run(self, params: GrepParams) -> str:
         base = self._workspace.resolve(params.path)
-        self._asked.check(params, params.path, base, self._warning(base))
+        self._asked.check(params, params.path, base, self._warning(base, params.path))
         _check_grep(params, base)
         loop = asyncio.get_running_loop()
         deadline = loop.time() + GREP_TIME_LIMIT
@@ -920,6 +976,12 @@ def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
         raise ToolError(f"is a directory: {raw}")
     if path.exists() and not path.is_file():
         raise ToolError(f"not a regular file: {raw}")
+    # Protected on purpose: replacing it would undo that (spec
+    # mejora-2026-10-26-deuda-pre-hito-6, B4). `chmod` goes by run_command.
+    # One that cannot be read either gets "cannot read", which says more.
+    readable = path.is_file() and os.access(path, os.R_OK)
+    if readable and not os.access(path, os.W_OK):
+        raise ToolError(f"read-only file: {raw}")
     for parent in path.parents:
         if parent.exists():
             if not parent.is_dir():
@@ -992,7 +1054,8 @@ def _write_atomically(path: Path, text: str, old: bytes | None) -> None:
     The new file gets the mode, owner, group and extended attributes (ACLs
     too, on Linux) of the old one. If the old one has other hard links, or
     any of that cannot be copied, `path` is rewritten in place instead
-    (spec mejora-2026-10-23-deuda-hito-5, D1 and D2).
+    (spec mejora-2026-10-23-deuda-hito-5, D1 and D2); also when the folder
+    does not let the temporary file be created.
     """
     try:
         info: os.stat_result | None = path.stat()
@@ -1001,7 +1064,15 @@ def _write_atomically(path: Path, text: str, old: bytes | None) -> None:
     if info is not None and info.st_nlink > 1:
         _write_in_place(path, text, old)
         return
-    descriptor, temporary = _create_temporary(path)
+    try:
+        descriptor, temporary = _create_temporary(path)
+    except PermissionError:
+        if info is None:
+            raise
+        # The folder is locked but the file is not: what `echo > file` does
+        # (spec mejora-2026-10-26-deuda-pre-hito-6, B5).
+        _write_in_place(path, text, old)
+        return
     try:
         with open(descriptor, "w", encoding="utf-8", newline="") as file:
             if info is not None and not _copy_identity(file.fileno(), path, info):
@@ -1192,7 +1263,7 @@ def _remove_folders(created: list[Path]) -> None:
             folder.rmdir()
 
 
-class WriteFileParams(BaseModel):
+class WriteFileParams(BaseModel, extra="forbid"):
     path: str = Field(description="Path relative to the working directory")
     content: str = Field(description="The whole new content of the file")
 
@@ -1219,7 +1290,7 @@ class WriteFile:
             params.content.encode("utf-8")
         except UnicodeEncodeError:
             raise ToolError("content is not valid UTF-8") from None
-        warning = change_warning(path, workspace.root)
+        warning = workspace.change_warning(path, params.path)
         data = _current_bytes(path, params.path, "overwrite")
         shown = workspace.shown(path)
         if data is None:
@@ -1274,7 +1345,7 @@ def _old_text(data: bytes, params: WriteFileParams) -> str:
 _BREAK = re.compile(r"\r\n|\r|\n")
 
 
-class EditFileParams(BaseModel):
+class EditFileParams(BaseModel, extra="forbid"):
     path: str = Field(description="Path relative to the working directory")
     old_string: str = Field(description="The exact text to replace")
     new_string: str = Field(description="The text to put in its place")
@@ -1393,7 +1464,7 @@ class EditFile:
         data = _current_bytes(path, params.path, "edit")
         if data is None:
             raise ToolError(f"file not found: {params.path}")
-        warning = change_warning(path, workspace.root)
+        warning = workspace.change_warning(path, params.path)
         try:
             old, new, _ = _edited(data, params)
             body = _diff(old, new)

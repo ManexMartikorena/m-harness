@@ -13,14 +13,16 @@ to fake what you approve.
 
 from typing import TextIO
 
-from mharness.adapters.cli.input import ReadLine
+from mharness.adapters.cli.input import Discard, ReadLine
 from mharness.adapters.cli.text import clean, clean_line
 from mharness.domain.approval import ApprovalRequest, Decision
 
 DETAIL_MAX_LINES = 60
+# A longer line goes on in more lines, never cut.
 DETAIL_MAX_LINE = 200
 WITH_ALWAYS = "[y] yes · [a] always this session · [n] no"
 WITHOUT_ALWAYS = "[y] yes · [n] no"
+VIEW_ALL = " · [v] view all"
 YELLOW = "\x1b[33m"
 RESET = "\x1b[0m"
 
@@ -39,24 +41,41 @@ class TerminalApproval:
     """Asks in the terminal, with the same reader as the conversation."""
 
     def __init__(
-        self, read_line: ReadLine, out: TextIO, *, color: bool = False
+        self,
+        read_line: ReadLine,
+        out: TextIO,
+        *,
+        color: bool = False,
+        discard: Discard | None = None,
     ) -> None:
         self._read = read_line
         self._out = out
         self._color = color
+        self._discard = discard
 
     async def decide(self, request: ApprovalRequest) -> Decision:
         out = self._out
-        print(f"  ┌ {_cut(clean_line(request.title))}", file=out)
-        for line in _detail(request.detail):
-            print(f"  │ {line}", file=out)
+        # Only what is typed while seeing the question answers it (spec
+        # mejora-2026-10-26-deuda-pre-hito-6, A2).
+        if self._discard is not None and self._discard():
+            print("  (discarded typed input)", file=out)
+        # Nothing is cut: what you approve is seen whole (A3).
+        _print(out, "  ┌ ", clean_line(request.title))
+        lines = [clean(line) for line in request.detail.splitlines()]
+        for line in lines[:DETAIL_MAX_LINES]:
+            _print(out, "  │ ", line)
+        rest = lines[DETAIL_MAX_LINES:]
+        if rest:
+            print(f"  │ … [{len(rest)} more lines: v to view them]", file=out)
         if request.warning:
-            warning = f"! {_cut(clean_line(request.warning))}"
+            warning = f"! {clean_line(request.warning)}"
             if self._color:
                 warning = f"{YELLOW}{warning}{RESET}"
             print(f"  │ {warning}", file=out)
         always = request.scope is not None
         choices = WITH_ALWAYS if always else WITHOUT_ALWAYS
+        if rest:
+            choices += VIEW_ALL
         while True:
             print(f"  └ Allow? {choices}: ", end="", file=out, flush=True)
             try:
@@ -67,21 +86,22 @@ class TerminalApproval:
                 return "deny"
             if answer == "a" and always:
                 return "session"
+            if answer == "v" and rest:
+                for line in rest:
+                    _print(out, "  │ ", line)
             if answer in _ANSWERS:
                 return _ANSWERS[answer]
 
 
-def _cut(line: str) -> str:
-    return line if len(line) <= DETAIL_MAX_LINE else line[:DETAIL_MAX_LINE] + "…"
-
-
-def _detail(detail: str) -> list[str]:
-    """The lines of the detail, clean and cut."""
-    lines = [clean(line) for line in detail.splitlines()]
-    shown = [_cut(line) for line in lines[:DETAIL_MAX_LINES]]
-    if len(lines) > DETAIL_MAX_LINES:
-        shown.append(f"… [{len(lines) - DETAIL_MAX_LINES} more lines]")
-    return shown
+def _print(out: TextIO, prefix: str, line: str) -> None:
+    """`line` in pieces of `DETAIL_MAX_LINE`; the next ones start with ↪."""
+    pieces = [
+        line[start : start + DETAIL_MAX_LINE]
+        for start in range(0, len(line), DETAIL_MAX_LINE)
+    ] or [""]
+    print(f"{prefix}{pieces[0]}", file=out)
+    for piece in pieces[1:]:
+        print(f"  │ ↪ {piece}", file=out)
 
 
 class DenyAll:

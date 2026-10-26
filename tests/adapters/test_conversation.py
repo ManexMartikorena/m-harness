@@ -1,7 +1,9 @@
 import asyncio
 import contextlib
 import io
+import json
 import os
+import pty
 import signal
 from collections.abc import Iterator
 from importlib.metadata import version
@@ -13,14 +15,17 @@ from mharness.adapters.cli.approval import TerminalApproval
 from mharness.adapters.cli.conversation import EXIT_INTERRUPTED, converse
 from mharness.adapters.cli.input import StdinLines
 from mharness.adapters.cli.spinner import CLEAR_LINE
+from mharness.adapters.commands import LocalCommandRunner
+from mharness.adapters.tools import RunCommand
 from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
-from mharness.domain.approval import ApprovalRequest
+from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from mharness.domain.tools import ToolError
+from tests.adapters.test_local_runner import gone, written_pid
 from tests.fakes.approval import FakeApproval
 from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply, tool_calls
 from tests.fakes.terminal import ScriptedInput
@@ -115,6 +120,68 @@ async def test_ctrl_c_ends_with_130() -> None:
     assert code == EXIT_INTERRUPTED
 
 
+@pytest.mark.parametrize(
+    ("number", "code"), [(signal.SIGTERM, 143), (signal.SIGHUP, 129)]
+)
+async def test_closing_signals_end_with_128_plus_the_signal(
+    number: signal.Signals, code: int
+) -> None:
+    # Closing the window (SIGHUP) or `kill` (SIGTERM) end maha like Ctrl+C
+    # does, without going back to the prompt (spec
+    # mejora-2026-10-26-deuda-pre-hito-6, A4).
+    async def close() -> str:
+        signal.raise_signal(number)
+        await asyncio.Event().wait()
+        raise AssertionError("not cancelled")
+
+    result = await converse(
+        Agent(FakeModelClient([]), ToolRegistry(), gate=FakeApproval(), model="m"),
+        provider="p",
+        model="m",
+        read_line=close,
+        out=io.StringIO(),
+        err=io.StringIO(),
+    )
+
+    assert result == code
+
+
+async def test_sigterm_during_a_command_kills_it(tmp_path: Path) -> None:
+    # The command runs in its own group, so the terminal's SIGHUP never
+    # reaches it: maha has to kill it on its way out.
+    pidfile = tmp_path / "pid"
+    command = f"sleep 30 & echo $! > {pidfile}; wait"
+    call = ToolCallBlock(
+        id="c1", name="run_command", arguments=json.dumps({"command": command})
+    )
+    tools = ToolRegistry([RunCommand(tmp_path, LocalCommandRunner(), {})])
+    agent = Agent(
+        FakeModelClient([tool_calls(call)]),
+        tools,
+        gate=FakeApproval(["once"]),
+        model="m",
+    )
+
+    async def close_when_it_runs() -> int:
+        pid = await written_pid(pidfile)
+        signal.raise_signal(signal.SIGTERM)
+        return pid
+
+    closing = asyncio.create_task(close_when_it_runs())
+    result = await converse(
+        agent,
+        provider="p",
+        model="m",
+        read_line=ScriptedInput("ejecuta"),
+        out=io.StringIO(),
+        err=io.StringIO(),
+    )
+    grandchild = await closing
+
+    assert result == 143
+    assert await gone(grandchild)
+
+
 async def test_other_cancellations_propagate() -> None:
     started = asyncio.Event()
 
@@ -173,6 +240,36 @@ async def test_stdin_lines_waits_for_a_whole_line(pipe: tuple[int, int]) -> None
     os.write(write_fd, b"la\n")
 
     assert await pending == "Hola"
+
+
+async def test_stdin_lines_discards_what_it_kept(pipe: tuple[int, int]) -> None:
+    # A pasted block lands whole in the buffer: its next line must not answer
+    # a question (spec mejora-2026-10-26-deuda-pre-hito-6, A2).
+    read_fd, write_fd = pipe
+    os.write(write_fd, b"borra los temporales\ny\n")
+    lines = StdinLines(read_fd)
+    assert await lines.readline() == "borra los temporales"
+
+    assert lines.discard() is True
+    assert lines.discard() is False
+    os.write(write_fd, b"n\n")
+    assert await lines.readline() == "n"
+
+
+async def test_stdin_lines_discards_what_the_terminal_holds() -> None:
+    # Typed ahead and not read yet: still in the terminal's queue.
+    main, side = pty.openpty()
+    try:
+        lines = StdinLines(side)
+        os.write(main, b"y\n")
+        await asyncio.sleep(0.05)
+
+        assert lines.discard() is True
+        os.write(main, b"n\n")
+        assert await lines.readline() == "n"
+    finally:
+        os.close(main)
+        os.close(side)
 
 
 async def test_stdin_lines_reads_a_regular_file(tmp_path: Path) -> None:
@@ -487,6 +584,35 @@ async def test_internal_tool_error_goes_to_stderr() -> None:
     assert err == "warning: tool \"echo\" failed: KeyError: 'boom'\n"
 
 
+class BrokenGate:
+    """The terminal fails while asking, as an EIO would."""
+
+    async def decide(self, request: ApprovalRequest) -> Decision:
+        raise OSError(5, "Input/output error")
+
+
+async def test_an_unexpected_error_ends_only_the_answer() -> None:
+    # Not a ModelError: maha says so and goes back to the prompt, keeping
+    # what the agent kept (spec mejora-2026-10-26-deuda-pre-hito-6, B1).
+    request = ApprovalRequest(tool="echo", title="echo", detail="", scope=None)
+    tool = FakeTool(permission="effect", requests=[request])
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Sigo.")])
+    out, err = io.StringIO(), io.StringIO()
+
+    code = await converse(
+        Agent(fake, ToolRegistry([tool]), gate=BrokenGate(), model="m"),
+        provider="p",
+        model="m",
+        read_line=ScriptedInput("Hola", "Otra", "/exit"),
+        out=out,
+        err=err,
+    )
+
+    assert code == 0
+    assert err.getvalue() == "error: internal: OSError: [Errno 5] Input/output error\n"
+    assert "Sigo." in out.getvalue()
+
+
 async def test_ctrl_c_during_a_tool_goes_back_to_the_prompt() -> None:
     gate = asyncio.Event()  # never set: the tool waits
     fake = FakeModelClient([tool_calls(call("c1")), reply("Hola.")])
@@ -512,6 +638,35 @@ async def test_ctrl_c_during_a_tool_goes_back_to_the_prompt() -> None:
     result = agent.messages[-1].blocks[0]
     assert isinstance(result, ToolResultBlock)
     assert (result.content, result.is_error) == ("error: cancelled by the user", True)
+
+
+async def test_ctrl_c_during_the_question_starts_a_new_line() -> None:
+    # The question leaves the cursor after "Allow? …:" (spec
+    # mejora-2026-10-26-deuda-pre-hito-6, B8).
+    async def no_answer() -> str:
+        await asyncio.Event().wait()
+        raise AssertionError("not cancelled")
+
+    request = ApprovalRequest(tool="echo", title="echo", detail="", scope=None)
+    tool = FakeTool(permission="effect", requests=[request])
+    fake = FakeModelClient([tool_calls(call("c1"))])
+    out = io.StringIO()
+    pressing = asyncio.ensure_future(interrupt_when(out, "Allow?"))
+    agent = Agent(
+        fake, ToolRegistry([tool]), gate=TerminalApproval(no_answer, out), model="m"
+    )
+
+    await converse(
+        agent,
+        provider="p",
+        model="m",
+        read_line=ScriptedInput("Usa la herramienta", "/exit"),
+        out=out,
+        err=io.StringIO(),
+    )
+    await pressing
+
+    assert "  └ Allow? [y] yes · [n] no: \n  [interrupted]\n" in out.getvalue()
 
 
 async def test_control_characters_from_the_model_and_tools_are_escaped() -> None:

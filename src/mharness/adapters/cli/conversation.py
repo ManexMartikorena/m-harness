@@ -16,7 +16,12 @@ from mharness.adapters.cli.input import ReadLine, StdinLines
 from mharness.adapters.cli.spinner import Spinner, use_color
 from mharness.adapters.cli.text import clean
 from mharness.application.agent import Agent
-from mharness.domain.agent_events import ToolCallProposed, ToolFinished, TurnFinished
+from mharness.domain.agent_events import (
+    ApprovalRequested,
+    ToolCallProposed,
+    ToolFinished,
+    TurnFinished,
+)
 from mharness.domain.errors import ModelError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock
@@ -28,12 +33,20 @@ EXIT_INTERRUPTED = 130
 MAX_CALL = 100
 
 
+# Closing the window (SIGHUP) or `kill` (SIGTERM) end maha the way Ctrl+C
+# cancels: what runs is killed on the way out (spec
+# mejora-2026-10-26-deuda-pre-hito-6, A4).
+CLOSING = (signal.SIGHUP, signal.SIGTERM)
+
+
 class _Sigint:
     """Whether Ctrl+C asked to cancel the task, and that request was not
-    handled yet. Tells it apart from any other cancellation."""
+    handled yet; or the closing signal that asked to end. Tells them apart
+    from any other cancellation."""
 
     def __init__(self) -> None:
         self.pending = False
+        self.closing: int | None = None
 
 
 async def converse(
@@ -59,10 +72,19 @@ async def converse(
         sigint.pending = True
         task.cancel()
 
+    def on_closing(number: int) -> None:
+        sigint.closing = number
+        task.cancel()
+
     loop.add_signal_handler(signal.SIGINT, on_sigint)
+    for number in CLOSING:
+        loop.add_signal_handler(number, on_closing, number)
     try:
         return await _turns(agent, provider, model, read, out, err, sigint)
     except asyncio.CancelledError:
+        if sigint.closing is not None:
+            task.uncancel()
+            return 128 + sigint.closing
         # Ctrl+C at the prompt ends `maha`; an answer handles its own.
         if not sigint.pending:
             raise
@@ -71,6 +93,8 @@ async def converse(
         return EXIT_INTERRUPTED
     finally:
         loop.remove_signal_handler(signal.SIGINT)
+        for number in CLOSING:
+            loop.remove_signal_handler(number)
 
 
 async def _turns(
@@ -110,6 +134,9 @@ async def _answer(
     """
     # True while the cursor is after text, not at the start of a line.
     wrote = False
+    # True while a question waits after "Allow? …:" (spec
+    # mejora-2026-10-26-deuda-pre-hito-6, B8).
+    asking = False
     # Covers each wait for the model (spec hito 3, §1.12).
     spinner = Spinner(out, color=use_color())
     spinner.start()
@@ -128,7 +155,10 @@ async def _answer(
                             print(file=out)
                             wrote = False
                         print(f"  → {_call(call)}", file=out, flush=True)
+                    case ApprovalRequested():
+                        asking = True
                     case ToolFinished():
+                        asking = False
                         mark = "✗" if event.result.is_error else "✓"
                         print(f"  {mark} {clean(event.summary)}", file=out, flush=True)
                         if event.internal_error:
@@ -152,8 +182,17 @@ async def _answer(
         if wrote:
             print(file=out)
         print(f"error: {clean(str(exc))}", file=err, flush=True)
+    except Exception as exc:
+        # A bug, or the terminal failing: the agent already kept what ran,
+        # and maha goes on (spec mejora-2026-10-26-deuda-pre-hito-6, B1).
+        await spinner.stop()
+        if wrote:
+            print(file=out)
+        detail = clean(f"{type(exc).__name__}: {exc}")
+        print(f"error: internal: {detail}", file=err, flush=True)
     except asyncio.CancelledError:
-        if not sigint.pending:
+        # A closing signal goes on up: maha ends, not just the answer.
+        if not sigint.pending or sigint.closing is not None:
             raise
         sigint.pending = False
         # Without this, asyncio would keep treating the task as cancelled.
@@ -161,7 +200,7 @@ async def _answer(
         assert task is not None
         task.uncancel()
         await spinner.stop()
-        if wrote:
+        if wrote or asking:
             print(file=out)
         print("  [interrupted]", file=out, flush=True)
     finally:

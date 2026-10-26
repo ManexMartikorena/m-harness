@@ -45,6 +45,28 @@ from mharness.domain.paths import (
         "repo/.git/config",
         ".GIT/CONFIG",
         ".git-credentials",
+        # Known credential files that were missing (spec
+        # mejora-2026-10-26-deuda-pre-hito-6, A5).
+        "id_ecdsa",
+        "keys/id_dsa",
+        "certs/client.p12",
+        "certs/client.PFX",
+        "prod.env",
+        "deploy/app.env",
+        ".envrc",
+        ".npmrc",
+        "web/.npmrc",
+        ".pypirc",
+        ".vault-token",
+        ".terraformrc",
+        ".terraform.d/credentials.tfrc.json",
+        ".azure/accessTokens.json",
+        ".config/gh/hosts.yml",
+        ".config/gcloud/application_default_credentials.json",
+        ".cargo/credentials.toml",
+        ".cargo/credentials",
+        ".git/modules/sub/config",
+        ".git/modules/a/b/config",
     ],
 )
 def test_secret_paths(path: str) -> None:
@@ -63,6 +85,13 @@ def test_secret_paths(path: str) -> None:
         ".",
         ".git/HEAD",
         "src/config",
+        "prod.env.example",
+        "docs/env.md",
+        ".config/nvim/init.lua",
+        "gh/hosts.yml",
+        ".cargo/config.toml",
+        ".git/modules/sub/HEAD",
+        "modules/config",
     ],
 )
 def test_ordinary_paths(path: str) -> None:
@@ -112,8 +141,20 @@ def test_change_warning(path: str, warning: str | None) -> None:
         (".husky/pre-commit", RUNS_CODE),
         (".vscode/tasks.json", RUNS_CODE),
         (".pre-commit-config.yaml", RUNS_CODE),
-        ("sub/.envrc", RUNS_CODE),
+        # Secret too: it often exports credentials (A5).
+        ("sub/.envrc", f"{SECRET_CHANGE}; {RUNS_CODE}"),
         (".GITHUB/workflows/ci.yml", RUNS_CODE),
+        # More CI, hooks and editors (spec mejora-2026-10-26-deuda-pre-hito-6,
+        # A6).
+        (".gitlab-ci.yml", RUNS_CODE),
+        (".circleci/config.yml", RUNS_CODE),
+        (".forgejo/workflows/ci.yml", RUNS_CODE),
+        (".gitea/workflows/ci.yml", RUNS_CODE),
+        (".githooks/pre-commit", RUNS_CODE),
+        (".devcontainer/devcontainer.json", RUNS_CODE),
+        (".idea/workspace.xml", RUNS_CODE),
+        (".claude/settings.json", RUNS_CODE),
+        ("docs/gitlab-ci.md", None),
         (".maha/config.toml", MAHA_CONFIG),
         (".git/HEAD", GIT_DIR),
         ("docs/github.md", None),
@@ -139,3 +180,20 @@ def test_inside_by_the_relative_path() -> None:
     assert is_inside(PurePath("/home/ane/.ssh/project/a.txt"), root)
     assert not is_secret_at(PurePath("/home/ane/.ssh/project/a.txt"), root)
     assert is_secret_at(PurePath("/home/ane/.ssh/a.txt"), root)
+
+
+def test_the_asked_path_counts_too() -> None:
+    # A `.env` that links to a plain name, or a plain name inside a linked
+    # `.github` (spec mejora-2026-10-26-deuda-pre-hito-6, A1).
+    resolved = ROOT / "config/app.txt"
+
+    assert read_warning(resolved, ROOT, secret=SECRET_FILE) is None
+    assert (
+        read_warning(resolved, ROOT, secret=SECRET_FILE, asked=ROOT / ".env")
+        == SECRET_FILE
+    )
+    assert change_warning(resolved, ROOT, asked=ROOT / ".env") == SECRET_CHANGE
+    assert (
+        change_warning(resolved, ROOT, asked=ROOT / ".github/workflows/ci.yml")
+        == RUNS_CODE
+    )
