@@ -185,3 +185,17 @@ def test_key_is_not_in_the_repr(home: Path, project: Path) -> None:
     write_user(home, 'model = "glm-5.3-flash"\n')
 
     assert KEY not in repr(load(home, project))
+
+
+# Where sessions live (spec hito 6, §1.1 and §1.3).
+
+
+def test_data_dir_respects_xdg_data_home(tmp_path: Path) -> None:
+    assert config.data_dir({"XDG_DATA_HOME": str(tmp_path)}) == tmp_path / "maha"
+
+
+@pytest.mark.parametrize("xdg", ["", "relative/path"])
+def test_without_absolute_xdg_data_uses_local_share(xdg: str) -> None:
+    assert config.data_dir({"XDG_DATA_HOME": xdg}) == (
+        Path.home() / ".local" / "share" / "maha"
+    )
