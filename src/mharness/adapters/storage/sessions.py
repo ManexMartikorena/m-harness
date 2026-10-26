@@ -54,13 +54,15 @@ class JsonlLog:
                 f"cannot save session {self._path.stem}: "
                 "its file could not be repaired after a failed write"
             )
-        data = "".join(_ENTRY.dump_json(entry).decode() + "\n" for entry in entries)
+        data = b"".join(
+            _line(_ENTRY.dump_python(entry, mode="json")) for entry in entries
+        )
         try:
             size = os.fstat(fd).st_size
         except OSError as exc:
             raise _cannot_save(self._path, exc) from None
         try:
-            _write(fd, self._path, data.encode())
+            _write(fd, self._path, data)
         except SessionError:
             try:
                 os.ftruncate(fd, size)
@@ -104,7 +106,7 @@ class JsonlSessionStore:
                 "version": VERSION,
                 **header.model_dump(mode="json"),
             }
-            _write(fd, path, (json.dumps(line, ensure_ascii=False) + "\n").encode())
+            _write(fd, path, _line(line))
             # The new name survives a power cut too.
             _sync_folder(self._folder)
         except BaseException as exc:
@@ -241,6 +243,17 @@ def _still_named(fd: int, path: Path) -> bool:
     return (named.st_dev, named.st_ino) == (held.st_dev, held.st_ino)
 
 
+def _line(data: object) -> bytes:
+    """One JSON line, readable UTF-8. Text that is not valid UTF-8 (a file
+    name with Latin-1 bytes comes as surrogates) goes escaped, `\\udce9`, and
+    reads back the same (final audit of hito 6, 2)."""
+    text = json.dumps(data, ensure_ascii=False)
+    try:
+        return (text + "\n").encode("utf-8")
+    except UnicodeEncodeError:
+        return (json.dumps(data) + "\n").encode("ascii")
+
+
 def _write(fd: int, path: Path, data: bytes) -> None:
     """All of `data` at the end of the file, then `fsync`: not on the disk is
     not saved."""
@@ -293,9 +306,12 @@ def _parse(data: bytes, session_id: str) -> tuple[SessionHeader, list[SessionEnt
     entries = []
     for number, line in enumerate(lines[1:], start=2):
         try:
-            entries.append(_ENTRY.validate_json(line))
+            entries.append(_ENTRY.validate_python(json.loads(line)))
+        # First: a ValidationError is also a ValueError.
         except ValidationError as exc:
             raise corrupt(f"line {number} is not valid: {_first(exc)}") from None
+        except ValueError, RecursionError:
+            raise corrupt(f"line {number} is not valid JSON") from None
     return header, entries
 
 

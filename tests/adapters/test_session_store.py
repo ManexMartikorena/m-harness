@@ -480,3 +480,38 @@ async def test_a_file_that_cannot_be_repaired_takes_no_more(
     with pytest.raises(SessionError, match="could not be repaired"):
         await log.append([MessageEntry(message=HOLA)])
     await log.close()
+
+
+# Text that is not valid UTF-8 (a file name with Latin-1 bytes comes to Python
+# as surrogates) is saved and comes back as it was (final audit of hito 6, 2).
+
+ODD = "caf\udce9.txt"
+
+
+async def test_text_with_surrogates_is_saved_and_comes_back(folder: Path) -> None:
+    listing = Message(role="user", blocks=[TextBlock(text=ODD)])
+    log = await JsonlSessionStore(folder).create(
+        HEADER.model_copy(update={"cwd": f"/tmp/{ODD}"})
+    )
+    await log.append([MessageEntry(message=listing)])
+    await log.close()
+
+    session, again = await JsonlSessionStore(folder).open(HEADER.id)
+    await again.close()
+
+    assert session.messages == [listing]
+    assert session.header.cwd == f"/tmp/{ODD}"
+    # The file stays valid UTF-8: the surrogate is written escaped.
+    file_of(folder).read_bytes().decode("utf-8")
+
+
+async def test_a_line_with_the_wrong_shape_says_what_is_wrong(folder: Path) -> None:
+    path = await saved(folder, HOLA, ANSWER)
+    lines = lines_of(path)
+    set_lines(path, [lines[0], '{"type": "usage", "usage": {"input_tokens": "x"}}'])
+
+    with pytest.raises(
+        SessionCorrupt,
+        match=r"line 2 is not valid: .*input_tokens: Input should be a valid integer",
+    ):
+        await JsonlSessionStore(folder).open(HEADER.id)
