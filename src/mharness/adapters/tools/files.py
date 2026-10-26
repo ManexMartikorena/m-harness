@@ -202,7 +202,9 @@ def _as_text(file: IO[bytes]) -> IO[str]:
     return io.TextIOWrapper(file, encoding="utf-8", errors="replace", newline="")
 
 
-class ReadFileParams(BaseModel):
+# extra="forbid" in every tool: an unknown field is an error for the
+# model, not ignored (spec mejora-2026-10-26-deuda-pre-hito-6, B2).
+class ReadFileParams(BaseModel, extra="forbid"):
     path: str = Field(description="Path relative to the working directory")
     offset: int = Field(default=1, ge=1, description="First line to read, from 1")
     limit: int | None = Field(
@@ -314,7 +316,7 @@ def _next_line(file: IO[str]) -> str | None:
 LIST_MAX_ENTRIES = 500
 
 
-class ListDirParams(BaseModel):
+class ListDirParams(BaseModel, extra="forbid"):
     path: str = Field(
         default=".", description="Directory relative to the working directory"
     )
@@ -490,7 +492,7 @@ def _check_glob(pattern: str, base: Path, raw: str) -> None:
 GLOB_MAX_RESULTS = 200
 
 
-class GlobParams(BaseModel):
+class GlobParams(BaseModel, extra="forbid"):
     pattern: str = Field(description='Pattern like "**/*.py" or "src/*.md"')
     path: str = Field(
         default=".",
@@ -559,7 +561,7 @@ GREP_TIME_LIMIT = 30.0
 GREP_BATCH_FILES = 500
 
 
-class GrepParams(BaseModel):
+class GrepParams(BaseModel, extra="forbid"):
     pattern: str = Field(description="Python regular expression")
     path: str = Field(
         default=".",
@@ -1202,7 +1204,7 @@ def _remove_folders(created: list[Path]) -> None:
             folder.rmdir()
 
 
-class WriteFileParams(BaseModel):
+class WriteFileParams(BaseModel, extra="forbid"):
     path: str = Field(description="Path relative to the working directory")
     content: str = Field(description="The whole new content of the file")
 
@@ -1284,7 +1286,7 @@ def _old_text(data: bytes, params: WriteFileParams) -> str:
 _BREAK = re.compile(r"\r\n|\r|\n")
 
 
-class EditFileParams(BaseModel):
+class EditFileParams(BaseModel, extra="forbid"):
     path: str = Field(description="Path relative to the working directory")
     old_string: str = Field(description="The exact text to replace")
     new_string: str = Field(description="The text to put in its place")

@@ -19,7 +19,9 @@ from mharness.ports.commands import CommandRunner
 DEFAULT_TIMEOUT = 120
 
 
-class RunCommandParams(BaseModel):
+# extra="forbid" in every tool: an unknown field is an error for the
+# model, not ignored (spec mejora-2026-10-26-deuda-pre-hito-6, B2).
+class RunCommandParams(BaseModel, extra="forbid"):
     command: str = Field(min_length=1, description="The shell command to run")
     timeout: int = Field(
         default=DEFAULT_TIMEOUT,
