@@ -8,6 +8,7 @@ from pydantic import TypeAdapter, ValidationError
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from mharness.domain.session import (
+    TITLE_MAX,
     MessageEntry,
     ModelEntry,
     SessionCorrupt,
@@ -16,10 +17,13 @@ from mharness.domain.session import (
     SessionHeader,
     SessionInUse,
     SessionNotFound,
+    SessionSummary,
     UsageEntry,
     check_history,
     is_session_id,
+    replay,
     session_id,
+    summarize,
 )
 
 ENTRY: TypeAdapter[SessionEntry] = TypeAdapter(SessionEntry)
@@ -150,3 +154,76 @@ def test_a_valid_history(messages: list[Message]) -> None:
 def test_a_broken_history(messages: list[Message], problem: str) -> None:
     with pytest.raises(SessionCorrupt, match=f"^history: {problem}$"):
         check_history(messages)
+
+
+# From the entries of a file to a session, and to a line of /sessions.
+
+HEADER = SessionHeader(
+    id="20261026-091502-3fa2",
+    created_at=datetime(2026, 10, 26, 9, 15, 2, tzinfo=UTC),
+    cwd="/home/ana/proyecto",
+    provider="opencode-go",
+    model="glm-5.3-flash",
+    maha="0.6.0",
+)
+
+
+def test_replay_gives_messages_the_last_model_and_the_tokens() -> None:
+    entries: list[SessionEntry] = [
+        MessageEntry(message=user()),
+        MessageEntry(message=answer()),
+        UsageEntry(usage=Usage(input_tokens=700, output_tokens=30)),
+        ModelEntry(model="kimi-k3"),
+        MessageEntry(message=user("Otra")),
+        MessageEntry(message=answer("Vale.")),
+        UsageEntry(usage=Usage(input_tokens=800, output_tokens=5, cache_read_tokens=1)),
+    ]
+
+    session = replay(HEADER, entries)
+
+    assert session.header == HEADER
+    assert session.messages == [user(), answer(), user("Otra"), answer("Vale.")]
+    assert session.model == "kimi-k3"
+    assert session.usage == Usage(
+        input_tokens=1500, output_tokens=35, cache_read_tokens=1
+    )
+
+
+def test_replay_without_entries_keeps_the_first_model() -> None:
+    session = replay(HEADER, [])
+
+    assert (session.messages, session.model, session.usage) == (
+        [],
+        "glm-5.3-flash",
+        Usage(),
+    )
+
+
+def test_replay_refuses_a_broken_history() -> None:
+    with pytest.raises(SessionCorrupt, match="call c1 has no result"):
+        replay(
+            HEADER, [MessageEntry(message=user()), MessageEntry(message=calls("c1"))]
+        )
+
+
+def test_the_summary_has_the_first_line_of_the_first_user_message() -> None:
+    updated = datetime(2026, 10, 26, 10, 0, tzinfo=UTC)
+    long = "arregla el test de config\ny después mira el README"
+    entries: list[SessionEntry] = [
+        MessageEntry(message=user(long)),
+        MessageEntry(message=answer()),
+        MessageEntry(message=user("x" * 100)),
+    ]
+
+    summary = summarize(HEADER, entries, updated)
+
+    assert summary == SessionSummary(
+        id=HEADER.id,
+        cwd=HEADER.cwd,
+        updated_at=updated,
+        messages=3,
+        title="arregla el test de config",
+    )
+    cut = summarize(HEADER, [MessageEntry(message=user("x" * 100))], updated)
+    assert cut.title == "x" * (TITLE_MAX - 1) + "…"
+    assert summarize(HEADER, [], updated).title == ""

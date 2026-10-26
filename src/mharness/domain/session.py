@@ -18,6 +18,8 @@ from mharness.domain.model import Usage
 # Date and time in UTC, and 4 random hex digits: short to type, sorted by
 # date, and two sessions in the same second do not clash.
 _ID = re.compile(r"\d{8}-\d{6}-[0-9a-f]{4}")
+# What /sessions shows of the first user message.
+TITLE_MAX = 60
 
 
 def session_id(created_at: datetime, token: str) -> str:
@@ -140,3 +142,40 @@ def check_history(messages: list[Message]) -> None:
 
 def _broken(problem: str) -> SessionCorrupt:
     return SessionCorrupt(f"history: {problem}")
+
+
+def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
+    """The session that `entries`, in the order of the file, build. Raises
+    `SessionCorrupt` if its history could not go to the model."""
+    messages: list[Message] = []
+    model = header.model
+    usage = Usage()
+    for entry in entries:
+        match entry:
+            case MessageEntry(message=message):
+                messages.append(message)
+            case ModelEntry(model=changed):
+                model = changed
+            case UsageEntry(usage=more):
+                usage += more
+    check_history(messages)
+    return Session(header=header, messages=messages, model=model, usage=usage)
+
+
+def summarize(
+    header: SessionHeader, entries: list[SessionEntry], updated_at: datetime
+) -> SessionSummary:
+    """The line of /sessions for a session, without checking its history:
+    a broken one still shows, so it can be deleted."""
+    messages = [entry.message for entry in entries if isinstance(entry, MessageEntry)]
+    first = next((m.text for m in messages if m.role == "user"), "")
+    title = first.split("\n", 1)[0]
+    if len(title) > TITLE_MAX:
+        title = title[: TITLE_MAX - 1] + "…"
+    return SessionSummary(
+        id=header.id,
+        cwd=header.cwd,
+        updated_at=updated_at,
+        messages=len(messages),
+        title=title,
+    )
