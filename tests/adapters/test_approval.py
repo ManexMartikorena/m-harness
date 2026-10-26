@@ -34,6 +34,31 @@ async def ask(
     return await gate.decide(request), out.getvalue()
 
 
+async def test_what_was_typed_before_the_question_is_discarded() -> None:
+    # A2: only what is typed while seeing the question answers it.
+    out = io.StringIO()
+    calls: list[str] = []
+
+    def discard() -> bool:
+        calls.append(out.getvalue())
+        return True
+
+    gate = TerminalApproval(ScriptedInput("n"), out, discard=discard)
+
+    assert await gate.decide(EDIT) == "deny"
+    # Before anything of the question is shown.
+    assert calls == [""]
+    assert out.getvalue().startswith("  (discarded typed input)\n  ┌ edit notas.txt")
+
+
+async def test_nothing_discarded_says_nothing() -> None:
+    out = io.StringIO()
+    gate = TerminalApproval(ScriptedInput("y"), out, discard=lambda: False)
+
+    assert await gate.decide(EDIT) == "once"
+    assert "discarded" not in out.getvalue()
+
+
 def test_both_satisfy_the_port() -> None:
     # mypy checks these assignments against the Protocol.
     terminal: ApprovalGate = TerminalApproval(ScriptedInput(), io.StringIO())

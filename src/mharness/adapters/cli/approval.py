@@ -13,7 +13,7 @@ to fake what you approve.
 
 from typing import TextIO
 
-from mharness.adapters.cli.input import ReadLine
+from mharness.adapters.cli.input import Discard, ReadLine
 from mharness.adapters.cli.text import clean, clean_line
 from mharness.domain.approval import ApprovalRequest, Decision
 
@@ -39,14 +39,24 @@ class TerminalApproval:
     """Asks in the terminal, with the same reader as the conversation."""
 
     def __init__(
-        self, read_line: ReadLine, out: TextIO, *, color: bool = False
+        self,
+        read_line: ReadLine,
+        out: TextIO,
+        *,
+        color: bool = False,
+        discard: Discard | None = None,
     ) -> None:
         self._read = read_line
         self._out = out
         self._color = color
+        self._discard = discard
 
     async def decide(self, request: ApprovalRequest) -> Decision:
         out = self._out
+        # Only what is typed while seeing the question answers it (spec
+        # mejora-2026-10-26-deuda-pre-hito-6, A2).
+        if self._discard is not None and self._discard():
+            print("  (discarded typed input)", file=out)
         print(f"  ┌ {_cut(clean_line(request.title))}", file=out)
         for line in _detail(request.detail):
             print(f"  │ {line}", file=out)

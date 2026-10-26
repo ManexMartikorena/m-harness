@@ -10,6 +10,7 @@ import httpx
 import pytest
 import respx
 
+from mharness.adapters.cli import StdinLines
 from mharness.bootstrap import main
 
 KEY = "sk-test-0000000000000000"
@@ -315,6 +316,7 @@ def test_in_a_terminal_a_command_asks_and_runs_without_the_key(
     workspace: Path,
     terminal: Callable[[str], None],
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The question reads the same input as the conversation (spec
     # mejora-2026-10-23-deuda-hito-5, B3), and the command does not get the
@@ -326,13 +328,24 @@ def test_in_a_terminal_a_command_asks_and_runs_without_the_key(
             sse_response(streamed("Hecho.", 1, 1)),
         ]
     )
+    # Typed ahead: the question drops it (spec
+    # mejora-2026-10-26-deuda-pre-hito-6, A2). The answer comes after, as a
+    # person seeing the question would type it.
     terminal("Ejecuta env\ny\n/exit\n")
+    discard = StdinLines.discard
+
+    def discard_then_answer(self: StdinLines) -> bool:
+        dropped = discard(self)
+        terminal("y\n/exit\n")
+        return dropped
+
+    monkeypatch.setattr(StdinLines, "discard", discard_then_answer)
 
     code = main([])
 
     out = capsys.readouterr().out
     assert code == 0
-    assert "  ┌ run: env\n" in out
+    assert "  (discarded typed input)\n  ┌ run: env\n" in out
     assert "  ✓ exit code 0\n" in out
     result = json.loads(route.calls.last.request.content)["messages"][-1]
     assert result["role"] == "tool"

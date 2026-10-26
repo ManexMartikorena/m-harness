@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import io
 import os
+import pty
 import signal
 from collections.abc import Iterator
 from importlib.metadata import version
@@ -173,6 +174,36 @@ async def test_stdin_lines_waits_for_a_whole_line(pipe: tuple[int, int]) -> None
     os.write(write_fd, b"la\n")
 
     assert await pending == "Hola"
+
+
+async def test_stdin_lines_discards_what_it_kept(pipe: tuple[int, int]) -> None:
+    # A pasted block lands whole in the buffer: its next line must not answer
+    # a question (spec mejora-2026-10-26-deuda-pre-hito-6, A2).
+    read_fd, write_fd = pipe
+    os.write(write_fd, b"borra los temporales\ny\n")
+    lines = StdinLines(read_fd)
+    assert await lines.readline() == "borra los temporales"
+
+    assert lines.discard() is True
+    assert lines.discard() is False
+    os.write(write_fd, b"n\n")
+    assert await lines.readline() == "n"
+
+
+async def test_stdin_lines_discards_what_the_terminal_holds() -> None:
+    # Typed ahead and not read yet: still in the terminal's queue.
+    main, side = pty.openpty()
+    try:
+        lines = StdinLines(side)
+        os.write(main, b"y\n")
+        await asyncio.sleep(0.05)
+
+        assert lines.discard() is True
+        os.write(main, b"n\n")
+        assert await lines.readline() == "n"
+    finally:
+        os.close(main)
+        os.close(side)
 
 
 async def test_stdin_lines_reads_a_regular_file(tmp_path: Path) -> None:
