@@ -42,13 +42,14 @@ class MemoryLog:
         if self._closed:
             raise SessionError(f"session {self._id} is closed")
         stored = self._store.sessions[self._id]
-        # Through JSON, as on the disk.
-        stored.entries.extend(
+        # Through JSON, as on the disk; all or none, as the port says.
+        done = [
             _ENTRY.validate_python(
                 json.loads(json.dumps(_ENTRY.dump_python(e, mode="json")))
             )
             for e in entries
-        )
+        ]
+        stored.entries.extend(done)
         stored.updated_at = datetime.now(UTC)
 
     async def close(self) -> None:
