@@ -19,7 +19,7 @@ from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.tools import RunCommand
 from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
-from mharness.domain.approval import ApprovalRequest
+from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
@@ -582,6 +582,35 @@ async def test_internal_tool_error_goes_to_stderr() -> None:
 
     assert '  ✗ error: internal error in tool "echo"\n' in out
     assert err == "warning: tool \"echo\" failed: KeyError: 'boom'\n"
+
+
+class BrokenGate:
+    """The terminal fails while asking, as an EIO would."""
+
+    async def decide(self, request: ApprovalRequest) -> Decision:
+        raise OSError(5, "Input/output error")
+
+
+async def test_an_unexpected_error_ends_only_the_answer() -> None:
+    # Not a ModelError: maha says so and goes back to the prompt, keeping
+    # what the agent kept (spec mejora-2026-10-26-deuda-pre-hito-6, B1).
+    request = ApprovalRequest(tool="echo", title="echo", detail="", scope=None)
+    tool = FakeTool(permission="effect", requests=[request])
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Sigo.")])
+    out, err = io.StringIO(), io.StringIO()
+
+    code = await converse(
+        Agent(fake, ToolRegistry([tool]), gate=BrokenGate(), model="m"),
+        provider="p",
+        model="m",
+        read_line=ScriptedInput("Hola", "Otra", "/exit"),
+        out=out,
+        err=err,
+    )
+
+    assert code == 0
+    assert err.getvalue() == "error: internal: OSError: [Errno 5] Input/output error\n"
+    assert "Sigo." in out.getvalue()
 
 
 async def test_ctrl_c_during_a_tool_goes_back_to_the_prompt() -> None:

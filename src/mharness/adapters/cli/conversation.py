@@ -171,6 +171,14 @@ async def _answer(
         if wrote:
             print(file=out)
         print(f"error: {clean(str(exc))}", file=err, flush=True)
+    except Exception as exc:
+        # A bug, or the terminal failing: the agent already kept what ran,
+        # and maha goes on (spec mejora-2026-10-26-deuda-pre-hito-6, B1).
+        await spinner.stop()
+        if wrote:
+            print(file=out)
+        detail = clean(f"{type(exc).__name__}: {exc}")
+        print(f"error: internal: {detail}", file=err, flush=True)
     except asyncio.CancelledError:
         # A closing signal goes on up: maha ends, not just the answer.
         if not sigint.pending or sigint.closing is not None:
