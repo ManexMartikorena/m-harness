@@ -1,4 +1,5 @@
-Estado: PROPUESTA (2026-10-26; ajustada tras `v0.5.2`)
+Estado: PROPUESTA (2026-10-26; ajustada tras `v0.5.2` y con la duda 2
+cambiada por el mantenedor)
 
 # Spec — Hito 6: Sesiones e historial
 
@@ -21,10 +22,11 @@ modelo:
 
 ```
 > /sessions
-  20261026-091502-3fa2  hoy 09:15   12 mensajes  arregla el test de config
-  20261025-174233-b01c  ayer 17:42   4 mensajes  explícame bootstrap.py
+  * 20261026-091502-3fa2  hoy 09:15   12 mensajes  ~/proyecto  arregla el test de config
+    20261025-174233-b01c  ayer 17:42   4 mensajes  ~/web       explícame el router
 > /resume 20261025-174233-b01c
   [resumed 20261025-174233-b01c · 4 messages · glm-5.3-flash]
+  [this session was in ~/web; tools work in ~/proyecto]
 > /model kimi-k3
   [model: kimi-k3]
 ```
@@ -193,7 +195,8 @@ class SessionStore(Protocol):
   `maha` añadirían turnos mezclados al mismo fichero.
 - **`open()` carga y bloquea en un paso:** no hay hueco entre leer y
   bloquear.
-- **`summaries()` da todas**; la aplicación filtra por directorio (§1.8).
+- **`summaries()` da todas**; la aplicación las ordena y marca las del
+  directorio actual (§1.8).
 - Fake: `MemorySessionStore` en `tests/fakes/sessions.py`, con el mismo
   bloqueo en memoria.
 
@@ -227,7 +230,7 @@ class Sessions:
 
     async def start(self) -> Conversation: ...
     async def resume(self, session_id: str | None) -> Conversation: ...
-    async def summaries(self) -> list[SessionSummary]: ...  # this cwd
+    async def summaries(self) -> list[SessionSummary]: ...  # all, newest first
     async def delete(self, session_id: str) -> None: ...
 
 
@@ -284,16 +287,28 @@ Cierra la pendiente de la spec 3, §1.6.
 
 | Comando | Qué hace |
 |---|---|
-| `/sessions` | Las 20 más recientes **de este directorio**: id, fecha, mensajes y título |
-| `/resume [ID]` | Retoma esa sesión, o la última de este directorio sin ID |
+| `/sessions` | Las 20 más recientes **de todos los directorios**: id, fecha, mensajes, directorio y título; las de este directorio, marcadas con `*` |
+| `/resume [ID]` | Retoma esa sesión, sea del directorio que sea; sin ID, la última de este directorio |
 | `/delete ID` | Borra esa sesión, tras confirmar `[y/N]`; nunca la actual |
 | `/model [ID]` | Sin ID, enseña el modelo; con ID, lo cambia desde el siguiente turno |
 | `/help` | La lista de comandos |
 | `/exit` | Como ahora |
 
-- **Por directorio:** las herramientas trabajan sobre el directorio actual.
-  Una sesión de otro proyecto habla de ficheros que aquí no están. Se
-  compara el `cwd` resuelto de la cabecera con el actual.
+- **Todas las sesiones, con su directorio** (decisión del mantenedor,
+  2026-10-26): abras `maha` donde lo abras, ves y retomas cualquier
+  conversación. El directorio sale abreviado con `~`; las de este, con `*`.
+  Se compara el `cwd` resuelto de la cabecera con el actual.
+- **Retomar una sesión de otro directorio:** se puede, con aviso
+  (`[this session was in ~/web; tools work in ~/proyecto]`). Las
+  herramientas **siguen** sobre el directorio donde se abrió `maha`: cambiar
+  el perímetro (DESIGN §10) a mitad de la conversación, sin preguntar, no se
+  hace. Para trabajar allí, se abre `maha` allí y se retoma.
+- **El modelo no sabe del cambio** hasta el hito 10, que pone el directorio
+  de trabajo en el system prompt (capa de entorno). Hasta entonces, el aviso
+  es para ti.
+- **`/resume` sin ID** retoma la última de este directorio; si aquí no hay
+  ninguna, `no session in this directory (see /sessions)`. La última de
+  todas sería una sorpresa: otro proyecto sin pedirlo.
 - **Un comando no se manda al modelo.** Una línea cuya primera palabra es
   `/` y letras (`^/[a-z]+$`) es un comando; si no existe, `unknown command:
   /foo (see /help)`. Una línea como `/etc/hosts no existe` sí va al modelo.
@@ -326,8 +341,8 @@ Cierra la pendiente de la spec 3, §1.6.
 | Pieza | M-Harness | Alternativas | Cuándo se elegirían |
 |---|---|---|---|
 | Formato | JSONL por sesión, solo se añade | JSON entero por sesión; SQLite; checkpointers de LangGraph (estado del grafo en cada paso); Sessions del OpenAI Agents SDK (SQLite) | Consultas entre sesiones; muchas sesiones o muy largas |
-| Dónde | `~/.local/share/maha/sessions/` (XDG) | Carpeta por proyecto (Claude Code: `~/.claude/projects/<carpeta>/`); en la nube | Sincronizar entre máquinas |
-| Retomar | `/resume` dentro, por directorio | Opciones al arrancar (`--continue`, `--resume`); bifurcar una sesión | Scripts; probar dos caminos desde un punto |
+| Dónde | `~/.local/share/maha/sessions/` (XDG), todas juntas | Carpeta por proyecto (Claude Code: `~/.claude/projects/<carpeta>/`); en la nube | Sincronizar entre máquinas |
+| Retomar | `/resume` dentro, de cualquier directorio | Opciones al arrancar (`--continue`, `--resume`); bifurcar una sesión | Scripts; probar dos caminos desde un punto |
 | Respuesta cortada | Mensaje marcado en el dominio | Mensaje del usuario "[interrupted]"; no guardarla | Formatos que no admiten metadatos |
 
 *Solo se citan categorías y herramientas; lo de Claude Code es lo observado en
@@ -407,9 +422,11 @@ bloqueo da `SessionInUse`; `delete` de una abierta falla.
 2. Cada turno añade sus mensajes y su `UsageEntry`; tras Ctrl+C, lo
    conservado consta sin `UsageEntry`.
 3. `resume()`: historial, modelo de la sesión (mismo proveedor) o de la
-   configuración (otro, con aviso); sin id, la última de este directorio;
+   configuración (otro, con aviso); de otro directorio, con su aviso; sin id,
+   la última de este directorio, o el mensaje si no hay;
    aprobaciones vacías.
-4. `summaries()` filtra por directorio; `delete()` de la actual falla.
+4. `summaries()` da todas, las más recientes primero y las de este
+   directorio marcadas; `delete()` de la actual falla.
 5. Un fallo al guardar no corta el turno y se avisa.
 6. `switch_model()` guarda un `ModelEntry`.
 
@@ -494,7 +511,9 @@ Con `opencode-go` y `glm-5.3-flash`, en un directorio desechable.
 8. `/delete` de otra sesión, con `n` (sigue) y con `y` (desaparece de
    `/sessions`).
 9. `/sesions` (mal escrito) → `unknown command`, no va al modelo.
-10. En otro directorio, `/sessions` no enseña las del primero.
+10. En otro directorio, `/sessions` enseña también las del primero, con su
+    directorio; `/resume ID` de una de ellas avisa de que las herramientas
+    trabajan aquí.
 
 ## 8. Lo que no viaja por git y lo que necesita la release
 
@@ -539,7 +558,15 @@ Corrige la nota 03, que dice que esto llega en el hito 6.
 
 ## 11. Decisiones
 
-Dudas para el mantenedor, con la recomendación del agente:
+Del humano (2026-10-26): **acepta las recomendaciones 1, 3, 4 y 5**. **Cambia
+la 2:** `/sessions` enseña las sesiones de todos los directorios, con el de
+cada una, y se puede retomar cualquiera ("algo que echo de menos de Claude
+Code es que si no abro exactamente el mismo directorio es como si no supiera
+nada"). El agente concretó cómo (§1.8): las del directorio actual marcadas,
+aviso al retomar una de otro, las herramientas siguen sobre el directorio
+de `maha` y `/resume` sin ID mira solo este.
+
+Dudas que se plantearon al mantenedor (registro):
 
 1. **La respuesta cortada** (§1.7). Propuesta: un campo `interrupted` en el
    mensaje, que el adaptador traduce a una marca de texto. Alternativas:
