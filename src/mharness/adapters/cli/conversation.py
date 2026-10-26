@@ -9,13 +9,15 @@ import json
 import signal
 import sys
 from contextlib import aclosing
+from pathlib import Path
 from typing import TextIO
 
 from mharness import __version__
-from mharness.adapters.cli.input import ReadLine, StdinLines
+from mharness.adapters.cli.commands import Commands, parse_command
+from mharness.adapters.cli.input import Discard, ReadLine, StdinLines
 from mharness.adapters.cli.spinner import Spinner, use_color
 from mharness.adapters.cli.text import clean
-from mharness.application.agent import Agent
+from mharness.application.sessions import Conversation, Sessions
 from mharness.domain.agent_events import (
     ApprovalRequested,
     ToolCallProposed,
@@ -50,19 +52,34 @@ class _Sigint:
 
 
 async def converse(
-    agent: Agent,
+    sessions: Sessions,
     *,
     provider: str,
-    model: str,
     read_line: ReadLine | None = None,
+    discard: Discard | None = None,
     out: TextIO | None = None,
     err: TextIO | None = None,
+    home: Path | None = None,
 ) -> int:
-    """Run the conversation until /exit, Ctrl+D or Ctrl+C; return the exit code."""
+    """Run the conversation until /exit, Ctrl+D or Ctrl+C; return the exit code.
+
+    A new session, saved turn by turn; the commands of maha can resume
+    another (spec hito 6, §1.8). `discard` drops what was typed ahead of a
+    question.
+    """
     read = read_line or StdinLines().readline
     # Looked up now, not at import time, in case they were replaced.
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
+    commands = Commands(
+        sessions,
+        await sessions.start(),
+        read=read,
+        discard=discard,
+        out=out,
+        err=err,
+        home=Path.home() if home is None else home,
+    )
     loop = asyncio.get_running_loop()
     task = asyncio.current_task()
     assert task is not None
@@ -80,7 +97,7 @@ async def converse(
     for number in CLOSING:
         loop.add_signal_handler(number, on_closing, number)
     try:
-        return await _turns(agent, provider, model, read, out, err, sigint)
+        return await _turns(commands, provider, read, out, err, sigint)
     except asyncio.CancelledError:
         if sigint.closing is not None:
             task.uncancel()
@@ -95,19 +112,22 @@ async def converse(
         loop.remove_signal_handler(signal.SIGINT)
         for number in CLOSING:
             loop.remove_signal_handler(number)
+        # What is still pending is saved, and the session let go.
+        await commands.conversation.close()
+        commands.warn_unsaved()
 
 
 async def _turns(
-    agent: Agent,
+    commands: Commands,
     provider: str,
-    model: str,
     read: ReadLine,
     out: TextIO,
     err: TextIO,
     sigint: _Sigint,
 ) -> int:
+    model = commands.conversation.model
     print(
-        f"maha {__version__} · {provider} · {model} · /exit to quit",
+        f"maha {__version__} · {provider} · {model} · /help for commands",
         file=out,
     )
     while True:
@@ -119,13 +139,18 @@ async def _turns(
             return 0
         if not line:
             continue
-        if line == "/exit":
+        command = parse_command(line)
+        if command is None:
+            await _answer(commands.conversation, line, out, err, sigint)
+            commands.warn_unsaved()
+        elif command.name == "exit":
             return 0
-        await _answer(agent, line, out, err, sigint)
+        else:
+            await commands.run(command)
 
 
 async def _answer(
-    agent: Agent, line: str, out: TextIO, err: TextIO, sigint: _Sigint
+    conversation: Conversation, line: str, out: TextIO, err: TextIO, sigint: _Sigint
 ) -> None:
     """Show one answer as it arrives.
 
@@ -141,7 +166,7 @@ async def _answer(
     spinner = Spinner(out, color=use_color())
     spinner.start()
     try:
-        async with aclosing(agent.run(line)) as events:
+        async with aclosing(conversation.run(line)) as events:
             async for event in events:
                 match event:
                     case TextDelta(text=text):

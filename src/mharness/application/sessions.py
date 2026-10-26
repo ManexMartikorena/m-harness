@@ -186,6 +186,11 @@ class Sessions:
         self._model = model
         self._origin = _Origin(cwd, provider, version, now, token)
 
+    @property
+    def cwd(self) -> str:
+        """The directory where this maha runs, and its tools work."""
+        return self._origin.cwd
+
     async def start(self) -> Conversation:
         """A new conversation; its session is created with the first turn."""
         return Conversation(self._store, self._new_agent(self._model, ()), self._origin)

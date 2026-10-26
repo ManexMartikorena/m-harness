@@ -352,3 +352,19 @@ def test_in_a_terminal_a_command_asks_and_runs_without_the_key(
     assert "PATH=" in result["content"]
     assert KEY not in result["content"]
     assert "OPENCODE_API_KEY" not in result["content"]
+
+
+def test_sessions_go_to_the_data_home_of_the_test(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    data_home: Path,
+) -> None:
+    # Never into the real home (spec hito 6, §1.3).
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(return_value=sse_response(streamed("Hola.", 1, 1)))
+        stdin("Hola\n/exit\n")
+
+        assert main([]) == 0
+
+    assert len(list((data_home / "maha" / "sessions").glob("*.jsonl"))) == 1
