@@ -882,3 +882,39 @@ async def test_a_model_error_mid_answer_keeps_nothing() -> None:
         await run(subject)
 
     assert subject.messages == ()
+
+
+# A resumed session: the history it starts with, and the model it uses
+# (spec hito 6, §1.6 and §4.4).
+
+
+async def test_the_history_given_goes_in_the_first_request() -> None:
+    before = (
+        user("Me llamo Ana"),
+        Message(role="assistant", blocks=[TextBlock(text="Hola, Ana.")]),
+    )
+    fake = FakeModelClient([reply("Ana.")])
+    subject = Agent(
+        fake,
+        ToolRegistry([FakeTool()]),
+        gate=FakeApproval(),
+        model=MODEL,
+        history=before,
+    )
+
+    await run(subject, "¿Cómo me llamo?")
+
+    assert fake.requests[0].messages == [*before, user("¿Cómo me llamo?")]
+    assert subject.messages[:2] == before
+
+
+async def test_changing_the_model_changes_the_next_request() -> None:
+    fake = FakeModelClient([reply("Uno."), reply("Dos.")])
+    subject = agent(fake)
+    await run(subject)
+
+    subject.model = "kimi-k3"
+    await run(subject)
+
+    assert [r.model for r in fake.requests] == [MODEL, "kimi-k3"]
+    assert subject.model == "kimi-k3"

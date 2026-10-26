@@ -52,7 +52,8 @@ class Agent:
 
     Every step sends the whole history, the turn so far and the tools. The
     `gate` decides on the calls that need approval; what the user approves
-    for the whole session lives as long as the agent.
+    for the whole session lives as long as the agent. `model` can change
+    between turns (`/model`, spec hito 6, §1.8).
     """
 
     def __init__(
@@ -63,14 +64,17 @@ class Agent:
         gate: ApprovalGate,
         model: str,
         max_steps: int = MAX_STEPS,
+        history: Sequence[Message] = (),
     ) -> None:
         self._client = client
         self._tools = tools
         self._gate = gate
         self._approvals = SessionApprovals()
-        self._model = model
+        self.model = model
         self._max_steps = max_steps
-        self._messages: list[Message] = []
+        # A resumed session starts with its history (spec hito 6, §1.6); its
+        # approvals do not come back (§1.9).
+        self._messages: list[Message] = list(history)
 
     @property
     def messages(self) -> Sequence[Message]:
@@ -240,7 +244,7 @@ class Agent:
     def _request(self, turn: list[Message]) -> ModelRequest:
         # No system prompt until hito 10 (spec hito 2, §1.5).
         return ModelRequest(
-            model=self._model,
+            model=self.model,
             messages=[*self._messages, *turn],
             tools=self._tools.specs(),
         )
