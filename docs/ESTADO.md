@@ -1,21 +1,22 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-26 (cierre de sesión). **Hito 6 (sesiones e
-historial) cerrado: `v0.6.0`, con los arreglos de su auditoría final. Cero
-deuda conocida.** Siguiente: la spec del hito 7 (trazas y coste).
-**Sesión en el PC del trabajo (el WSL del PC de Windows).**
+Última actualización: 2026-10-26 (cierre de sesión). **Hito 6 cerrado
+(`v0.6.0`), cero deuda conocida. Hito 7 (trazas y coste): spec PROPUESTA en
+el PR #61, abierto, esperando que el mantenedor responda sus cinco dudas.**
+Sesión cerrada en el PC del trabajo (el WSL del PC de Windows).
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 6 cerrado (`v0.6.0`). Siguiente: hito 7 (trazas y
-coste), empezando por su spec.**
+**Desarrollo. Hito 6 cerrado (`v0.6.0`). En curso: hito 7 (trazas y coste),
+spec PROPUESTA en el PR #61.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.6.0` — Sesiones e historial** (2026-10-26):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.6.0
-- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
+- Ramas abiertas: `docs/spec-hito-7-trazas` (PR #61, la spec del hito 7,
+  sin integrar). Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -30,6 +31,26 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Cierre de sesión, 2026-10-26, PC de Windows (WSL).** Hecho en la
+  sesión: la mejora "cero deuda antes del hito 6" (`v0.5.2`), el hito 6
+  entero con su auditoría final (`v0.6.0`), la subida de dependencias por
+  una alerta de Dependabot (PR #58) y la spec del hito 7 propuesta (PR #61,
+  abierto). `main` sin cambios sin commitear; 1018 tests, mypy, ruff e
+  import-linter en verde; sin alertas de seguridad ni issues. Permisos que
+  dio el mantenedor esta sesión: el agente hace push, abre PRs, los integra
+  con el CI en verde y crea los tags; la aprobación de una spec (sus dudas)
+  sigue siendo del mantenedor. Pidió siempre respetar la arquitectura
+  hexagonal y dejar cero deuda técnica.
+- **Spec del hito 7 propuesta, 2026-10-26** (PR #61, rama
+  `docs/spec-hito-7-trazas`; la spec y DESIGN van en `f842754`, que por un
+  fallo del hook de formato quedó con el mensaje "Añadir la spec del hito 7
+  al mapa y al estado"; no se reescribe porque ya tenía push):
+  `Usage.reasoning_tokens`; catálogo TOML en el paquete (precios de OpenCode
+  Go y Zen comprobados hoy en su documentación; ventanas de models.dev) y del
+  usuario; coste en `Decimal` por llamada, turno y sesión; `TurnStarted`;
+  trazas JSONL por sesión con credenciales enmascaradas; `/trace`; avisos de
+  modelo fuera del catálogo o que entrena con los datos; `maha.log` (D11).
+  Corrige DESIGN §3, §5, §6 y §11.
 - **`v0.6.0` publicada, 2026-10-26.** Tag anotado sobre el merge del PR #59
   (`84df610`), con el CI de `main` en verde y la alerta de Dependabot ya
   cerrada (`fixed`); creado por el agente a petición del mantenedor.
@@ -509,10 +530,21 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
 subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
 mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Mantenedor:** dar paso al hito 7.
-2. **Agente:** proponer la spec del hito 7 (trazas y coste) en
-   `docs/spec-hito-7-<slug>`, tras leer DESIGN §6, §11 y §14. Entran los
-   pendientes que DESIGN y las specs asignan al hito 7 (abajo).
+1. **Mantenedor:** responder las cinco dudas de la spec del hito 7
+   (`docs/specs/hito-7-trazas-coste.md` §11, en el PR #61). Las
+   recomendaciones del agente:
+   1. catálogo: un TOML propio en el paquete, con fecha, más
+      `~/.config/maha/models.toml` opcional del usuario;
+   2. coste en OpenCode Go: en dólares, lo que cuenta contra el límite
+      mensual;
+   3. sin evento `AgentError`: la traza apunta las excepciones desde
+      `Conversation`;
+   4. reintentos ante 429 y 5xx: hito 8;
+   5. `/trace` dentro de `maha`.
+2. **Agente:** con las respuestas, traer `main` a la rama
+   (`git switch docs/spec-hito-7-trazas && git pull && git merge main`),
+   pasar la spec a APROBADA (anotando las decisiones en §11), integrar el
+   PR #61 y empezar por el PR 1 de la spec §6 (`feature/hito-7-coste`).
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
