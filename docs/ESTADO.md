@@ -30,6 +30,16 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
+- **Spec del hito 7 propuesta, 2026-10-26** (rama `docs/spec-hito-7-trazas`;
+  la spec y DESIGN van en `f842754`, que por un fallo del hook de formato
+  quedó con el mensaje "Añadir la spec del hito 7 al mapa y al estado"; no
+  se reescribe porque ya tenía push):
+  `Usage.reasoning_tokens`; catálogo TOML en el paquete (precios de OpenCode
+  Go y Zen comprobados hoy en su documentación; ventanas de models.dev) y del
+  usuario; coste en `Decimal` por llamada, turno y sesión; `TurnStarted`;
+  trazas JSONL por sesión con credenciales enmascaradas; `/trace`; avisos de
+  modelo fuera del catálogo o que entrena con los datos; `maha.log` (D11).
+  Corrige DESIGN §3, §5, §6 y §11. Cinco dudas en §11.
 - **`v0.6.0` publicada, 2026-10-26.** Tag anotado sobre el merge del PR #59
   (`84df610`), con el CI de `main` en verde y la alerta de Dependabot ya
   cerrada (`fixed`); creado por el agente a petición del mantenedor.
@@ -509,10 +519,9 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
 subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
 mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Mantenedor:** dar paso al hito 7.
-2. **Agente:** proponer la spec del hito 7 (trazas y coste) en
-   `docs/spec-hito-7-<slug>`, tras leer DESIGN §6, §11 y §14. Entran los
-   pendientes que DESIGN y las specs asignan al hito 7 (abajo).
+1. ~~**Mantenedor:** dar paso al hito 7~~ Dado el 2026-10-26.
+2. **Mantenedor:** responder las cinco dudas de la spec del hito 7 (§11) en
+   su PR (rama `docs/spec-hito-7-trazas`). Integrarlo es aprobarla.
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
