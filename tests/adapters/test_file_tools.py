@@ -2750,3 +2750,47 @@ async def test_a_writable_file_in_a_locked_folder_is_edited_in_place(
         assert sorted(p.name for p in path.parent.iterdir()) == ["app.py"]
     finally:
         path.parent.chmod(0o755)
+
+
+# A huge file or folder does not freeze the loop (spec
+# mejora-2026-10-26-deuda-pre-hito-6, B6). The limits are lowered.
+
+
+async def test_reading_stops_at_the_scan_limit(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(files, "READ_MAX_SCAN_CHARS", 10_000)
+    write(root, "min.js", "x" * 50_000)
+    write(root, "log.txt", "".join(f"línea {n}\n" for n in range(5_000)))
+
+    with pytest.raises(
+        ToolError, match=r"^min\.js: read stopped after 10000 characters"
+    ):
+        await read(root, "min.js", offset=2)
+    with pytest.raises(
+        ToolError, match=r"^log\.txt: read stopped after 10000 characters"
+    ):
+        await read(root, "log.txt", offset=4_000)
+    # What fits before the limit is read as always.
+    write(root, "small.js", "x" * 5_000)
+    assert (await read(root, "small.js")).endswith("x … [line cut]")
+    assert (
+        await read(root, "log.txt", offset=3, limit=1)
+        == "     3\tlínea 2\n… [truncated at line 3; use offset=4 to read more]"
+    )
+
+
+async def test_listing_stops_reading_past_the_scan_limit(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(files, "LIST_MAX_SCAN", 30)
+    monkeypatch.setattr(files, "LIST_MAX_ENTRIES", 10)
+    for n in range(40):
+        write(root, f"f{n:02}.txt", "")
+
+    lines = (await list_dir(root)).splitlines()
+
+    assert len(lines) == 11
+    assert (
+        lines[-1] == "… [truncated: 10 shown; the directory has more than 30 entries]"
+    )

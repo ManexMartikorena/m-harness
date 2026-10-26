@@ -12,6 +12,7 @@ import contextlib
 import difflib
 import errno
 import io
+import itertools
 import json
 import os
 import re
@@ -46,6 +47,9 @@ READ_MAX_LINES = 2000
 READ_MAX_CHARS = 100_000
 # A longer line is cut: one huge line must not fill the context.
 READ_MAX_LINE = 2000
+# Reading never goes through more than this: a huge line or a far offset
+# would hold the loop (spec mejora-2026-10-26-deuda-pre-hito-6, B6).
+READ_MAX_SCAN_CHARS = 64 * MIB
 
 
 def _count(number: int, singular: str, plural: str | None = None) -> str:
@@ -253,7 +257,14 @@ class ReadFile:
             with _as_text(file) as text:
                 if is_binary(file):
                     raise ToolError(f"binary file, not readable: {params.path}")
-                return _numbered_lines(text, params.offset, limit)
+                try:
+                    return _numbered_lines(text, params.offset, limit)
+                except _ScanLimit:
+                    raise ToolError(
+                        f"{params.path}: read stopped after "
+                        f"{READ_MAX_SCAN_CHARS} characters; use grep to find "
+                        "what you need"
+                    ) from None
 
     def summary(self, result: str) -> str:
         lines = sum(1 for line in result.splitlines() if _NUMBERED.match(line))
@@ -274,12 +285,30 @@ def _check_exists(path: Path, raw: str) -> None:
         raise ToolError(f"not a regular file: {raw}")
 
 
+class _ScanLimit(Exception):
+    """Reading went past `READ_MAX_SCAN_CHARS`."""
+
+
+class _Scanned:
+    """The characters read so far; raises `_ScanLimit` past the limit."""
+
+    def __init__(self) -> None:
+        self.chars = 0
+
+    def add(self, text: str) -> str:
+        self.chars += len(text)
+        if self.chars > READ_MAX_SCAN_CHARS:
+            raise _ScanLimit
+        return text
+
+
 def _numbered_lines(file: IO[str], offset: int, limit: int) -> str:
     """Lines `offset` to `offset + limit - 1`, numbered like `cat -n`."""
     shown: list[str] = []
     chars = 0
     number = 0
-    while (line := _next_line(file)) is not None:
+    scanned = _Scanned()
+    while (line := _next_line(file, scanned)) is not None:
         number += 1
         if number < offset:
             continue
@@ -300,20 +329,24 @@ def _numbered_lines(file: IO[str], offset: int, limit: int) -> str:
     return "\n".join(shown)
 
 
-def _next_line(file: IO[str]) -> str | None:
+def _next_line(file: IO[str], scanned: _Scanned) -> str | None:
     """The next line without its line ending, cut if it is too long."""
-    line = file.readline(READ_MAX_LINE + 1)
+    line = scanned.add(file.readline(READ_MAX_LINE + 1))
     if not line:
         return None
     if len(line) > READ_MAX_LINE and not line.endswith(("\n", "\r")):
         # Skip the rest of the long line.
-        while (rest := file.readline(64 * 1024)) and not rest.endswith(("\n", "\r")):
+        while (rest := scanned.add(file.readline(64 * 1024))) and not rest.endswith(
+            ("\n", "\r")
+        ):
             pass
         return line[:READ_MAX_LINE] + " … [line cut]"
     return line.rstrip("\r\n")
 
 
 LIST_MAX_ENTRIES = 500
+# A folder is read up to this many entries, then sorted (B6).
+LIST_MAX_SCAN = 10_000
 
 
 class ListDirParams(BaseModel, extra="forbid"):
@@ -353,12 +386,23 @@ class ListDir:
         warning = self._workspace.warning(path, SECRET_DIR, params.path)
         self._asked.check(params, params.path, path, warning)
         _check_dir(path, params.path)
-        with _reading(params.path):
-            entries = sorted(path.iterdir(), key=lambda entry: entry.name)
+        with _reading(params.path), os.scandir(path) as found:
+            # One more than the limit says that there are more.
+            read = list(itertools.islice(found, LIST_MAX_SCAN + 1))
+        more = len(read) > LIST_MAX_SCAN
+        entries = sorted(
+            (Path(entry.path) for entry in read[:LIST_MAX_SCAN]),
+            key=lambda entry: entry.name,
+        )
         if not entries:
             return "(empty directory)"
         lines = [self._entry(entry) for entry in entries[:LIST_MAX_ENTRIES]]
-        if len(entries) > LIST_MAX_ENTRIES:
+        if more:
+            lines.append(
+                f"… [truncated: {LIST_MAX_ENTRIES} shown; the directory has more "
+                f"than {LIST_MAX_SCAN} entries]"
+            )
+        elif len(entries) > LIST_MAX_ENTRIES:
             lines.append(
                 f"… [truncated: {LIST_MAX_ENTRIES} of {len(entries)} entries shown]"
             )
