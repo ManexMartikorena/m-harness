@@ -104,8 +104,8 @@ directorio donde abriste `maha`, y te lo dice:
 ```
 
 Cambiar el perímetro a mitad de conversación, sin preguntar, sería un
-permiso que nadie dio. `/resume` sin id toma la última **de este
-directorio**.
+permiso que nadie dio. `/resume` sin id toma la más reciente **de este
+directorio** que no sea la actual ni esté abierta en otro `maha`.
 
 ### 6. Lo que no se recupera: las aprobaciones
 
@@ -121,7 +121,8 @@ verificación, una escritura aprobada con `a` volvió a preguntar tras
 (application) no saben cuál hay, y tampoco qué cliente ni qué herramientas
 tiene el `Agent`: lo crea una fábrica que les da `bootstrap`. Un fallo del
 disco no corta la conversación: se avisa y se reintenta en el turno
-siguiente.
+siguiente. Para que el reintento no duplique nada, una escritura que falla
+se deshace: se recorta el fichero al tamaño que tenía antes.
 
 ```
 warning: session not saved: cannot save session 20261026-…: No space left on device
