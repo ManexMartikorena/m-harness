@@ -2,22 +2,22 @@
 
 Última actualización: 2026-10-26. **Mejora "cero deuda antes del hito 6"
 implementada** (PRs #48 a #50; spec `mejora-2026-10-26-deuda-pre-hito-6`,
-IMPLEMENTADA) y publicada como `v0.5.2`. Siguiente: aprobar la spec del
-hito 6 (su PR, rama `docs/spec-hito-6-sesiones`).
+IMPLEMENTADA) y publicada como `v0.5.2`. **Hito 6 en curso**: spec
+`hito-6-sesiones` APROBADA (PR #52).
 **Sesión en el PC del trabajo (el WSL del PC de Windows).**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 5 cerrado (`v0.5.0`, `v0.5.1` y `v0.5.2`). Siguiente:
-hito 6 (sesiones e historial), empezando por su spec.**
+**Desarrollo. Hito 5 cerrado (`v0.5.0`, `v0.5.1` y `v0.5.2`). En curso:
+hito 6 (sesiones e historial), spec APROBADA.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.5.2` — Cero deuda antes del hito 6** (2026-10-26):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.5.2
-- Ramas abiertas: `docs/spec-hito-6-sesiones` (PR de la spec, esperando las
-  dudas). Las integradas se conservan en GitHub.
+- Ramas abiertas: las del hito 6, según avance. Las integradas se conservan
+  en GitHub.
 
 ## Para la release
 
@@ -472,10 +472,15 @@ lint-imports en verde; después, el primer punto sin hacer.
 
 1. ~~**Agente:** publicar `v0.5.2`~~ Hecho el 2026-10-26 (PR #51, merge
    `3266867`).
-2. **Mantenedor:** responder las cinco dudas de la spec del hito 6 (§11),
-   en su PR (rama `docs/spec-hito-6-sesiones`). Con las respuestas, el
-   agente la pasa a APROBADA y la integra (integrar es aprobarla).
-3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+2. ~~**Mantenedor:** responder las dudas de la spec del hito 6~~ APROBADA el
+   2026-10-26 (PR #52): acepta 1, 3, 4 y 5; cambia la 2 (sesiones de todos
+   los directorios).
+3. **Agente:** implementar el hito 6 por el orden de la spec §6: PR 1
+   (`feature/hito-6-contrato`), PR 2 (`feature/hito-6-jsonl`), PR 3
+   (`feature/hito-6-conversacion`), PR 4 (`feature/hito-6-terminal`) y PR 5
+   (`feature/hito-6-cierre`, `v0.6.0`). Permiso del mantenedor para push,
+   PRs e integrar con el CI en verde.
+4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 

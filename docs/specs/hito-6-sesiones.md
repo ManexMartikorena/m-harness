@@ -1,5 +1,6 @@
 Estado: PROPUESTA (2026-10-26; ajustada tras `v0.5.2` y con la duda 2
-cambiada por el mantenedor)
+cambiada por el mantenedor) → APROBADA (2026-10-26, por el humano, con el
+cambio de la duda 2)
 
 # Spec — Hito 6: Sesiones e historial
 
