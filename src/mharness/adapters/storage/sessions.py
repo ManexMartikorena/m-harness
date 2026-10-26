@@ -41,10 +41,33 @@ class JsonlLog:
     def __init__(self, fd: int, path: Path) -> None:
         self._fd: int | None = fd
         self._path = path
+        # A failed write that could not be undone: the end of the file is
+        # unknown, and nothing more is written after it.
+        self._damaged = False
 
     async def append(self, entries: Sequence[SessionEntry]) -> None:
+        """All the entries or none: a write that fails is cut back, so the
+        caller can try again without doubling anything."""
+        fd = self._descriptor()
+        if self._damaged:
+            raise SessionError(
+                f"cannot save session {self._path.stem}: "
+                "its file could not be repaired after a failed write"
+            )
         data = "".join(_ENTRY.dump_json(entry).decode() + "\n" for entry in entries)
-        _write(self._descriptor(), self._path, data.encode())
+        try:
+            size = os.fstat(fd).st_size
+        except OSError as exc:
+            raise _cannot_save(self._path, exc) from None
+        try:
+            _write(fd, self._path, data.encode())
+        except SessionError:
+            try:
+                os.ftruncate(fd, size)
+                os.fsync(fd)
+            except OSError:
+                self._damaged = True
+            raise
 
     async def close(self) -> None:
         if self._fd is not None:

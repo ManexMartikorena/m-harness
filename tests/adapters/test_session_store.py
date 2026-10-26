@@ -407,3 +407,76 @@ async def test_a_disk_failure_opening_is_a_session_error(
 
     with pytest.raises(SessionError, match=r"cannot open session .*Input/output"):
         await JsonlSessionStore(folder).open(HEADER.id)
+
+
+# A save that fails leaves the file as it was: the conversation tries again
+# with the same entries (final audit of hito 6, 1).
+
+
+async def test_a_failed_fsync_leaves_nothing_behind(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = await JsonlSessionStore(folder).create(HEADER)
+    sync = os.fsync
+    failures = [OSError(5, "Input/output error")]
+
+    def once(fd: int) -> None:
+        if failures:
+            raise failures.pop()
+        sync(fd)
+
+    monkeypatch.setattr(os, "fsync", once)
+    turn = [MessageEntry(message=HOLA), MessageEntry(message=ANSWER)]
+    with pytest.raises(SessionError):
+        await log.append(turn)
+    await log.append(turn)
+    await log.close()
+
+    session, again = await JsonlSessionStore(folder).open(HEADER.id)
+    await again.close()
+    assert session.messages == [HOLA, ANSWER]
+
+
+async def test_a_write_cut_halfway_leaves_nothing_behind(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = await JsonlSessionStore(folder).create(HEADER)
+    write = os.write
+    cut = [True]
+
+    def half_then_full(fd: int, data: bytes | memoryview) -> int:
+        if cut:
+            cut.pop()
+            write(fd, bytes(data[: len(data) // 2]))
+            raise OSError(28, "No space left on device")
+        return write(fd, data)
+
+    monkeypatch.setattr(os, "write", half_then_full)
+    turn = [MessageEntry(message=HOLA), MessageEntry(message=ANSWER)]
+    with pytest.raises(SessionError, match="No space left on device"):
+        await log.append(turn)
+    await log.append(turn)
+    await log.close()
+
+    session, again = await JsonlSessionStore(folder).open(HEADER.id)
+    await again.close()
+    assert session.messages == [HOLA, ANSWER]
+
+
+async def test_a_file_that_cannot_be_repaired_takes_no_more(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = await JsonlSessionStore(folder).create(HEADER)
+
+    def broken(*args: object) -> None:
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(os, "fsync", broken)
+    monkeypatch.setattr(os, "ftruncate", broken)
+    with pytest.raises(SessionError):
+        await log.append([MessageEntry(message=HOLA)])
+    monkeypatch.undo()
+
+    with pytest.raises(SessionError, match="could not be repaired"):
+        await log.append([MessageEntry(message=HOLA)])
+    await log.close()
