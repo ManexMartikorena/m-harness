@@ -39,11 +39,17 @@ class Accumulator:
             case MessageEnd():
                 self._end = event
 
+    @property
+    def text(self) -> str:
+        """The text so far, also before the answer ends (spec hito 6,
+        §1.7)."""
+        return "".join(self._texts)
+
     def response(self) -> ModelResponse:
         """The answer. Raises `ModelResponseError` if it never ended."""
         if self._end is None:
             raise ModelResponseError("stream ended before the answer was complete")
-        text = "".join(self._texts)
+        text = self.text
         blocks: list[Block] = [TextBlock(text=text)] if text else []
         for index in sorted(self._calls):
             call = self._calls[index]

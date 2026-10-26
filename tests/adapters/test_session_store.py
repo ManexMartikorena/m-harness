@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from mharness.adapters.storage import JsonlSessionStore
+from mharness.adapters.storage import JsonlSessionStore, sessions
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from mharness.domain.session import (
@@ -375,3 +375,35 @@ async def test_delete_with_another_form_of_id_touches_nothing(folder: Path) -> N
     with pytest.raises(SessionNotFound):
         await JsonlSessionStore(folder).delete(f"../sessions/{HEADER.id}")
     assert exists(file_of(folder))
+
+
+# Every disk failure is a SessionError: the conversation catches only that
+# and goes on (spec hito 6, §1.6).
+
+
+async def test_a_disk_failure_creating_is_a_session_error(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(folder: Path) -> None:
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(sessions, "_sync_folder", broken)
+
+    with pytest.raises(SessionError, match=r"cannot save session .*Input/output"):
+        await JsonlSessionStore(folder).create(HEADER)
+    # Not left half made: the conversation tries again with another id.
+    assert not exists(file_of(folder))
+
+
+async def test_a_disk_failure_opening_is_a_session_error(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await saved(folder, HOLA, ANSWER)
+
+    def broken(fd: int) -> bytes:
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(sessions, "_read", broken)
+
+    with pytest.raises(SessionError, match=r"cannot open session .*Input/output"):
+        await JsonlSessionStore(folder).open(HEADER.id)

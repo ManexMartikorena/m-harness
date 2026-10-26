@@ -89,3 +89,13 @@ def test_unknown_block_type_is_rejected() -> None:
         Message.model_validate(
             {"role": "user", "blocks": [{"type": "image", "data": "x"}]}
         )
+
+
+def test_a_message_is_not_interrupted_unless_said() -> None:
+    # A Ctrl+C in the middle marks it (spec hito 6, §1.7).
+    whole = Message(role="assistant", blocks=[TextBlock(text="Hola.")])
+    cut = Message(role="assistant", blocks=[TextBlock(text="Ho")], interrupted=True)
+
+    assert whole.interrupted is False
+    assert Message.model_validate_json(cut.model_dump_json()) == cut
+    assert Message.model_validate_json(whole.model_dump_json()).interrupted is False

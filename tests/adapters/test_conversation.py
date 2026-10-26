@@ -440,8 +440,13 @@ async def test_ctrl_c_during_an_answer_goes_back_to_the_prompt() -> None:
 
     assert code == 0
     assert out.getvalue().endswith("> Esperando\n  [interrupted]\n> Hola.\n> ")
-    # The cut answer is not kept: the next request has only the new message.
-    assert [m.text for m in fake.requests[1].messages] == ["Hola"]
+    # The cut answer is kept, marked (spec hito 6, §1.7): the model sees it.
+    sent = fake.requests[1].messages
+    assert [(m.text, m.interrupted) for m in sent] == [
+        ("Cuéntame algo", False),
+        ("Esperando", True),
+        ("Hola", False),
+    ]
 
 
 async def test_ctrl_c_while_the_spinner_spins() -> None:

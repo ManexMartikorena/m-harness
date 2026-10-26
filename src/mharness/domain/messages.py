@@ -51,6 +51,9 @@ class Message(BaseModel, frozen=True):
 
     role: Role
     blocks: list[Block]
+    # Cut by Ctrl+C while the model wrote it: a fact of the conversation,
+    # that each adapter tells its model in its own way (spec hito 6, §1.7).
+    interrupted: bool = False
 
     @property
     def text(self) -> str:

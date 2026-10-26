@@ -52,7 +52,8 @@ class Agent:
 
     Every step sends the whole history, the turn so far and the tools. The
     `gate` decides on the calls that need approval; what the user approves
-    for the whole session lives as long as the agent.
+    for the whole session lives as long as the agent. `model` can change
+    between turns (`/model`, spec hito 6, §1.8).
     """
 
     def __init__(
@@ -63,14 +64,17 @@ class Agent:
         gate: ApprovalGate,
         model: str,
         max_steps: int = MAX_STEPS,
+        history: Sequence[Message] = (),
     ) -> None:
         self._client = client
         self._tools = tools
         self._gate = gate
         self._approvals = SessionApprovals()
-        self._model = model
+        self.model = model
         self._max_steps = max_steps
-        self._messages: list[Message] = []
+        # A resumed session starts with its history (spec hito 6, §1.6); its
+        # approvals do not come back (§1.9).
+        self._messages: list[Message] = list(history)
 
     @property
     def messages(self) -> Sequence[Message]:
@@ -84,7 +88,9 @@ class Agent:
         when the user denies a call. If a call to the model fails, or the
         turn is cancelled, what already ran is kept: the turn up to the last
         complete result, and a result for every call of the interrupted step.
-        If no tool ran, nothing is kept (spec hito 5, §1.5).
+        If no tool ran, nothing is kept (spec hito 5, §1.5), unless Ctrl+C
+        cut an answer that had begun: its text is kept, marked as
+        interrupted (spec hito 6, §1.7).
         """
         turn = [Message(role="user", blocks=[TextBlock(text=text)])]
         usage = Usage()
@@ -98,15 +104,20 @@ class Agent:
         calls: list[ToolCallBlock] = []
         results: list[ToolResultBlock] = []
         denied = False
+        accumulator = Accumulator()
+        # Whether the model is writing the answer of this step.
+        streaming = False
         try:
             for step in range(1, self._max_steps + 1):
                 accumulator = Accumulator()
                 request = self._request(turn)
+                streaming = True
                 async with aclosing(self._client.stream(request)) as events:
                     async for event in events:
                         accumulator.add(event)
                         if isinstance(event, TextDelta):
                             yield event
+                streaming = False
                 response = accumulator.response()
                 usage += response.usage
                 yield ModelCallFinished(usage=response.usage, model=response.model)
@@ -208,21 +219,32 @@ class Agent:
             # CancelledError while the loop waits, or as GeneratorExit when
             # the terminal was the one waiting and closes the loop. What ran
             # is kept, so the model does not do it again (spec hito 5, §1.5).
-            if executed and not kept:
+            by_user = isinstance(exc, asyncio.CancelledError | GeneratorExit)
+            # The text the person already saw; a half tool call never ran. A
+            # failed model call keeps none: its text may be broken.
+            half = accumulator.text if streaming and by_user else ""
+            if (executed or half) and not kept:
                 if calls:
                     # The model is not called while the calls run: here only
                     # Ctrl+C or an unexpected error can cut the step.
-                    by_user = isinstance(exc, asyncio.CancelledError | GeneratorExit)
                     cause = CANCELLED if by_user else INTERRUPTED
                     blocks = _interrupted(calls, results, denied=denied, cause=cause)
                     turn.append(Message(role="tool", blocks=[*blocks]))
+                if half:
+                    turn.append(
+                        Message(
+                            role="assistant",
+                            blocks=[TextBlock(text=half)],
+                            interrupted=True,
+                        )
+                    )
                 self._messages.extend(turn)
             raise
 
     def _request(self, turn: list[Message]) -> ModelRequest:
         # No system prompt until hito 10 (spec hito 2, §1.5).
         return ModelRequest(
-            model=self._model,
+            model=self.model,
             messages=[*self._messages, *turn],
             tools=self._tools.specs(),
         )

@@ -84,8 +84,12 @@ class JsonlSessionStore:
             _write(fd, path, (json.dumps(line, ensure_ascii=False) + "\n").encode())
             # The new name survives a power cut too.
             _sync_folder(self._folder)
-        except BaseException:
+        except BaseException as exc:
+            # Not left half made: the caller tries again with another id.
             await log.close()
+            path.unlink(missing_ok=True)
+            if isinstance(exc, OSError):
+                raise _cannot_save(path, exc) from None
             raise
         return log
 
@@ -112,8 +116,12 @@ class JsonlSessionStore:
                 # A line cut by a crash: dropped, so the next append does not
                 # leave it in the middle (spec hito 6, §1.3).
                 os.ftruncate(fd, whole)
-        except BaseException:
+        except BaseException as exc:
             await log.close()
+            if isinstance(exc, OSError):
+                raise SessionError(
+                    f"cannot open session {session_id}: {exc.strerror}"
+                ) from None
             raise
         return session, log
 

@@ -619,3 +619,35 @@ Dudas que se plantearon al mantenedor (registro):
    lista no bloquea (una sesión abierta también sale) y no comprueba el
    historial, para que una rota se pueda borrar. Salta lo que no casa con
    un id, lo que no puede leer y una cabecera con otro id.
+
+**PR 3** (`feature/hito-6-conversacion`, piezas 10 a 14):
+10. `Message.interrupted` y la marca en OpenAI (`777d1ef`). Con el test de
+    4.1.3 que quedó del PR 1.
+11. El parcial cortado (`d12ea22`). Una bandera `streaming` dice si el corte
+    llegó mientras el modelo escribía; solo entonces se guarda el texto.
+    Dos tests antiguos fijaban lo contrario (spec 3, §1.6: "no se guarda") y
+    se reescribieron con la spec §1.7.
+12. Historial y modelo (`4c22e4a`). `model` es un atributo público, no una
+    propiedad con setter: no hace falta más.
+13. `Sessions` y `Conversation` (`e197e77`). Lo que la spec no fijaba,
+    dentro de las reglas hexagonales:
+    - `application` no pinta: un fallo al guardar queda en
+      `Conversation.unsaved`, y `resume()` devuelve hechos (`Resumed`); el
+      texto lo pone la terminal (PR 4);
+    - el `Agent` lo crea una fábrica inyectada (`new_agent(model,
+      history)`), y el reloj y el azar del id se inyectan, con valores por
+      defecto de la biblioteca estándar;
+    - lo no guardado (mensajes y tokens) se reintenta en el turno siguiente
+      y al cerrar;
+    - `/model` antes del primer turno va en la cabecera; después, como
+      `ModelEntry` en el acto;
+    - `resume()` abre y bloquea la nueva antes de soltar la actual, y si
+      algo falla entre medias suelta la nueva;
+    - retomar la sesión actual o borrarla da `this is the current session`.
+
+    Fuera de plan, un arreglo del PR 2 (`f2949f3`): un `OSError` de
+    `fchmod`, del `fsync` de la carpeta, de la lectura o de `ftruncate`
+    salía tal cual, y `Conversation` solo captura `SessionError`. Ahora todo
+    fallo del disco es `SessionError`, y una sesión que no se pudo crear
+    entera se borra (si no, quedaría vacía en `/sessions`, porque el
+    reintento usa otro id).
