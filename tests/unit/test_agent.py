@@ -20,7 +20,7 @@ from mharness.domain.agent_events import (
 )
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.errors import ModelUnavailableError
-from mharness.domain.events import TextDelta
+from mharness.domain.events import TextDelta, ToolCallDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from mharness.domain.tools import ToolError
@@ -791,9 +791,8 @@ async def test_once_then_deny_in_one_answer_keeps_every_call_paired() -> None:
     )
 
 
-async def test_cancelling_mid_stream_after_a_run_drops_the_half_answer() -> None:
-    fake = FakeModelClient([tool_calls(call("c1")), [TextDelta(text="Ya est"), HANG]])
-    subject = agent(fake)
+async def cancel_once(subject: Agent, seen: AgentEvent | None) -> None:
+    """Run a turn and cancel it once `seen` arrives (or at once if None)."""
     events: list[AgentEvent] = []
 
     async def consume() -> None:
@@ -801,15 +800,85 @@ async def test_cancelling_mid_stream_after_a_run_drops_the_half_answer() -> None
             events.append(event)
 
     task = asyncio.ensure_future(consume())
-    await until(lambda: TextDelta(text="Ya est") in events)
+    if seen is None:
+        await asyncio.sleep(0.01)
+    else:
+        await until(lambda: seen in events)
     task.cancel()
-
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+def cut(text: str) -> Message:
+    return Message(role="assistant", blocks=[TextBlock(text=text)], interrupted=True)
+
+
+async def test_cancelling_mid_stream_after_a_run_keeps_the_half_answer() -> None:
+    # Spec hito 6, §1.7: it used to be dropped (spec hito 3, §1.6); now it
+    # stays, marked, after the results of the tools that ran.
+    fake = FakeModelClient([tool_calls(call("c1")), [TextDelta(text="Ya est"), HANG]])
+    subject = agent(fake)
+
+    await cancel_once(subject, TextDelta(text="Ya est"))
+
     assert subject.messages == (
         user("Hola"),
         Message(role="assistant", blocks=[call("c1")]),
         Message(
             role="tool", blocks=[ToolResultBlock(call_id="c1", content="echo: Hola")]
         ),
+        cut("Ya est"),
     )
+
+
+async def test_cancelling_mid_answer_keeps_the_question_and_the_half_answer() -> None:
+    fake = FakeModelClient(
+        [[TextDelta(text="La capital "), TextDelta(text="es"), HANG]]
+    )
+    subject = agent(fake)
+
+    await cancel_once(subject, TextDelta(text="es"))
+
+    assert subject.messages == (user("Hola"), cut("La capital es"))
+
+
+async def test_cancelling_before_any_text_keeps_nothing() -> None:
+    subject = agent(FakeModelClient([[HANG]]))
+
+    await cancel_once(subject, None)
+
+    assert subject.messages == ()
+
+
+async def test_a_half_tool_call_is_dropped_with_the_text_kept() -> None:
+    # It never ran: only the text the person saw stays.
+    half = ToolCallDelta(index=0, id="c1", name="echo", arguments='{"te')
+    fake = FakeModelClient([[TextDelta(text="Voy a mirar"), half, HANG]])
+    subject = agent(fake)
+
+    await cancel_once(subject, TextDelta(text="Voy a mirar"))
+
+    assert subject.messages == (user("Hola"), cut("Voy a mirar"))
+
+
+async def test_closing_the_loop_mid_answer_keeps_the_half_answer() -> None:
+    # Ctrl+C while the terminal was the one waiting closes the loop.
+    subject = agent(FakeModelClient([[TextDelta(text="Medio"), HANG]]))
+
+    async with aclosing(subject.run("Hola")) as events:
+        async for event in events:
+            if event == TextDelta(text="Medio"):
+                break
+
+    assert subject.messages == (user("Hola"), cut("Medio"))
+
+
+async def test_a_model_error_mid_answer_keeps_nothing() -> None:
+    # The text may be broken: the turn is repeated, as before.
+    fake = FakeModelClient([[TextDelta(text="Medio"), ModelUnavailableError("caído")]])
+    subject = agent(fake)
+
+    with pytest.raises(ModelUnavailableError):
+        await run(subject)
+
+    assert subject.messages == ()
