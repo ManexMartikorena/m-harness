@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from mharness.domain.messages import Message, TextBlock
+from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from mharness.domain.session import (
     MessageEntry,
@@ -17,6 +17,7 @@ from mharness.domain.session import (
     SessionInUse,
     SessionNotFound,
     UsageEntry,
+    check_history,
     is_session_id,
     session_id,
 )
@@ -87,3 +88,65 @@ def test_the_header_needs_every_field_and_is_immutable() -> None:
 def test_every_error_is_a_session_error() -> None:
     for error in (SessionNotFound, SessionInUse, SessionCorrupt):
         assert issubclass(error, SessionError)
+
+
+# A history the API accepts (spec hito 6, §1.2 and §4.1.2).
+
+
+def user(text: str = "Hola") -> Message:
+    return Message(role="user", blocks=[TextBlock(text=text)])
+
+
+def calls(*ids: str) -> Message:
+    return Message(
+        role="assistant",
+        blocks=[
+            TextBlock(text="Miro."),
+            *(ToolCallBlock(id=id, name="read_file", arguments="{}") for id in ids),
+        ],
+    )
+
+
+def results(*ids: str) -> Message:
+    return Message(
+        role="tool", blocks=[ToolResultBlock(call_id=id, content="ok") for id in ids]
+    )
+
+
+def answer(text: str = "Hecho.") -> Message:
+    return Message(role="assistant", blocks=[TextBlock(text=text)])
+
+
+@pytest.mark.parametrize(
+    "messages",
+    [
+        [],
+        [user(), answer()],
+        [user(), calls("c1", "c2"), results("c1", "c2"), answer()],
+        # A turn denied or at the step limit ends on its results.
+        [user(), calls("c1"), results("c1")],
+        [user(), calls("c1"), results("c1"), user("Sigue"), answer()],
+    ],
+)
+def test_a_valid_history(messages: list[Message]) -> None:
+    check_history(messages)
+
+
+@pytest.mark.parametrize(
+    ("messages", "problem"),
+    [
+        ([user(), calls("c1")], "call c1 has no result"),
+        ([user(), calls("c1"), answer()], "call c1 has no result"),
+        ([user(), calls("c1", "c2"), results("c1")], "call c2 has no result"),
+        ([user(), results("c1")], "result c1 without its call"),
+        ([user(), calls("c1"), results("c1", "c9")], "result c9 without its call"),
+        ([user(), calls("c1"), results("c1", "c1")], "result c1 without its call"),
+        (
+            [user(), calls("c1"), Message(role="tool", blocks=[TextBlock(text="x")])],
+            "a tool message holds only results",
+        ),
+    ],
+)
+def test_a_broken_history(messages: list[Message], problem: str) -> None:
+    with pytest.raises(SessionCorrupt, match=f"^history: {problem}$"):
+        check_history(messages)

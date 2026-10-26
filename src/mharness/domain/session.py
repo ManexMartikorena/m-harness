@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from mharness.domain.messages import Message
+from mharness.domain.messages import Message, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 
 # Date and time in UTC, and 4 random hex digits: short to type, sorted by
@@ -109,3 +109,34 @@ class SessionInUse(SessionError):
 
 class SessionCorrupt(SessionError):
     """The file cannot be read back as a session."""
+
+
+def check_history(messages: list[Message]) -> None:
+    """Raise `SessionCorrupt` unless the API would take `messages`: every
+    tool call of the assistant has its result in the `tool` message right
+    after it, and no result is left over (spec hito 6, §1.2). A session that
+    fails this would get an error 400 on its first call."""
+    # The ids of the calls still waiting for their results.
+    waiting: list[str] = []
+    for message in messages:
+        if message.role == "tool":
+            found = [b for b in message.blocks if isinstance(b, ToolResultBlock)]
+            if len(found) != len(message.blocks):
+                raise _broken("a tool message holds only results")
+            for block in found:
+                if block.call_id not in waiting:
+                    raise _broken(f"result {block.call_id} without its call")
+                waiting.remove(block.call_id)
+            if waiting:
+                raise _broken(f"call {waiting[0]} has no result")
+            continue
+        if waiting:
+            raise _broken(f"call {waiting[0]} has no result")
+        if message.role == "assistant":
+            waiting = [b.id for b in message.blocks if isinstance(b, ToolCallBlock)]
+    if waiting:
+        raise _broken(f"call {waiting[0]} has no result")
+
+
+def _broken(problem: str) -> SessionCorrupt:
+    return SessionCorrupt(f"history: {problem}")
