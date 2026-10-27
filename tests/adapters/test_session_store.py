@@ -626,3 +626,18 @@ async def test_a_disk_failure_goes_to_the_log_without_content(
     assert "No space left on device" in warning.getMessage()
     assert HEADER.id in warning.getMessage()
     assert "Ana" not in warning.getMessage()
+
+
+async def test_a_folder_blocked_by_a_file_is_not_an_id_clash(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # mkdir's FileExistsError was taken for O_EXCL's: five "clashes" and a
+    # wrong message, and nothing in maha.log (manual check of hito 7).
+    blocked = tmp_path / "sessions"
+    blocked.write_text("", encoding="utf-8")
+
+    with pytest.raises(SessionError, match="cannot save session") as caught:
+        await JsonlSessionStore(blocked).create(HEADER)
+
+    assert not isinstance(caught.value, SessionExists)
+    assert [r for r in caplog.records if r.name.startswith("mharness")]
