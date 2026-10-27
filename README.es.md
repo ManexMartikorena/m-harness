@@ -42,19 +42,31 @@ En notas.txt pone: "comprar pan".
   (`write_file`, `edit_file`, con el diff a la vista) y ejecuta comandos
   (`run_command`).
 - **Nada cambia sin tu permiso.** Cada escritura y cada comando te preguntan
-  antes: una vez, siempre en esta sesión, o no. Leer fuera del directorio o
-  un fichero secreto (`.env`, claves, `.ssh`…) también pregunta. Los
-  comandos no reciben tu clave del proveedor.
+  antes, con el diff o el comando: una vez, siempre en esta sesión, o no.
+  Leer fuera del directorio o un fichero secreto (`.env`, claves, `.ssh`…)
+  también pregunta, una vez cada vez. Los comandos corren con un tiempo
+  límite y sin tu clave del proveedor en el entorno, pero **con tus
+  permisos: lee el comando antes de aprobarlo**.
 - **El modelo y el proveedor que quieras.** Formato de OpenAI de serie, con
   OpenCode Go y Zen ya configurados, y cualquier servidor compatible que
   declares. Cambias de modelo con `/model` o en la configuración.
 - **Sesiones que no se pierden.** Cada conversación se guarda sola, turno a
-  turno, y se retoma desde cualquier directorio.
+  turno (también la respuesta que cortas), y se retoma desde cualquier
+  directorio. Al retomar, las aprobaciones empiezan de cero.
 - **Sabes lo que gastas.** Cada turno dice sus tokens y su coste, y la
-  sesión lo que lleva. Con OpenCode Go, lo que cuenta contra tu límite
-  mensual.
+  sesión lo que lleva: el coste que da el proveedor (con OpenCode Go, lo
+  que cuenta contra tu límite mensual) o, si no lo da, el de un catálogo con
+  los precios de todos los modelos de OpenCode Go y Zen.
 - **Todo queda registrado, sin tus secretos.** Cada sesión deja una traza
-  de lo que hizo el agente; `/trace` la resume.
+  de lo que hizo el agente; `/trace` la resume:
+
+  ```
+  > /trace
+    20261027-101620-1163 · glm-5.3-flash · 1 turn · 2 model calls · 1 tool
+    1  11:16:20  2 calls · 1 tool · 2542 in · 26 out · $0.0004 · 5.7 s
+    total: 2542 in · 26 out · $0.0004
+    [trace: ~/.local/share/maha/traces/20261027-101620-1163.jsonl]
+  ```
 
 ## Instalación
 
@@ -112,6 +124,7 @@ clave a otro servidor.
 | `/trace [ID]` | Lo que hizo y costó una sesión, turno a turno |
 | `/exit` | Sale (también Ctrl+D) |
 
+- Mientras espera la respuesta, gira un spinner con "maha".
 - **Ctrl+C** a mitad de una respuesta la corta y vuelve al prompt; el
   modelo sabe que la cortaste. En el prompt, sale.
 - **Sin terminal** (`maha < instrucciones.txt`), todo lo que tiene efecto

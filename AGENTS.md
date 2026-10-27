@@ -141,11 +141,13 @@ Desde el hito 8 (DESIGN §9).
 - Una decisión importante queda fijada con un test cuando se puede.
 - `docs/MAPA.md` se actualiza en el mismo PR que crea, mueve o borra ficheros.
 - **Reorganizar documentación no pierde información.** Al mover, resumir o
-  reescribir un documento, lo que deja de estar se lleva, tal cual, a otro
-  sitio (por ejemplo, `docs/HISTORIAL_DESARROLLO.md`), y antes del commit se
-  comprueba mecánicamente que cada línea del texto antiguo sigue en algún
-  documento. *(Añadido el 2026-10-27, tras reorganizar ESTADO sin esa
-  comprobación: se perdieron los pendientes resueltos y se recuperaron.)*
+  reescribir un documento, antes del commit se comprueba mecánicamente qué
+  líneas del texto antiguo ya no están tal cual en ningún documento, y cada
+  una se revisa: o su contenido sigue (reescrito o renumerado), o se lleva
+  tal cual a otro sitio (por ejemplo, `docs/HISTORIAL_DESARROLLO.md`). Lo
+  que se quita a propósito lo decide el mantenedor. *(Añadido el
+  2026-10-27: al reorganizar ESTADO y el README sin esa comprobación se
+  perdieron los pendientes resueltos y avisos del README, y se recuperaron.)*
 
 ## Flujo de commits (agentes y humano)
 - El agente commitea cada cambio completo y coherente (una pieza de la spec,
