@@ -34,7 +34,7 @@ Lo más reciente primero.
 - **Hito 7 cerrado, 2026-10-27: `v0.7.0` — Trazas y coste.** Spec
   IMPLEMENTADA con la verificación a mano (diez puntos en verde) y la nota
   07 de la guía. PRs: #61, #64, #65, #66 (`v0.6.1`), #69, #70, #71, #72, #73,
-  #74, #75 y el de cierre. 1312 tests, mypy, ruff e import-linter en verde.
+  #74, #75 y el de cierre. 1313 tests, mypy, ruff e import-linter en verde.
 - **Decisiones del mantenedor al cerrar, 2026-10-27:** sin tope de intentos
   al buscar un id de sesión libre (spec §12.34, PR #75); y se acepta como
   límite que la rotación de `maha.log` no se coordine entre varios `maha`
@@ -639,6 +639,11 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 **Externas, con el hito en que bloquean:**
 - **Proveedor de modelos: OpenCode Go**, funcionando desde el 2026-10-20
   (verificación a mano del hito 2).
+
+**Decisiones del mantenedor para hitos futuros:**
+- **Hito 19: una TUI completa** (2026-10-27), bonita y fácil para cualquier
+  persona, con OpenCode como referencia; la interfaz de línea se conserva.
+  DESIGN §14, hito 19.
 
 **Se deciden en la spec de su hito:**
 - búsqueda en la memoria (hito 13);
