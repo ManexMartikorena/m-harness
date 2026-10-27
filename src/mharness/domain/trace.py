@@ -7,8 +7,9 @@ Before a record leaves the process, every text in it goes through `mask()`:
 a trace is for auditing, and may end up shared.
 """
 
+import json
 import re
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
@@ -42,8 +43,10 @@ _SHAPES = re.compile(
             r"AKIA[0-9A-Z]{16}",  # AWS access key ids
             r"xox[abposr]-[A-Za-z0-9-]{10,}",  # Slack
             r"AIza[0-9A-Za-z_-]{35}",  # Google API keys
-            # PEM private keys, whole.
-            r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+            # PEM private keys: whole, or to the end of a text cut before its
+            # END line (read_file with a limit, `head id_rsa`).
+            r"-----BEGIN [A-Z ]*PRIVATE KEY-----"
+            r"(?:.*?-----END [A-Z ]*PRIVATE KEY-----|.*\Z)",
         ]
     ),
     re.DOTALL,
@@ -108,29 +111,51 @@ def known_secrets(
     return {value for value in values if len(value) >= MIN_SECRET}
 
 
-def mask(text: str, known: Collection[str]) -> str:
+class Secrets:
+    """The known values to mask, ready once for every text: also as they
+    look escaped inside JSON text (the arguments of a call are JSON that
+    the model wrote), and the longer first, so that a value holding another
+    is masked whole. Short ones are left out."""
+
+    def __init__(self, values: Iterable[str] = ()) -> None:
+        forms: set[str] = set()
+        for value in values:
+            if len(value) < MIN_SECRET:
+                continue
+            for escaped in (value, _in_json(value, ascii=False), _in_json(value)):
+                forms.update((escaped, escaped.replace("/", "\\/")))
+        self._forms = tuple(sorted(forms, key=len, reverse=True))
+
+    def mask(self, text: str) -> str:
+        for form in self._forms:
+            text = text.replace(form, REDACTED)
+        return text
+
+
+def mask(text: str, secrets: Secrets) -> str:
     """`text` with every known value and every credential shape replaced by
     `[redacted]`."""
-    # The longer first: a value that holds another is masked whole.
-    for value in sorted(known, key=len, reverse=True):
-        if len(value) >= MIN_SECRET:
-            text = text.replace(value, REDACTED)
-    return _SHAPES.sub(REDACTED, text)
+    return _SHAPES.sub(REDACTED, secrets.mask(text))
 
 
-def redact(record: TraceRecord, known: Collection[str]) -> TraceRecord:
+def redact(record: TraceRecord, secrets: Secrets) -> TraceRecord:
     """The record with every text in it masked."""
-    data = _masked(record.model_dump(mode="json"), known)
+    data = _masked(record.model_dump(mode="json"), secrets)
     return TraceRecord.model_validate(data)
 
 
-def _masked(data: Any, known: Collection[str]) -> Any:
+def _in_json(value: str, *, ascii: bool = True) -> str:
+    """How `value` looks inside a JSON string, without the quotes."""
+    return json.dumps(value, ensure_ascii=ascii)[1:-1]
+
+
+def _masked(data: Any, secrets: Secrets) -> Any:
     match data:
         case str():
-            return mask(data, known)
+            return mask(data, secrets)
         case dict():
-            return {key: _masked(value, known) for key, value in data.items()}
+            return {key: _masked(value, secrets) for key, value in data.items()}
         case list():
-            return [_masked(value, known) for value in data]
+            return [_masked(value, secrets) for value in data]
         case _:
             return data

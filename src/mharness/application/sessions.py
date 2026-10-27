@@ -36,6 +36,7 @@ from mharness.domain.session import (
     session_id,
 )
 from mharness.domain.trace import (
+    Secrets,
     TraceError,
     TraceEvent,
     TraceExists,
@@ -65,8 +66,8 @@ class _Origin:
     now: Callable[[], datetime]
     token: Callable[[], str]
     traces: TraceSink
-    # Values masked in every trace record (spec hito 7, §1.8).
-    masked: Collection[str]
+    # Masked in every trace record (spec hito 7, §1.8).
+    masked: Secrets
 
 
 class Conversation:
@@ -374,7 +375,7 @@ class Sessions:
         self._new_agent = new_agent
         self._model = model
         self._origin = _Origin(
-            cwd, provider, version, now, token, traces, frozenset(masked)
+            cwd, provider, version, now, token, traces, Secrets(masked)
         )
 
     @property
