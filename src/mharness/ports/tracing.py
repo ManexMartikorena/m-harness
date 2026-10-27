@@ -20,7 +20,9 @@ class TraceLog(Protocol):
         """Make what was written survive a power cut: once per turn."""
         ...
 
-    async def close(self) -> None: ...
+    async def close(self) -> None:
+        """Never fails: what matters was already synced."""
+        ...
 
 
 class TraceSink(Protocol):

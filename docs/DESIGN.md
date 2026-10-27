@@ -268,7 +268,7 @@ Session(id, created_at, cwd, model, messages, usage)
 | `ModelCatalog` | Ventana de contexto, precios y capacidades de cada modelo | Fichero TOML propio (formato inspirado en models.dev) · catálogo en memoria. *(Concretado el 26/10/2026, spec del hito 7, §1.3: un TOML en el paquete, con la fecha de los precios, y otro opcional del usuario, `~/.config/maha/models.toml`, que manda; claves `proveedor/modelo`.)* *(Ampliado el 27/10/2026, spec del hito 7, §1.3 y §11: todos los modelos de cada proveedor, y precios por tramos de tamaño del prompt.)* |
 | `Tool` | Especificación y ejecución de una herramienta | Ficheros, búsqueda, terminal, web, memoria, subagente, herramientas MCP · `FakeTool` |
 | `ApprovalGate` | Decide sobre cada llamada con efecto: una vez, toda la sesión o denegar | Aviso en la terminal · política automática (evals) · `FakeApproval` |
-| `SessionStore` | Guardar, cargar, listar y borrar sesiones | JSONL en disco · en memoria |
+| `SessionStore` | Guardar, cargar, listar y borrar sesiones | JSONL en disco · en memoria. *(Ampliado el 27/10/2026, auditoría del hito 7: `exists()`, para que una sesión nueva no tome el id de otra.)* |
 | `MemoryStore` | Guardar, buscar y borrar recuerdos | SQLite con FTS5 · en memoria |
 | `SkillSource` | Listar y cargar skills | Carpetas con `SKILL.md` · en memoria |
 | `CommandRunner` | Ejecutar un comando con directorio, entorno y tiempo límite | Proceso local · proceso aislado (hito 14) · `FakeRunner` |

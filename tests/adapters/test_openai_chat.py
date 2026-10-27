@@ -262,6 +262,24 @@ async def test_usage_with_null_reasoning_tokens(client: OpenAIChatClient) -> Non
 
 
 @respx.mock
+async def test_negative_counters_from_the_provider_count_as_zero(
+    client: OpenAIChatClient,
+) -> None:
+    body = fixture("completion.json")
+    body["usage"] = {
+        "prompt_tokens": -5,
+        "completion_tokens": 7,
+        "prompt_tokens_details": {"cached_tokens": -1},
+        "completion_tokens_details": {"reasoning_tokens": -3},
+    }
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.usage == Usage(output_tokens=7)
+
+
+@respx.mock
 async def test_usage_with_null_counters(client: OpenAIChatClient) -> None:
     body = fixture("completion.json")
     body["usage"] = {

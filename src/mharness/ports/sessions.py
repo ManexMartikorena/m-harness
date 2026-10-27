@@ -15,7 +15,9 @@ class SessionLog(Protocol):
         """Add the entries at the end, all of them or none."""
         ...
 
-    async def close(self) -> None: ...
+    async def close(self) -> None:
+        """Never fails: every append was already synced."""
+        ...
 
 
 class SessionStore(Protocol):
@@ -32,6 +34,11 @@ class SessionStore(Protocol):
     async def open(self, session_id: str) -> tuple[Session, SessionLog]:
         """Read and lock in one step, so nothing changes in between. Raises
         `SessionNotFound`, `SessionInUse` or `SessionCorrupt`."""
+        ...
+
+    async def exists(self, session_id: str) -> bool:
+        """Whether a session has that id, open or not. An id of another
+        form has none."""
         ...
 
     async def summaries(self) -> list[SessionSummary]:

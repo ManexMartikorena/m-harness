@@ -20,6 +20,7 @@ from mharness.domain.messages import ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from mharness.domain.trace import (
     REDACTED,
+    Secrets,
     TraceEvent,
     TraceRecord,
     TurnFailed,
@@ -61,37 +62,63 @@ SHAPES = [
 
 
 def test_a_known_value_is_masked() -> None:
-    assert mask(f"Authorization: Bearer {KEY}!", {KEY}) == (
+    assert mask(f"Authorization: Bearer {KEY}!", Secrets({KEY})) == (
         f"Authorization: Bearer {REDACTED}!"
     )
 
 
 @pytest.mark.parametrize("secret", SHAPES)
 def test_each_shape_of_credential_is_masked(secret: str) -> None:
-    assert mask(f"antes {secret} después", set()) == f"antes {REDACTED} después"
+    assert mask(f"antes {secret} después", Secrets()) == f"antes {REDACTED} después"
 
 
 def test_several_in_one_text() -> None:
     text = f"{KEY} y {SHAPES[2]} y otra vez {KEY}"
 
-    assert mask(text, {KEY}) == f"{REDACTED} y {REDACTED} y otra vez {REDACTED}"
+    assert (
+        mask(text, Secrets({KEY})) == f"{REDACTED} y {REDACTED} y otra vez {REDACTED}"
+    )
 
 
 def test_nothing_to_mask_stays_the_same() -> None:
     text = "sk-corto, skill, AKIA a medias, ghp_ sin más; ñandú"
 
-    assert mask(text, set()) == text
+    assert mask(text, Secrets()) == text
 
 
 def test_a_short_known_value_is_not_masked() -> None:
     # "secret" or "1234" would mask half the trace (false positives).
-    assert mask("el valor es 12345678", {"12345678"}) == "el valor es 12345678"
+    assert mask("el valor es 12345678", Secrets({"12345678"})) == "el valor es 12345678"
 
 
 def test_the_longer_known_value_goes_first() -> None:
     long, short = "abcdefghij-klmnop", "abcdefghij"
 
-    assert mask(f"{long} {short}", {short, long}) == f"{REDACTED} {REDACTED}"
+    assert mask(f"{long} {short}", Secrets({short, long})) == f"{REDACTED} {REDACTED}"
+
+
+def test_a_private_key_cut_before_its_end_is_masked_to_the_end() -> None:
+    # read_file with a limit, or `head id_rsa` (audit of hito 7, 4).
+    cut = pem("OPENSSH PRIVATE KEY", "AAAA\nBBBB").rsplit("\n", 1)[0]
+
+    assert mask(f"la clave:\n{cut}", Secrets()) == f"la clave:\n{REDACTED}"
+
+
+@pytest.mark.parametrize(
+    ("secret", "written"),
+    [
+        ('con"comillas-dentro', 'con\\"comillas-dentro'),
+        ("con\\barra-invertida", "con\\\\barra-invertida"),
+        ("con/barra-normal", "con\\/barra-normal"),
+        ("contraseña-larga", "contrase\\u00f1a-larga"),
+    ],
+)
+def test_a_known_value_escaped_in_json_is_masked(secret: str, written: str) -> None:
+    # The arguments of a call are JSON text written by the model (audit of
+    # hito 7, 5).
+    arguments = f'{{"command": "echo {written}"}}'
+
+    assert mask(arguments, Secrets({secret})) == (f'{{"command": "echo {REDACTED}"}}')
 
 
 # known_secrets()
@@ -191,7 +218,7 @@ def test_redact_masks_every_text_of_the_record() -> None:
         duration=0.1,
     )
 
-    masked = redact(record(finished), {KEY})
+    masked = redact(record(finished), Secrets({KEY}))
 
     assert isinstance(masked.event, ToolFinished)
     assert KEY not in masked.model_dump_json()
@@ -204,4 +231,4 @@ def test_redact_masks_every_text_of_the_record() -> None:
 def test_redact_leaves_a_clean_record_as_it_was() -> None:
     clean = record(TurnFailed(kind="ModelUnavailableError", message="HTTP 503"))
 
-    assert redact(clean, {KEY}) == clean
+    assert redact(clean, Secrets({KEY})) == clean

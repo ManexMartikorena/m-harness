@@ -426,8 +426,13 @@ def _usage(usage: _Usage | None) -> Usage:
     prompt = usage.prompt_tokens_details
     completion = usage.completion_tokens_details
     return Usage(
-        input_tokens=usage.prompt_tokens or 0,
-        output_tokens=usage.completion_tokens or 0,
-        cache_read_tokens=(prompt.cached_tokens or 0) if prompt else 0,
-        reasoning_tokens=(completion.reasoning_tokens or 0) if completion else 0,
+        input_tokens=_count(usage.prompt_tokens),
+        output_tokens=_count(usage.completion_tokens),
+        cache_read_tokens=_count(prompt.cached_tokens if prompt else None),
+        reasoning_tokens=_count(completion.reasoning_tokens if completion else None),
     )
+
+
+def _count(tokens: int | None) -> int:
+    """A count the provider sent; missing, null or negative is 0."""
+    return max(tokens or 0, 0)

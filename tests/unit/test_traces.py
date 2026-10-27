@@ -3,7 +3,6 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from mharness.application.agent import NOT_RUN_DENIED
 from mharness.application.traces import TraceSummary, TurnSummary, summarize
 from mharness.domain.agent_events import (
     ModelCallFinished,
@@ -39,7 +38,11 @@ def model(
 
 
 def tool(
-    content: str = "ok", *, error: bool = False, decision: Decision | None = None
+    content: str = "ok",
+    *,
+    error: bool = False,
+    decision: Decision | None = None,
+    skipped: bool = False,
 ) -> ToolFinished:
     return ToolFinished(
         call=CALL,
@@ -47,6 +50,7 @@ def tool(
         summary=content,
         duration=0.1,
         decision=decision,
+        skipped=skipped,
     )
 
 
@@ -56,6 +60,7 @@ def finished(reason: str = "end_turn") -> TurnFinished:
         usage=Usage(),
         tool_calls=0,
         steps=1,
+        cost=None,
     )
 
 
@@ -117,7 +122,7 @@ def test_denied_failed_and_skipped_tools() -> None:
         at(1, tool("error: no such file", error=True)),
         at(1, tool("error: the user denied this call", error=True, decision="deny")),
         # After a denial the rest do not run: not counted as tools.
-        at(1, tool(f"error: {NOT_RUN_DENIED}", error=True)),
+        at(1, tool("error: not run", error=True, skipped=True)),
         at(1, finished("denied")),
     ]
 

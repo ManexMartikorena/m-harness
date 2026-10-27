@@ -8,6 +8,7 @@ Disk calls are synchronous inside `async def`, as in the file tools: small
 writes, and no threads (spec hito 2, §12).
 """
 
+import contextlib
 import fcntl
 import json
 import os
@@ -74,8 +75,10 @@ class JsonlLog:
 
     async def close(self) -> None:
         if self._fd is not None:
-            os.close(self._fd)
-            self._fd = None
+            fd, self._fd = self._fd, None
+            # Every append was synced: a failing close loses nothing.
+            with contextlib.suppress(OSError):
+                os.close(fd)
 
     def _descriptor(self) -> int:
         if self._fd is None:
@@ -152,6 +155,11 @@ class JsonlSessionStore:
                 ) from None
             raise
         return session, log
+
+    async def exists(self, session_id: str) -> bool:
+        if not is_session_id(session_id):
+            return False
+        return _taken(self._path(session_id))
 
     async def summaries(self) -> list[SessionSummary]:
         """Every session that can be read, newest first, without locking
@@ -325,6 +333,11 @@ def _first(exc: ValidationError) -> str:
     error = exc.errors(include_url=False, include_input=False)[0]
     location = ".".join(str(part) for part in error["loc"])
     return f"{location}: {error['msg']}" if location else error["msg"]
+
+
+def _taken(path: Path) -> bool:
+    # lexists: a link named so takes the name too.
+    return os.path.lexists(path)
 
 
 def _sync_folder(folder: Path) -> None:

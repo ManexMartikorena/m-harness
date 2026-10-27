@@ -11,13 +11,13 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from mharness.application.agent import NOT_RUN_DENIED
 from mharness.domain.agent_events import (
     ModelCallFinished,
     ToolFinished,
     TurnFinished,
     TurnStarted,
 )
+from mharness.domain.catalog import add_cost
 from mharness.domain.model import Usage
 from mharness.domain.trace import TraceRecord, TurnFailed, TurnInterrupted
 
@@ -26,9 +26,6 @@ from mharness.domain.trace import TraceRecord, TurnFailed, TurnInterrupted
 type Ending = Literal[
     "end_turn", "max_steps", "denied", "error", "interrupted", "unfinished"
 ]
-
-# The result of a call skipped after a denial: it never ran.
-_SKIPPED = f"error: {NOT_RUN_DENIED}"
 
 
 @dataclass(frozen=True)
@@ -97,14 +94,11 @@ def summarize(session: str, records: Sequence[TraceRecord]) -> TraceSummary:
             case ModelCallFinished():
                 current.model_calls += 1
                 current.usage += event.usage
-                if current.cost is not None:
-                    current.cost = (
-                        None if event.cost is None else current.cost + event.cost
-                    )
+                current.cost = add_cost(current.cost, event.cost)
                 if event.model not in models:
                     models.append(event.model)
             case ToolFinished():
-                if event.result.content == _SKIPPED:
+                if event.skipped:
                     continue
                 current.tools += 1
                 if event.decision == "deny":

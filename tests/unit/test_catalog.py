@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from mharness.domain.catalog import ModelInfo, Prices, Tier, Usd, cost
+from mharness.domain.catalog import ModelInfo, Prices, Tier, Usd, add_cost, cost
 from mharness.domain.model import Usage
 
 CHECKED = date(2026, 10, 26)
@@ -177,6 +177,9 @@ def test_model_info_is_immutable() -> None:
         ("1E+1", "10"),
         ("0.0031", "0.0031"),
         ("0", "0"),
+        # A price of -0.0 passes `ge=0` (audit of hito 7).
+        ("-0", "0"),
+        ("-0E-6", "0"),
     ],
 )
 def test_usd_goes_to_json_plain_and_exact(amount: str, text: str) -> None:
@@ -184,3 +187,18 @@ def test_usd_goes_to_json_plain_and_exact(amount: str, text: str) -> None:
 
     assert usd.dump_python(Decimal(amount), mode="json") == text
     assert usd.validate_json(usd.dump_json(Decimal(amount))) == Decimal(amount)
+
+
+@pytest.mark.parametrize(
+    ("total", "more", "result"),
+    [
+        (Decimal("0.1"), Decimal("0.2"), Decimal("0.3")),
+        (Decimal("0.1"), None, None),
+        (None, Decimal("0.2"), None),
+        (None, None, None),
+    ],
+)
+def test_add_cost_is_unknown_once_a_part_is(
+    total: Decimal | None, more: Decimal | None, result: Decimal | None
+) -> None:
+    assert add_cost(total, more) == result

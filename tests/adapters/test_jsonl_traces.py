@@ -265,3 +265,67 @@ async def test_a_new_trace_is_created_only_if_free(folder: Path) -> None:
     with pytest.raises(TraceExists, match=f"trace of {SESSION} already exists"):
         await sink.open(SESSION, new=True)
     assert await sink.read(SESSION) == [record("Uno")]
+
+
+async def test_reopening_after_a_cut_line_drops_it_first(folder: Path) -> None:
+    # maha died half way through a line: the next record must not stick to
+    # it, or both are lost and /trace merges two turns (audit of hito 7, 1).
+    sink = JsonlTraceSink(folder)
+    log = await sink.open(SESSION)
+    await log.write(record("Uno"))
+    await log.close()
+    with open(file_of(folder), "ab") as file:  # noqa: ASYNC230
+        file.write(record("Cortado").model_dump_json().encode()[:25])
+
+    log = await sink.open(SESSION)
+    await log.write(record("Dos"))
+    await log.close()
+
+    assert await sink.read(SESSION) == [record("Uno"), record("Dos")]
+
+
+async def test_a_cut_line_left_by_a_failed_write_is_dropped_too(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The write failed half way and the file could not be cut back.
+    sink = JsonlTraceSink(folder)
+    log = await sink.open(SESSION)
+    await log.write(record("Uno"))
+    real_write = os.write
+
+    def half_then_fail(fd: int, data: bytes | memoryview) -> int:
+        real_write(fd, bytes(data)[:10])
+        raise OSError(28, "No space left on device")
+
+    def no_truncate(fd: int, size: int) -> None:
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(os, "write", half_then_fail)
+    monkeypatch.setattr(os, "ftruncate", no_truncate)
+    with pytest.raises(TraceError):
+        await log.write(record("Perdido"))
+    monkeypatch.undo()
+    await log.write(record("Dos"))
+    await log.close()
+
+    assert await sink.read(SESSION) == [record("Uno"), record("Dos")]
+
+
+async def test_closing_never_fails(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Everything was synced before: a failing close loses nothing, and must
+    # not cut the turn that closes it (audit of hito 7).
+    log = await JsonlTraceSink(folder).open(SESSION)
+    real_close = os.close
+
+    def failing(fd: int) -> None:
+        real_close(fd)
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(os, "close", failing)
+    await log.close()
+    monkeypatch.undo()
+
+    with pytest.raises(TraceError, match="closed"):
+        await log.write(record())

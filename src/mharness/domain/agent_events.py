@@ -52,6 +52,8 @@ class ToolFinished(BaseModel, frozen=True):
     internal_error: str | None = None
     # What the user answered; None if nobody was asked.
     decision: Decision | None = None
+    # Not run, because a previous call of the step was denied.
+    skipped: bool = False
 
 
 class ModelCallFinished(BaseModel, frozen=True):
@@ -60,8 +62,9 @@ class ModelCallFinished(BaseModel, frozen=True):
     type: Literal["model_call_finished"] = "model_call_finished"
     usage: Usage
     model: str
-    # None if the catalog has no prices for the model.
-    cost: Usd | None = None
+    # None if the catalog has no prices for the model. No default: a
+    # forgotten cost must not pass for "no price".
+    cost: Usd | None
 
 
 class TurnFinished(BaseModel, frozen=True):
@@ -78,7 +81,7 @@ class TurnFinished(BaseModel, frozen=True):
     # Calls to the model in the turn.
     steps: int
     # Summed over its calls; None if one of them has no price.
-    cost: Usd | None = None
+    cost: Usd | None
 
 
 type AgentEvent = (
