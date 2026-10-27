@@ -83,7 +83,10 @@ de esto entra en git:
   `maha.log`, solo legible por el usuario, rotado a 1 MiB con una copia).
   Solo diagnóstico: fallos del disco al guardar una sesión o una traza, el
   `fsync` de una carpeta que falla y errores internos de una herramienta;
-  nunca el texto de la conversación. Respeta `XDG_STATE_HOME`.
+  nunca el texto de la conversación. Respeta `XDG_STATE_HOME`. Desde el
+  hito 8, también `evals/<fecha-hora>/`: las sesiones y trazas de cada
+  ejecución de `maha eval`, aparte de las tuyas (§4.1). Se pueden borrar
+  cuando ya no hagan falta.
 
 Lo que se haga en una máquina no está en la otra.
 
@@ -102,8 +105,20 @@ model = "glm-5.3-flash"    # el id, tal cual lo da el proveedor (cambian a menud
 # api_key_env = "MI_CLAVE"   # sin ella, no se envía Authorization
 ```
 
+Desde el hito 8, límites de cada turno (todos opcionales; sin ellos, solo
+los 25 pasos de siempre):
+
+```toml
+[limits]
+max_steps = 25       # llamadas al modelo
+max_cost = 0.50      # dólares
+max_tokens = 400000  # entrada + salida
+timeout = 600        # segundos
+```
+
 Un proyecto puede tener `.maha/config.toml` con `provider` y `model`, que
-ganan a los del usuario. Si declara `[providers]`, `maha` se niega a
+ganan a los del usuario, y `[limits]`, de los que vale el más estricto de
+los dos ficheros: un repositorio ajeno no puede aflojar los tuyos. Si declara `[providers]`, `maha` se niega a
 arrancar: un repositorio ajeno podría enviar la clave a otro servidor (spec
 del hito 2, §1.10).
 
@@ -139,6 +154,25 @@ uv run mypy
 uv run lint-imports
 uv run pytest
 ```
+
+### 4.1 Evals (llamadas reales, cuestan dinero)
+
+Desde el hito 8 (spec, §1.5 a §1.9). Usan la clave del `.env` y el
+proveedor de tu configuración; nunca corren en el CI.
+
+```
+uv run --env-file .env maha eval --split train            # iterar: 1 pasada, sin la validación
+uv run --env-file .env maha eval --models glm-5.3-flash,kimi-k2.7-code --repeat 5
+uv run --env-file .env maha eval --models glm-5.3-flash,kimi-k2.7-code --repeat 5 --save
+```
+
+- La segunda línea es la comparación antes de un merge (AGENTS.md,
+  "Evals"); la tercera guarda una línea base nueva en `evals/baselines/`,
+  que entra en git (solo números).
+- Sale con 1 si hay una regresión (⚠).
+- `--retry-errors` repite una vez lo que rompió el proveedor (429, 5xx,
+  red); `--keep` deja la copia de cada ejecución para mirarla; las sesiones
+  y trazas quedan en `~/.local/state/maha/evals/`.
 
 ## 5. GitHub (una vez por repositorio)
 
