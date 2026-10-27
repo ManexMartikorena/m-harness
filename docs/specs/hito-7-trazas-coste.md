@@ -688,3 +688,56 @@ Dudas que se plantearon al mantenedor (registro):
     trataron. Las denegadas y las fallidas van aparte.
 23. **Un turno sin `TurnFinished`** sale como `error`, `interrupted` o
     `unfinished` (maha murió o la traza falló al final).
+
+### Auditoría antes del PR 5 (`fix/deuda-hito-7`, 2026-10-27)
+
+Pedida por el mantenedor: dejar el hito sin deuda antes del hito 8. Dos
+revisiones independientes del código del hito (sesiones y trazas; catálogo,
+coste y bucle) y el repaso de los pendientes. Cada fallo, con su test
+primero:
+
+24. **Una traza con una línea cortada** (maha murió escribiendo) pegaba el
+    siguiente registro a la media línea: se perdían los dos y `/trace`
+    mezclaba dos turnos. Ahora, al abrir o tras un fallo que no se pudo
+    recortar, se termina la línea antes de escribir.
+25. **Reservar el id comprueba también las sesiones** (`SessionStore.exists`):
+    un id que tiene una sesión sin traza (del hito 6) no se toma. Si aun así
+    choca al guardar y la traza no se puede mover, se borra: nunca queda con
+    el id de otra sesión. Con la comprobación, otro `maha` tampoco puede
+    retomar esa sesión y escribir en nuestra traza.
+26. **Nada se traza después de `TurnFinished`**: un fallo de la terminal al
+    pintar el final ya no deja el turno como `interrupted`. `interrupted`
+    pasa a decir "cortado antes de acabar": Ctrl+C, quien lo leía lo cerró
+    o un tiempo límite (el hito 8 los tendrá).
+27. **Enmascarado:** una clave PEM sin su `END` se tapa hasta el final del
+    texto; los secretos conocidos se buscan también escapados como en JSON
+    (`\"`, `\\`, `\/`, `\uXXXX`), y se preparan una vez (`Secrets`).
+28. **Tokens negativos** de un proveedor cuentan como 0 (antes, coste
+    negativo); `Usage` no admite negativos. El coste cero se escribe `"0"`,
+    nunca `"-0"`.
+29. **El catálogo del paquete ilegible** da `CatalogError`, no una traza.
+    Los errores del catálogo dicen el tramo y citan la clave siempre entre
+    comillas; se rechazan claves con espacios y precios escritos como texto.
+    Un precio del usuario lleva su propia fecha (documentado y con test).
+30. **`close()` nunca falla** en sesiones ni trazas: todo estaba ya
+    sincronizado, y un `OSError` ahí cortaba el turno.
+31. **`/delete` borra una traza que quedó sin su sesión** (guarda el primer
+    mensaje), y **`/trace` de un id sin sesión ni traza** dice que no existe.
+32. **Una traza que se abre a mitad de turno** (falló al abrir en
+    `TurnStarted`) empieza igual con ese `TurnStarted`: `/trace` no esconde
+    el turno.
+33. **Limpiezas:** `add_cost()` en un solo sitio; `cost` sin valor por
+    defecto en los eventos (olvidarlo ya no pasa en silencio); el precio
+    recurre al modelo pedido también si el que contestó está sin precio;
+    `ToolFinished.skipped` en vez de reconocer las llamadas saltadas por su
+    texto; el fake de trazas falla y lee como el adaptador real.
+34. **Límite aceptado por diseño:** si cinco ids seguidos chocan (mismo
+    segundo y mismo token aleatorio cinco veces), la traza de ese turno no
+    se escribe y se avisa; la conversación sigue con un id nuevo.
+35. **POR VERIFICAR de §10, resuelto (2026-10-27):** OpenCode ya no manda
+    `completion_tokens_details`, ni con stream ni sin él (en los hitos 3 y 4
+    sí llegaba). Su propio `usage.opencode.tokens.reasoning` vale 0 aunque
+    "OK" cueste 102 tokens de salida: el desglose "(N reasoning)" casi nunca
+    saldrá con OpenCode. A cambio manda su coste: `usage.opencode.list_cost`
+    coincide al dígito con el que calcula el catálogo (15 de entrada y 120 de
+    salida con `glm-5.3-flash`: 0,00006225 $).
