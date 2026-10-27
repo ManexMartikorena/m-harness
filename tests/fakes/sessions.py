@@ -13,6 +13,7 @@ from mharness.domain.session import (
     Session,
     SessionEntry,
     SessionError,
+    SessionExists,
     SessionHeader,
     SessionInUse,
     SessionNotFound,
@@ -68,7 +69,7 @@ class MemorySessionStore:
 
     async def create(self, header: SessionHeader) -> MemoryLog:
         if header.id in self.sessions:
-            raise SessionError(f"cannot save session {header.id}: File exists")
+            raise SessionExists(f"session {header.id} already exists")
         self.sessions[header.id] = _Stored(header)
         self.locked.add(header.id)
         return MemoryLog(self, header.id)

@@ -109,6 +109,11 @@ class SessionError(Exception):
     """A session cannot be used; the message says why."""
 
 
+class SessionExists(SessionError):
+    """A new session's id is already taken: the conversation takes another
+    (spec hito 7, §12)."""
+
+
 class SessionNotFound(SessionError):
     """No session with that id."""
 

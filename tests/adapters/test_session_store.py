@@ -18,6 +18,7 @@ from mharness.domain.session import (
     ModelEntry,
     SessionCorrupt,
     SessionError,
+    SessionExists,
     SessionHeader,
     SessionInUse,
     SessionNotFound,
@@ -417,6 +418,20 @@ async def test_a_disk_failure_creating_is_a_session_error(
         await JsonlSessionStore(folder).create(HEADER)
     # Not left half made: the conversation tries again with another id.
     assert not exists(file_of(folder))
+
+
+async def test_an_id_that_exists_is_a_clash(folder: Path) -> None:
+    # The conversation takes another id (spec hito 7, §12).
+    store = JsonlSessionStore(folder)
+    log = await store.create(HEADER)
+    await log.close()
+
+    with pytest.raises(SessionExists, match=f"session {HEADER.id} already exists"):
+        await store.create(HEADER)
+    # The one that was there is untouched.
+    session, again = await store.open(HEADER.id)
+    await again.close()
+    assert session.header == HEADER
 
 
 async def test_a_disk_failure_opening_is_a_session_error(

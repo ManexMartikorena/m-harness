@@ -22,6 +22,7 @@ from mharness.domain.session import (
     SessionCorrupt,
     SessionEntry,
     SessionError,
+    SessionExists,
     SessionHeader,
     SessionInUse,
     SessionNotFound,
@@ -95,6 +96,8 @@ class JsonlSessionStore:
             # mkdir follows the umask: the mode is set after.
             self._folder.chmod(0o700)
             fd = os.open(path, _CREATE, 0o600)
+        except FileExistsError:
+            raise SessionExists(f"session {header.id} already exists") from None
         except OSError as exc:
             raise _cannot_save(path, exc) from None
         log = JsonlLog(fd, path)
