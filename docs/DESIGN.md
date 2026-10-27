@@ -204,6 +204,9 @@ ModelRequest(model, system, messages, tools: list[ToolSpec], max_tokens)
 # (Anotado el 26/10/2026, spec mejora-2026-10-26-deuda-pre-hito-6, C1:
 #  `max_tokens` no existe todavía; la spec del hito 2, §1.6, lo aplazó. Se
 #  decide con los límites de tokens: por turno, hito 8; contexto, hito 11.)
+# (Decidido el 27/10/2026, spec del hito 8, §1.1: el tope de tokens por
+#  turno lo aplica el bucle con el uso sumado, sin `max_tokens`; el de cada
+#  llamada sigue para el hito 11.)
 ToolSpec(name, description, input_schema)       # JSON Schema generado por Pydantic
 
 # Respuesta del modelo, en streaming             (adaptador → bucle)
@@ -355,8 +358,8 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   user-agent y un identificador de sesión estable, como pide OpenCode Go a los
   clientes de terceros.
 - **Herramientas:** tipadas con Pydantic, con mínimo privilegio. Crecen por
-  hitos: solo lectura (hito 4) → efecto (5) → memoria (13) → subagentes (15) →
-  MCP (16) → web (17).
+  hitos: solo lectura (hito 4) → efecto (5) → memoria (14) → subagentes (16) →
+  MCP (17) → web (19). *(Números al día con el plan del 27/10/2026.)*
 - **System prompt:** composición por capas (base + entorno + `AGENTS.md` del
   proyecto + skills + memoria), con plantillas versionadas en el repositorio y
   evaluadas como código (hito 10).
@@ -364,7 +367,12 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   contenido se carga bajo demanda (hito 13).
 - **Supervisión:** toda herramienta con efecto pide aprobación. "Aprobar para
   toda la sesión" es la única forma de autonomía; no hay modo sin aprobaciones
-  en v1.
+  en v1. *(Cambiado el 27/10/2026 por decisión del mantenedor, spec del
+  hito 8, §1.2: sin persona (`maha -p`, evals), `--allow TOOL` aprueba
+  solo lo que tiene ámbito; lo que con persona pregunta "cada vez" (fuera del directorio,
+  secretos, ficheros que ejecutan código) se deniega siempre. Solo por la
+  línea de comandos, nunca por configuración. Los modos de permiso, en el
+  hito 15.)*
 
 ## 9. Evals
 - **Batería:** tareas genéricas en `evals/tasks/`. Cada tarea define un repo de
@@ -387,6 +395,15 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   cada push.
 - **Línea base:** cada ejecución de referencia se guarda en `evals/baselines/`
   con fecha y modelo.
+- *(Concretado el 27/10/2026, spec del hito 8, §1.5–§1.9, decisión del
+  mantenedor: la comprobación también puede mirar la respuesta final; cada
+  tarea corre en una copia temporal de su fixture, con `AllowList` y sin
+  `run_command` hasta el sandbox del hito 15; en paralelo (`--jobs`); 1
+  repetición al iterar y 5 para la línea base y antes de cada merge, con
+  dos modelos (`glm-5.3-flash` y `kimi-k2.7-code`); la línea base guarda
+  solo métricas; los errores del proveedor no cuentan como fallo;
+  regresión: una tarea que pasaba siempre y falla, menos éxito total, o
+  coste o pasos +20 %.)*
 - **Puerta:** todo cambio en prompts, bucle, herramientas, contexto o memoria
   se evalúa contra la última línea base antes del merge, y el resultado se
   anota en la spec.

@@ -60,14 +60,17 @@ mantenedor):
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** proponer la spec del hito 8 (milestone "Hito 8"; evals y modo no interactivo,
-   DESIGN §9 y §14) en su propio PR (`docs/spec-hito-8-…`), con sus dudas y
-   recomendaciones. El hito 8 ya recoge P1 y P2 de la comparativa: `maha
-   -p`, `-c`/`-r`, `--model`, salida JSON, stdin, códigos de salida, topes
-   de pasos y coste, reintentos con modelo de respaldo, `maha models`,
-   `sessions`, `stats` y `export`, y la batería de evals con su línea base.
-2. **Mantenedor:** responder las dudas de esa spec.
-3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+1. ~~**Agente:** proponer la spec del hito 8~~ Hecho el 2026-10-27:
+   `docs/specs/hito-8-evals-no-interactivo.md`, en PROPUESTA, en su PR
+   (milestone "Hito 8"). Recoge P1 y P2 de la comparativa y los pendientes
+   de las specs 3 a 7.
+2. **Mantenedor:** integrar el PR de la spec (es la aprobación). Las
+   dudas ya están respondidas (2026-10-27, "la opción más profesional y que
+   más valor aporte"; §11): cambian a 5 repeticiones y dos modelos, y entran
+   `--jobs` y los errores de infraestructura.
+3. **Agente:** tras el merge, el PR 1 del hito 8 (núcleo sin persona:
+   límites del turno, `AllowList`, `run_once`).
+4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
