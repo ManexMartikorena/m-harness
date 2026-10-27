@@ -887,8 +887,9 @@ async def test_an_id_whose_trace_exists_is_not_taken() -> None:
     assert traces.events(second)[0] == "turn_started"
 
 
-async def test_an_id_whose_session_exists_moves_the_trace_to_a_new_one() -> None:
-    # A session without trace (of hito 6) already has the id.
+async def test_an_id_whose_session_has_no_trace_is_not_taken() -> None:
+    # A session without trace (of hito 6) already has the id: checked when
+    # the id is reserved, before anything is written (audit of hito 7, 2).
     store = MemorySessionStore()
     old = World(store, FakeModelClient([reply("Viejo")]))
     first = await old.sessions.start()
@@ -903,7 +904,8 @@ async def test_an_id_whose_session_exists_moves_the_trace_to_a_new_one() -> None
     second = "20261026-091502-b01c"
     assert conversation.id == second
     assert entries(store, second)[0] == MessageEntry(message=user("B"))
-    assert FIRST not in traces.traces
+    # Not created and moved later: never created.
+    assert traces.created == [second]
     records = await traces.read(second)
     assert records[0].event.type == "turn_started"
     assert {r.session for r in records} == {second}
@@ -1032,3 +1034,81 @@ async def test_keyboard_interrupt_is_traced_as_interrupted() -> None:
         await turn(conversation, "Hola")
 
     assert world.traces.events(FIRST)[-1] == "interrupted"
+
+
+class Liar(MemorySessionStore):
+    """Says no id is taken: the clash shows only when creating."""
+
+    async def exists(self, session_id: str) -> bool:
+        return False
+
+
+async def test_a_failed_move_never_leaves_the_trace_under_another_id() -> None:
+    store = Liar()
+    old = World(store, FakeModelClient([reply("Viejo")]))
+    first = await old.sessions.start()
+    await turn(first, "A")
+    await first.close()
+    traces = MemoryTraceSink()
+    world = World(store, FakeModelClient([reply("Nuevo")]), traces=traces)
+    conversation = await world.sessions.start()
+    traces.read_failures = 1
+
+    await turn(conversation, "B")
+
+    # The trace of FIRST is not left with this conversation's turn.
+    assert FIRST not in traces.traces
+    assert conversation.id == "20261026-091502-b01c"
+    assert conversation.trace_warning() is not None
+
+
+async def test_a_trace_that_opens_late_still_starts_with_its_turn() -> None:
+    # It failed on TurnStarted and opened on the next event (audit of
+    # hito 7, 11): /trace must not hide the turn.
+    traces = MemoryTraceSink()
+    traces.open_failures = 1
+    world = World(MemorySessionStore(), FakeModelClient([reply("Hola")]), traces=traces)
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "Hola")
+
+    assert traces.events(FIRST) == [
+        "turn_started",
+        "model_call_finished",
+        "turn_finished",
+    ]
+    records = await traces.read(FIRST)
+    assert records[0].event == TurnStarted(text="Hola")
+    assert conversation.trace_warning() is not None
+
+
+async def test_a_failed_sync_is_told() -> None:
+    traces = MemoryTraceSink()
+    traces.sync_failures = 1
+    world = World(MemorySessionStore(), FakeModelClient([reply("Hola")]), traces=traces)
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "Hola")
+
+    warning = conversation.trace_warning()
+    assert warning is not None
+    assert "Input/output error" in warning
+
+
+async def test_without_a_free_id_for_the_trace_the_turn_goes_on() -> None:
+    traces = MemoryTraceSink()
+    tokens = ["3fa2", "b01c", "c0de", "d00d", "e1e1", "f0f0"]
+    for token in tokens[:5]:
+        await traces.open(f"20261026-091502-{token}", new=True)
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Hola")]), traces=traces, tokens=tokens)
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "Hola")
+
+    warning = conversation.trace_warning()
+    assert warning is not None
+    assert "no free id" in warning
+    assert [type(e).__name__ for e in entries(store, conversation.id)][-1] == (
+        "UsageEntry"
+    )

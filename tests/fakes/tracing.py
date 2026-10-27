@@ -57,6 +57,8 @@ class MemoryTraceSink:
         self.read_failures = 0
         self.synced = 0
         self.logs: list[MemoryTraceLog] = []
+        # Every session whose trace was created, in order.
+        self.created: list[str] = []
 
     async def open(self, session: str, *, new: bool = False) -> MemoryTraceLog:
         _check(session)
@@ -66,6 +68,8 @@ class MemoryTraceSink:
             self.open_failures -= 1
             raise TraceError(f"cannot write the trace of {session}: Permission denied")
         # The file exists from here on, even without records.
+        if session not in self.traces:
+            self.created.append(session)
         lines = self.traces.setdefault(session, [])
         log = MemoryTraceLog(self, session, lines)
         self.logs.append(log)

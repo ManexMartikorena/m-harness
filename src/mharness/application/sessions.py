@@ -17,7 +17,12 @@ from decimal import Decimal
 
 from mharness.application.agent import Agent
 from mharness.application.traces import TraceSummary, summarize
-from mharness.domain.agent_events import AgentEvent, ModelCallFinished, TurnFinished
+from mharness.domain.agent_events import (
+    AgentEvent,
+    ModelCallFinished,
+    TurnFinished,
+    TurnStarted,
+)
 from mharness.domain.catalog import add_cost
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
@@ -118,6 +123,11 @@ class Conversation:
         # The first failure of the trace, until it is told.
         self._trace_problem: str | None = None
         self._trace_failed = False
+        # The turn in progress, and whether its start is in the trace: one
+        # that opens late starts with it anyway (audit of hito 7, 11).
+        self._turn = TurnStarted(text="")
+        self._turn_at = self._created
+        self._turn_traced = True
         # The model a new session's header names: the one it started with.
         self._first_model = agent.model
         # How many messages of the agent are already queued or saved.
@@ -157,6 +167,9 @@ class Conversation:
         cost: Decimal | None = Decimal(0)
         # Once the turn finished, what comes after is not about it.
         finished = False
+        self._turn = TurnStarted(text=text)
+        self._turn_at = self._origin.now()
+        self._turn_traced = False
         try:
             async with aclosing(self._agent.run(text)) as events:
                 async for event in events:
@@ -223,24 +236,39 @@ class Conversation:
         try:
             if self._trace is None:
                 self._trace = await self._open_trace()
-            record = TraceRecord(at=self._origin.now(), session=self.id, event=event)
-            try:
-                masked = redact(record, self._origin.masked)
-            except ValueError as exc:
-                # A secret equal to a fixed value ("tool_call"): masked, the
-                # record is no longer one. It is lost, never the turn.
-                raise TraceError(f"cannot trace a {event.type} event: {exc}") from None
-            await self._trace.write(masked)
+            log = self._trace
+            if not self._turn_traced and not isinstance(event, TurnStarted):
+                await self._write(log, self._turn_at, self._turn)
+                self._turn_traced = True
+            await self._write(log, self._origin.now(), event)
+            if isinstance(event, TurnStarted):
+                self._turn_traced = True
         except TraceError as exc:
             self._trace_trouble(exc)
 
+    async def _write(self, log: TraceLog, at: datetime, event: TraceEvent) -> None:
+        record = TraceRecord(at=at, session=self.id, event=event)
+        try:
+            masked = redact(record, self._origin.masked)
+        except ValueError as exc:
+            # A secret equal to a fixed value ("tool_call"): masked, the
+            # record is no longer one. It is lost, never the turn.
+            raise TraceError(f"cannot trace a {event.type} event: {exc}") from None
+        await log.write(masked)
+
     async def _open_trace(self) -> TraceLog:
-        """The trace of this session. A new session's is created only if
-        no other has that id; if one has it, this one takes another."""
+        """The trace of this session. A new session takes an id that no
+        session has, and reserves it creating its trace only if there is
+        none; another maha cannot create a session with that id in
+        between, because it would need that same trace first."""
         traces = self._origin.traces
         if self._reserved:
             return await traces.open(self.id)
         for _ in range(ID_ATTEMPTS):
+            if await self._store.exists(self.id):
+                # A session without a trace (of hito 6) has it.
+                self.id = self._new_id()
+                continue
             try:
                 log = await traces.open(self.id, new=True)
             except TraceExists:
@@ -314,14 +342,18 @@ class Conversation:
         # The trace is reserved again under the new id when it moves.
         self._reserved = False
         traces = self._origin.traces
+        if self._trace is not None:
+            await self._trace.close()
+            self._trace = None
         try:
-            if self._trace is not None:
-                await self._trace.close()
-                self._trace = None
             records = await traces.read(old)
             self._trace = await self._open_trace()
             for record in records:
                 await self._trace.write(record.model_copy(update={"session": self.id}))
+        except TraceError as exc:
+            self._trace_trouble(exc)
+        # Moved or not, it never stays under an id that another session has.
+        try:
             await traces.delete(old)
         except TraceError as exc:
             self._trace_trouble(exc)
