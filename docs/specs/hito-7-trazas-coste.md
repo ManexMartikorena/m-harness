@@ -751,10 +751,27 @@ primero:
     registros de ese turno anteriores a encontrar un id libre no se
     escriben y se avisa; la conversación sigue con un id nuevo y lo
     siguiente sí se traza. La alternativa es no poner tope a los intentos.
-35. **POR VERIFICAR de §10, resuelto (2026-10-27):** OpenCode ya no manda
-    `completion_tokens_details`, ni con stream ni sin él (en los hitos 3 y 4
-    sí llegaba). Su propio `usage.opencode.tokens.reasoning` vale 0 aunque
-    "OK" cueste 102 tokens de salida: el desglose "(N reasoning)" casi nunca
-    saldrá con OpenCode. A cambio manda su coste: `usage.opencode.list_cost`
+35. **POR VERIFICAR de §10, resuelto (2026-10-27):** depende del modelo.
+    Con `glm-5.3-flash`, OpenCode ya no manda `completion_tokens_details`, ni
+    con stream ni sin él (en los hitos 3 y 4 sí llegaba), y su propio
+    `usage.opencode.tokens.reasoning` vale 0 aunque "OK" cueste 102 tokens
+    de salida. Con `deepseek-v4.1-flash` sí llegan (34 de 36). A cambio manda su coste: `usage.opencode.list_cost`
     coincide al dígito con el que calcula el catálogo (15 de entrada y 120 de
     salida con `glm-5.3-flash`: 0,00006225 $).
+
+### El coste del proveedor (`feature/hito-7-coste-proveedor`, 2026-10-27)
+
+36. **`allowance` no es siempre el precio de lista.** Medido con
+    `deepseek-v4.1-flash` en hora valle (martes, 10:03 UTC): `list_cost` es
+    el precio de valle exacto (485 de entrada y 36 de salida: 0,00009435 $),
+    y `allowance`, lo que cuenta contra el límite, es el 75 % (0,00007076 $),
+    algo que la documentación no dice. Con `glm-5.3-flash` los dos son
+    iguales. Un turno real de `maha` guardó 0,00015896 $: el 75 % del precio
+    de valle de sus 1405 y 2 tokens. El catálogo habría dicho 0,0004239 $
+    (punta y sin el descuento): 2,7 veces más. La decisión del mantenedor
+    (§11) da el coste real.
+37. **Valores raros del proveedor** (texto, `NaN`, booleanos, negativos) se
+    ignoran y decide el catálogo; nunca se pierde la respuesta por ellos.
+38. **`Usd` pasa a `domain/money.py`:** lo usan el modelo (`ModelResponse`,
+    `MessageEnd`) y el catálogo, y `domain/catalog.py` ya importa
+    `domain/model.py`.
