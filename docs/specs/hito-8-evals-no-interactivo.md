@@ -119,7 +119,8 @@ class TurnLimits(BaseModel, frozen=True):
 - **Tiempo:** el turno entero va dentro de `asyncio.timeout`. Al vencer se
   cancela como Ctrl+C, por el camino que ya existe y está probado: lo
   ejecutado consta y la traza lo apunta `interrupted` (spec 7, §12.26), con
-  la causa `timeout`.
+  la causa `timeout`. *(Corregido al implementarlo, §12.1: el plazo va en
+  cada espera del bucle y el turno acaba con `TurnFinished(reason="timeout")`.)*
 
 ### 1.2 Política de aprobación sin persona: `AllowList`
 
@@ -147,7 +148,8 @@ ajeno no puede darse permisos (duda 1).
 
 ### 1.3 Una ejecución de un turno: `application/headless.py`
 
-`run_once(conversation, text, limits) -> RunResult` ejecuta un turno, junta
+`run_once(conversation, text, limits) -> RunResult` *(al implementarlo,
+§12.3: sin `limits`, que ya lleva el `Agent`)* ejecuta un turno, junta
 los eventos y devuelve un resumen. Lo usan `maha -p` y `maha eval`, así que
 las evals miden exactamente lo que hace `-p`:
 
@@ -461,7 +463,8 @@ timeout = 600        # segundos por turno
 ```
 
 Las opciones de la línea de comandos mandan sobre la configuración. Un
-proyecto puede poner límites (solo restringen) y un modelo de respaldo (como
+proyecto puede poner límites (solo restringen: de cada uno vale el más
+estricto de los dos ficheros, §12.4) y un modelo de respaldo (como
 ya elige el modelo), pero no permisos (§1.2). Ninguna variable de entorno
 nueva.
 
@@ -726,4 +729,34 @@ agente:
 
 ## 12. Aprendido al implementar
 
-(Se añade al implementar.)
+### PR 1 (`feature/hito-8-nucleo`, 2026-10-27)
+
+1. **El tiempo límite no puede ir alrededor del generador.** Con un
+   `asyncio.timeout` que abarca un `yield`, la cancelación cae en el
+   código de quien lee los eventos (la terminal pintando), no en el bucle;
+   y el bucle lo tomaría por Ctrl+C ("cancelled by the user"). Solución:
+   `_within()` pone el plazo en cada espera del bucle (el siguiente trozo
+   del modelo, preparar la llamada, la aprobación, la herramienta) y, al
+   vencer, el turno acaba con `TurnFinished(reason="timeout")`, como los
+   demás límites. Conserva lo ejecutado como tras Ctrl+C, con "stopped by
+   the time limit" en la llamada en curso. Un `TimeoutError` que no causó
+   el plazo sigue siendo el de quien lo lanzó (`scope.expired()`).
+2. **Una respuesta a medias no se guarda al vencer el plazo:** su marca
+   diría "[interrupted by the user]". Si no se ejecutó nada, no queda nada,
+   como tras Ctrl+C.
+3. **`run_once` no recibe límites:** los lleva el `Agent` desde su fábrica
+   (`bootstrap` con los de la configuración; las evals, con los de su
+   tarea). `tool_calls` se cuenta en cada `ToolFinished`, para que también
+   salga bien si el modelo falla a mitad del turno.
+4. **"Un proyecto solo restringe" necesitaba código:** con "el proyecto
+   gana", un `.maha/config.toml` con `max_steps = 1000` aflojaría los 25
+   del usuario. De cada límite vale el más estricto de los dos ficheros.
+5. **`AllowList` se apoya en que lo que pregunta cada vez llega sin
+   ámbito:** fijado con un test sobre las herramientas reales (un `.env`,
+   una ruta de fuera y `.github/workflows/ci.yml`).
+6. **Verificación a mano** (OpenCode Go, `glm-5.3-flash`, configuración
+   temporal): `max_steps = 1` para tras la primera llamada ("[step limit
+   reached: 1]"); `timeout = 0.5` corta la respuesta ("[time limit
+   reached]") y la traza dice `"reason": "timeout"`. Encontró un fallo,
+   arreglado con su test: tras un corte sin ninguna llamada terminada, la
+   terminal pintaba "[tokens: 0 in · 0 out · $0 …]".
