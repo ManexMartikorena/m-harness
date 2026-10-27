@@ -693,7 +693,9 @@ async def test_step_limit_is_shown() -> None:
     assert "  [step limit reached: 2]\n  [tokens: 2 in · 2 out · 2 calls]\n" in out
 
 
-async def test_internal_tool_error_goes_to_stderr() -> None:
+async def test_internal_tool_error_goes_to_stderr_and_the_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     fake = FakeModelClient([tool_calls(call("c1")), reply("Vaya.")])
 
     _, out, err = await run_with_tools(
@@ -702,6 +704,9 @@ async def test_internal_tool_error_goes_to_stderr() -> None:
 
     assert '  ✗ error: internal error in tool "echo"\n' in out
     assert err == "warning: tool \"echo\" failed: KeyError: 'boom'\n"
+    # A bug of ours: for whoever maintains maha (spec hito 7, §1.11).
+    [warning] = [r for r in caplog.records if r.name.startswith("mharness")]
+    assert warning.getMessage() == "tool echo failed: KeyError: 'boom'"
 
 
 class BrokenGate:

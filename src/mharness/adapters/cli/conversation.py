@@ -6,6 +6,7 @@ call the agent makes (spec hito 4, §1.9).
 
 import asyncio
 import json
+import logging
 import signal
 import sys
 from contextlib import aclosing
@@ -30,6 +31,9 @@ from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import Usage
 from mharness.ports.catalog import ModelCatalog
+
+# Bugs of ours, for whoever maintains maha (spec hito 7, §1.11).
+_log = logging.getLogger(__name__)
 
 # Terminal convention for a program stopped by Ctrl+C: 128 + SIGINT.
 EXIT_INTERRUPTED = 130
@@ -196,6 +200,11 @@ async def _answer(
                         mark = "✗" if event.result.is_error else "✓"
                         print(f"  {mark} {clean(event.summary)}", file=out, flush=True)
                         if event.internal_error:
+                            _log.warning(
+                                "tool %s failed: %s",
+                                event.call.name,
+                                event.internal_error,
+                            )
                             print(
                                 f'warning: tool "{clean(event.call.name)}" failed: '
                                 f"{clean(event.internal_error)}",
