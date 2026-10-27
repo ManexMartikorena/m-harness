@@ -582,16 +582,14 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
 subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
 mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Mantenedor (no bloquea):** decidir si el `README.md` (la cara de
-   producto) va también en inglés.
-2. **Agente:** proponer la spec del hito 8 (evals y modo no interactivo,
+1. **Agente:** proponer la spec del hito 8 (evals y modo no interactivo,
    DESIGN §9 y §14) en su propio PR (`docs/spec-hito-8-…`), con sus dudas y
    recomendaciones. El hito 8 ya recoge P1 y P2 de la comparativa: `maha
    -p`, `-c`/`-r`, `--model`, salida JSON, stdin, códigos de salida, topes
    de pasos y coste, reintentos con modelo de respaldo, `maha models`,
    `sessions`, `stats` y `export`, y la batería de evals con su línea base.
-3. **Mantenedor:** responder las dudas de esa spec.
-4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+2. **Mantenedor:** responder las dudas de esa spec.
+3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -653,8 +651,8 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   posible en capacidades e intuitivo (ANALISIS §4). Las 17 piezas son el
   mínimo; la comparación con OpenCode y Claude Code (`docs/COMPARATIVA.md`)
   propone qué más entra y cuándo.
-- **Dos caras en GitHub** (2026-10-27): `README.md` como producto y
-  `docs/PROYECTO.md` como proyecto; las dos al día en cada cierre de hito
+- **Dos caras en GitHub** (2026-10-27): el producto en `README.md`
+  (inglés) y `README.es.md` (español), y el proyecto en `docs/PROYECTO.md`; las dos al día en cada cierre de hito
   (AGENTS.md, DESIGN §13).
 - **Distribución pública en la 1.0** (2026-10-27): instalable para
   cualquier usuario y con documentación de usuario (DESIGN §13, hito 23).

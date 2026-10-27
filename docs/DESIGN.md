@@ -493,8 +493,9 @@ método se convierte aquí en distribución.
 - **Desde el hito 1:** `uv tool install git+https://github.com/ManexMartikorena/m-harness`
   instala el comando `maha` en cualquier máquina con uv.
 - **Dos caras en GitHub** *(27/10/2026, decisión del mantenedor)*: el
-  `README.md` es la página del producto (qué es, qué hace, cómo se instala y
-  se usa) y `docs/PROYECTO.md` la del proyecto (objetivo, cómo se construye,
+  `README.md` (en inglés) y `README.es.md` (en español) son la página del
+  producto (qué es, qué hace, cómo se instala y se usa) y `docs/PROYECTO.md`
+  la del proyecto (objetivo, cómo se construye,
   hoja de ruta y cómo hacerlo desde cero). Las dos se ponen al día al cerrar
   cada hito (`AGENTS.md`).
 - **Cada hito:** tag anotado `v0.N.0`. Su push dispara el workflow que crea la

@@ -1,18 +1,19 @@
 # maha
 
+[Español](README.es.md) · **English**
+
 [![CI](https://github.com/ManexMartikorena/m-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/ManexMartikorena/m-harness/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ManexMartikorena/m-harness)](https://github.com/ManexMartikorena/m-harness/releases)
-[![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**Un agente de IA para la terminal.** Le pides algo en lenguaje natural y
-`maha` lee tu código, busca, escribe, edita y ejecuta comandos para
-hacerlo, **preguntándote antes de cada cambio**. Funciona con el proveedor y
-el modelo que elijas, y te dice en cada turno lo que ha costado.
+**An AI agent for your terminal.** Ask for something in plain language and
+`maha` reads your code, searches, writes, edits and runs commands to get it
+done, **asking you before every change**. It works with the provider and
+model you choose, and tells you what each turn cost.
 
-> 🚧 **En desarrollo: `v0.7.0`.** Ya es usable para trabajar en un
-> proyecto: conversar, leer y cambiar ficheros, ejecutar comandos, guardar y
-> retomar sesiones, y ver el coste. Lo que viene, en la [hoja de
-> ruta](#hoja-de-ruta).
+> 🚧 **In development: `v0.7.0`.** Already usable to work on a project:
+> chat, read and change files, run commands, save and resume sessions, and
+> see the cost. What comes next is in the [roadmap](#roadmap).
 
 ```
 $ maha
@@ -33,126 +34,128 @@ En notas.txt pone: "comprar pan".
   ✓ 1 replacement
 ```
 
-## Qué hace
+*(A real session, in Spanish: you talk to `maha` in any language.)*
 
-- **Trabaja en tu proyecto.** Lee, lista y busca ficheros (`read_file`,
-  `list_dir`, `glob`, `grep`, respetando `.gitignore`), los escribe y edita
-  (`write_file`, `edit_file`, con el diff a la vista) y ejecuta comandos
+## What it does
+
+- **Works on your project.** Reads, lists and searches files (`read_file`,
+  `list_dir`, `glob`, `grep`, honoring `.gitignore`), writes and edits them
+  (`write_file`, `edit_file`, showing the diff) and runs commands
   (`run_command`).
-- **Nada cambia sin tu permiso.** Cada escritura y cada comando te preguntan
-  antes: una vez, siempre en esta sesión, o no. Leer fuera del directorio o
-  un fichero secreto (`.env`, claves, `.ssh`…) también pregunta. Los
-  comandos no reciben tu clave del proveedor.
-- **El modelo y el proveedor que quieras.** Formato de OpenAI de serie, con
-  OpenCode Go y Zen ya configurados, y cualquier servidor compatible que
-  declares. Cambias de modelo con `/model` o en la configuración.
-- **Sesiones que no se pierden.** Cada conversación se guarda sola, turno a
-  turno, y se retoma desde cualquier directorio.
-- **Sabes lo que gastas.** Cada turno dice sus tokens y su coste, y la
-  sesión lo que lleva. Con OpenCode Go, lo que cuenta contra tu límite
-  mensual.
-- **Todo queda registrado, sin tus secretos.** Cada sesión deja una traza
-  de lo que hizo el agente; `/trace` la resume.
+- **Nothing changes without your permission.** Every write and every command
+  asks first: once, always in this session, or no. Reading outside the
+  working directory or a secret file (`.env`, keys, `.ssh`…) asks too.
+  Commands never get your provider key.
+- **The model and provider you want.** OpenAI format out of the box, with
+  OpenCode Go and Zen already configured, and any compatible server you
+  declare. Switch models with `/model` or in the configuration.
+- **Sessions that are never lost.** Every conversation saves itself, turn by
+  turn, and can be resumed from any directory.
+- **You know what you spend.** Every turn shows its tokens and cost, and the
+  session its total. With OpenCode Go, what counts against your monthly
+  limit.
+- **Everything is recorded, without your secrets.** Each session leaves a
+  trace of what the agent did; `/trace` summarizes it.
 
-## Instalación
+## Installation
 
-Necesitas [uv](https://docs.astral.sh/uv/) (instala también Python 3.14 si
-falta).
+You need [uv](https://docs.astral.sh/uv/) (it also installs Python 3.14 if
+missing).
 
 ```
 uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.7.0
 ```
 
-Después, elige proveedor y modelo:
+Then choose a provider and a model:
 
 ```toml
 # ~/.config/maha/config.toml
-provider = "opencode-go"   # o "opencode-zen"
+provider = "opencode-go"   # or "opencode-zen"
 model = "glm-5.3-flash"
 ```
 
-y deja la clave en una variable de entorno:
+and put the key in an environment variable:
 
 ```
 export OPENCODE_API_KEY=...
 maha
 ```
 
-`maha` trabaja sobre el directorio donde lo abres.
+`maha` works on the directory where you open it.
 
-### Otro proveedor
+### Another provider
 
-Cualquier servidor con el formato de OpenAI, declarado en tu configuración:
+Any server with the OpenAI format, declared in your configuration:
 
 ```toml
 # ~/.config/maha/config.toml
 provider = "local"
-model = "el-id-de-tu-modelo"
+model = "your-model-id"
 
 [providers.local]
 base_url = "http://localhost:11434/v1"
-# api_key_env = "MI_CLAVE"   # sin ella, no se envía clave
+# api_key_env = "MY_KEY"   # without it, no key is sent
 ```
 
-Un proyecto puede elegir su proveedor y modelo en `.maha/config.toml`, pero
-nunca declarar proveedores: así un repositorio ajeno no puede llevarse tu
-clave a otro servidor.
+A project can choose its provider and model in `.maha/config.toml`, but never
+declare providers: that way a foreign repository cannot send your key to
+another server.
 
-## Uso
+## Usage
 
-| Comando | Qué hace |
+| Command | What it does |
 |---|---|
-| `/help` | Lista los comandos |
-| `/model [ID]` | Enseña el modelo, o lo cambia |
-| `/sessions` | Las sesiones recientes, de todos los directorios |
-| `/resume [ID]` | Retoma una sesión; sin ID, la última de este directorio |
-| `/delete ID` | Borra una sesión y su traza |
-| `/trace [ID]` | Lo que hizo y costó una sesión, turno a turno |
-| `/exit` | Sale (también Ctrl+D) |
+| `/help` | Lists the commands |
+| `/model [ID]` | Shows the model, or changes it |
+| `/sessions` | Recent sessions, from every directory |
+| `/resume [ID]` | Resumes a session; without ID, the last one here |
+| `/delete ID` | Deletes a session and its trace |
+| `/trace [ID]` | What a session did and cost, turn by turn |
+| `/exit` | Quits (also Ctrl+D) |
 
-- **Ctrl+C** a mitad de una respuesta la corta y vuelve al prompt; el
-  modelo sabe que la cortaste. En el prompt, sale.
-- **Sin terminal** (`maha < instrucciones.txt`), todo lo que tiene efecto
-  se deniega.
+- **Ctrl+C** in the middle of an answer cuts it and returns to the prompt;
+  the model knows you cut it. At the prompt, it quits.
+- **Without a terminal** (`maha < instructions.txt`), everything with an
+  effect is denied.
 
-### Dónde guarda cada cosa
+### Where it keeps things
 
-| Qué | Dónde |
+| What | Where |
 |---|---|
-| Configuración | `~/.config/maha/config.toml` |
-| Precios propios (opcional) | `~/.config/maha/models.toml` |
-| Sesiones | `~/.local/share/maha/sessions/` |
-| Trazas | `~/.local/share/maha/traces/` |
-| Registro de diagnóstico | `~/.local/state/maha/maha.log` |
+| Configuration | `~/.config/maha/config.toml` |
+| Own prices (optional) | `~/.config/maha/models.toml` |
+| Sessions | `~/.local/share/maha/sessions/` |
+| Traces | `~/.local/share/maha/traces/` |
+| Diagnostic log | `~/.local/state/maha/maha.log` |
 
-Todo es local. Las sesiones, las trazas y el registro solo los puede leer
-tu usuario. Respeta las variables `XDG_*`.
+Everything is local. Sessions, traces and the log are readable only by your
+user. It honors the `XDG_*` variables.
 
-## Hoja de ruta
+## Roadmap
 
-`maha` crece hito a hito hasta la versión 1.0. Lo siguiente:
+`maha` grows milestone by milestone up to version 1.0. Next:
 
-- **Modo no interactivo y evals:** `maha -p "…"` para scripts, retomar al
-  arrancar, salida JSON, topes de coste, `maha stats`.
-- **Más proveedores:** formato de Anthropic, esfuerzo de razonamiento.
-- **Instrucciones del proyecto** (`AGENTS.md`, `/init`), compactación del
-  contexto y **deshacer** cambios.
-- **Skills y comandos propios, memoria entre sesiones, sandbox, modos de
-  permiso, subagentes, MCP y hooks.**
-- **Web e imágenes.**
-- **Una interfaz a pantalla completa**, con menú de comandos y navegación
-  sencilla.
-- **La 1.0**, instalable para cualquier usuario y con su documentación.
+- **Non-interactive mode and evals:** `maha -p "…"` for scripts, resuming at
+  start, JSON output, cost limits, `maha stats`.
+- **More providers:** the Anthropic format, reasoning effort.
+- **Project instructions** (`AGENTS.md`, `/init`), context compaction and
+  **undo**.
+- **Skills and custom commands, memory across sessions, sandbox, permission
+  modes, subagents, MCP and hooks.**
+- **Web and images.**
+- **A full-screen interface**, with a command menu and easy navigation.
+- **Version 1.0**, installable for any user and documented.
 
-El plan completo, hito a hito: [el proyecto](docs/PROYECTO.md#hoja-de-ruta).
+The full plan, milestone by milestone, is in [the project](docs/PROYECTO.md#hoja-de-ruta)
+(in Spanish).
 
-## El proyecto
+## The project
 
-`maha` se construye desde cero y a la vista: sin frameworks de agentes, cada
-pieza en su propio PR, con su spec, sus tests y una nota que explica el
-concepto. Si quieres saber cómo funciona un agente por dentro, o construir
-el tuyo, empieza por **[cómo se ha hecho](docs/PROYECTO.md)**.
+`maha` is built from scratch and in the open: no agent frameworks, each piece
+in its own PR, with its spec, its tests and a note that explains the
+concept. To learn how an agent works inside, or to build your own, start
+with **[how it was built](docs/PROYECTO.md)** (in Spanish).
 
-## Licencia
+## License
 
 [MIT](LICENSE)
