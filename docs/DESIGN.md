@@ -492,6 +492,11 @@ Es un producto local: no hay servidor que desplegar. La fase de despliegue del
 método se convierte aquí en distribución.
 - **Desde el hito 1:** `uv tool install git+https://github.com/ManexMartikorena/m-harness`
   instala el comando `maha` en cualquier máquina con uv.
+- **Dos caras en GitHub** *(27/10/2026, decisión del mantenedor)*: el
+  `README.md` es la página del producto (qué es, qué hace, cómo se instala y
+  se usa) y `docs/PROYECTO.md` la del proyecto (objetivo, cómo se construye,
+  hoja de ruta y cómo hacerlo desde cero). Las dos se ponen al día al cerrar
+  cada hito (`AGENTS.md`).
 - **Cada hito:** tag anotado `v0.N.0`. Su push dispara el workflow que crea la
   GitHub Release con sus notas (§12).
 - **Cuando el proyecto esté maduro** (fuera de alcance v1): publicación en PyPI

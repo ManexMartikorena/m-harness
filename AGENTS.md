@@ -196,7 +196,10 @@ Desde el hito 8 (DESIGN §9).
    herramientas con efecto se prueban en un directorio desechable.
 7. **Cierre.**
    1. La spec pasa a IMPLEMENTADA, con su sección "Aprendido al implementar".
-   2. Se escribe la nota del hito en docs/guia/.
+   2. Se escribe la nota del hito en docs/guia/, y se ponen al día las dos
+      caras del proyecto: el `README.md` (el producto: qué hace, cómo se
+      instala y se usa) y `docs/PROYECTO.md` (cómo se hace y su hoja de
+      ruta). *(Añadido el 2026-10-27, por decisión del mantenedor.)*
    3. Los PRs se integran con merge commit. La rama se borra en local y se
       conserva en GitHub.
    4. Se crea el tag y el humano hace push del tag.
