@@ -143,5 +143,6 @@ agente:
 | [`guia/`](guia/README.md) | Una nota por hito: los conceptos |
 | [`specs/`](specs/) | La spec de cada hito y de cada mejora |
 | [`ESTADO.md`](ESTADO.md) | El estado del trabajo |
+| [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md) | Lo hecho en cada hito y sesión, con detalle |
 | [`MAPA.md`](MAPA.md) | Dónde está cada cosa |
 | [`PUESTA_EN_MARCHA.md`](PUESTA_EN_MARCHA.md) | Preparar una máquina para desarrollar |

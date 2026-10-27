@@ -230,8 +230,12 @@ Mantenimiento de docs/ESTADO.md:
   cerrar sesión. Nunca queda desactualizado más de una sesión.
 - "Siguiente paso" es una acción concreta y ejecutable, con responsable
   (humano o agente), no un hito.
-- Al cerrar la fase de desarrollo, su historial sale a
-  docs/HISTORIAL_DESARROLLO.md, tal cual.
+- ESTADO es corto: fase, siguiente paso, pendientes y versiones, y una
+  línea por hito en "Hecho". El detalle de lo hecho va a
+  docs/HISTORIAL_DESARROLLO.md, lo más reciente primero: al cerrar cada
+  hito, su detalle pasa allí. *(Cambiado el 2026-10-27, por decisión del
+  mantenedor; antes, el historial salía solo al cerrar la fase de
+  desarrollo.)*
 
 ## Memoria y contexto (varios PCs, varios agentes)
 - El humano trabaja este proyecto desde varios PCs sincronizados por git, y

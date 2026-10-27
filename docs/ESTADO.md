@@ -1,16 +1,15 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-27 (cierre del hito 7). **Hito 7 cerrado
-(`v0.7.0`): trazas y coste. Cero deuda conocida: tres revisiones
-independientes y la verificación a mano, todo arreglado; las dos decisiones
-que quedaban las tomó el mantenedor. Siguiente: la spec del hito 8.**
+Última actualización: 2026-10-27. **Hito 7 cerrado (`v0.7.0`). Plan
+completado y ordenado para empezar el hito 8. Cero deuda conocida.**
 
-Lo primero al abrir: "Siguiente paso", más abajo.
+Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
+está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 ## Fase actual
 
-**Desarrollo. Hito 7 cerrado (`v0.7.0`). Siguiente: hito 8 (evals y modo
-no interactivo), sin spec todavía.**
+**Desarrollo. Hitos 1 a 7 cerrados; siguiente: hito 8 (evals y modo no
+interactivo), sin spec todavía. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.7.0` — Trazas y coste** (2026-10-27):
@@ -22,565 +21,40 @@ no interactivo), sin spec todavía.**
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
 
-- Nada pendiente. `v0.7.0` sale sin pasos fuera de lo normal: ninguna
-  variable nueva. Desde esta versión `maha` escribe también en
-  `~/.local/share/maha/traces/` y `~/.local/state/maha/maha.log`, y lee el
-  `~/.config/maha/models.toml` opcional (`PUESTA_EN_MARCHA` §3).
+- Nada pendiente.
 
 ## Hecho
 
-Lo más reciente primero.
+Un resumen por hito; el detalle, en
+[`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md), y cada hito con su
+spec, su nota de la guía y su release.
 
-- **Hito 7 cerrado, 2026-10-27: `v0.7.0` — Trazas y coste.** Spec
-  IMPLEMENTADA con la verificación a mano (diez puntos en verde) y la nota
-  07 de la guía. PRs: #61, #64, #65, #66 (`v0.6.1`), #69, #70, #71, #72, #73,
-  #74, #75 y el de cierre. 1313 tests, mypy, ruff e import-linter en verde.
-- **Decisiones del mantenedor al cerrar, 2026-10-27:** sin tope de intentos
-  al buscar un id de sesión libre (spec §12.34, PR #75); y se acepta como
-  límite que la rotación de `maha.log` no se coordine entre varios `maha`
-  (§12.48).
-- **Verificación a mano y revisión final, 2026-10-27** (PR #74): la
-  verificación encontró un fallo (una carpeta bloqueada se tomaba por un
-  choque de ids) y una tercera revisión independiente, 3 más y deuda; todo
-  arreglado con su test (spec §12.44 a §12.47). Medido: OpenCode Go cuenta
-  contra el límite 1× GLM, 0,75× DeepSeek en valle y 4× Kimi K3.
-- **Hito 7, PR 5: la terminal, 2026-10-27** (PR #73): la línea de tokens
-  con razonamiento y coste, avisos del catálogo, `/trace` y `maha.log`.
-- **El coste que da el proveedor, 2026-10-27** (PR #72), por decisión del
-  mantenedor: gana al del catálogo.
+| Hito | Qué | Versión |
+|---|---|---|
+| 1 | Esqueleto, CI y reglas de arquitectura | `v0.1.0` (2026-10-20) |
+| 2 | Primera conversación con un modelo | `v0.2.0` (2026-10-20) |
+| 3 | Streaming | `v0.3.0` (2026-10-21) |
+| 4 | Tool calling y bucle agéntico | `v0.4.0` (2026-10-21) |
+| 5 | Permisos y herramientas con efecto | `v0.5.0` (2026-10-23), `v0.5.1`, `v0.5.2` (cero deuda) |
+| 6 | Sesiones e historial | `v0.6.0` (2026-10-26), `v0.6.1` |
+| 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27) |
 
-- **Auditoría del hito 7, 2026-10-27** (PR #71). El mantenedor pidió dejar
-  el hito sin deuda antes del hito 8. Dos revisiones independientes del
-  código y el repaso de los pendientes: 11 fallos y 10 puntos de deuda,
-  todos arreglados con su test (spec §12.24 a §12.35). Comprobado contra
-  OpenCode: su `list_cost` coincide al dígito con el coste del catálogo.
-- **Hito 7, PR 4: trazas, 2026-10-27** (PR #70): un JSONL por sesión en
-  `~/.local/share/maha/traces/`, enmascarado, `error` e `interrupted`, el id
-  reservado desde el principio y el resumen de `/trace`.
-- **Hito 7, PR 3: coste en el bucle y la sesión, 2026-10-27** (PR #69): el
-  coste por llamada, turno y sesión; el catálogo se carga al arrancar; un
-  turno cortado guarda lo que gastó.
-
-- **`v0.6.1`, 2026-10-27:** el arreglo de lecturas no UTF-8, publicado
-  por decisión del mantenedor antes de cerrar el hito 7. `main` ya llevaba
-  los PRs 1 y 2 del hito 7, sin cablear: no cambian lo que hace `maha`.
-- **Arreglo de lecturas no UTF-8, 2026-10-27** (PR #66): un
-  `config.toml` que no es UTF-8 tiraba `maha` con una traza; un proceso de
-  la máquina con nombre no ASCII (`ñandú`) hacía fallar todos los
-  `run_command` (`/proc/<pid>/stat` leído como ASCII). Los dos, con su test.
-- **Hito 7, PR 2: catálogo de modelos, 2026-10-27** (PR #65). El
-  mantenedor amplió el alcance al empezarlo (spec §11): **todos los modelos
-  de cada proveedor** (30 de Go y 83 de Zen) **y precios por tramos**.
-  `Tier` en el dominio; `adapters/catalog/models.toml` (precios de la
-  documentación oficial, ventanas de models.dev, cruzado con models.dev) y
-  `TomlCatalog` (el `models.toml` del usuario manda modelo a modelo). Spec
-  §12.5 a §12.12.
-- **Hito 7, PR 1: coste en el dominio, 2026-10-27** (PR #64):
-  `Usage.reasoning_tokens`, `Prices`, `ModelInfo`, `cost()` y el puerto
-  `ModelCatalog`. `input_tokens` incluye la caché leída y la escrita (spec
-  §12.1).
-- **Spec del hito 7 aprobada, 2026-10-27** (PR #61): el mantenedor acepta
-  las cinco recomendaciones; el agente las repasó con el criterio "lo más
-  pro para el producto final" (spec §11).
-
-- **Cierre de sesión, 2026-10-26, PC de Windows (WSL).** Hecho en la
-  sesión: la mejora "cero deuda antes del hito 6" (`v0.5.2`), el hito 6
-  entero con su auditoría final (`v0.6.0`), la subida de dependencias por
-  una alerta de Dependabot (PR #58) y la spec del hito 7 propuesta (PR #61,
-  abierto). `main` sin cambios sin commitear; 1018 tests, mypy, ruff e
-  import-linter en verde; sin alertas de seguridad ni issues. Permisos que
-  dio el mantenedor esta sesión: el agente hace push, abre PRs, los integra
-  con el CI en verde y crea los tags; la aprobación de una spec (sus dudas)
-  sigue siendo del mantenedor. Pidió siempre respetar la arquitectura
-  hexagonal y dejar cero deuda técnica.
-- **Spec del hito 7 propuesta, 2026-10-26** (PR #61, rama
-  `docs/spec-hito-7-trazas`; la spec y DESIGN van en `f842754`, que por un
-  fallo del hook de formato quedó con el mensaje "Añadir la spec del hito 7
-  al mapa y al estado"; no se reescribe porque ya tenía push):
-  `Usage.reasoning_tokens`; catálogo TOML en el paquete (precios de OpenCode
-  Go y Zen comprobados hoy en su documentación; ventanas de models.dev) y del
-  usuario; coste en `Decimal` por llamada, turno y sesión; `TurnStarted`;
-  trazas JSONL por sesión con credenciales enmascaradas; `/trace`; avisos de
-  modelo fuera del catálogo o que entrena con los datos; `maha.log` (D11).
-  Corrige DESIGN §3, §5, §6 y §11.
-- **`v0.6.0` publicada, 2026-10-26.** Tag anotado sobre el merge del PR #59
-  (`84df610`), con el CI de `main` en verde y la alerta de Dependabot ya
-  cerrada (`fixed`); creado por el agente a petición del mantenedor.
-  `uvx --from git+https://github.com/ManexMartikorena/m-harness@v0.6.0 maha
-  --version` → `maha 0.6.0`.
-- **Auditoría final del hito 6, 2026-10-26, antes del tag `v0.6.0`.** El
-  mantenedor pidió dejarlo todo listo, con cero deuda y la arquitectura
-  respetada. Dos auditores independientes del código del hito (disco y
-  aplicación; terminal, bucle y cableado): capas sin violaciones y el bucle
-  sin fallos, pero diez hallazgos en las sesiones, todos arreglados con su
-  test (spec 6, §12, "Auditoría final"; rama `fix/sesiones-auditoria`). Los
-  más graves: un guardado que fallaba a medias duplicaba o corrompía la
-  sesión, y un nombre de fichero no UTF-8 impedía guardar el resto de la
-  conversación. Además, una alerta de Dependabot (alta) en `virtualenv`,
-  arreglada en el PR #58 con los parches de ruff y pytest-asyncio.
-  Verificado de nuevo con el modelo real. 1018 tests en verde.
-- **Hito 6 implementado, 2026-10-26, PC de Windows (WSL)** (spec
-  `hito-6-sesiones`, IMPLEMENTADA; el detalle, en su §12):
-  - PR #52 (merge `74605b0`): spec APROBADA; el mantenedor cambió la duda 2
-    (sesiones de todos los directorios) y aceptó las otras cuatro;
-  - PR #53 (merge `9395ded`): tipos, `check_history()`, `replay()`,
-    `summarize()`, `Usage.__add__`, puerto `SessionStore` y
-    `MemorySessionStore`;
-  - PR #54 (merge `dd8e433`): `JsonlSessionStore` (fsync por turno,
-    `0700`/`0600`, última línea cortada, versión, `flock`, lista y borrado);
-  - PR #55 (merge `555f48f`): `Message.interrupted` y la marca en OpenAI, el
-    parcial cortado en el bucle, `history=` y `model`, `Sessions` y
-    `Conversation`, y un arreglo del PR 2 (todo fallo del disco es
-    `SessionError`);
-  - PR #56 (merge `dd70ee9`): comandos `/sessions`, `/resume`, `/delete`,
-    `/model` y `/help`, `config.data_dir()` y el cableado. Los tests de punta
-    a punta escribían sesiones de prueba en el `HOME` real del puesto: se
-    borraron y `tests/conftest.py` da a cada test su `XDG_DATA_HOME`;
-  - PR #57 (merge `2acc803`, `feature/hito-6-cierre`): versión 0.6.0, verificación a
-    mano (los 10 puntos de la spec §7 en verde, con el modelo real), nota
-    `docs/guia/06-historial.md`, README, MAPA y ESTADO.
-
-  993 tests (1018 tras la auditoría final), mypy, ruff e import-linter en
-  verde. El mantenedor pidió
-  respetar siempre la arquitectura hexagonal y dejar cero deuda técnica.
-- **`v0.5.2` publicada, 2026-10-26.** Tag anotado sobre el merge del PR #51
-  (`3266867`), con el CI de `main` en verde; creado por el agente con el
-  permiso del mantenedor. `uvx --from
-  git+https://github.com/ManexMartikorena/m-harness@v0.5.2 maha --version`
-  → `maha 0.5.2`.
-- **Mejora "cero deuda antes del hito 6" implementada, 2026-10-26** (PR #48
-  la spec, merge `ae36187`; PR #49 seguridad, merge `3bc416d`; PR #50
-  corrección, merge `4356765`). Un commit por fallo, con su test visto
-  fallar antes: A1 (`d284799`), A2 (`f30a68a`), A3 (`bd87b88`), A4
-  (`de7a5da`), A5 (`b3bdcde`), A6 (`f6d9d0a`), B1 (`e031fc7`), B2
-  (`10e9926`), B3 (`bcd4ce3`), B4 (`f3c18ee`), B5 (`da9e872`), B6
-  (`cdf9887`), B7 (`451958c`), B8 (`16b4eb6`) y C1 (`c8e01c0`). 844 tests,
-  mypy, ruff e import-linter en verde. Verificación a mano con el modelo
-  real: los cinco puntos de la spec §7, en verde. `.gitignore` comparado
-  en local con `git check-ignore`: 0 diferencias en ~16 600 casos. El
-  mantenedor dio permiso al agente para push, PRs, integrar con el CI en
-  verde y publicar `v0.5.2`.
-- **Auditoría previa al hito 6, 2026-10-26, PC de Windows (WSL).** El
-  mantenedor pidió no dejar deuda antes del hito 6. Dos auditorías
-  independientes (bucle, aplicación y terminal; herramientas, comandos y
-  OpenAI) encontraron 6 fallos de seguridad (secreto tras un enlace,
-  entrada adelantada que aprueba, pregunta que corta lo aprobado, comando
-  huérfano al cerrar la terminal, listas de secretos y de código
-  incompletas), 8 de corrección y 1 de docs. El agente reprodujo el del
-  enlace. Spec `mejora-2026-10-26-deuda-pre-hito-6` propuesta; el
-  mantenedor ya decidió la forma (spec de mejora), B4 (solo lectura → error)
-  y B7 (arreglar `.gitignore`). Spec del hito 6 escrita en
-  `docs/spec-hito-6-sesiones` (`db20643`, `3eae639`), con cinco dudas en
-  §11. Dependencias: ruff 0.17.2 y pytest-asyncio 1.4.1 disponibles (dev,
-  parches).
-
-- **Cierre de sesión, 2026-10-23, PC de Windows (WSL).** Hito 5 cerrado:
-  `v0.5.0` y el arreglo `v0.5.1` publicados. Una auditoría de fin de sesión
-  encontró un fallo más, arreglado en `main` tras `v0.5.1` (PR #47): un
-  proceso escapado que no se puede matar ya no corta la limpieza del
-  comando. Sin ramas ni PRs abiertos; 750 tests, mypy, ruff e import-linter
-  en verde. Método de la sesión: tres auditorías independientes del código
-  (la última, sin hallazgos de arquitectura) y la regla nueva de
-  `AGENTS.md`: ningún fallo conocido se deja sin arreglar por decisión del
-  agente.
-- **PRs #43, #44 y #46, 2026-10-23:** docs del cierre (release `v0.5.0`,
-  ramas abiertas y release `v0.5.1`).
-- **`v0.5.1` publicada, 2026-10-23.** Tag anotado sobre el merge del PR #45
-  (`f688169`), con el CI de `main` en verde; creado por el agente con el
-  visto bueno del mantenedor. `uvx --from
-  git+https://github.com/ManexMartikorena/m-harness@v0.5.1 maha --version`
-  → `maha 0.5.1`. Verificado a mano: un `setsid sleep 300` aprobado no
-  queda vivo, y `grep` sobre 300 ficheros para en 100 resultados.
-- **PR #45 integrado, 2026-10-23** (merge `f688169`; rama
-  `fix/procesos-escapados-y-grep`): los procesos que salen de su grupo
-  mueren con el comando (`96db36c`, E2 adelantado del hito 14) y `grep`
-  busca por tandas (`f249080`). `AGENTS.md` gana la regla `v0.N.M` para un
-  arreglo entre hitos.
-- **`v0.5.0` publicada, 2026-10-23.** Tag anotado sobre el merge del PR #42
-  (`2f8dc55`), con el CI de `main` en verde; creado por el agente (el
-  mantenedor pidió "dejar el hito 5 cerrado"). `uvx --from
-  git+https://github.com/ManexMartikorena/m-harness@v0.5.0 maha --version`
-  → `maha 0.5.0`.
-- **PR #42 integrado, 2026-10-23** (merge `2f8dc55`; rama
-  `feature/hito-5-cierre`): versión 0.5.0, nota `docs/guia/05-permisos.md`,
-  specs del hito 5 y de la mejora en IMPLEMENTADA, README, MAPA y ESTADO.
-  Verificación a mano en una pseudoterminal con el modelo real: los 11
-  puntos de la spec 5 §7 y los 3 de la mejora, en verde (spec 5, §12.23),
-  repetida tras la auditoría final.
-- **PR #41 integrado, 2026-10-23** (merge `56d3072`; rama
-  `fix/auditoria-final`): los 8 hallazgos de la segunda auditoría (mejora,
-  §12.22 a §12.29): título de la pregunta en una línea, tope del recorrido,
-  comandos con hijos en segundo plano, `grep` en un proceso hijo contra
-  ReDoS (decisión del mantenedor), caracteres invisibles, tests que
-  faltaban, `collect()` a los fakes, DESIGN y MAPA. El CI destapó que
-  `process.wait()` de Python 3.14.4 espera a las tuberías (`453d8eb`).
-- **PR #40 integrado, 2026-10-23** (merge `c084629`; hito 5, PR 4, piezas 14
-  a 18, con A2 y B3 de la mejora): un solo lector (`3ae659d`),
-  `TerminalApproval` y `DenyAll` (`ea93db2`), la negativa en la conversación
-  (`50725f3`), `refusal` (`89e0fec`) y el cableado (`e60101c`).
-- **PR #39 integrado, 2026-10-23** (merge `b3294ce`; hito 5, PR 3, piezas 10
-  a 13, con B4 y E1 de la mejora): puerto `CommandRunner` (`c1264b0`),
-  `command_env()` (`30f1336`), `LocalCommandRunner` (`6991d63`) y
-  `run_command` (`9836be4`).
-- **PR #38 integrado, 2026-10-23** (merge `ff3c79f`; mejora, PR 4): E6,
-  `.gitignore` traducido a mano (`e1b7ffd`) y usado en `glob` y `grep`
-  (`eb675f1`).
-- **PR #37 integrado, 2026-10-23** (merge `2be2a23`; mejora, PR 3): D6
-  (`689adf7`), D3 (`b5bd7d3`), D4 (`fb79e82`), D1 y D2 (`bbce66e`), D7
-  (`7a871a6`), D8 (`552804b`), D9 y D10 (`909a863`), D12 (`d6631a1`) y D13
-  (`9eade8d`).
-- **PR #36 integrado, 2026-10-23** (merge `6101881`; mejora, PR 2): B2
-  `approval()` asíncrono (`f8b38f8`), B1 reglas de ruta en el dominio
-  (`9d95f18`) y la limpieza C (`95014d5`, `eaddf2f`, `ea20fa2`, `397e5e4`,
-  `bb98770`).
-- **PR #35 integrado, 2026-10-23** (merge `618ea13`; mejora, PR 1): A1
-  (`7235142`), A2 (`4e908f2`), A3 (`b99573b`), A4 (`ec235c3`), A5
-  (`4da3ccd`), A6 (`52dc6ba`), A7 (`9c7b915`), E3 (`c64207b`) y E4
-  (`e084fbd`).
-- **PR #34 integrado, 2026-10-23** (merge `0e944d7`): spec
-  `mejora-2026-10-23-deuda-hito-5` APROBADA. El mantenedor aprobó todas las
-  recomendaciones del agente sobre los fallos de la primera auditoría y los
-  límites conocidos, y pidió cerrar el hito 5 con cero deuda.
-- **PR #33 integrado, 2026-10-23** (merge `b8b5c14`; rama
-  `fix/fifo-sin-carrera`, `7f329ee`): el tipo de fichero se mira con `fstat`
-  sobre el fichero ya abierto. Regla nueva del mantenedor en `AGENTS.md`:
-  ningún fallo conocido se deja sin arreglar por decisión del agente.
-- **PR #32 integrado, 2026-10-23** (merge `dfa2425`; rama
-  `fix/fifo-bloquea-lectura`, `85c9e26`): `read_file` y `grep` ya no abren
-  una FIFO.
-- **PC de Windows al día, 2026-10-23:** pull de 30 commits, `uv sync` sin
-  cambios; 487 tests, mypy, lint-imports y ruff en verde; `maha 0.4.0`.
-- **Cierre de sesión, 2026-10-21, Ubuntu de casa.** Todo integrado y con
-  push: `main` en `0f2317a` más este cierre; sin ramas abiertas ni cambios
-  sin commitear; 487 tests en verde. Se mantiene para el hito 5 el permiso
-  del mantenedor: el agente hace push e integra cada PR con el CI en verde;
-  el tag sigue necesitando que el mantenedor lo pida. Método acordado esta
-  sesión: ante cualquier hueco de la spec, el agente para y pregunta con
-  opciones y recomendación; no inventa.
-- **Hito 5, PR 2 integrado (#30, merge `0f2317a`), 2026-10-21, Ubuntu de
-  casa** (rama `feature/hito-5-ficheros`, borrada en local y conservada en
-  GitHub; CI en verde en el PR y en `main`; piezas 6 a 9 de la spec §6): leer fuera del directorio o un secreto con
-  aprobación (`7e39cfb`), `write_file` con escritura atómica (`fad129c`),
-  `fsync` de la carpeta tras el renombrado (`c22eb08`), `edit_file` con
-  adaptación a CRLF (`b8e98b6`) y los docs (mapa, spec y estado: `4db13d8`,
-  `e325e54` y `b42ce45`).
-  Arreglos de la revisión, decididos por el mantenedor: con aviso, la
-  pregunta va antes de los errores de contenido (`39162ca`), tamaño máximo
-  de 2 MiB para cambiar (`40e7e1a`), `cannot read` (`b66b354`), la llamada
-  entera en `_Shown` y `_Asked` (`06e285e`), `.git` siempre pregunta
-  (`ad2341d`), refactor `_as_shown`/`_write` (`9015a45`), aviso de cambio de
-  saltos de línea (`8458304`), `grep` salta los ilegibles (`105904d`) y el
-  commit "Dar un error limpio si falla el stat del fichero que se cambia"
-  (`30ffc45`). Segunda revisión: sin bloqueantes.
-  `write_file` y `edit_file` aún no están cableadas en `bootstrap` (pieza
-  17). En verde: 487 tests. Las decisiones, los límites conocidos, lo
-  pendiente y la revisión, en la spec §12 (puntos 6 a 12).
-- **Hito 5, PR 1 (#29) integrado, 2026-10-21** (`98fb0dd`).
-- **Hito 5, PR 1, 2026-10-21, Ubuntu de casa** (sale por PR desde
-  `feature/hito-5-aprobacion` y lo integra el agente con el CI en verde;
-  piezas 1 a 5 de la spec §6):
-  contrato de aprobación (`0f8311d`), aprobaciones de sesión (`14026e1`), el
-  bucle pregunta (`839231f`), lo ejecutado consta (`a9acbab`) y los docs.
-  Arreglos de la revisión, aprobados por el mantenedor: solo una decisión
-  válida ejecuta (`d3953b0`), fallo de `summary()` y JSON demasiado anidado
-  como error interno (`56d7909`) y más tests del bucle (`bf643a6`). En
-  verde: 362 tests. Las decisiones que la spec no fijaba y la revisión, en
-  la spec §12.
-- **Ubuntu de casa al día, 2026-10-21:** `main` al día, rama local
-  `docs/spec-hito-3-streaming` borrada, `uv sync`; 327 tests, mypy,
-  lint-imports y ruff en verde; `uv run maha --version` → `maha 0.4.0`.
-- **Cierre de sesión, 2026-10-21, PC de Windows (WSL).** Todo integrado y
-  con push: `main` en el merge del PR #27 más este cierre; sin ramas
-  abiertas ni cambios sin commitear. El mantenedor mantiene para el hito 5
-  el permiso que dio en el hito 4: **el agente hace push e integra cada PR
-  con el CI en verde** (merge commit). El tag sigue necesitando que el
-  mantenedor lo pida.
-- **PR #27 integrado, 2026-10-21** (merge `c64aef5`): spec del hito 5
-  APROBADA.
-- **Spec del hito 5 aprobada, 2026-10-21** (PR #27): el mantenedor acepta
-  las cinco recomendaciones de §11 sin cambios; se anota como mejora futura
-  aprobar comandos por prefijo (spec §1.3).
-- **Spec del hito 5 propuesta, 2026-10-21** (rama
-  `docs/spec-hito-5-permisos`):
-  - contrato de aprobación: `ApprovalRequest`, `Decision`, puerto
-    `ApprovalGate` y `Tool.approval()`; una herramienta `effect` siempre
-    pregunta;
-  - "toda la sesión" por ámbito: todas las escrituras, todas las ediciones
-    o cada comando exacto; fuera del directorio y secretos, siempre uno a
-    uno;
-  - una negativa termina el turno; lo ejecutado consta en el historial
-    aunque falle o se cancele (revisa el turno atómico del hito 4);
-  - `write_file`, `edit_file` (texto exacto, con diff) y `run_command`
-    (grupo de procesos propio, tiempo límite, salida acotada y sin
-    credenciales en el entorno);
-  - sin terminal, se deniega todo; `refusal` entra como texto;
-  - corrige DESIGN §5 y §10.
-
-  Hechos comprobados ese día en la documentación de Python 3.14
-  (`asyncio` subprocess, `process_group`, `os.killpg`, `difflib`) y con una
-  prueba local de grupos de procesos.
-- **Parada del mantenedor para entender el código, 2026-10-21:** el agente
-  le señaló dónde están las herramientas (`adapters/tools/files.py`, puerto
-  `ports/tools.py`, registro `application/tools.py`) y el bucle
-  (`application/agent.py`, `Agent.run()` y `_execute()`); el mantenedor los
-  leyó y dio paso al hito 5.
-- **`v0.4.0` publicada, 2026-10-21.** Tag anotado sobre el merge del PR #25
-  (`ee632f9`), con el CI de `main` en verde; creado y publicado por el
-  agente a petición del mantenedor. `release.yml` creó la release en 11 s:
-  título "v0.4.0 — Tool calling y bucle agéntico", las notas del tag y la
-  lista de PRs #18 a #25. `uvx --from
-  git+https://github.com/ManexMartikorena/m-harness@v0.4.0 maha --version`
-  → `maha 0.4.0`.
-- **Hito 4, PR 6 (#25) integrado, 2026-10-21** (merge `ee632f9`).
-- **Hito 4, PR 6 (cierre), 2026-10-21** (#25):
-  versión 0.4.0, nota `docs/guia/04-tool-calling.md`, spec en IMPLEMENTADA
-  y README, MAPA y ESTADO al día. Verificación a mano de la spec §7 por el
-  agente en pty con el modelo real: los 9 puntos en verde (spec §12.12).
-- **Hito 4, PR 5 (#24) integrado, 2026-10-21** (merge `c903c65`; piezas
-  22 a 25): la terminal usa `Agent` (se borra `Chat`) y muestra cada
-  llamada; `bootstrap` da las cuatro herramientas a `maha`; prueba de punta
-  a punta con un fichero real. Probado en pty con el modelo real (spec
-  §12.11). En verde: 327 tests.
-- **Hito 4, PR 4 (#23) integrado, 2026-10-21** (merge `eec3d5a`; piezas 16
-  a 21): `is_secret()` y las herramientas `read_file`,
-  `list_dir`, `glob` y `grep`, dentro del directorio de trabajo, sin
-  secretos, con topes y sin hilos. Dos fallos encontrados y fijados con
-  test (spec §12.6). En verde: 324 tests.
-- **Hito 4, PR 3 (#22) integrado, 2026-10-21** (merge `3b52bad`; piezas 9 a
-  15): puerto `Tool`, `ToolRegistry` (rechaza las de efecto), eventos del
-  agente y el bucle `Agent` (25 pasos, en orden, errores devueltos al
-  modelo, turno atómico). Probado con fakes: 264 tests en verde. Lo
-  aprendido, en la spec §12.
-- **Hito 4, PR 2 (#21) integrado, 2026-10-21** (merge `a158037`; piezas 5
-  a 8): el adaptador envía `tools`, las llamadas (`tool_calls`, `content`
-  null sin texto) y un mensaje `tool` por resultado; traduce
-  `delta.tool_calls` (con `null` explícito) y `message.tool_calls`. En
-  verde: 238 tests.
-- **Hito 4, PR 1 (#20) integrado, 2026-10-21** (merge `6f73e95`; piezas 1
-  a 4 de la spec §6): `ToolCallBlock` (argumentos como texto JSON),
-  `ToolResultBlock`, `Message` validado por `type`, `ToolSpec` en la
-  petición y `ToolCallDelta` juntado por `index` en el `Accumulator`. En
-  verde: 230 tests, ruff, mypy e import-linter.
-- **PR #19 integrado, 2026-10-21** (merge `b34bd60`): spec del hito 4
-  APROBADA.
-- **Spec del hito 4 aprobada, 2026-10-21** (PR #19): el mantenedor acepta
-  las cinco recomendaciones de §11 sin cambios.
-- **Spec del hito 4 propuesta, 2026-10-21** (rama
-  `docs/spec-hito-4-bucle-agentico`):
-  - bloques `ToolCallBlock` (argumentos como texto JSON) y
-    `ToolResultBlock`; `ToolCallDelta` que junta el `Accumulator`;
-  - puerto `Tool` con modelo Pydantic; el registro rechaza herramientas con
-    efecto hasta el hito 5;
-  - `read_file`, `list_dir`, `glob` y `grep`, sin hilos, dentro del
-    directorio de trabajo y sin ficheros secretos;
-  - `Agent` sustituye a `Chat`: límite de 25 pasos, llamadas en orden,
-    errores devueltos al modelo, turno atómico ante fallo o Ctrl+C;
-  - corrige DESIGN §5 (argumentos y resultado como texto; calendario de
-    `AgentEvent`).
-
-  Hechos comprobados ese día: la referencia de Chat Completions de OpenAI
-  (leída con `curl`; la URL citada en la spec 3 sigue viva) y una sonda de 9
-  llamadas a OpenCode Go con permiso del mantenedor: cada llamada llega
-  entera en un trozo, varias llamadas en una respuesta,
-  `parallel_tool_calls: false` ignorado y `"tool_calls": null` explícito en
-  los trozos de texto (spec §1.1).
-- **`v0.3.0` publicada, 2026-10-21.** Tag anotado sobre el merge del PR #17
-  (`1caebec`), creado y publicado por el agente a petición del mantenedor.
-  `release.yml` creó la release en 12 s: título "v0.3.0 — Streaming", las
-  notas del tag y la lista de PRs #12 a #17. `uvx --from
-  git+https://github.com/ManexMartikorena/m-harness@v0.3.0 maha --version`
-  → `maha 0.3.0`. El CI del merge del #17 en `main`, en verde.
-- **Hito 3, PR 4 (#17) integrado, 2026-10-21** (merge `1caebec`; piezas
-  16 a 19 de la spec §6): versión 0.3.0, nota `docs/guia/03-streaming.md`, spec en
-  IMPLEMENTADA y README, MAPA y ESTADO al día. Verificación a mano de la spec
-  §7 por el agente en pty con el modelo real: 9 de 10 puntos en verde; el 9
-  (cortar la red) no se pudo provocar en WSL y lo cubren los tests (spec
-  §12.9).
-- **Hito 3, PR 3 (#16) integrado, 2026-10-21** (merge `3e03407`; piezas 9
-  a 15 de la spec §6): `stream()` en el puerto y el fake (`Gate`, `HANG`),
-  `Chat.stream()`, terminal en directo, spinner con "maha" en colores y
-  Ctrl+C que corta solo la respuesta. En verde: 216 tests, ruff, mypy e
-  import-linter. Probado en pty con el modelo real (spec §12.8).
-- **Hito 3, PR 2 (#15) integrado, 2026-10-21** (merge `3a4fa5e`; piezas 5
-  a 8 de la spec §6): `OpenAIChatClient.stream()` con la petición en stream,
-  decodificador incremental, traducción de los trozos, errores del stream y
-  cierre de la conexión al cancelar. Timeout `read=120` como silencio
-  máximo entre trozos. En verde: 181 tests, ruff, mypy e import-linter. Lo
-  aprendido, en la spec §12 (respx admite cuerpos que fallan a mitad;
-  `stream()` se anota `AsyncGenerator`).
-- **Hito 3, PR 1 (#14) integrado, 2026-10-21** (merge `5fadc22`; piezas 1 a
-  4 de la spec §6): eventos del dominio
-  (`domain/events.py`), `collect()` (`application/collect.py`), analizador
-  SSE (`adapters/models/sse.py`) y mapa. En verde: 142 tests, ruff, mypy e
-  import-linter.
-- **PR #13 integrado, 2026-10-21** (merge `2f7d6a5`): spec del hito 3
-  APROBADA. Push e integración por el agente, a petición del mantenedor.
-- **Spec del hito 3 aprobada, 2026-10-21** (PC de Windows, WSL; rama
-  `docs/spec-hito-3-streaming`). Decisiones del mantenedor (spec §11):
-  - duda 1: `complete()` se queda en el puerto, junto a `stream()` (contra
-    la propuesta del agente). Corrige DESIGN §6. Sale la pieza que lo
-    quitaba;
-  - duda 2: spinner braille con "maha", cada letra en un color y los
-    colores rotando (spec §1.12, nueva pieza 12). Solo en una terminal real
-    y sin color con `NO_COLOR` (https://no-color.org, comprobado ese día);
-  - duda 3: Ctrl+C a mitad de respuesta vuelve al prompt;
-  - duda 5: `Usage` sigue sin `None`.
-- **Spec del hito 3 propuesta, 2026-10-20** (rama
-  `docs/spec-hito-3-streaming`, PR #13 abierto
-  (https://github.com/ManexMartikorena/m-harness/pull/13), CI en verde):
-  - `complete()` sale del puerto: queda `stream()`, y `collect()` (en
-    `application`) construye la respuesta entera a partir de los eventos;
-  - SSE (*Server-Sent Events*, el formato de streaming de las APIs) a mano,
-    sin dependencias nuevas. Las líneas se parten solo en CRLF, LF o CR:
-    `aiter_lines()` de httpx 0.28.1 parte también en U+2028 y otros, y
-    rompería un JSON válido;
-  - corrige DESIGN §5: `MessageEnd` lleva `model`;
-  - Ctrl+C a mitad de respuesta corta la respuesta y vuelve al prompt;
-  - sonda lanzada en la fase de spec, con permiso del mantenedor (spec
-    §1.7): los tokens de salida altos de `glm-5.3-flash` son razonamiento.
-    `completion_tokens` incluye `reasoning_tokens`: para "OK", 13 de 16,
-    18 de 21 y 43 de 46 (varía mucho). Llega en `delta.reasoning_content`
-    con stream y en `message.reasoning` sin él;
-  - OpenCode manda `usage` aunque no se pida `stream_options`; ~5 s de
-    silencio hasta el primer byte. En OpenCode solo queda POR VERIFICAR el
-    formato de un error a mitad de stream.
-
-  Hechos comprobados ese día por el agente en la documentación oficial: el
-  endpoint de Go, `https://opencode.ai/inference/go/openai/v1/chat/completions`,
-  coincide con el código; la URL que dio Context7 estaba desfasada.
-- **Ubuntu de casa preparado, 2026-10-20:**
-  - Ubuntu 24.04.5 LTS, no 26.04 como el CI. Funciona: 116 tests, mypy,
-    lint-imports y ruff en verde con el python3.14 del sistema (3.14.8), sin
-    Python gestionado por uv;
-  - uv 0.13.4, con el instalador oficial y `UV_NO_MODIFY_PATH=1`, en
-    `~/.local/bin` (ya estaba en el PATH; no se tocó ningún fichero de
-    shell). `uv sync` y `pre-commit install` hechos;
-  - `.env` con la clave de OpenCode Go y `~/.config/maha/config.toml`.
-    Prueba de dos turnos con `glm-5.3-flash` correcta;
-  - `gh auth status`: login en github.com como ManexMartikorena, con el scope
-    `workflow`;
-  - aviso: en ese PC hay otro uv 0.12.17 en `~/.hermes/bin/` (de hermes,
-    fuera del PATH) que comparte `~/.cache/uv`. Para quitar uv, no usar
-    `uv cache clean` ni `rm -r "$(uv tool dir)"`;
-  - dato: "OK" contó `22 in · 67 out` (spec 2 §12.12; se investiga en la
-    spec 3, §1.7).
-- **PR #12 integrado, 2026-10-20** (merge `80d958d`): cierre de la
-  documentación del hito 2.
-- **`v0.2.0` publicada, 2026-10-20.** Tag anotado sobre el merge del PR #11
-  (`9480b1d`). `release.yml` creó la release en 12 s: título
-  "v0.2.0 — Primera conversación", las notas del tag y la lista de PRs #6 a
-  #11. `uvx --from git+https://github.com/ManexMartikorena/m-harness@v0.2.0
-  maha --version` → `maha 0.2.0`. El CI del merge del #11 pasó entero (ya sin
-  cancelaciones en `main`).
-- **Hito 2, PR 4 (#11) integrado, 2026-10-20** (merge `9480b1d`; piezas 19
-  a 22): versión 0.2.0, nota
-  `docs/guia/02-llamada-a-un-llm.md`, spec en IMPLEMENTADA, y README, MAPA y
-  ESTADO al día.
-  - fuera de plan, a petición del mantenedor: el CI ya no cancela las
-    ejecuciones de los pushes a `main`. Al integrar #8, #9 y #10 seguidos,
-    las de #8 y #9 salieron canceladas (spec §12.13).
-- **Hito 2, PRs 1 a 3 integrados, 2026-10-20** (#8 `ca1aa21`, #9 `dcb7983`,
-  #10 `a1964f5`):
-  - PR 1, el núcleo: Pydantic 2.14.1, mensajes, petición y respuesta,
-    errores del modelo, puerto `ModelClient`, `FakeModelClient` y `Chat`;
-  - PR 2, el adaptador: httpx 0.28.1, respx 0.23.1 y `OpenAIChatClient`.
-    Un fallo encontrado (la clave cortada por el límite de 300 caracteres),
-    convertido en test y arreglado;
-  - PR 3, configuración y terminal: `config.py`, la conversación, el
-    cableado en `bootstrap`, `.env.example` y `PUESTA_EN_MARCHA` §3.1.
-    Corrige la spec §1.11, con el visto bueno del mantenedor: la entrada se
-    lee sin hilos, porque con `input()` en un hilo Ctrl+C colgaba `maha`;
-  - en verde: 116 tests, con Python 3.14 y 3.15. Lo imprevisto, en la spec
-    §12.
-- **Verificación a mano del hito 2, 2026-10-20** (spec §7 y §12.10): los
-  9 puntos en verde con OpenCode Go y `glm-5.3-flash`. Go acepta
-  `Authorization: Bearer`. Clave del mantenedor en el `.env` y
-  `~/.config/maha/config.toml` creados en el WSL del PC de Windows.
-- **Spec del hito 2 aprobada, 2026-10-20** (PR #7, merge `09ebdb5`), sin
-  cambios.
-- **Spec del hito 2 propuesta, 2026-10-20** (rama
-  `docs/spec-hito-2-primera-conversacion`, PR abierto en GitHub, sin
-  integrar). Proveedor elegido por el mantenedor: OpenCode Go.
-  - hechos comprobados ese día en la documentación oficial (spec §1.1): URLs
-    de chat completions de OpenCode Go y Zen, cabecera
-    `x-opencode-session`, modelos sin entrenamiento, formato de OpenAI;
-    versiones de pydantic 2.14.1, httpx 0.28.1 y respx 0.23.1, probadas con
-    Python 3.14 y 3.15;
-  - corrige DESIGN §7: la configuración del proyecto solo elige proveedor y
-    modelo (spec §1.10);
-  - cuatro PRs de implementación (spec §6).
-
-- **`v0.1.0` publicada, 2026-10-20.** Tag anotado sobre el merge del PR #5
-  (`e78f7d9`). `release.yml` creó la release en 12 s: título
-  "v0.1.0 — Esqueleto", las notas del tag y la lista de PRs #1 a #5.
-  `uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.1.0`
-  instala `maha 0.1.0`. Spec §7 completa.
-- **Hito 1, PR 2 (#5) integrado, 2026-10-20** (merge `e78f7d9`; piezas 11 a
-  15 de la spec §6):
-  - workflow de release, versión 0.1.0, nota de la guía
-    `docs/guia/01-arquitectura-hexagonal.md`, spec en IMPLEMENTADA, y README,
-    MAPA, PUESTA_EN_MARCHA y ESTADO al día;
-  - fuera de plan, con el visto bueno del mantenedor: el CI fija gitleaks
-    8.30.1, la misma versión que pre-commit (spec §12).
-- **GitHub tras el PR 1, 2026-10-20** (humano): el ruleset "main protegida"
-  exige `checks (3.14)`, `checks (3.15)` y `secrets`, con "up to date"
-  activada (`PUESTA_EN_MARCHA` §5). CI lanzado a mano sobre `main`: gitleaks
-  revisó el historial entero (41 commits), sin secretos.
-- **Hito 1, PR 1 (#4) integrado, 2026-10-20** (merge `e935068`). Un commit
-  por pieza (spec §6, piezas 1 a 10):
-  - proyecto uv, ruff, mypy estricto, las cuatro capas con import-linter,
-    pytest con el test de arquitectura, el adaptador `cli` con `--version`,
-    `bootstrap.py` y el comando `maha`, pre-commit, CI y mapa;
-  - en verde: ruff, mypy, import-linter y pytest (8 tests), con Python 3.14
-    y también con 3.15;
-  - verificación a mano (spec §7): puntos 1 a 8 hechos;
-  - lo imprevisto, en la spec §12 "Aprendido al implementar": ruff formatea
-    Markdown, mypy e import-linter piden que existan `tests/` y las capas, y
-    el hook de gitleaks no mira el primer commit de un repo.
-
-- **Clon en `~/` en el PC de Windows, 2026-10-20:** el agente trabaja desde
-  `~/Desarrollo/m-harness`, dentro de WSL. El clon viejo de `/mnt/c/…`, limpio
-  y al día, se borró.
-- **WSL preparado en el PC de Windows, 2026-10-19:** Ubuntu 26.04.1,
-  uv 0.13.1, gh 2.102 con login y el agente dentro de WSL.
-- **GitHub revisado, 2026-10-19:** ajustes, rulesets y alertas coinciden con
-  `docs/PUESTA_EN_MARCHA.md` §5. Sin issues, tags ni releases.
-- **Spec del hito 1 aprobada, 2026-10-19** (PR #2), sin cambios.
-  - Plataforma: Linux. En Windows, Ubuntu 26.04 en WSL2, con el agente
-    dentro de WSL. CI con `ubuntu-26.04`.
-  - Versiones de las herramientas comprobadas ese día (spec §1.1).
-- **GitHub configurado, 2026-10-19.**
-  - Solo merge commit; las ramas integradas se conservan.
-  - `main` y los tags `v*` protegidos con rulesets.
-  - Alertas de seguridad activadas.
-
-  Detalle en `docs/PUESTA_EN_MARCHA.md` §5.
-- **Repositorio público creado y primer push, 2026-10-19.** Un commit por
-  fichero fundacional.
-- **Documentos fundacionales, 2026-10-19:**
-  - en la raíz: `AGENTS.md`, `CLAUDE.md`, `README.md`, `LICENSE`, `.gitignore`
-    y `.gitattributes`;
-  - en `docs/`: `ANALISIS.md`, `DESIGN.md`, `ESTADO.md`, `PUESTA_EN_MARCHA.md`,
-    `MAPA.md`, `guia/README.md` y `specs/PLANTILLA.md`;
-  - en `.github/`: `pull_request_template.md`.
-- **Decisiones de diseño del mantenedor, 2026-10-19:**
-  - sin frameworks de agentes: a mano lo que es del agente, fontanería
-    estándar y la industria documentada al lado;
-  - monolito modular con arquitectura hexagonal; asíncrono con `asyncio`;
-  - httpx directo; adaptador de OpenAI primero y de Anthropic en el hito 9;
-  - trazas propias y OpenTelemetry opcional; Pydantic también en el dominio;
-  - comando `maha`, módulo `mharness`, distribución `m-harness`;
-  - spec en su propio PR; integración con merge commit; muchos commits
-    pequeños;
-  - todo lo que hace el agente de código se explica al mantenedor, corto y
-    directo.
-- **Análisis cerrado, 2026-10-19.**
+Después del hito 7 (2026-10-27, todo de documentación, decidido por el
+mantenedor):
+- **Segundo objetivo:** un producto profesional, lo más completo posible e
+  intuitivo (ANALISIS §4); la distribución pública entra en la 1.0.
+- **Plan completado** con la comparativa de OpenCode y Claude Code
+  (`docs/COMPARATIVA.md`): hitos ampliados, dos nuevos (12 deshacer, 18
+  hooks) y la 1.0 en el hito 23.
+- **El hito 21 es una TUI completa**, con OpenCode como referencia.
+- **Dos caras en GitHub:** `README.md` (inglés) y `README.es.md` como
+  producto; `docs/PROYECTO.md` como proyecto.
+- **ESTADO ordenado:** el historial pasa a `HISTORIAL_DESARROLLO.md`.
 
 ## Siguiente paso
 
-Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
-subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
-mypy y lint-imports en verde; después, el primer punto sin hacer.
+Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
+tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
 1. **Agente:** proponer la spec del hito 8 (evals y modo no interactivo,
    DESIGN §9 y §14) en su propio PR (`docs/spec-hito-8-…`), con sus dudas y
@@ -634,141 +108,71 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 
 **Puestos de trabajo:**
 - Los dos listos, con clave y configuración: el WSL del PC de Windows
-  (Ubuntu 26.04.1) y el Ubuntu de casa (24.04.5, no 26.04; ver "Hecho",
-  2026-10-20).
+  (Ubuntu 26.04.1) y el Ubuntu de casa (24.04.5).
+- **Proveedor de modelos: OpenCode Go**, funcionando desde el 2026-10-20.
 
-**Externas, con el hito en que bloquean:**
-- **Proveedor de modelos: OpenCode Go**, funcionando desde el 2026-10-20
-  (verificación a mano del hito 2).
-
-**Decisiones del mantenedor para hitos futuros:**
-- **Plan completado con la comparativa** (2026-10-27, `docs/COMPARATIVA.md`):
-  se amplían los hitos 8 a 17 con lo que ofrecen OpenCode y Claude Code,
-  entran dos hitos nuevos (12 deshacer, 18 hooks) y la 1.0 pasa al hito 23.
-  Después de la 1.0: LSP, plugins, API y SDK, editores, GitHub Action, más
-  APIs de modelo, worktrees, tareas programadas y voz (DESIGN §14).
-- **Segundo objetivo: producto profesional** (2026-10-27), lo más completo
-  posible en capacidades e intuitivo (ANALISIS §4). Las 17 piezas son el
-  mínimo; la comparación con OpenCode y Claude Code (`docs/COMPARATIVA.md`)
-  propone qué más entra y cuándo.
-- **Dos caras en GitHub** (2026-10-27): el producto en `README.md`
-  (inglés) y `README.es.md` (español), y el proyecto en `docs/PROYECTO.md`; las dos al día en cada cierre de hito
-  (AGENTS.md, DESIGN §13).
-- **Distribución pública en la 1.0** (2026-10-27): instalable para
-  cualquier usuario y con documentación de usuario (DESIGN §13, hito 23).
-- **Hito 21: una TUI completa** (2026-10-27), bonita y fácil para cualquier
-  persona, con navegación intuitiva: todos los comandos que vayan llegando,
-  descubribles en un menú de comandos (como la paleta `ctrl+p` de OpenCode)
-  y con `/help`, `/` y atajos. OpenCode como referencia; la interfaz de
-  línea se conserva. DESIGN §14, hito 21.
+**Decisiones del mantenedor para hitos futuros** (todas del 2026-10-27):
+- **Producto profesional** (ANALISIS §4): lo más completo posible e
+  intuitivo; las 17 piezas son el mínimo.
+- **El plan de 23 hitos** de DESIGN §14, a partir de
+  `docs/COMPARATIVA.md`. Después de la 1.0: LSP y formateadores, plugins,
+  API y SDK, editores, GitHub Action, las APIs de Responses de OpenAI y de
+  Google, *worktrees*, tareas programadas y voz.
+- **Hito 21, una TUI completa**, bonita y fácil para cualquier persona:
+  todos los comandos, descubribles en un menú de comandos (como la paleta
+  `ctrl+p` de OpenCode), con `/help`, `/` y atajos. La interfaz de línea se
+  conserva.
+- **Distribución pública en la 1.0** (hito 23), con documentación de
+  usuario.
+- **Dos caras en GitHub**, al día en cada cierre de hito (AGENTS.md).
 
 **Se deciden en la spec de su hito:**
 - búsqueda en la memoria (hito 14);
 - tecnología del sandbox (hito 15);
 - cliente MCP a mano o con el SDK oficial (hito 17);
 - proveedor de búsqueda web (hito 19);
-- tratamiento de PDFs (hito 20).
+- tratamiento de PDFs (hito 20);
+- librería y pantallas de la TUI (hito 21);
+- canal de distribución (hito 23).
 
-**Pendientes del hito 3** (anotados en su spec; cada uno con el hito que lo
-resuelve):
-- ~~**Tokens de razonamiento:** desglose y coste~~ **Resuelto** en el
-  hito 7: la línea de tokens dice `(N reasoning)` cuando el proveedor lo
-  manda, y el coste lo incluye (spec 7, §1.2 y §12.35). Ver el texto del
-  razonamiento (`reasoning_content`): hito 21, con la interfaz.
-- ~~**`refusal` del stream se ignora**~~ **Resuelto** en el hito 5
-  (`89e0fec`): llega como texto. Sigue POR VERIFICAR en OpenCode, que no la
-  ha mandado nunca (spec 5, §10).
-- ~~**Respuesta cortada con Ctrl+C**~~ **Resuelto** en el hito 6 (`d12ea22`):
-  se guarda marcada y el modelo lo sabe (spec 6, §1.7 y §12).
-- **Sin reintentos** ante 429 o 5xx: hito 8, por decisión del mantenedor
-  (spec 7, §11, duda 4).
-- **Lo que se teclea mientras gira el spinner se mezcla con él** en pantalla
-  (solo visual). Hito 21, con la TUI (spec 3, §12.10).
-- **POR VERIFICAR:** el formato de un error a mitad de stream en OpenCode
-  (no se pudo provocar; el código lo lee de forma defensiva) y cortar la red
-  a mitad de respuesta a mano (punto 9 de la verificación, no provocado en
-  WSL; lo cubren los tests). Siguen POR VERIFICAR: la verificación del
-  hito 4 se hizo también desde el PC de Windows. Se miran si aparecen, o
-  desde el Ubuntu de casa.
+**Con hito asignado** (salieron de hitos anteriores; cada uno, de su spec):
+- **Hito 8:** reintentos ante 429 y 5xx (spec 7, §11); límites de tokens y
+  de tiempo por turno (spec 4, §11); `--continue`/`--resume` al arrancar
+  (spec 6, §11); en la batería de evals, las descripciones de las
+  herramientas (spec 4, §5) y la marca `[interrupted by the user]` (spec 6).
+- **Hito 10:** el modelo no sabe en qué directorio trabaja tras retomar una
+  sesión de otro (spec 6, §1.8).
+- **Hito 11:** ~700 tokens de entrada por llamada solo por las herramientas;
+  compactar (spec 4, §12.14).
+- **Hito 15:** detectar secretos con otro nombre (`credenciales.txt`)
+  mirando el contenido (mejora `2026-10-23`, E5).
+- **Hito 16:** llamadas a herramientas en paralelo (spec 4, §11).
+- **Hito 21:** lo que se teclea mientras gira el spinner y el eco de `^C`
+  se mezclan con la salida (spec 3, §12.10; spec 4, §12.13); ver el texto
+  del razonamiento (spec 7).
+- **Mejora posible:** refrescar los precios desde models.dev a una caché, a
+  petición, si mantener a mano 113 modelos pesa (spec 7, §11). Hoy, con
+  OpenCode Go, el coste que vale es el del proveedor.
 
-**Pendientes del hito 4** (anotados en su spec; cada uno con el hito que lo
-resuelve):
-- ~~**Turno atómico:** un fallo o Ctrl+C no guarda nada del turno. Vale porque
-  ninguna herramienta tiene efecto; **el hito 5 lo revisa**, porque una
-  edición ya hecha sí debe constar (spec 4, §1.7).~~ **Resuelto** en el
-  hito 5, pieza 4 (`a9acbab`): lo ejecutado consta aunque falle el modelo o
-  se cancele (spec 5, §1.5 y §12).
-- **Leer fuera del directorio de trabajo y secretos con otro nombre**
-  (`credenciales.txt`): hoy se deniega, o no se detecta. Aprobación en el
-  hito 5 (spec 4, §1.6 y §10). **Leer fuera y los secretos conocidos,
-  resuelto** en el hito 5, pieza 6 (`7e39cfb`): preguntan, una a una (spec
-  5, §1.6 y §12.6). Los secretos con otro nombre siguen sin detectarse:
-  se mantiene así por decisión del mantenedor; mirar el contenido es otra
-  pieza (hito 15; mejora `2026-10-23`, E5).
-- **Tokens:** cada llamada al modelo cuesta ~700 tokens de entrada solo por
-  las cuatro herramientas; un turno de dos pasos llegó a 4111. El coste ya
-  se ve (hito 7); compactación: hito 11 (spec 4, §12.14).
-- **Límites de tokens y de tiempo por turno:** hito 8, con el modo no
-  interactivo (spec 4, §11, duda 3).
-- **Las descripciones de las herramientas son prompts:** primeras candidatas
-  a la batería de evals del hito 8 (spec 4, §5).
-- **Llamadas en paralelo:** hito 16 (spec 4, §11, duda 5).
-- ~~**`.gitignore`**~~ **Resuelto** (`eb675f1`, spec
-  `mejora-2026-10-23-deuda-hito-5`, E6): `glob` y `grep` lo leen.
-- **POR VERIFICAR:** si OpenCode llega a partir los argumentos de una
-  llamada o a mandar JSON inválido (el código y los tests cubren los dos
-  casos; spec 4, §10).
-- **Detalles visuales:** el eco de `^C` y lo que se teclea durante un turno
-  se mezclan con la salida. Hito 21 (spec 4, §12.13).
+**POR VERIFICAR** (observaciones de proveedor o de entorno, no deuda: el
+código y los tests cubren los dos casos):
+- cortar la red a mitad de una respuesta, a mano (spec 3, punto 9 de la
+  verificación): no se pudo provocar en WSL; desde el Ubuntu de casa;
+- el formato de un error a mitad de stream en OpenCode (spec 3, §10);
+- si OpenCode llega a partir los argumentos de una llamada o a mandar JSON
+  inválido (spec 4, §10);
+- un `refusal` de OpenCode, que no ha mandado nunca (spec 5, §10);
+- qué campos de coste manda OpenCode Zen; la cuenta es de Go (spec 7, §10).
 
-**Pendientes del hito 5** (anotados en su spec; cada uno con el hito que lo
-resuelve):
-- ~~**Excepciones no previstas tras una ejecución**~~ **Resuelto**
-  (`e084fbd`, spec `mejora-2026-10-23-deuda-hito-5`, E4): el turno se
-  guarda ante cualquier excepción.
-- ~~**Una FIFO bloquea `read_file` y `grep` al recorrer**~~ **Resuelto**
-  (`85c9e26`, spec 5, §12.11).
-- ~~**Pieza 14: sanear la pregunta**~~ **Resuelto** (`ea93db2`, con `clean()`
-  de la mejora, A2).
-- ~~**`.git/config` se lee sin preguntar**~~ **Resuelto** (`c64207b`, mejora
-  E3): es secreto.
-- ~~**Límites conocidos de `write_file` y `edit_file`**~~ **Resueltos**
-  (spec `mejora-2026-10-23-deuda-hito-5`, PR 3), salvo lo que decidió el
-  mantenedor: D7 aceptado, D14 se mantiene y D5 no es un fallo (Linux). D11,
-  resuelto en el hito 7.
-- ~~**Un comando que sale de su grupo** (`setsid`) sobrevive~~ **Resuelto**
-  (`96db36c`, `v0.5.1`): subreaper.
-- ~~**El fallo del `fsync` de la carpeta no deja rastro** (D11)~~
-  **Resuelto** en el hito 7: va a `maha.log` (spec 7, §1.11).
-- **Comandos interactivos** (un editor, `git commit` sin `-m`): sin stdin,
-  terminan o llegan al tiempo límite. Es el diseño (spec 5, §10); la
-  descripción pide comandos no interactivos.
-
-**Del hito 7** (anotados en su spec §12; ningún fallo conocido):
-- **Modelos que `maha` aún no puede usar:** muchos de Go y Zen se sirven
-  por la API de Anthropic (hito 9), por la de Responses de OpenAI o por la
-  de Google, y `maha` solo habla Chat Completions. Están en el catálogo
-  igual. Las dos últimas no tienen hito: **decisión del mantenedor**, cuando
-  toque, si se añaden adaptadores.
-- **Refrescar los precios desde models.dev** a una caché, a petición:
-  mejora posible si mantener a mano 113 modelos pesa (spec §11, 1). Los
-  precios del catálogo son del 2026-10-27: cuando OpenCode da el coste
-  (Go), es el que vale.
-- **POR VERIFICAR:** qué campos de coste manda OpenCode Zen (pago por uso);
-  la cuenta es de Go (spec 7, §10).
-- **Límite aceptado por el mantenedor:** la rotación de `maha.log` no se
-  coordina entre varios `maha` a la vez (spec 7, §12.48).
-
-**Del hito 6** (anotados en su spec; ningún fallo conocido):
-- ~~**Coste por sesión**~~ **Resuelto** en el hito 7: `session $…` en la
-  línea de tokens, y cada turno guarda su coste (spec 7, §1.5).
-- **Retomar al arrancar** (`maha --continue`, `--resume ID`): hito 8, con
-  las opciones de línea de comandos (spec 6, §11, duda 5).
-- **El modelo no sabe en qué directorio trabaja** tras retomar una sesión de
-  otro: el aviso es para la persona. El directorio entra en el system prompt
-  en el hito 10 (spec 6, §1.8).
-- **La marca `[interrupted by the user]`** es texto para el modelo:
-  candidata a la batería de evals del hito 8.
+**Límites aceptados por el mantenedor** (cada uno, con su decisión en su
+spec):
+- los secretos con otro nombre no se detectan hasta el hito 15 (mejora
+  `2026-10-23`, E5);
+- D7 y D14 de `write_file`/`edit_file` (mejora `2026-10-23`);
+- los comandos interactivos (un editor, `git commit` sin `-m`) terminan o
+  llegan al tiempo límite: es el diseño (spec 5, §10);
+- la rotación de `maha.log` no se coordina entre varios `maha` a la vez
+  (spec 7, §12.48).
 
 **Por medir:**
 - Línea base de las evals (hito 8).
