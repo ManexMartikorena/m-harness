@@ -1,6 +1,6 @@
 [project]
 name = "m-harness"
-version = "0.6.0"
+version = "0.6.1"
 description = "Agente de terminal de propósito general, construido desde cero."
 readme = "README.md"
 license = "MIT"
