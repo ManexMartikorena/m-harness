@@ -177,6 +177,9 @@ def test_model_info_is_immutable() -> None:
         ("1E+1", "10"),
         ("0.0031", "0.0031"),
         ("0", "0"),
+        # A price of -0.0 passes `ge=0` (audit of hito 7).
+        ("-0", "0"),
+        ("-0E-6", "0"),
     ],
 )
 def test_usd_goes_to_json_plain_and_exact(amount: str, text: str) -> None:
