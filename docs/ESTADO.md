@@ -1,6 +1,7 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-27. **Hito 7 cerrado (`v0.7.0`). Plan
+Última actualización: 2026-10-27. **Hito 7 cerrado (`v0.7.0`, y el arreglo
+`v0.7.1`). Plan
 ampliado y ordenado para empezar el hito 8. Cero deuda conocida.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
@@ -12,8 +13,8 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 interactivo), sin spec todavía. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.7.0` — Trazas y coste** (2026-10-27):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.7.0
+- Última versión: **`v0.7.1` — Comandos sin terminal** (2026-10-27):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.7.1
 - Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
@@ -37,7 +38,7 @@ spec, su nota de la guía y su release.
 | 4 | Tool calling y bucle agéntico | `v0.4.0` (2026-10-21) |
 | 5 | Permisos y herramientas con efecto | `v0.5.0` (2026-10-23), `v0.5.1`, `v0.5.2` (cero deuda) |
 | 6 | Sesiones e historial | `v0.6.0` (2026-10-26), `v0.6.1` |
-| 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27) |
+| 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
 
 Después del hito 7 (2026-10-27, todo de documentación, decidido por el
 mantenedor):
@@ -93,7 +94,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.7.0`).
+   `maha 0.7.1`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -198,7 +199,8 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
   arreglos `v0.5.1` (2026-10-23) y `v0.5.2` (2026-10-26)
 - [x] 6. Sesiones e historial. `v0.6.0` (2026-10-26) y el arreglo `v0.6.1`
   (2026-10-27)
-- [x] 7. Trazas y coste. `v0.7.0` (2026-10-27)
+- [x] 7. Trazas y coste. `v0.7.0` (2026-10-27) y el arreglo `v0.7.1`
+  (2026-10-27)
 - [ ] 8. Evals y modo no interactivo. `v0.8.0`
 - [ ] 9. Adaptador de Anthropic. `v0.9.0`
 - [ ] 10. System prompt por capas. `v0.10.0`
