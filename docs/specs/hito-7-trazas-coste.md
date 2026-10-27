@@ -145,7 +145,7 @@ trains_on_data = true        # "collected data may be used to improve the model"
   mismos en Zen si están en su tabla, más los gratis de Zen que entrenan con
   los datos~~. *(Cambiado por el mantenedor el 2026-10-27, §11:)* **todos
   los modelos de cada proveedor**, tal como los publica su tabla de precios:
-  los 30 de Go y los 95 de Zen (comprobados el 2026-10-27). Cada proveedor
+  los 30 de Go y los 83 de Zen (comprobados el 2026-10-27). Cada proveedor
   nuevo (Anthropic, hito 9) trae los suyos. Lo que no está, no tiene coste
   (§1.5).
 - **Precios por tramos** *(añadido el 2026-10-27, §11)*: varios modelos
@@ -603,3 +603,35 @@ Dudas que se plantearon al mantenedor (registro):
    con stream y sin él (los trozos medidos en los hitos 3 y 4 ya los
    traían: 25 y 40). Sigue POR VERIFICAR que OpenCode los mande sin stream
    (§10).
+
+### PR 2 (`feature/hito-7-catalogo`, 2026-10-27)
+
+5. **Alcance ampliado por el mantenedor** al empezar el PR (§11): todos los
+   modelos de cada proveedor y precios por tramos. Spec y DESIGN corregidos
+   en su propio commit (`2f53ed7`).
+6. **Las tablas, del HTML de la documentación**, no de un resumen: un
+   resumen automático contó 37 modelos en Go porque tomaba cada tramo como
+   un modelo. Son 30 en Go y 83 en Zen.
+7. **models.dev, segunda fuente.** Cruzado modelo a modelo, solo difiere en
+   dos sitios: DeepSeek V4.1 Flash y V4 Pro en Go (models.dev da el precio
+   de valle; aquí va el de punta, §1.3) y MiniMax M3 en Go (models.dev le
+   pone un tramo por encima de 512 000 tokens que la documentación no
+   publica; manda la documentación). Jev 1.13 y Jev 1.13 Free no están en
+   models.dev: van sin ventana de contexto.
+8. **Los que entrenan con los datos**, de las secciones de privacidad: en
+   Go, Muse Spark 1.3 y 1.2 Contributor e Iceman Contributor Free ("Model
+   training: Yes"); en Zen, Big Pickle, Flint 40B Free y MiMo-V2.6-Flash
+   Free ("collected data may be used to improve the model") y los tres
+   Nemotron gratis ("logged … to improve NVIDIA products and services"),
+   que se marcan por prudencia.
+9. **Muchos modelos usan otra API** (Anthropic Messages, OpenAI Responses,
+   Google): `maha` aún solo habla Chat Completions. Están en el catálogo
+   igual; poder usarlos es otra pieza (el adaptador de Anthropic, hito 9).
+10. **La fecha, por proveedor:** `[providers.<nombre>].checked`, y un modelo
+    la puede cambiar con su propio `checked`. Un precio sin fecha es un
+    error.
+11. **El usuario sustituye modelos enteros**, no campos sueltos: su entrada
+    es la que vale, sin heredar la ventana ni la caché del paquete.
+12. **`models.toml` entra en el paquete** (`uv build`, comprobado a mano):
+    `uv_build` incluye los ficheros que no son Python de la carpeta del
+    módulo.
