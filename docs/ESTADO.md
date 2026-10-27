@@ -1,22 +1,20 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-27. **Hito 6 cerrado (`v0.6.0`). Hito 7
-(trazas y coste) en curso: PRs 1 a 4 integrados (#64, #65, #69, #70) y la
-auditoría del mantenedor ("cero deuda antes del hito 8") arreglada en
-`fix/deuda-hito-7`. Falta: el coste que da el proveedor (decisión del
-mantenedor), el PR 5 (terminal) y el cierre. Arreglo de lecturas no UTF-8
-publicado en `v0.6.1`.**
+Última actualización: 2026-10-27 (cierre del hito 7). **Hito 7 cerrado
+(`v0.7.0`): trazas y coste. Cero deuda conocida: tres revisiones
+independientes y la verificación a mano, todo arreglado; las dos decisiones
+que quedaban las tomó el mantenedor. Siguiente: la spec del hito 8.**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
-**Desarrollo. Hito 6 cerrado (`v0.6.0`). En curso: hito 7 (trazas y coste),
-PRs 1 a 4 de 5 integrados, y la auditoría.**
+**Desarrollo. Hito 7 cerrado (`v0.7.0`). Siguiente: hito 8 (evals y modo
+no interactivo), sin spec todavía.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.6.1` — Lecturas que no son UTF-8** (2026-10-27):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.6.1
+- Última versión: **`v0.7.0` — Trazas y coste** (2026-10-27):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.7.0
 - Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
@@ -24,24 +22,38 @@ PRs 1 a 4 de 5 integrados, y la auditoría.**
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
 
-- Nada pendiente. `v0.6.1` sale sin pasos fuera de lo normal. `v0.6.0` salió sin pasos fuera de lo normal: ninguna
-  variable nueva. Desde esta versión `maha` escribe en
-  `~/.local/share/maha/sessions/` (`PUESTA_EN_MARCHA` §3).
+- Nada pendiente. `v0.7.0` sale sin pasos fuera de lo normal: ninguna
+  variable nueva. Desde esta versión `maha` escribe también en
+  `~/.local/share/maha/traces/` y `~/.local/state/maha/maha.log`, y lee el
+  `~/.config/maha/models.toml` opcional (`PUESTA_EN_MARCHA` §3).
 
 ## Hecho
 
 Lo más reciente primero.
 
-- **Auditoría del hito 7, 2026-10-27** (rama `fix/deuda-hito-7`). El
-  mantenedor pidió dejar el hito sin deuda antes del hito 8. Dos revisiones
-  independientes del código y el repaso de los pendientes: 11 fallos y 10
-  puntos de deuda, todos arreglados con su test (spec §12.24 a §12.35). Un
-  punto queda para el mantenedor: el tope de 5 intentos de id (§12.34).
-  Comprobado contra OpenCode: su `list_cost` coincide al dígito con el coste
-  del catálogo, y ya no manda el desglose de razonamiento.
-- **Decisión del mantenedor, 2026-10-27:** usar el coste que da el
-  proveedor cuando venga (OpenCode: `usage.opencode`), y el catálogo cuando
-  no. Pendiente de implementar.
+- **Hito 7 cerrado, 2026-10-27: `v0.7.0` — Trazas y coste.** Spec
+  IMPLEMENTADA con la verificación a mano (diez puntos en verde) y la nota
+  07 de la guía. PRs: #61, #64, #65, #66 (`v0.6.1`), #69, #70, #71, #72, #73,
+  #74, #75 y el de cierre. 1312 tests, mypy, ruff e import-linter en verde.
+- **Decisiones del mantenedor al cerrar, 2026-10-27:** sin tope de intentos
+  al buscar un id de sesión libre (spec §12.34, PR #75); y se acepta como
+  límite que la rotación de `maha.log` no se coordine entre varios `maha`
+  (§12.48).
+- **Verificación a mano y revisión final, 2026-10-27** (PR #74): la
+  verificación encontró un fallo (una carpeta bloqueada se tomaba por un
+  choque de ids) y una tercera revisión independiente, 3 más y deuda; todo
+  arreglado con su test (spec §12.44 a §12.47). Medido: OpenCode Go cuenta
+  contra el límite 1× GLM, 0,75× DeepSeek en valle y 4× Kimi K3.
+- **Hito 7, PR 5: la terminal, 2026-10-27** (PR #73): la línea de tokens
+  con razonamiento y coste, avisos del catálogo, `/trace` y `maha.log`.
+- **El coste que da el proveedor, 2026-10-27** (PR #72), por decisión del
+  mantenedor: gana al del catálogo.
+
+- **Auditoría del hito 7, 2026-10-27** (PR #71). El mantenedor pidió dejar
+  el hito sin deuda antes del hito 8. Dos revisiones independientes del
+  código y el repaso de los pendientes: 11 fallos y 10 puntos de deuda,
+  todos arreglados con su test (spec §12.24 a §12.35). Comprobado contra
+  OpenCode: su `list_cost` coincide al dígito con el coste del catálogo.
 - **Hito 7, PR 4: trazas, 2026-10-27** (PR #70): un JSONL por sesión en
   `~/.local/share/maha/traces/`, enmascarado, `error` e `interrupted`, el id
   reservado desde el principio y el resumen de `/trace`.
@@ -570,11 +582,12 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
 subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
 mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Mantenedor:** decidir el tope de intentos de id (spec §12.34): dejar
-   5 o no poner tope.
-2. **Agente:** el coste que da el proveedor (decisión del mantenedor del
-   2026-10-27), después el PR 5 de la spec §6 (`feature/hito-7-terminal`) y
-   el cierre del hito (`v0.7.0`).
+1. **Agente:** proponer la spec del hito 8 (evals y modo no interactivo,
+   DESIGN §9 y §14) en su propio PR (`docs/spec-hito-8-…`), con sus dudas y
+   recomendaciones. Entran en ella los pendientes que el hito 8 resuelve
+   (más abajo): reintentos ante 429 y 5xx, límites por turno, `maha -p`,
+   `--continue`/`--resume`, y la batería de evals con su línea base.
+2. **Mantenedor:** responder las dudas de esa spec.
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
@@ -602,7 +615,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.6.1`).
+   `maha 0.7.0`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -636,17 +649,17 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 
 **Pendientes del hito 3** (anotados en su spec; cada uno con el hito que lo
 resuelve):
-- **Tokens de razonamiento:** "OK" cuesta de 16 a 99 tokens de salida
-  porque `glm-5.3-flash` razona; varía mucho con el mismo prompt.
-  `reasoning_content` se ignora. Desglose y coste: hito 7 (spec 3, §1.7 y
-  §12.9.3).
+- ~~**Tokens de razonamiento:** desglose y coste~~ **Resuelto** en el
+  hito 7: la línea de tokens dice `(N reasoning)` cuando el proveedor lo
+  manda, y el coste lo incluye (spec 7, §1.2 y §12.35). Ver el texto del
+  razonamiento (`reasoning_content`): hito 19, con la interfaz.
 - ~~**`refusal` del stream se ignora**~~ **Resuelto** en el hito 5
   (`89e0fec`): llega como texto. Sigue POR VERIFICAR en OpenCode, que no la
   ha mandado nunca (spec 5, §10).
 - ~~**Respuesta cortada con Ctrl+C**~~ **Resuelto** en el hito 6 (`d12ea22`):
   se guarda marcada y el modelo lo sabe (spec 6, §1.7 y §12).
-- **Sin reintentos** ante 429 o 5xx: se valoran en el hito 7 o el 8 (spec 3,
-  §1.9).
+- **Sin reintentos** ante 429 o 5xx: hito 8, por decisión del mantenedor
+  (spec 7, §11, duda 4).
 - **Lo que se teclea mientras gira el spinner se mezcla con él** en pantalla
   (solo visual). Hito 19, con prompt_toolkit (spec 3, §12.10).
 - **POR VERIFICAR:** el formato de un error a mitad de stream en OpenCode
@@ -671,8 +684,8 @@ resuelve):
   se mantiene así por decisión del mantenedor; mirar el contenido es otra
   pieza (hito 14; mejora `2026-10-23`, E5).
 - **Tokens:** cada llamada al modelo cuesta ~700 tokens de entrada solo por
-  las cuatro herramientas; un turno de dos pasos llegó a 4111. Coste: hito
-  7; compactación: hito 11 (spec 4, §12.14).
+  las cuatro herramientas; un turno de dos pasos llegó a 4111. El coste ya
+  se ve (hito 7); compactación: hito 11 (spec 4, §12.14).
 - **Límites de tokens y de tiempo por turno:** hito 8, con el modo no
   interactivo (spec 4, §11, duda 3).
 - **Las descripciones de las herramientas son prompts:** primeras candidatas
@@ -699,28 +712,34 @@ resuelve):
   E3): es secreto.
 - ~~**Límites conocidos de `write_file` y `edit_file`**~~ **Resueltos**
   (spec `mejora-2026-10-23-deuda-hito-5`, PR 3), salvo lo que decidió el
-  mantenedor: D7 aceptado, D14 se mantiene, D5 no es un fallo (Linux) y
-  D11 va al hito 7.
+  mantenedor: D7 aceptado, D14 se mantiene y D5 no es un fallo (Linux). D11,
+  resuelto en el hito 7.
 - ~~**Un comando que sale de su grupo** (`setsid`) sobrevive~~ **Resuelto**
   (`96db36c`, `v0.5.1`): subreaper.
-- **Por decisión del mantenedor** (mejora `2026-10-23`): el fallo del
-  `fsync` de la carpeta no deja rastro → hito 7 (D11).
+- ~~**El fallo del `fsync` de la carpeta no deja rastro** (D11)~~
+  **Resuelto** en el hito 7: va a `maha.log` (spec 7, §1.11).
 - **Comandos interactivos** (un editor, `git commit` sin `-m`): sin stdin,
   terminan o llegan al tiempo límite. Es el diseño (spec 5, §10); la
   descripción pide comandos no interactivos.
 
-**Del hito 7, en curso** (anotados en su spec §12):
+**Del hito 7** (anotados en su spec §12; ningún fallo conocido):
 - **Modelos que `maha` aún no puede usar:** muchos de Go y Zen se sirven
   por la API de Anthropic (hito 9), por la de Responses de OpenAI o por la
   de Google, y `maha` solo habla Chat Completions. Están en el catálogo
   igual. Las dos últimas no tienen hito: **decisión del mantenedor**, cuando
   toque, si se añaden adaptadores.
 - **Refrescar los precios desde models.dev** a una caché, a petición:
-  mejora posible si mantener a mano 113 modelos pesa (spec §11, 1).
+  mejora posible si mantener a mano 113 modelos pesa (spec §11, 1). Los
+  precios del catálogo son del 2026-10-27: cuando OpenCode da el coste
+  (Go), es el que vale.
+- **POR VERIFICAR:** qué campos de coste manda OpenCode Zen (pago por uso);
+  la cuenta es de Go (spec 7, §10).
+- **Límite aceptado por el mantenedor:** la rotación de `maha.log` no se
+  coordina entre varios `maha` a la vez (spec 7, §12.48).
 
 **Del hito 6** (anotados en su spec; ningún fallo conocido):
-- **Coste por sesión:** cada turno guarda sus tokens (`UsageEntry`) para el
-  hito 7, que trae el catálogo y los precios.
+- ~~**Coste por sesión**~~ **Resuelto** en el hito 7: `session $…` en la
+  línea de tokens, y cada turno guarda su coste (spec 7, §1.5).
 - **Retomar al arrancar** (`maha --continue`, `--resume ID`): hito 8, con
   las opciones de línea de comandos (spec 6, §11, duda 5).
 - **El modelo no sabe en qué directorio trabaja** tras retomar una sesión de
@@ -745,7 +764,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
   arreglos `v0.5.1` (2026-10-23) y `v0.5.2` (2026-10-26)
 - [x] 6. Sesiones e historial. `v0.6.0` (2026-10-26) y el arreglo `v0.6.1`
   (2026-10-27)
-- [ ] 7. Trazas y coste. `v0.7.0`
+- [x] 7. Trazas y coste. `v0.7.0` (2026-10-27)
 - [ ] 8. Evals y modo no interactivo. `v0.8.0`
 - [ ] 9. Adaptador de Anthropic. `v0.9.0`
 - [ ] 10. System prompt por capas. `v0.10.0`
