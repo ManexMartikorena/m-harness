@@ -331,6 +331,14 @@ async def test_the_cost_opencode_counts_against_the_limit(
         ({"cost": {"usd": 1}}, None),
         ({"cost": "0.5"}, "0.5"),
         ({"opencode": None, "cost": 0.25}, "0.25"),
+        # The whole opencode object of another shape: ignored, the answer
+        # kept (final review of hito 7).
+        ({"opencode": "x", "cost": 0.25}, "0.25"),
+        ({"opencode": [], "cost": 0.25}, "0.25"),
+        ({"opencode": 1}, None),
+        # An absurd amount is not believed either.
+        ({"cost": 1e30}, None),
+        ({"cost": "1e300"}, None),
     ],
 )
 @respx.mock
