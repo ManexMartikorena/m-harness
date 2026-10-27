@@ -1,0 +1,9 @@
+# Escribir una función contra sus tests.
+instruction = "Implementa slugify en texto.py para que pasen los tests de test_texto.py, sin tocarlos."
+fixture = "texto"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = "python3 -m unittest -q test_texto"
+file = "test_texto.py"
+contains = ['self.assertEqual(slugify("Hola Mundo"), "hola-mundo")']
