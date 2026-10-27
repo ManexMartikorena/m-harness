@@ -8,6 +8,7 @@ They are shown escaped, as `\x1b` or `\u202e`.
 """
 
 import re
+from decimal import ROUND_HALF_UP, Decimal
 
 # C0 and C1 controls but newline and tab, and the bidi embeddings,
 # overrides, isolates and marks.
@@ -30,3 +31,16 @@ def clean_line(text: str) -> str:
     """`text` clean and on one line: its line breaks and tabs escaped too, so
     a title cannot push the start of a command off the screen."""
     return clean(text).replace("\n", "\\n").replace("\t", "\\t")
+
+
+# The smallest cost shown: a hundredth of a cent.
+_SMALLEST = Decimal("0.0001")
+
+
+def usd(amount: Decimal) -> str:
+    """$0.0008: four decimals, enough for a turn; never a "$0.0000" that
+    looks free when it is not (spec hito 7, §1.5)."""
+    if amount.is_zero():
+        return "$0"
+    shown = amount.quantize(_SMALLEST, rounding=ROUND_HALF_UP)
+    return f"<${_SMALLEST}" if shown.is_zero() else f"${shown}"

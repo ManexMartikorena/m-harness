@@ -8,9 +8,11 @@ from typing import TextIO
 
 from mharness.adapters.cli.input import Discard, ReadLine
 from mharness.adapters.cli.spinner import use_color
-from mharness.adapters.cli.text import clean, clean_line
+from mharness.adapters.cli.text import clean, clean_line, usd
 from mharness.application.sessions import Conversation, Sessions
+from mharness.application.traces import TraceSummary, TurnSummary
 from mharness.domain.session import SessionError, SessionNotFound
+from mharness.domain.trace import TraceError
 from mharness.ports.catalog import ModelCatalog
 
 # What each command does, for /help.
@@ -19,6 +21,7 @@ COMMANDS = {
     "resume": "/resume [ID] — resume a session; without ID, the last one here",
     "delete": "/delete ID — delete a session",
     "model": "/model [ID] — show the model, or change it",
+    "trace": "/trace [ID] — what a session did and cost; without ID, this one",
     "help": "/help — this list",
     "exit": "/exit — quit",
 }
@@ -83,11 +86,13 @@ class Commands:
                     await self._resume(command.argument)
                 case "delete":
                     await self._delete(command.argument)
+                case "trace":
+                    await self._trace(command.argument)
                 case "model":
                     await self._model(command.argument)
                 case _:
                     self._say(f"unknown command: /{command.name} (see /help)")
-        except SessionError as exc:
+        except (SessionError, TraceError) as exc:
             print(f"error: {clean(str(exc))}", file=self._err, flush=True)
         except Exception as exc:
             # A bug, or the disk failing in a way nobody expected: said, and
@@ -215,6 +220,18 @@ class Commands:
         if model is not None:
             self.note_model()
 
+    async def _trace(self, session: str | None) -> None:
+        """A row per turn and the total; the detail, in the file (spec hito
+        7, §1.9). Everything that comes from the disk is escaped."""
+        report = await self._sessions.trace(session, current=self.conversation)
+        summary = report.summary
+        if not summary.turns:
+            self._say("(no turns in the trace)")
+        else:
+            for line in _summary_lines(summary):
+                self._say(line)
+        self._say(f"[trace: {self._shown(report.location)}]")
+
     def _shown(self, cwd: str) -> str:
         """A directory, with `~` for the home, clean."""
         path = PurePath(cwd)
@@ -225,3 +242,55 @@ class Commands:
 
     def _say(self, text: str) -> None:
         print(f"  {text}", file=self._out, flush=True)
+
+
+def _summary_lines(summary: TraceSummary) -> list[str]:
+    models = ", ".join(clean_line(model) for model in summary.models) or "no model"
+    lines = [
+        f"{clean_line(summary.session)} · {models} · "
+        f"{_count(len(summary.turns), 'turn')} · "
+        f"{_count(summary.model_calls, 'model call')} · "
+        f"{_count(summary.tools, 'tool')}"
+    ]
+    lines += [_turn_line(turn) for turn in summary.turns]
+    usage = summary.usage
+    at_least = "≥" if summary.uncosted_turns else ""
+    lines.append(
+        f"total: {usage.input_tokens} in · {usage.output_tokens} out · "
+        f"{at_least}{usd(summary.cost)}"
+    )
+    return lines
+
+
+def _turn_line(turn: TurnSummary) -> str:
+    parts = [
+        _count(turn.model_calls, "call"),
+        _count(turn.tools, "tool"),
+        f"{turn.usage.input_tokens} in",
+        f"{turn.usage.output_tokens} out",
+    ]
+    if turn.cost is not None:
+        parts.append(usd(turn.cost))
+    parts.append(f"{turn.seconds:.1f} s")
+    if turn.failed_tools:
+        parts.append(f"{turn.failed_tools} failed")
+    if turn.denied_tools:
+        parts.append(f"{turn.denied_tools} denied")
+    if turn.ended != "end_turn":
+        parts.append(_ENDINGS[turn.ended])
+    started = f"{turn.started_at.astimezone():%H:%M:%S}"
+    return f"{turn.number}  {started}  {' · '.join(parts)}"
+
+
+# How a turn that did not just answer ended.
+_ENDINGS = {
+    "max_steps": "step limit",
+    "denied": "denied",
+    "error": "error",
+    "interrupted": "interrupted",
+    "unfinished": "unfinished",
+}
+
+
+def _count(number: int, thing: str) -> str:
+    return f"{number} {thing}" + ("" if number == 1 else "s")

@@ -5,6 +5,7 @@ import asyncio
 import io
 import signal
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -14,18 +15,20 @@ from mharness.adapters.cli.conversation import converse
 from mharness.application.agent import Agent
 from mharness.application.sessions import Sessions
 from mharness.application.tools import ToolRegistry
+from mharness.domain.agent_events import ModelCallFinished, TurnStarted
 from mharness.domain.catalog import ModelInfo
-from mharness.domain.messages import Message, TextBlock
-from mharness.domain.model import ModelResponse
+from mharness.domain.messages import Message, TextBlock, ToolCallBlock
+from mharness.domain.model import ModelResponse, Usage
 from mharness.domain.session import (
     MessageEntry,
     SessionError,
     SessionHeader,
     SessionSummary,
 )
+from mharness.domain.trace import TraceRecord, TurnFailed
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
-from tests.fakes.model import FakeModelClient, reply
+from tests.fakes.model import FakeModelClient, reply, tool_calls
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
 from tests.fakes.terminal import ScriptedInput
 from tests.fakes.tracing import MemoryTraceSink
@@ -69,7 +72,15 @@ def test_text_that_goes_to_the_model(line: str) -> None:
 
 
 def test_the_known_commands() -> None:
-    assert set(COMMANDS) == {"sessions", "resume", "delete", "model", "help", "exit"}
+    assert set(COMMANDS) == {
+        "sessions",
+        "resume",
+        "delete",
+        "model",
+        "trace",
+        "help",
+        "exit",
+    }
 
 
 # The commands in the conversation (spec hito 6, §1.8 and §4.7.2-3), with
@@ -88,6 +99,9 @@ KNOWN = MemoryCatalog(
 )
 
 CWD = "/home/ana/proyecto"
+# The first session of a Maha, and another one.
+FIRST = "20261026-091502-3fa2"
+OTHER = "20261026-091502-0bad"
 NOW = datetime(2026, 10, 26, 9, 15, 2, tzinfo=UTC)
 
 
@@ -446,3 +460,84 @@ async def test_leaving_a_conversation_never_saved_says_so() -> None:
         "warning: the conversation was not saved, its last turns are lost: "
         "cannot save session: No space left on device\n"
     ) in err
+
+
+# /trace (spec hito 7, §1.9 and §4.6.2).
+
+
+def clock(moment: datetime) -> str:
+    return f"{moment.astimezone():%H:%M:%S}"
+
+
+def priced_reply(text: str, usage: Usage, cost: str) -> ModelResponse:
+    return reply(text, usage=usage).model_copy(update={"cost": Decimal(cost)})
+
+
+async def test_trace_shows_each_turn_and_the_total() -> None:
+    maha = Maha(
+        MemorySessionStore(),
+        [
+            priced_reply("Uno", Usage(input_tokens=742, output_tokens=31), "0.0012"),
+            tool_calls(
+                ToolCallBlock(id="c1", name="nada", arguments="{}"),
+                usage=Usage(input_tokens=10, output_tokens=2),
+            ),
+            priced_reply("Dos", Usage(input_tokens=20, output_tokens=3), "0.0001"),
+        ],
+    )
+
+    _, out, _ = await maha.run("A", "B", "/trace", "/exit")
+
+    assert (
+        f"  {FIRST} · fake-model · 2 turns · 3 model calls · 1 tool\n"
+        f"  1  {clock(NOW)}  1 call · 0 tools · 742 in · 31 out · $0.0012 · 0.0 s\n"
+        f"  2  {clock(NOW)}  2 calls · 1 tool · 30 in · 5 out · 0.0 s · 1 failed\n"
+        "  total: 772 in · 36 out · ≥$0.0012\n"
+        f"  [trace: /traces/{FIRST}.jsonl]\n"
+    ) in out
+
+
+async def test_trace_before_any_turn_says_so() -> None:
+    _, out, _ = await Maha(MemorySessionStore(), []).run("/trace", "/exit")
+
+    assert "  (no turns in the trace)\n" in out
+
+
+async def test_trace_of_an_id_with_nothing_is_an_error() -> None:
+    _, _, err = await Maha(MemorySessionStore(), []).run(
+        "/trace 20261026-091502-ffff", "/exit"
+    )
+
+    assert "error: no session 20261026-091502-ffff\n" in err
+
+
+async def test_trace_says_how_a_turn_ended_badly() -> None:
+    maha = Maha(MemorySessionStore(), [])
+    log = await maha.traces.open(OTHER, new=True)
+    for event in (
+        TurnStarted(text="A"),
+        TurnFailed(kind="ModelUnavailableError", message="503"),
+        TurnStarted(text="B"),
+    ):
+        await log.write(TraceRecord(at=NOW, session=OTHER, event=event))
+
+    _, out, _ = await maha.run(f"/trace {OTHER}", "/exit")
+
+    assert (
+        f"  1  {clock(NOW)}  0 calls · 0 tools · 0 in · 0 out · $0 · 0.0 s · error\n"
+        in out
+    )
+    assert "· unfinished\n" in out
+
+
+async def test_what_the_trace_brings_from_the_disk_is_escaped() -> None:
+    maha = Maha(MemorySessionStore(), [])
+    log = await maha.traces.open(OTHER, new=True)
+    await log.write(TraceRecord(at=NOW, session=OTHER, event=TurnStarted(text="A")))
+    call = ModelCallFinished(usage=Usage(), model="glm\x1b[2J", cost=None)
+    await log.write(TraceRecord(at=NOW, session=OTHER, event=call))
+
+    _, out, _ = await maha.run(f"/trace {OTHER}", "/exit")
+
+    assert "\x1b[2J" not in out
+    assert "glm\\x1b[2J" in out

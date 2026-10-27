@@ -10,7 +10,6 @@ import logging
 import signal
 import sys
 from contextlib import aclosing
-from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import TextIO
 
@@ -18,7 +17,7 @@ from mharness import __version__
 from mharness.adapters.cli.commands import Commands, parse_command
 from mharness.adapters.cli.input import Discard, ReadLine, StdinLines
 from mharness.adapters.cli.spinner import Spinner, use_color
-from mharness.adapters.cli.text import clean
+from mharness.adapters.cli.text import clean, usd
 from mharness.application.sessions import Conversation, Sessions
 from mharness.domain.agent_events import (
     ApprovalRequested,
@@ -39,8 +38,6 @@ _log = logging.getLogger(__name__)
 EXIT_INTERRUPTED = 130
 # A tool call is shown in one line, cut to this length.
 MAX_CALL = 100
-# The smallest cost shown: a hundredth of a cent.
-_CENT_HUNDREDTH = Decimal("0.0001")
 
 
 # Closing the window (SIGHUP) or `kill` (SIGTERM) end maha the way Ctrl+C
@@ -287,18 +284,9 @@ def _show_turn(turn: TurnFinished, conversation: Conversation, out: TextIO) -> N
     if turn.tool_calls:
         parts.append(f"{turn.tool_calls} call" + ("s" if turn.tool_calls > 1 else ""))
     if turn.cost is not None:
-        parts.append(_usd(turn.cost))
+        parts.append(usd(turn.cost))
     # The turns without a price are not in the sum: it is at least that.
     if conversation.cost or (turn.cost is not None and not conversation.uncosted_turns):
         at_least = "≥" if conversation.uncosted_turns else ""
-        parts.append(f"session {at_least}{_usd(conversation.cost)}")
+        parts.append(f"session {at_least}{usd(conversation.cost)}")
     print(f"  [{' · '.join(parts)}]", file=out, flush=True)
-
-
-def _usd(amount: Decimal) -> str:
-    """$0.0008: four decimals, enough for a turn; never a "$0.0000" that
-    looks free when it is not."""
-    if amount.is_zero():
-        return "$0"
-    shown = amount.quantize(_CENT_HUNDREDTH, rounding=ROUND_HALF_UP)
-    return f"<{_usd(_CENT_HUNDREDTH)}" if shown.is_zero() else f"${shown}"
