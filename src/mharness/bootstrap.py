@@ -153,6 +153,7 @@ async def _converse(settings: config.Settings, catalog: ModelCatalog, cwd: Path)
         return await cli.converse(
             sessions,
             provider=settings.provider_name,
+            catalog=catalog,
             read_line=lines.readline,
             # Only a terminal has typed-ahead input to drop.
             discard=lines.discard if os.isatty(0) else None,

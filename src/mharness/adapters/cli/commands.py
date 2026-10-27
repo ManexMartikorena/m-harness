@@ -7,9 +7,11 @@ from pathlib import Path, PurePath
 from typing import TextIO
 
 from mharness.adapters.cli.input import Discard, ReadLine
+from mharness.adapters.cli.spinner import use_color
 from mharness.adapters.cli.text import clean, clean_line
 from mharness.application.sessions import Conversation, Sessions
 from mharness.domain.session import SessionError, SessionNotFound
+from mharness.ports.catalog import ModelCatalog
 
 # What each command does, for /help.
 COMMANDS = {
@@ -50,6 +52,8 @@ class Commands:
         sessions: Sessions,
         conversation: Conversation,
         *,
+        catalog: ModelCatalog,
+        provider: str,
         read: ReadLine,
         discard: Discard | None,
         out: TextIO,
@@ -58,6 +62,8 @@ class Commands:
     ) -> None:
         self._sessions = sessions
         self.conversation = conversation
+        self._catalog = catalog
+        self._provider = provider
         self._read = read
         self._discard = discard
         self._out = out
@@ -89,6 +95,30 @@ class Commands:
             detail = clean(f"{type(exc).__name__}: {exc}")
             print(f"error: internal: {detail}", file=self._err, flush=True)
         self.warn_unsaved()
+
+    def note_model(self) -> None:
+        """What the catalog says of the model in use (spec hito 7, §1.10):
+        not in it, or it may train on the data (ANALISIS §9). The model is
+        used anyway: a new one may not be in the catalog yet."""
+        info = self._catalog.get(self._provider, self.conversation.model)
+        if info is None:
+            self._say(
+                "[model not in the catalog: cost only if the provider reports it]"
+            )
+        elif info.trains_on_data:
+            warning = "[warning: this model may use your data for training]"
+            if use_color() and self._out.isatty():
+                warning = f"\x1b[33m{warning}\x1b[0m"
+            self._say(warning)
+
+    def warn_trace(self) -> None:
+        """A trace that fails does not stop maha: it is said, once (spec
+        hito 7, §1.7)."""
+        reason = self.conversation.trace_warning()
+        if reason is not None:
+            print(
+                f"warning: trace not saved: {clean(reason)}", file=self._err, flush=True
+            )
 
     def warn_unsaved(self) -> None:
         """A failed save does not stop maha: it is said (spec hito 6, §1.6)."""
@@ -148,6 +178,7 @@ class Commands:
             )
         if resumed.interrupted:
             self._say("[the last answer was interrupted]")
+        self.note_model()
 
     async def _delete(self, session: str | None) -> None:
         if session is None:
@@ -181,6 +212,8 @@ class Commands:
         if model is not None:
             await self.conversation.switch_model(model)
         self._say(f"[model: {clean_line(self.conversation.model)}]")
+        if model is not None:
+            self.note_model()
 
     def _shown(self, cwd: str) -> str:
         """A directory, with `~` for the home, clean."""

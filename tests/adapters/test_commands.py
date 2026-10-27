@@ -14,6 +14,7 @@ from mharness.adapters.cli.conversation import converse
 from mharness.application.agent import Agent
 from mharness.application.sessions import Sessions
 from mharness.application.tools import ToolRegistry
+from mharness.domain.catalog import ModelInfo
 from mharness.domain.messages import Message, TextBlock
 from mharness.domain.model import ModelResponse
 from mharness.domain.session import (
@@ -75,6 +76,17 @@ def test_the_known_commands() -> None:
 # sessions in memory.
 
 HOME = Path("/home/ana")
+
+# Every model these tests use, known without prices: no catalog notes and
+# no "$" (spec hito 7, §1.10).
+KNOWN = MemoryCatalog(
+    [
+        ModelInfo(provider=provider, model=model)
+        for provider in ("opencode-go", "p")
+        for model in ("glm-5.3-flash", "m", "kimi-k3")
+    ]
+)
+
 CWD = "/home/ana/proyecto"
 NOW = datetime(2026, 10, 26, 9, 15, 2, tzinfo=UTC)
 
@@ -123,6 +135,7 @@ class Maha:
         code = await converse(
             self.sessions,
             provider="opencode-go",
+            catalog=KNOWN,
             read_line=ScriptedInput(*lines),
             discard=self.discard,
             out=out,
@@ -401,6 +414,7 @@ async def test_ctrl_c_at_the_delete_question_ends_maha_and_keeps_the_session() -
     code = await converse(
         maha.sessions,
         provider="opencode-go",
+        catalog=KNOWN,
         read_line=read,
         discard=maha.discard,
         out=io.StringIO(),

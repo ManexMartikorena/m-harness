@@ -96,8 +96,10 @@ def test_two_turns_resend_the_history(
     out = capsys.readouterr().out
     assert code == 0
     assert "· opencode-go · glm-5.3-flash ·" in out
-    assert "Hola, Ane.\n  [tokens: 12 in · 9 out]" in out
-    assert "Te llamas Ane.\n  [tokens: 31 in · 5 out]" in out
+    assert "Hola, Ane.\n  [tokens: 12 in · 9 out · <$0.0001 · session <$0.0001]" in out
+    assert (
+        "Te llamas Ane.\n  [tokens: 31 in · 5 out · <$0.0001 · session <$0.0001]" in out
+    )
 
     first, second = (json.loads(call.request.content) for call in route.calls)
     assert len(first["messages"]) == 1
@@ -137,7 +139,10 @@ def test_a_cut_stream_shows_the_error_and_the_next_turn_works(
 
     captured = capsys.readouterr()
     assert code == 0
-    assert "> Hola, A\n> Hola, Ane.\n  [tokens: 12 in · 9 out]" in captured.out
+    assert (
+        "> Hola, A\n> Hola, Ane.\n"
+        "  [tokens: 12 in · 9 out · <$0.0001 · session <$0.0001]"
+    ) in captured.out
     assert captured.err.startswith("error: the connection to the provider failed")
     # The cut turn was not kept.
     second = json.loads(route.calls.last.request.content)
@@ -206,7 +211,10 @@ def test_a_tool_call_reads_a_real_file(
     out = capsys.readouterr().out
     assert code == 0
     assert '  → read_file(path="notas.txt")\n  ✓ 1 line\n' in out
-    assert "Dice: comprar pan.\n  [tokens: 430 in · 29 out · 1 call]" in out
+    assert (
+        "Dice: comprar pan.\n"
+        "  [tokens: 430 in · 29 out · 1 call · $0.0001 · session $0.0001]"
+    ) in out
     second = json.loads(route.calls.last.request.content)["messages"]
     assert second[-1] == {
         "role": "tool",

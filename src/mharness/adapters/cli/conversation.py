@@ -9,6 +9,7 @@ import json
 import signal
 import sys
 from contextlib import aclosing
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import TextIO
 
@@ -28,11 +29,14 @@ from mharness.domain.errors import ModelError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import Usage
+from mharness.ports.catalog import ModelCatalog
 
 # Terminal convention for a program stopped by Ctrl+C: 128 + SIGINT.
 EXIT_INTERRUPTED = 130
 # A tool call is shown in one line, cut to this length.
 MAX_CALL = 100
+# The smallest cost shown: a hundredth of a cent.
+_CENT_HUNDREDTH = Decimal("0.0001")
 
 
 # Closing the window (SIGHUP) or `kill` (SIGTERM) end maha the way Ctrl+C
@@ -55,6 +59,7 @@ async def converse(
     sessions: Sessions,
     *,
     provider: str,
+    catalog: ModelCatalog,
     read_line: ReadLine | None = None,
     discard: Discard | None = None,
     out: TextIO | None = None,
@@ -74,6 +79,8 @@ async def converse(
     commands = Commands(
         sessions,
         await sessions.start(),
+        catalog=catalog,
+        provider=provider,
         read=read,
         discard=discard,
         out=out,
@@ -130,6 +137,7 @@ async def _turns(
         f"maha {__version__} · {provider} · {model} · /help for commands",
         file=out,
     )
+    commands.note_model()
     while True:
         print("> ", end="", file=out, flush=True)
         try:
@@ -143,6 +151,7 @@ async def _turns(
         if command is None:
             await _answer(commands.conversation, line, out, err, sigint)
             commands.warn_unsaved()
+            commands.warn_trace()
         elif command.name == "exit":
             return 0
         else:
@@ -200,7 +209,7 @@ async def _answer(
                         if wrote:
                             print(file=out)
                             wrote = False
-                        _show_turn(event, out)
+                        _show_turn(event, conversation, out)
     except ModelError as exc:
         await spinner.stop()
         # The text already shown stays; the error starts on a new line.
@@ -250,7 +259,7 @@ def _call(call: ToolCallBlock) -> str:
     return text if len(text) <= MAX_CALL else text[: MAX_CALL - 1] + "…"
 
 
-def _show_turn(turn: TurnFinished, out: TextIO) -> None:
+def _show_turn(turn: TurnFinished, conversation: Conversation, out: TextIO) -> None:
     if turn.reason == "max_steps":
         print(f"  [step limit reached: {turn.steps}]", file=out)
     elif turn.reason == "denied":
@@ -262,11 +271,25 @@ def _show_turn(turn: TurnFinished, out: TextIO) -> None:
     if usage == Usage():
         out.flush()
         return
-    calls = ""
+    parts = [f"tokens: {usage.input_tokens} in · {usage.output_tokens} out"]
+    if usage.reasoning_tokens:
+        # Already inside "out": what the model thought, billed as output.
+        parts[0] += f" ({usage.reasoning_tokens} reasoning)"
     if turn.tool_calls:
-        calls = f" · {turn.tool_calls} call" + ("s" if turn.tool_calls > 1 else "")
-    print(
-        f"  [tokens: {usage.input_tokens} in · {usage.output_tokens} out{calls}]",
-        file=out,
-        flush=True,
-    )
+        parts.append(f"{turn.tool_calls} call" + ("s" if turn.tool_calls > 1 else ""))
+    if turn.cost is not None:
+        parts.append(_usd(turn.cost))
+    # The turns without a price are not in the sum: it is at least that.
+    if conversation.cost or (turn.cost is not None and not conversation.uncosted_turns):
+        at_least = "≥" if conversation.uncosted_turns else ""
+        parts.append(f"session {at_least}{_usd(conversation.cost)}")
+    print(f"  [{' · '.join(parts)}]", file=out, flush=True)
+
+
+def _usd(amount: Decimal) -> str:
+    """$0.0008: four decimals, enough for a turn; never a "$0.0000" that
+    looks free when it is not."""
+    if amount.is_zero():
+        return "$0"
+    shown = amount.quantize(_CENT_HUNDREDTH, rounding=ROUND_HALF_UP)
+    return f"<{_usd(_CENT_HUNDREDTH)}" if shown.is_zero() else f"${shown}"

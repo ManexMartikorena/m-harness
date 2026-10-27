@@ -1168,3 +1168,23 @@ async def test_delete_of_an_id_of_another_form_is_not_found() -> None:
 
     with pytest.raises(SessionNotFound):
         await world.sessions.delete("../../etc/passwd", current=current)
+
+
+async def test_the_session_cost_has_the_turn_when_it_finishes() -> None:
+    # The terminal shows "session $…" on TurnFinished, with this turn in it.
+    world = World(
+        MemorySessionStore(),
+        FakeModelClient([reply("Hola", usage=MILLION)]),
+        catalog=PRICED,
+    )
+    conversation = await world.sessions.start()
+    seen: list[Decimal] = []
+
+    async with aclosing(conversation.run("Hola")) as events:
+        async for event in events:
+            if isinstance(event, TurnFinished):
+                seen.append(conversation.cost)
+
+    assert seen == [Decimal(1)]
+    # Counted once.
+    assert conversation.cost == Decimal(1)
