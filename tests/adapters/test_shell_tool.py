@@ -37,10 +37,13 @@ def test_satisfies_the_port(tmp_path: Path) -> None:
     subject: Tool[RunCommandParams] = tool(tmp_path)[0]
 
     assert (subject.name, subject.permission) == ("run_command", "effect")
-    # The exact description of spec hito 5, §3.2.
+    # The exact description of spec hito 5, §3.2, with what §10 said it
+    # asked and it did not: commands that do not wait for input (2026-10-27).
     assert subject.description == (
         "Run a shell command in the working directory, with a timeout. "
-        'The user approves it first. Example: {"command": "uv run pytest -q"}'
+        "The user approves it first. It gets no input and no terminal: use "
+        "options that ask nothing (git commit -m). "
+        'Example: {"command": "uv run pytest -q"}'
     )
 
 

@@ -35,7 +35,9 @@ class RunCommand:
     name = "run_command"
     description = (
         "Run a shell command in the working directory, with a timeout. "
-        'The user approves it first. Example: {"command": "uv run pytest -q"}'
+        "The user approves it first. It gets no input and no terminal: use "
+        "options that ask nothing (git commit -m). "
+        'Example: {"command": "uv run pytest -q"}'
     )
     params = RunCommandParams
     permission: Permission = "effect"
