@@ -60,16 +60,16 @@ mantenedor):
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. ~~**Agente:** proponer la spec del hito 8~~ Hecho el 2026-10-27:
-   `docs/specs/hito-8-evals-no-interactivo.md`, en PROPUESTA, en su PR
-   (milestone "Hito 8"). Recoge P1 y P2 de la comparativa y los pendientes
-   de las specs 3 a 7.
-2. **Mantenedor:** integrar el PR de la spec (es la aprobación). Las
-   dudas ya están respondidas (2026-10-27, "la opción más profesional y que
-   más valor aporte"; §11): cambian a 5 repeticiones y dos modelos, y entran
-   `--jobs` y los errores de infraestructura.
-3. **Agente:** tras el merge, el PR 1 del hito 8 (núcleo sin persona:
+1. Hecho el 2026-10-27: la spec del hito 8 (`docs/specs/hito-8-evals-no-interactivo.md`,
+   APROBADA, PR #90; las dudas, respondidas con "la opción más profesional
+   y que más valor aporte", §11) y su PR 1, núcleo sin persona (#91:
    límites del turno, `AllowList`, `run_once`).
+2. **Agente:** PR 2 del hito 8, las evals (`feature/hito-8-evals`, spec §6):
+   formato de tarea, `TomlEvalSuite`, ejecución en paralelo con errores de
+   infraestructura aparte, `maha eval`, las 10 tareas y la primera línea
+   base de los dos modelos (llamadas reales: unos 1,15 $ por pasada, a
+   medir).
+3. **Agente:** PRs 3 a 6 del hito 8, en el orden de la spec.
 4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
