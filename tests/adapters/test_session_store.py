@@ -636,7 +636,9 @@ async def test_a_folder_blocked_by_a_file_is_not_an_id_clash(
     blocked = tmp_path / "sessions"
     blocked.write_text("", encoding="utf-8")
 
-    with pytest.raises(SessionError, match="cannot save session") as caught:
+    with pytest.raises(
+        SessionError, match=f"cannot create the folder {blocked}: File exists"
+    ) as caught:
         await JsonlSessionStore(blocked).create(HEADER)
 
     assert not isinstance(caught.value, SessionExists)

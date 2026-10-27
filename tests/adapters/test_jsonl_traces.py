@@ -354,7 +354,9 @@ async def test_a_folder_blocked_by_a_file_is_not_a_taken_id(tmp_path: Path) -> N
     blocked = tmp_path / "traces"
     blocked.write_text("", encoding="utf-8")
 
-    with pytest.raises(TraceError, match="cannot write the trace") as caught:
+    with pytest.raises(
+        TraceError, match=f"cannot create the folder {blocked}: File exists"
+    ) as caught:
         await JsonlTraceSink(blocked).open(SESSION, new=True)
 
     assert not isinstance(caught.value, TraceExists)

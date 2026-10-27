@@ -101,8 +101,14 @@ class JsonlSessionStore:
             self._folder.chmod(0o700)
         except OSError as exc:
             # Also FileExistsError, from a file where the folder goes: that
-            # is not an id that is taken.
-            raise _cannot_save(path, exc) from None
+            # is not an id that is taken. The folder is named: the error
+            # alone ("File exists") does not say which.
+            message = (
+                f"cannot save session {header.id}: "
+                f"cannot create the folder {self._folder}: {exc.strerror}"
+            )
+            _log.warning("%s", message)
+            raise SessionError(message) from None
         try:
             fd = os.open(path, _CREATE, 0o600)
         except FileExistsError:
