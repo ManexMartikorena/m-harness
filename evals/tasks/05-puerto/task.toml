@@ -1,0 +1,7 @@
+# Cambiar un valor: edit_file.
+instruction = "Cambia el puerto por defecto de la tienda de 8000 a 8080."
+fixture = "tienda"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = 'PYTHONPATH=src python3 -c "from tienda import config; assert config.PORT == 8080"'
