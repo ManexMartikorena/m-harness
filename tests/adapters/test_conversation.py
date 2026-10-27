@@ -718,6 +718,8 @@ async def test_the_token_and_cost_limits_are_shown() -> None:
         fake, "Hola", "/exit", limits=TurnLimits(timeout=0.05)
     )
     assert "  [time limit reached]\n" in out
+    # No call ended: there are no tokens to show (found by hand, 2026-10-27).
+    assert "[tokens:" not in out
 
 
 async def test_internal_tool_error_goes_to_stderr_and_the_log(

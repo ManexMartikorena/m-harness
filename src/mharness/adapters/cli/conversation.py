@@ -285,8 +285,9 @@ def _show_turn(turn: TurnFinished, conversation: Conversation, out: TextIO) -> N
         # 5, §1.4).
         print("  [denied: tell maha how to continue]", file=out)
     usage = turn.usage
-    # All zeros and no cost: the provider reported nothing to show.
-    if usage == Usage() and turn.cost is None:
+    # All zeros and no cost: the provider reported nothing, or no call
+    # ended (a time limit while the model answered).
+    if usage == Usage() and not turn.cost:
         out.flush()
         return
     parts = [f"tokens: {usage.input_tokens} in · {usage.output_tokens} out"]
