@@ -582,11 +582,8 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
 subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
 mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** separar en GitHub las dos caras del proyecto (decisión del
-   mantenedor del 2026-10-27): el `README.md` como página de producto (qué
-   es, qué hace, cómo instalarlo y usarlo) y un documento del proyecto
-   (objetivo, cómo se ha construido y cómo hacerlo desde cero), en un PR
-   de docs.
+1. **Mantenedor (no bloquea):** decidir si el `README.md` (la cara de
+   producto) va también en inglés.
 2. **Agente:** proponer la spec del hito 8 (evals y modo no interactivo,
    DESIGN §9 y §14) en su propio PR (`docs/spec-hito-8-…`), con sus dudas y
    recomendaciones. El hito 8 ya recoge P1 y P2 de la comparativa: `maha
@@ -656,6 +653,9 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   posible en capacidades e intuitivo (ANALISIS §4). Las 17 piezas son el
   mínimo; la comparación con OpenCode y Claude Code (`docs/COMPARATIVA.md`)
   propone qué más entra y cuándo.
+- **Dos caras en GitHub** (2026-10-27): `README.md` como producto y
+  `docs/PROYECTO.md` como proyecto; las dos al día en cada cierre de hito
+  (AGENTS.md, DESIGN §13).
 - **Distribución pública en la 1.0** (2026-10-27): instalable para
   cualquier usuario y con documentación de usuario (DESIGN §13, hito 23).
 - **Hito 21: una TUI completa** (2026-10-27), bonita y fácil para cualquier

@@ -1,42 +1,27 @@
-# M-Harness
+# maha
 
 [![CI](https://github.com/ManexMartikorena/m-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/ManexMartikorena/m-harness/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ManexMartikorena/m-harness)](https://github.com/ManexMartikorena/m-harness/releases)
+[![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE)
 
-**Un agente de terminal construido desde cero, pieza a pieza, para entender cómo
-funciona un arnés de agente por dentro.**
+**Un agente de IA para la terminal.** Le pides algo en lenguaje natural y
+`maha` lee tu código, busca, escribe, edita y ejecuta comandos para
+hacerlo, **preguntándote antes de cada cambio**. Funciona con el proveedor y
+el modelo que elijas, y te dice en cada turno lo que ha costado.
 
-`maha` es un agente de propósito general para la terminal, en la línea de
-Claude Code u OpenCode. Conversa contigo, usa herramientas sobre tu directorio
-de trabajo y pide aprobación antes de cualquier efecto.
-
-Lo que lo diferencia es cómo se construye:
-- sin frameworks de agentes;
-- cada pieza llega en su propio PR, con su spec, sus tests y una nota que
-  explica el concepto;
-- el historial del repositorio es la guía.
-
-> 🚧 **En construcción.** Hito 5 (permisos y herramientas con efecto)
-> terminado: `maha` lee, escribe, edita y ejecuta comandos en tu directorio
-> de trabajo, y pregunta antes de cada cosa con efecto. El estado al día está
-> en [`docs/ESTADO.md`](docs/ESTADO.md).
+> 🚧 **En desarrollo: `v0.7.0`.** Ya es usable para trabajar en un
+> proyecto: conversar, leer y cambiar ficheros, ejecutar comandos, guardar y
+> retomar sesiones, y ver el coste. Lo que viene, en la [hoja de
+> ruta](#hoja-de-ruta).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.7.0
-```
-
-Necesita un proveedor con formato OpenAI (de serie, OpenCode Go o Zen) y su
-clave en una variable de entorno:
-
-```toml
-# ~/.config/maha/config.toml
-provider = "opencode-go"
-model = "glm-5.3-flash"
-```
-
-```
-$ export OPENCODE_API_KEY=...
 $ maha
 maha 0.7.0 · opencode-go · glm-5.3-flash · /help for commands
+> Lee notas.txt con read_file y dime qué pone, en una frase.
+  → read_file(path="notas.txt")
+  ✓ 1 line
+En notas.txt pone: "comprar pan".
+  [tokens: 2542 in · 26 out · 1 call · $0.0004 · session $0.0004]
 > Cambia la segunda línea de notas.txt por 'tres' con edit_file.
   → edit_file(new_string="tres", old_string="dos", path="notas.txt")
   ┌ edit notas.txt
@@ -48,132 +33,125 @@ maha 0.7.0 · opencode-go · glm-5.3-flash · /help for commands
   ✓ 1 replacement
 ```
 
-Herramientas: `read_file`, `list_dir`, `glob` y `grep` (lectura, sin
-preguntar dentro del directorio de trabajo), y `write_file`, `edit_file` y
-`run_command` (con efecto: siempre preguntan, con el diff o el comando).
-Fuera del directorio y con ficheros secretos (`.env`, claves, `.ssh`…),
-también leer pregunta, una vez cada vez. Los comandos corren con un tiempo
-límite y sin tus credenciales en el entorno, pero con tus permisos: lee el
-comando antes de aprobarlo. Sin terminal (`maha < fichero`), se deniega
-todo.
+## Qué hace
 
-Mientras espera el primer token, gira un spinner con "maha". Ctrl+C a mitad
-de una respuesta la corta y vuelve al prompt; en el prompt, sale.
+- **Trabaja en tu proyecto.** Lee, lista y busca ficheros (`read_file`,
+  `list_dir`, `glob`, `grep`, respetando `.gitignore`), los escribe y edita
+  (`write_file`, `edit_file`, con el diff a la vista) y ejecuta comandos
+  (`run_command`).
+- **Nada cambia sin tu permiso.** Cada escritura y cada comando te preguntan
+  antes: una vez, siempre en esta sesión, o no. Leer fuera del directorio o
+  un fichero secreto (`.env`, claves, `.ssh`…) también pregunta. Los
+  comandos no reciben tu clave del proveedor.
+- **El modelo y el proveedor que quieras.** Formato de OpenAI de serie, con
+  OpenCode Go y Zen ya configurados, y cualquier servidor compatible que
+  declares. Cambias de modelo con `/model` o en la configuración.
+- **Sesiones que no se pierden.** Cada conversación se guarda sola, turno a
+  turno, y se retoma desde cualquier directorio.
+- **Sabes lo que gastas.** Cada turno dice sus tokens y su coste, y la
+  sesión lo que lleva. Con OpenCode Go, lo que cuenta contra tu límite
+  mensual.
+- **Todo queda registrado, sin tus secretos.** Cada sesión deja una traza
+  de lo que hizo el agente; `/trace` la resume.
 
-Cada conversación se guarda sola en `~/.local/share/maha/sessions/`, turno a
-turno, también la respuesta que cortas (el modelo sabe que la cortaste).
-`/sessions` lista las de todos los directorios, `/resume [ID]` retoma una,
-`/delete ID` la borra y `/model [ID]` cambia de modelo; `/help` los
-enseña. Al retomar, las aprobaciones empiezan de cero.
+## Instalación
 
-Cada turno dice lo que costó, y la sesión lo que lleva: el coste que da el
-proveedor (con OpenCode Go, lo que cuenta contra tu límite mensual) o, si no
-lo da, el de un catálogo con los precios de todos los modelos de OpenCode
-Go y Zen. `/trace [ID]` resume lo que hizo una sesión, turno a turno; el
-detalle queda en `~/.local/share/maha/traces/`, sin tus credenciales.
-
-```
-> Lee notas.txt con read_file y dime qué pone, en una frase.
-  → read_file(path="notas.txt")
-  ✓ 1 line
-En notas.txt pone: "comprar pan".
-  [tokens: 2542 in · 26 out · 1 call · $0.0004 · session $0.0004]
-> /trace
-  20261027-101620-1163 · glm-5.3-flash · 1 turn · 2 model calls · 1 tool
-  1  11:16:20  2 calls · 1 tool · 2542 in · 26 out · $0.0004 · 5.7 s
-  total: 2542 in · 26 out · $0.0004
-  [trace: ~/.local/share/maha/traces/20261027-101620-1163.jsonl]
-```
-
-## Cómo funciona un agente
+Necesitas [uv](https://docs.astral.sh/uv/) (instala también Python 3.14 si
+falta).
 
 ```
-            ┌──────────────────────────────────────────────┐
-            ▼                                              │
-  mensajes + tools ──► modelo ──► respuesta ──► ¿pide tools? ──no──► fin del turno
-                                                  │ sí
-                                                  ▼
-                              validar ─► permiso ─► ejecutar ─► resultado
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.7.0
 ```
 
-El modelo nunca ejecuta nada: propone llamadas a herramientas, y el arnés las
-valida, comprueba el permiso, las ejecuta y le devuelve el resultado. Todo lo
-demás (contexto, memoria, skills, subagentes, MCP) se engancha alrededor de
-este bucle.
+Después, elige proveedor y modelo:
 
-## Principio
+```toml
+# ~/.config/maha/config.toml
+provider = "opencode-go"   # o "opencode-zen"
+model = "glm-5.3-flash"
+```
 
-- **A mano lo que es del agente:** bucle, adaptadores de modelos, permisos,
-  contexto, memoria y subagentes.
-- **Librerías estándar para la fontanería:** HTTP, validación e interfaz de
-  terminal.
-- **La industria siempre al lado:** cada pieza documenta qué se usa
-  normalmente para resolverla (LiteLLM, LangGraph, Mem0, OpenTelemetry…) y
-  cuándo se elegiría.
+y deja la clave en una variable de entorno:
 
-## Arquitectura
+```
+export OPENCODE_API_KEY=...
+maha
+```
 
-Monolito modular con arquitectura hexagonal (puertos y adaptadores):
+`maha` trabaja sobre el directorio donde lo abres.
 
-- **`domain`:** tipos y reglas puras (mensajes, herramientas, eventos).
-- **`ports`:** interfaces con el exterior (modelo, herramientas, aprobaciones,
-  almacenamiento, trazas).
-- **`application`:** casos de uso (el bucle, la ejecución de herramientas, el
-  contexto).
-- **`adapters`:** implementaciones reales (proveedores de modelos, ficheros,
-  terminal, MCP) y la interfaz de terminal.
+### Otro proveedor
 
-Cambiar de proveedor es cambiar de adaptador, y el bucle se prueba sin red. El
-detalle está en [`docs/DESIGN.md`](docs/DESIGN.md).
+Cualquier servidor con el formato de OpenAI, declarado en tu configuración:
+
+```toml
+# ~/.config/maha/config.toml
+provider = "local"
+model = "el-id-de-tu-modelo"
+
+[providers.local]
+base_url = "http://localhost:11434/v1"
+# api_key_env = "MI_CLAVE"   # sin ella, no se envía clave
+```
+
+Un proyecto puede elegir su proveedor y modelo en `.maha/config.toml`, pero
+nunca declarar proveedores: así un repositorio ajeno no puede llevarse tu
+clave a otro servidor.
+
+## Uso
+
+| Comando | Qué hace |
+|---|---|
+| `/help` | Lista los comandos |
+| `/model [ID]` | Enseña el modelo, o lo cambia |
+| `/sessions` | Las sesiones recientes, de todos los directorios |
+| `/resume [ID]` | Retoma una sesión; sin ID, la última de este directorio |
+| `/delete ID` | Borra una sesión y su traza |
+| `/trace [ID]` | Lo que hizo y costó una sesión, turno a turno |
+| `/exit` | Sale (también Ctrl+D) |
+
+- **Ctrl+C** a mitad de una respuesta la corta y vuelve al prompt; el
+  modelo sabe que la cortaste. En el prompt, sale.
+- **Sin terminal** (`maha < instrucciones.txt`), todo lo que tiene efecto
+  se deniega.
+
+### Dónde guarda cada cosa
+
+| Qué | Dónde |
+|---|---|
+| Configuración | `~/.config/maha/config.toml` |
+| Precios propios (opcional) | `~/.config/maha/models.toml` |
+| Sesiones | `~/.local/share/maha/sessions/` |
+| Trazas | `~/.local/share/maha/traces/` |
+| Registro de diagnóstico | `~/.local/state/maha/maha.log` |
+
+Todo es local. Las sesiones, las trazas y el registro solo los puede leer
+tu usuario. Respeta las variables `XDG_*`.
 
 ## Hoja de ruta
 
-| # | Hito | Estado |
-|---|---|---|
-| 1 | Esqueleto del proyecto y CI | ✅ `v0.1.0` |
-| 2 | Primera conversación con un modelo | ✅ `v0.2.0` |
-| 3 | Streaming | ✅ `v0.3.0` |
-| 4 | Tool calling y bucle agéntico | ✅ `v0.4.0` |
-| 5 | Permisos y herramientas con efecto | ✅ `v0.5.0` (y `v0.5.1`, `v0.5.2`) |
-| 6 | Sesiones e historial | ✅ `v0.6.0` |
-| 7 | Trazas y coste | ✅ `v0.7.0` |
-| 8 | Evals y modo no interactivo | ⬜ |
-| 9 | Adaptador de Anthropic | ⬜ |
-| 10 | System prompt por capas | ⬜ |
-| 11 | Gestión del contexto | ⬜ |
-| 12 | Skills | ⬜ |
-| 13 | Memoria persistente | ⬜ |
-| 14 | Sandbox | ⬜ |
-| 15 | Subagentes | ⬜ |
-| 16 | MCP | ⬜ |
-| 17 | Web | ⬜ |
-| 18 | Multimodal | ⬜ |
-| 19 | Interfaz completa | ⬜ |
-| 20 | Exportador OpenTelemetry | ⬜ |
-| 21 | Versión 1.0 | ⬜ |
+`maha` crece hito a hito hasta la versión 1.0. Lo siguiente:
 
-## Cómo se construye
+- **Modo no interactivo y evals:** `maha -p "…"` para scripts, retomar al
+  arrancar, salida JSON, topes de coste, `maha stats`.
+- **Más proveedores:** formato de Anthropic, esfuerzo de razonamiento.
+- **Instrucciones del proyecto** (`AGENTS.md`, `/init`), compactación del
+  contexto y **deshacer** cambios.
+- **Skills y comandos propios, memoria entre sesiones, sandbox, modos de
+  permiso, subagentes, MCP y hooks.**
+- **Web e imágenes.**
+- **Una interfaz a pantalla completa**, con menú de comandos y navegación
+  sencilla.
+- **La 1.0**, instalable para cualquier usuario y con su documentación.
 
-- **Spec antes de código.** Cada hito empieza con una spec en su propio PR. Se
-  aprueba al integrarse.
-- **Commits pequeños.** Un commit por cada cosa pequeña, siempre con tests y
-  lint en verde.
-- **Revisión humana.** El código lo escribe un agente de código siguiendo
-  [`AGENTS.md`](AGENTS.md), y cada fichero pasa por revisión antes de
-  integrarse.
-- **CI en cada PR:** lint, tipos, reglas de arquitectura, tests y escaneo de
-  secretos. Sin el CI en verde, nada entra en `main`.
-- **Un tag y una release por hito.**
+El plan completo, hito a hito: [el proyecto](docs/PROYECTO.md#hoja-de-ruta).
 
-## Documentación
+## El proyecto
 
-- [`docs/ANALISIS.md`](docs/ANALISIS.md): el problema, el alcance y los
-  criterios de éxito.
-- [`docs/DESIGN.md`](docs/DESIGN.md): la arquitectura, el stack y el plan de
-  hitos.
-- [`docs/guia/`](docs/guia/README.md): una nota por pieza, del tool calling a
-  los subagentes.
-- [`docs/MAPA.md`](docs/MAPA.md): dónde está cada cosa.
+`maha` se construye desde cero y a la vista: sin frameworks de agentes, cada
+pieza en su propio PR, con su spec, sus tests y una nota que explica el
+concepto. Si quieres saber cómo funciona un agente por dentro, o construir
+el tuyo, empieza por **[cómo se ha hecho](docs/PROYECTO.md)**.
 
 ## Licencia
 
