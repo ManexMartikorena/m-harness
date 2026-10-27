@@ -1,0 +1,6 @@
+# Recorrer carpetas y contar: glob o list_dir. Son 6.
+instruction = "¿Cuántos ficheros .py hay dentro de src/, contando las subcarpetas? Responde con el número."
+fixture = "tienda"
+
+[check]
+answer_matches = ['\b6\b']
