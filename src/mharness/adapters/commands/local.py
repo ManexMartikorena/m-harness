@@ -131,17 +131,19 @@ def _children() -> set[int]:
     """The pids whose parent is `maha`, from /proc."""
     me = os.getpid()
     found = set()
-    with contextlib.suppress(OSError):
-        for entry in os.scandir("/proc"):
+    with contextlib.suppress(OSError), os.scandir("/proc") as entries:
+        for entry in entries:
             if not entry.name.isdigit():
                 continue
             try:
-                with open(os.path.join(entry.path, "stat"), encoding="ascii") as file:
+                # Bytes: the name is whatever the process chose, in any
+                # encoding or none.
+                with open(os.path.join(entry.path, "stat"), "rb") as file:
                     stat = file.read()
             except OSError:
                 continue
             # "pid (name) state ppid …"; the name can hold spaces and ")".
-            fields = stat[stat.rindex(")") + 2 :].split()
+            fields = stat[stat.rindex(b")") + 2 :].split()
             if int(fields[1]) == me:
                 found.add(int(entry.name))
     return found
