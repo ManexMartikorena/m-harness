@@ -1,16 +1,15 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-26 (cierre de sesión). **Hito 6 cerrado
-(`v0.6.0`), cero deuda conocida. Hito 7 (trazas y coste): spec PROPUESTA en
-el PR #61, abierto, esperando que el mantenedor responda sus cinco dudas.**
-Sesión cerrada en el PC del trabajo (el WSL del PC de Windows).
+Última actualización: 2026-10-27. **Hito 6 cerrado (`v0.6.0`), cero deuda
+conocida. Hito 7 (trazas y coste): spec APROBADA (el mantenedor acepta las
+cinco recomendaciones), en el PR #61.**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 6 cerrado (`v0.6.0`). En curso: hito 7 (trazas y coste),
-spec PROPUESTA en el PR #61.**
+spec APROBADA en el PR #61.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.6.0` — Sesiones e historial** (2026-10-26):
@@ -530,26 +529,12 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
 subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
 mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Mantenedor:** responder las cinco dudas de la spec del hito 7
-   (`docs/specs/hito-7-trazas-coste.md` §11). **La spec aún no está en
-   `main`:** está en el PR #61
-   (https://github.com/ManexMartikorena/m-harness/pull/61), rama
-   `docs/spec-hito-7-trazas`. Para leerla en local: `git fetch && git switch
-   docs/spec-hito-7-trazas`. Las recomendaciones del agente:
-   1. catálogo: un TOML propio en el paquete, con fecha, más
-      `~/.config/maha/models.toml` opcional del usuario;
-   2. coste en OpenCode Go: en dólares, lo que cuenta contra el límite
-      mensual;
-   3. sin evento `AgentError`: la traza apunta las excepciones desde
-      `Conversation`;
-   4. reintentos ante 429 y 5xx: hito 8;
-   5. `/trace` dentro de `maha`.
-2. **Agente:** con las respuestas, en la rama de la spec (`git fetch && git
-   switch docs/spec-hito-7-trazas && git pull`; si `main` cambió desde el
-   2026-10-26, `git merge main`), pasar la spec a APROBADA anotando las
-   decisiones en §11 (y corregir DESIGN si alguna cambia el alcance), hacer
-   push, integrar el PR #61 con el CI en verde y empezar por el PR 1 de la
-   spec §6 (`feature/hito-7-coste`, desde `main` actualizado).
+1. **Agente:** integrar el PR #61 (la spec del hito 7, APROBADA el
+   2026-10-27) con el CI en verde, cuando el mantenedor dé permiso de push
+   en la sesión.
+2. **Agente:** PR 1 de la spec §6 (`feature/hito-7-coste`, desde `main`
+   actualizado): `Usage.reasoning_tokens`, `Prices`, `ModelInfo`, `cost()`
+   y el puerto `ModelCatalog`.
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.

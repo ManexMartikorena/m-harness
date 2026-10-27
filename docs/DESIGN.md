@@ -78,10 +78,13 @@ m-harness/
 │   │   ├── commands.py    #   CommandResult
 │   │   ├── environment.py #   las variables que recibe un comando
 │   │   ├── gitignore.py   #   las reglas de .gitignore
-│   │   ├── session.py
+│   │   ├── session.py     #   la sesión guardada y sus líneas
+│   │   ├── catalog.py     #   ModelInfo, Prices, cost()
+│   │   ├── trace.py       #   TraceRecord, mask()
 │   │   └── errors.py
 │   ├── ports/             # Interfaces (typing.Protocol): lo que el núcleo necesita del exterior
-│   │   ├── model.py       #   ModelClient, ModelCatalog
+│   │   ├── model.py       #   ModelClient
+│   │   ├── catalog.py     #   ModelCatalog
 │   │   ├── tools.py       #   Tool
 │   │   ├── approval.py    #   ApprovalGate
 │   │   ├── sessions.py    #   SessionStore
@@ -96,6 +99,7 @@ m-harness/
 │   │   ├── prompt.py      #   composición del system prompt
 │   │   ├── sessions.py    #   guardar, retomar, listar y borrar sesiones
 │   │   ├── context.py     #   conteo y compactación
+│   │   ├── traces.py      #   el resumen de /trace
 │   │   └── subagents.py
 │   ├── adapters/          # Implementaciones de los puertos: el contacto real con el exterior
 │   │   ├── models/        #   openai_chat.py, anthropic.py
@@ -104,6 +108,7 @@ m-harness/
 │   │   ├── mcp/
 │   │   ├── storage/       #   sessions.py (JSONL), memoria (SQLite)
 │   │   ├── skills/
+│   │   ├── catalog/       #   models.toml y toml_catalog.py
 │   │   ├── tracing/       #   jsonl_traces.py, otel.py
 │   │   └── cli/           #   adaptador de entrada: terminal interactiva y modo no interactivo
 │   ├── config.py          # carga y valida la configuración
@@ -120,7 +125,9 @@ m-harness/
 *(Corregido el 23/10/2026, spec `mejora-2026-10-23-deuda-hito-5`, C: el árbol
 usa los nombres reales de los ficheros que ya existen.)*
 *(Anotado el 26/10/2026, spec del hito 6, §3.1: `application/sessions.py` y
-`adapters/storage/sessions.py`.)*
+`adapters/storage/sessions.py`; y spec del hito 7, §3.1:
+`domain/catalog.py`, `domain/trace.py`, `ports/catalog.py`,
+`application/traces.py` y `adapters/catalog/`.)*
 
 El árbol muestra el destino: cada carpeta nace en el hito que la necesita
 (§14). `docs/MAPA.md` describe lo que existe en cada momento y se actualiza en
@@ -202,6 +209,8 @@ ModelEvent = TextDelta | ReasoningDelta | ToolCallDelta | MessageEnd(stop_reason
 #  ModelResponse exige y solo llega en los trozos. El hito 3 solo implementa
 #  TextDelta y MessageEnd.)
 Usage(input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+# (Corregido el 26/10/2026, spec del hito 7, §1.2: también reasoning_tokens,
+#  dentro de output_tokens, que es lo que se factura.)
 
 # Lo que cuenta el núcleo                        (bucle → interfaz y trazas)
 AgentEvent = TurnStarted | TextDelta | ToolCallProposed | ApprovalRequested
@@ -211,6 +220,10 @@ AgentEvent = TurnStarted | TextDelta | ToolCallProposed | ApprovalRequested
 #  ToolCallProposed, ToolFinished, ModelCallFinished (sin coste) y TurnFinished.
 #  ApprovalRequested llega en el hito 5; TurnStarted, AgentError y el coste, en
 #  el 7. Hasta entonces, los errores son excepciones.)
+# (Corregido el 26/10/2026, spec del hito 7, §1.6: TurnStarted(text),
+#  ModelCallFinished(usage, model, cost) y TurnFinished(…, cost). AgentError
+#  no se crea: los errores siguen siendo excepciones y la traza los apunta
+#  desde fuera del bucle.)
 
 # Herramientas
 Permission = READ | EFFECT                      # lo prohibido no se registra
@@ -252,7 +265,7 @@ Session(id, created_at, cwd, model, messages, usage)
 | Puerto | Qué ofrece | Implementaciones (real · falsa) |
 |---|---|---|
 | `ModelClient` | `stream(ModelRequest)` → eventos `ModelEvent` asíncronos; `complete(ModelRequest)` → `ModelResponse` entera. *(Corregido el 21/10/2026, spec del hito 3, §1.2: `complete()` se queda junto a `stream()`, por decisión del mantenedor.)* | `OpenAIChatClient` (hito 2), `AnthropicClient` (hito 9) · `FakeModelClient` guionizado |
-| `ModelCatalog` | Ventana de contexto, precios y capacidades de cada modelo | Fichero TOML propio (formato inspirado en models.dev) · catálogo en memoria |
+| `ModelCatalog` | Ventana de contexto, precios y capacidades de cada modelo | Fichero TOML propio (formato inspirado en models.dev) · catálogo en memoria. *(Concretado el 26/10/2026, spec del hito 7, §1.3: un TOML en el paquete, con la fecha de los precios, y otro opcional del usuario, `~/.config/maha/models.toml`, que manda; claves `proveedor/modelo`.)* |
 | `Tool` | Especificación y ejecución de una herramienta | Ficheros, búsqueda, terminal, web, memoria, subagente, herramientas MCP · `FakeTool` |
 | `ApprovalGate` | Decide sobre cada llamada con efecto: una vez, toda la sesión o denegar | Aviso en la terminal · política automática (evals) · `FakeApproval` |
 | `SessionStore` | Guardar, cargar, listar y borrar sesiones | JSONL en disco · en memoria |
@@ -430,9 +443,13 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
 ## 11. Observabilidad
 - **Trazas:** `~/.local/share/maha/traces/<sesión>.jsonl`, con un `AgentEvent`
   por línea, marca de tiempo, uso de tokens y coste. Nunca en el repositorio.
+  *(Concretado el 26/10/2026, spec del hito 7, §1.7: sin los `TextDelta`, que
+  ya están en la sesión; con un registro `error` o `interrupted` si el turno
+  acaba así; `0600`; se borra con su sesión.)*
 - **Registro de la aplicación:** módulo `logging` de la biblioteca estándar, en
   `~/.local/state/maha/maha.log`. Solo errores y diagnóstico, nunca contenido
-  de conversaciones.
+  de conversaciones. *(Concretado el 26/10/2026, spec del hito 7, §1.11: nivel
+  `WARNING`, rotado a 1 MiB; lo usan solo los adaptadores.)*
 - **En la interfaz:** modelo activo, tokens del contexto y coste de la sesión,
   siempre visibles.
 - **Exportador OpenTelemetry (hito 20, opcional):** permite enviar las trazas a
