@@ -188,6 +188,9 @@ coste = (input − cache_read) × input  +  cache_read × cache_read
       + cache_write × cache_write  +  output × output        (cada uno / 1M)
 ```
 
+*(Corregido al implementar, §12.1: `input` incluye también `cache_write`, y
+se resta igual que `cache_read`.)*
+
 - La caché leída, a su precio (o al de entrada si no tiene); el
   razonamiento ya va dentro de `output`.
 - **Sin precio, sin coste:** `None`, y la terminal no enseña `$`. Nunca un
@@ -527,3 +530,22 @@ Dudas que se plantearon al mantenedor (registro):
 5. **`/trace` dentro de `maha`** (§1.9). Propuesta: sí; `maha trace ID` desde
    la línea de comandos llega con las opciones del hito 8. Alternativa: solo
    el fichero y `jq`.
+
+## 12. Aprendido al implementar
+
+### PR 1 (`feature/hito-7-coste`, 2026-10-27)
+
+1. **Qué cuenta `input_tokens`.** No estaba fijado para la caché escrita, y
+   la fórmula de §1.5 la sumaba aparte sin restarla de la entrada. Se fija
+   en el dominio: `input_tokens` cuenta todos los tokens del prompt, la
+   caché leída y la escrita incluidas (como los cuenta OpenAI), y `cost()`
+   resta las dos. El adaptador de Anthropic (hito 9), que las da aparte, las
+   sumará al traducir. Hoy no cambia nada: el de OpenAI no lee la escrita.
+2. **Sin precio de caché escrita**, se cobra como entrada, igual que la
+   leída.
+3. **El coste nunca es negativo:** si un proveedor manda más caché que
+   entrada, la parte sin caché cuenta 0.
+4. **Los tokens de razonamiento** se leen de `completion_tokens_details`,
+   con stream y sin él (los trozos medidos en los hitos 3 y 4 ya los
+   traían: 25 y 40). Sigue POR VERIFICAR que OpenCode los mande sin stream
+   (§10).
