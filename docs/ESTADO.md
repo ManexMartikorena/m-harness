@@ -666,7 +666,7 @@ resuelve):
 - **Sin reintentos** ante 429 o 5xx: hito 8, por decisión del mantenedor
   (spec 7, §11, duda 4).
 - **Lo que se teclea mientras gira el spinner se mezcla con él** en pantalla
-  (solo visual). Hito 19, con prompt_toolkit (spec 3, §12.10).
+  (solo visual). Hito 19, con la TUI (spec 3, §12.10).
 - **POR VERIFICAR:** el formato de un error a mitad de stream en OpenCode
   (no se pudo provocar; el código lo lee de forma defensiva) y cortar la red
   a mitad de respuesta a mano (punto 9 de la verificación, no provocado en
