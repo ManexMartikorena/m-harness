@@ -240,3 +240,13 @@ def test_a_broken_user_file_says_what_and_where(
 def test_parse_names_its_source() -> None:
     with pytest.raises(CatalogError, match="the built-in catalog"):
         parse("[models", "the built-in catalog")
+
+
+def test_a_user_file_that_is_not_utf8_is_an_error(tmp_path: Path) -> None:
+    path = tmp_path / "models.toml"
+    path.write_bytes(b'[models."ollama/\xff"]\n')
+
+    with pytest.raises(CatalogError, match="not valid UTF-8") as caught:
+        TomlCatalog.load(path)
+
+    assert str(path) in str(caught.value)

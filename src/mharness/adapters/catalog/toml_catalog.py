@@ -88,6 +88,8 @@ class TomlCatalog:
             return cls(models)
         except OSError as exc:
             raise CatalogError(f"cannot read {user_file}: {exc.strerror}") from None
+        except UnicodeDecodeError:
+            raise CatalogError(f"{user_file} is not valid UTF-8") from None
         # Later entries win: the user's replace whole models.
         return cls([*models, *parse(text, str(user_file))])
 
