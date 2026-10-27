@@ -52,6 +52,8 @@ class ToolFinished(BaseModel, frozen=True):
     internal_error: str | None = None
     # What the user answered; None if nobody was asked.
     decision: Decision | None = None
+    # Not run, because a previous call of the step was denied.
+    skipped: bool = False
 
 
 class ModelCallFinished(BaseModel, frozen=True):

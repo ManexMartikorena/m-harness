@@ -686,10 +686,10 @@ async def test_deny_ends_the_turn_without_calling_the_model() -> None:
         ToolResultBlock(call_id=id, content=not_run, is_error=True)
         for id in ("c2", "c3")
     ]
-    assert [(f.result, f.decision) for f in finished(events)] == [
-        (denied, "deny"),
-        (skipped[0], None),
-        (skipped[1], None),
+    assert [(f.result, f.decision, f.skipped) for f in finished(events)] == [
+        (denied, "deny", False),
+        (skipped[0], None, True),
+        (skipped[1], None, True),
     ]
     # Every call is proposed, so the terminal shows each one with its result.
     proposed = [e.call.id for e in events if isinstance(e, ToolCallProposed)]

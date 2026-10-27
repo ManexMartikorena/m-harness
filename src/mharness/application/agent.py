@@ -166,6 +166,7 @@ class Agent:
                             result=skipped.result,
                             summary=skipped.summary,
                             duration=0.0,
+                            skipped=True,
                         )
                         continue
                     started = time.monotonic()
