@@ -136,6 +136,8 @@ def _read(path: Path) -> dict[str, Any]:
         return {}
     except OSError as exc:
         raise ConfigError(f"cannot read {path}: {exc.strerror}") from None
+    except UnicodeDecodeError:
+        raise ConfigError(f"{path} is not valid UTF-8") from None
     try:
         return tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:

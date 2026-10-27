@@ -147,6 +147,23 @@ def test_invalid_toml(home: Path, project: Path) -> None:
         load(home, project)
 
 
+def test_a_user_file_that_is_not_utf8(home: Path, project: Path) -> None:
+    # It used to escape as a UnicodeDecodeError, with a traceback.
+    path = write_user(home, "")
+    path.write_bytes(b'model = "\xff"\n')
+
+    with pytest.raises(ConfigError, match=re.escape(f"{path} is not valid UTF-8")):
+        load(home, project)
+
+
+def test_a_project_file_that_is_not_utf8(home: Path, project: Path) -> None:
+    path = write_project(project, "")
+    path.write_bytes(b'model = "\xff"\n')
+
+    with pytest.raises(ConfigError, match=re.escape(f"{path} is not valid UTF-8")):
+        load(home, project)
+
+
 def test_without_files_uses_the_builtin_provider(home: Path, project: Path) -> None:
     write_project(project, 'model = "glm-5.3-flash"\n')
 
