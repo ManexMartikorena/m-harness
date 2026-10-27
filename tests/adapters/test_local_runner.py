@@ -1,11 +1,15 @@
 """The local command runner (spec hito 5, §1.9 and §4.5): real commands, all
 harmless."""
 
+import ast
 import asyncio
 import contextlib
 import os
+import pty
+import select
 import signal
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -53,6 +57,59 @@ async def test_stdin_is_closed(tmp_path: Path) -> None:
     result = await run("cat; echo fin", tmp_path, time_limit=5)
 
     assert (result.output, result.timed_out) == ("fin\n", False)
+
+
+# Run in a process that has a terminal, as `maha` in a console: the result
+# of one command, printed.
+IN_A_TERMINAL = """
+import asyncio, os, sys
+from pathlib import Path
+from mharness.adapters.commands import LocalCommandRunner
+result = asyncio.run(LocalCommandRunner().run(
+    sys.argv[1], cwd=Path(sys.argv[2]), time_limit=5,
+    env={"PATH": os.environ["PATH"]},
+))
+print(repr((result.exit_code, result.timed_out)), flush=True)
+"""
+
+
+def run_in_a_terminal(command: str, cwd: Path) -> tuple[str, float]:
+    """What the command gave, run by `maha` from a terminal, and how long it
+    took."""
+    started = time.monotonic()
+    pid, fd = pty.fork()
+    if pid == 0:  # pragma: no cover (the child)
+        os.execv(
+            sys.executable, [sys.executable, "-c", IN_A_TERMINAL, command, str(cwd)]
+        )
+    out = b""
+    try:
+        while select.select([fd], [], [], 20)[0]:
+            try:
+                chunk = os.read(fd, 4096)
+            except OSError:  # the terminal closes when the child ends
+                break
+            if not chunk:
+                break
+            out += chunk
+    finally:
+        os.close(fd)
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+    return out.decode(errors="replace").strip(), time.monotonic() - started
+
+
+def test_a_command_cannot_wait_on_the_terminal(tmp_path: Path) -> None:
+    # `sudo`, `ssh` or `gpg` ask for a password on /dev/tty, not on stdin: in
+    # the same session as `maha`, the command stopped there until the time
+    # limit (found 2026-10-27). Without a terminal it fails at once.
+    output, took = run_in_a_terminal("read x < /dev/tty", tmp_path)
+    exit_code, timed_out = ast.literal_eval(output)
+
+    assert exit_code not in (0, None)
+    assert not timed_out
+    assert took < 4
 
 
 async def test_a_long_output_is_cut_without_blocking(tmp_path: Path) -> None:

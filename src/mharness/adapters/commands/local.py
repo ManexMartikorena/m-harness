@@ -1,8 +1,11 @@
 """Shell commands on this machine (spec hito 5, §1.9).
 
-Each command runs in its own process group: Ctrl+C in the terminal does not
-reach it, and `maha` kills the whole group, grandchildren included, when the
-time is up, when the task is cancelled, and when its shell ends. No
+Each command runs in its own session, and so in its own process group and
+without a terminal: Ctrl+C in the terminal does not reach it, a command that
+asks for a password on /dev/tty (`sudo`, `ssh`) fails at once instead of
+waiting until the time limit (found 2026-10-27), and `maha` kills the whole
+group, grandchildren included, when the time is up, when the task is
+cancelled, and when its shell ends. No
 threads: the output is read with asyncio while the command runs, so a
 command that writes a lot never blocks on a full pipe.
 
@@ -57,7 +60,9 @@ class LocalCommandRunner:
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            process_group=0,
+            # A new session: a new group, whose id is the pid, and no
+            # terminal to wait on.
+            start_new_session=True,
         )
         assert process.stdout is not None
         output = _Output()
