@@ -50,13 +50,16 @@ mantenedor):
 - **Dos caras en GitHub:** `README.md` (inglés) y `README.es.md` como
   producto; `docs/PROYECTO.md` como proyecto.
 - **ESTADO ordenado:** el historial pasa a `HISTORIAL_DESARROLLO.md`.
+- **GitHub ordenado:** descripción y temas del repositorio al día; un
+  milestone por hito, los 1 a 7 cerrados con sus PRs y los 8 a 23 abiertos
+  con su descripción (AGENTS.md: cada PR, al de su hito).
 
 ## Siguiente paso
 
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** proponer la spec del hito 8 (evals y modo no interactivo,
+1. **Agente:** proponer la spec del hito 8 (milestone "Hito 8"; evals y modo no interactivo,
    DESIGN §9 y §14) en su propio PR (`docs/spec-hito-8-…`), con sus dudas y
    recomendaciones. El hito 8 ya recoge P1 y P2 de la comparativa: `maha
    -p`, `-c`/`-r`, `--model`, salida JSON, stdin, códigos de salida, topes
