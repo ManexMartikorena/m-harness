@@ -55,9 +55,12 @@ totals are exact; each turn is rounded to four decimals.)*
   asks first, showing the diff or the command: once, always in this session,
   or no. "Always" covers every later edit inside the working directory, but
   only that exact command. Reading outside the working directory or a
-  secret file (`.env`, keys, `.ssh`…) asks too, every time. Commands run with a time limit and
-  without your provider key in their environment, but **with your
-  permissions: read the command before approving it**.
+  secret file asks too, every time; a secret is recognized by its name
+  (`.env`, keys, `.ssh`…), not by its content. Commands run with a time
+  limit, without a terminal (one that asks for something, such as a
+  password or an editor, fails at once) and without your provider key in
+  their environment, but **with your permissions: read the command before
+  approving it**.
 - **The model and provider you want.** OpenAI format out of the box, with
   OpenCode Go and Zen already configured, and any compatible server you
   declare. Switch models with `/model` or in the configuration.

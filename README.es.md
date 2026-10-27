@@ -56,9 +56,12 @@ decimales.)*
   antes, con el diff o el comando: una vez, siempre en esta sesión, o no.
   "Siempre" cubre todas las ediciones siguientes dentro del directorio de
   trabajo, pero solo ese comando exacto. Leer fuera del directorio o un
-  fichero secreto (`.env`, claves, `.ssh`…) también pregunta, cada vez. Los comandos corren con un tiempo
-  límite y sin tu clave del proveedor en el entorno, pero **con tus
-  permisos: lee el comando antes de aprobarlo**.
+  fichero secreto también pregunta, cada vez; un secreto se reconoce por
+  el nombre (`.env`, claves, `.ssh`…), no por el contenido. Los comandos
+  corren con un tiempo límite, sin terminal (uno que pide algo, como una
+  contraseña o un editor, falla al momento) y sin tu clave del proveedor en
+  el entorno, pero **con tus permisos: lee el comando antes de
+  aprobarlo**.
 - **El modelo y el proveedor que quieras.** Formato de OpenAI de serie, con
   OpenCode Go y Zen ya configurados, y cualquier servidor compatible que
   declares. Cambias de modelo con `/model` o en la configuración.
