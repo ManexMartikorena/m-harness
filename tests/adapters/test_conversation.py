@@ -6,6 +6,7 @@ import os
 import pty
 import signal
 from collections.abc import Iterator
+from decimal import Decimal
 from importlib.metadata import version
 from pathlib import Path
 
@@ -21,10 +22,11 @@ from mharness.application.agent import Agent
 from mharness.application.sessions import Sessions
 from mharness.application.tools import ToolRegistry
 from mharness.domain.approval import ApprovalRequest, Decision
+from mharness.domain.catalog import ModelInfo
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
-from mharness.domain.model import Usage
+from mharness.domain.model import ModelResponse, Usage
 from mharness.domain.tools import ToolError
 from tests.adapters.test_local_runner import gone, written_pid
 from tests.fakes.approval import FakeApproval
@@ -34,6 +36,16 @@ from tests.fakes.sessions import MemorySessionStore
 from tests.fakes.terminal import ScriptedInput
 from tests.fakes.tools import FakeTool
 from tests.fakes.tracing import MemoryTraceSink
+
+# Every model these tests use, known without prices: no catalog notes and
+# no "$" (spec hito 7, §1.10).
+KNOWN = MemoryCatalog(
+    [
+        ModelInfo(provider=provider, model=model)
+        for provider in ("opencode-go", "p")
+        for model in ("glm-5.3-flash", "m", "kimi-k3")
+    ]
+)
 
 HEADER = (
     f"maha {version('m-harness')} · opencode-go · glm-5.3-flash · /help for commands"
@@ -67,6 +79,7 @@ async def run(fake: FakeModelClient, *lines: str) -> tuple[int, str, str]:
             )
         ),
         provider="opencode-go",
+        catalog=KNOWN,
         read_line=ScriptedInput(*lines),
         out=out,
         err=err,
@@ -147,6 +160,7 @@ async def test_ctrl_c_ends_with_130() -> None:
             )
         ),
         provider="p",
+        catalog=KNOWN,
         read_line=interrupt,
         out=out,
         err=io.StringIO(),
@@ -181,6 +195,7 @@ async def test_closing_signals_end_with_128_plus_the_signal(
             )
         ),
         provider="p",
+        catalog=KNOWN,
         read_line=close,
         out=io.StringIO(),
         err=io.StringIO(),
@@ -216,6 +231,7 @@ async def test_sigterm_during_a_command_kills_it(tmp_path: Path) -> None:
     result = await converse(
         solo(agent),
         provider="p",
+        catalog=KNOWN,
         read_line=ScriptedInput("ejecuta"),
         out=io.StringIO(),
         err=io.StringIO(),
@@ -247,6 +263,7 @@ async def test_other_cancellations_propagate() -> None:
                 )
             ),
             provider="p",
+            catalog=KNOWN,
             read_line=wait_forever,
             out=io.StringIO(),
             err=io.StringIO(),
@@ -360,6 +377,7 @@ async def test_text_is_shown_before_the_stream_ends() -> None:
                 )
             ),
             provider="p",
+            catalog=KNOWN,
             read_line=ScriptedInput("Hola"),
             out=out,
             err=io.StringIO(),
@@ -421,6 +439,7 @@ async def converse_until_spinning(
                 )
             ),
             provider="p",
+            catalog=KNOWN,
             read_line=ScriptedInput("Hola"),
             out=out,
             err=err,
@@ -508,6 +527,7 @@ async def test_ctrl_c_during_an_answer_goes_back_to_the_prompt() -> None:
             )
         ),
         provider="p",
+        catalog=KNOWN,
         read_line=ScriptedInput("Cuéntame algo", "Hola", "/exit"),
         out=out,
         err=io.StringIO(),
@@ -542,6 +562,7 @@ async def test_ctrl_c_while_the_spinner_spins() -> None:
             )
         ),
         provider="p",
+        catalog=KNOWN,
         read_line=ScriptedInput("Hola"),
         out=out,
         err=io.StringIO(),
@@ -577,6 +598,7 @@ async def run_with_tools(
             )
         ),
         provider="p",
+        catalog=KNOWN,
         read_line=ScriptedInput(*lines),
         out=out,
         err=err,
@@ -671,7 +693,9 @@ async def test_step_limit_is_shown() -> None:
     assert "  [step limit reached: 2]\n  [tokens: 2 in · 2 out · 2 calls]\n" in out
 
 
-async def test_internal_tool_error_goes_to_stderr() -> None:
+async def test_internal_tool_error_goes_to_stderr_and_the_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     fake = FakeModelClient([tool_calls(call("c1")), reply("Vaya.")])
 
     _, out, err = await run_with_tools(
@@ -680,6 +704,9 @@ async def test_internal_tool_error_goes_to_stderr() -> None:
 
     assert '  ✗ error: internal error in tool "echo"\n' in out
     assert err == "warning: tool \"echo\" failed: KeyError: 'boom'\n"
+    # A bug of ours: for whoever maintains maha (spec hito 7, §1.11).
+    [warning] = [r for r in caplog.records if r.name.startswith("mharness")]
+    assert warning.getMessage() == "tool echo failed: KeyError: 'boom'"
 
 
 class BrokenGate:
@@ -709,6 +736,7 @@ async def test_an_unexpected_error_ends_only_the_answer() -> None:
             )
         ),
         provider="p",
+        catalog=KNOWN,
         read_line=ScriptedInput("Hola", "Otra", "/exit"),
         out=out,
         err=err,
@@ -736,6 +764,7 @@ async def test_ctrl_c_during_a_tool_goes_back_to_the_prompt() -> None:
     code = await converse(
         solo(agent),
         provider="p",
+        catalog=KNOWN,
         read_line=ScriptedInput("Usa la herramienta", "/exit"),
         out=out,
         err=io.StringIO(),
@@ -774,6 +803,7 @@ async def test_ctrl_c_during_the_question_starts_a_new_line() -> None:
     await converse(
         solo(agent),
         provider="p",
+        catalog=KNOWN,
         read_line=ScriptedInput("Usa la herramienta", "/exit"),
         out=out,
         err=io.StringIO(),
@@ -831,6 +861,7 @@ async def converse_asking(
             )
         ),
         provider="p",
+        catalog=KNOWN,
         read_line=read,
         out=out,
         err=io.StringIO(),
@@ -875,3 +906,143 @@ async def test_a_denied_call_ends_the_turn_and_says_so() -> None:
         "  [denied: tell maha how to continue]\n"
     ) in out
     assert tool.calls == []
+
+
+# Cost and catalog notes in the terminal (spec hito 7, §1.2, §1.5, §1.10;
+# §4.7.1 and §4.7.2).
+
+
+async def run_priced(
+    fake: FakeModelClient,
+    *lines: str,
+    model: str = "glm-5.3-flash",
+    catalog: MemoryCatalog = KNOWN,
+    traces: MemoryTraceSink | None = None,
+) -> tuple[int, str, str]:
+    """A conversation whose terminal knows `catalog`."""
+    out, err = io.StringIO(), io.StringIO()
+    agent = Agent(
+        fake,
+        ToolRegistry(),
+        gate=FakeApproval(),
+        model=model,
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
+    )
+    sessions = Sessions(
+        MemorySessionStore(),
+        lambda model, history: agent,
+        cwd="/home/ana/proyecto",
+        provider="opencode-go",
+        model=model,
+        version="0.6.0",
+        traces=traces or MemoryTraceSink(),
+    )
+    code = await converse(
+        sessions,
+        provider="opencode-go",
+        catalog=catalog,
+        read_line=ScriptedInput(*lines),
+        out=out,
+        err=err,
+    )
+    return code, out.getvalue(), err.getvalue()
+
+
+def costing(text: str, usage: Usage, cost: str | None) -> ModelResponse:
+    """A reply whose provider says what it cost."""
+    return reply(text, usage=usage).model_copy(
+        update={"cost": None if cost is None else Decimal(cost)}
+    )
+
+
+async def test_the_token_line_has_reasoning_cost_and_session() -> None:
+    usage = Usage(input_tokens=4111, output_tokens=286, reasoning_tokens=190)
+    fake = FakeModelClient(
+        [costing("Uno", usage, "0.0008"), costing("Dos", usage, "0.00234")]
+    )
+
+    _, out, _ = await run_priced(fake, "A", "B", "/exit")
+
+    assert (
+        "  [tokens: 4111 in · 286 out (190 reasoning) · $0.0008 · session $0.0008]\n"
+    ) in out
+    assert "· $0.0023 · session $0.0031]\n" in out
+
+
+async def test_without_a_price_there_is_no_dollar() -> None:
+    fake = FakeModelClient([costing("Uno", Usage(input_tokens=3), None)])
+
+    _, out, _ = await run_priced(fake, "A", "/exit")
+
+    assert "  [tokens: 3 in · 0 out]\n" in out
+
+
+async def test_tiny_and_zero_costs_are_said_as_such() -> None:
+    fake = FakeModelClient(
+        [
+            costing("Uno", Usage(input_tokens=3), "0.000006"),
+            costing("Dos", Usage(input_tokens=3), "0"),
+        ]
+    )
+
+    _, out, _ = await run_priced(fake, "A", "B", "/exit")
+
+    assert "· <$0.0001 · session <$0.0001]" in out
+    assert "· $0 · session <$0.0001]" in out
+
+
+async def test_a_session_with_a_turn_without_price_is_at_least() -> None:
+    fake = FakeModelClient(
+        [
+            costing("Uno", Usage(input_tokens=3), None),
+            costing("Dos", Usage(input_tokens=3), "0.0012"),
+        ]
+    )
+
+    _, out, _ = await run_priced(fake, "A", "B", "/exit")
+
+    assert "  [tokens: 3 in · 0 out · $0.0012 · session ≥$0.0012]\n" in out
+
+
+async def test_a_model_out_of_the_catalog_is_said_at_the_start() -> None:
+    _, out, _ = await run_priced(FakeModelClient([]), "/exit", model="nuevo")
+
+    assert "  [model not in the catalog: cost only if the provider reports it]\n" in out
+
+
+async def test_a_model_that_trains_on_the_data_is_warned() -> None:
+    catalog = MemoryCatalog(
+        [
+            ModelInfo(provider="opencode-go", model="glm-5.3-flash"),
+            ModelInfo(provider="opencode-go", model="big", trains_on_data=True),
+        ]
+    )
+
+    _, out, _ = await run_priced(
+        FakeModelClient([]), "/model big", "/exit", catalog=catalog
+    )
+
+    assert "  [warning: this model may use your data for training]\n" in out
+    # The color only in a terminal.
+    assert "\x1b[" not in out
+
+
+async def test_model_says_whether_the_new_one_is_in_the_catalog() -> None:
+    _, out, _ = await run_priced(FakeModelClient([]), "/model nuevo", "/exit")
+
+    assert (
+        "  [model: nuevo]\n"
+        "  [model not in the catalog: cost only if the provider reports it]\n"
+    ) in out
+
+
+async def test_a_trace_that_fails_is_said_once() -> None:
+    traces = MemoryTraceSink()
+    traces.failures = 10
+    fake = FakeModelClient([reply("Uno"), reply("Dos")])
+
+    _, _, err = await run_priced(fake, "A", "B", "/exit", traces=traces)
+
+    assert err.count("warning: trace not saved: ") == 1
+    assert "No space left on device" in err

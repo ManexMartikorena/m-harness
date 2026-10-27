@@ -775,3 +775,20 @@ primero:
 38. **`Usd` pasa a `domain/money.py`:** lo usan el modelo (`ModelResponse`,
     `MessageEnd`) y el catálogo, y `domain/catalog.py` ya importa
     `domain/model.py`.
+
+### PR 5 (`feature/hito-7-terminal`, 2026-10-27)
+
+39. **La sesión suma el turno al terminarlo**, en `TurnFinished`, y no al
+    salir del turno: la terminal enseña `session $…` con ese evento, y antes
+    salía sin el turno actual. Un turno cortado se suma al salir.
+40. **"session ≥$…"** cuando algún turno no tuvo precio (§12.16); sin
+    ningún coste conocido, la línea no lo enseña.
+41. **Avisos del catálogo**, también al retomar (el modelo puede cambiar).
+    Con el coste del proveedor (§1.5), un modelo fuera del catálogo puede
+    tener coste: el aviso dice "cost only if the provider reports it".
+42. **El registro** usa un logger `mharness` propio, sin propagar a la raíz,
+    y reemplaza su handler en cada `main()`; sin sitio para el fichero, un
+    `NullHandler`: nunca escribe en la terminal. En los tests, un fixture
+    lo deja como estaba tras cada test, para que `caplog` vea los avisos.
+43. **También a `maha.log`** los errores internos de una herramienta (la
+    terminal ya los enseñaba).

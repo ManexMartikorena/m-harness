@@ -5,9 +5,11 @@ application and starts the `maha` command.
 """
 
 import asyncio
+import logging
 import os
 import sys
 from collections.abc import Mapping, Sequence
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from mharness import __version__, config
@@ -42,6 +44,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     options = cli.parse(argv)
     if isinstance(options, int):
         return options
+    _log_to(config.state_dir(os.environ) / "maha.log")
     try:
         settings = config.load(cwd=Path.cwd(), env=os.environ)
         catalog = TomlCatalog.load(config.user_catalog_path(os.environ))
@@ -49,6 +52,36 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cli.fail(str(exc))
     # Resolved once: the tools and the sessions name it the same way.
     return asyncio.run(_converse(settings, catalog, Path.cwd().resolve()))
+
+
+# The application log: diagnosis for whoever maintains maha, never what was
+# said (DESIGN §11, spec hito 7, §1.11). Only the adapters write to it.
+_LOG_BYTES = 1024 * 1024
+_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+
+
+def _log_to(path: Path) -> None:
+    """Send the warnings of `mharness.*` to `path`, rotated at 1 MiB with one
+    copy. Without a place for it, nowhere: never to the terminal."""
+    logger = logging.getLogger("mharness")
+    logger.setLevel(logging.WARNING)
+    # Not to the root's handlers, nor twice if main() runs again.
+    logger.propagate = False
+    for old in list(logger.handlers):
+        logger.removeHandler(old)
+        old.close()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # mkdir follows the umask: the modes are set after.
+        path.parent.chmod(0o700)
+        handler: logging.Handler = RotatingFileHandler(
+            path, maxBytes=_LOG_BYTES, backupCount=1, encoding="utf-8"
+        )
+        path.chmod(0o600)
+    except OSError:
+        handler = logging.NullHandler()
+    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+    logger.addHandler(handler)
 
 
 def _tools(cwd: Path, env: Mapping[str, str]) -> ToolRegistry:
@@ -120,6 +153,7 @@ async def _converse(settings: config.Settings, catalog: ModelCatalog, cwd: Path)
         return await cli.converse(
             sessions,
             provider=settings.provider_name,
+            catalog=catalog,
             read_line=lines.readline,
             # Only a terminal has typed-ahead input to drop.
             discard=lines.discard if os.isatty(0) else None,

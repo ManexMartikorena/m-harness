@@ -169,6 +169,8 @@ class Conversation:
         cost: Decimal | None = Decimal(0)
         # Once the turn finished, what comes after is not about it.
         finished = False
+        # Whether the turn's cost is already in the session's.
+        counted = False
         self._turn = TurnStarted(text=text)
         self._turn_at = self._origin.now()
         self._turn_traced = False
@@ -182,6 +184,11 @@ class Conversation:
                     if not isinstance(event, TextDelta):
                         await self._record(event)
                     finished = isinstance(event, TurnFinished)
+                    if finished and calls:
+                        # Before it is shown: the terminal tells the session's
+                        # cost with this turn in it.
+                        self._count(cost)
+                        counted = True
                     yield event
         except BaseException as exc:
             if not finished:
@@ -203,12 +210,17 @@ class Conversation:
             self._pending += [MessageEntry(message=m) for m in fresh]
             if calls:
                 self._pending.append(UsageEntry(usage=usage, cost=cost))
-                if cost is None:
-                    self.uncosted_turns += 1
-                else:
-                    self.cost += cost
+                if not counted:
+                    self._count(cost)
             await self._save()
             await self._sync_trace()
+
+    def _count(self, cost: Decimal | None) -> None:
+        """Add one turn's cost to the session's."""
+        if cost is None:
+            self.uncosted_turns += 1
+        else:
+            self.cost += cost
 
     async def switch_model(self, model: str) -> None:
         """Use `model` from the next turn on; the change keeps its place

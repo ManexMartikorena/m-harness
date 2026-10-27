@@ -79,7 +79,11 @@ de esto entra en git:
   también su traza. La traza enmascara la clave del proveedor, las
   variables con forma de credencial y las claves con forma conocida
   (`sk-…`, `ghp_…`…), pero no garantiza que no quede ningún secreto.
-- `~/.local/state/maha/`: registro de la aplicación.
+- `~/.local/state/maha/`: registro de la aplicación (desde el hito 7,
+  `maha.log`, solo legible por el usuario, rotado a 1 MiB con una copia).
+  Solo diagnóstico: fallos del disco al guardar una sesión o una traza, el
+  `fsync` de una carpeta que falla y errores internos de una herramienta;
+  nunca el texto de la conversación. Respeta `XDG_STATE_HOME`.
 
 Lo que se haga en una máquina no está en la otra.
 

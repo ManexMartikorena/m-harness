@@ -1165,7 +1165,7 @@ async def test_the_rename_is_flushed_to_the_disk(
 
 
 async def test_a_failed_folder_fsync_still_counts_as_written(
-    root: Path, monkeypatch: pytest.MonkeyPatch
+    root: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     # The file is already replaced: "cannot write" would be false, and the
     # model would write it again.
@@ -1187,6 +1187,13 @@ async def test_a_failed_folder_fsync_still_counts_as_written(
     assert result == "wrote notas.txt (1 line)"
     assert (root / "notas.txt").read_text(encoding="utf-8") == "dos\n"
     assert temporaries(root) == []
+    # Not silent any more: it goes to maha.log (D11, spec hito 7, §1.11),
+    # with the folder and the error, never the content.
+    [warning] = [r for r in caplog.records if r.name == "mharness.adapters.tools.files"]
+    assert warning.levelname == "WARNING"
+    assert str(root) in warning.getMessage()
+    assert "Invalid argument" in warning.getMessage()
+    assert "dos" not in warning.getMessage()
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root opens any folder")

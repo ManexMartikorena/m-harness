@@ -605,3 +605,24 @@ async def test_exists_says_whether_an_id_is_taken(folder: Path) -> None:
     assert await store.exists(HEADER.id)
     await log.close()
     assert not await store.exists("../../etc/passwd")
+
+
+async def test_a_disk_failure_goes_to_the_log_without_content(
+    folder: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Spec hito 7, §1.11: diagnosis, never what was said.
+    log = await JsonlSessionStore(folder).create(HEADER)
+
+    def full(fd: int, data: bytes | memoryview) -> int:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "write", full)
+    with pytest.raises(SessionError):
+        await log.append([MessageEntry(message=HOLA)])
+    monkeypatch.undo()
+    await log.close()
+
+    [warning] = [r for r in caplog.records if r.name.startswith("mharness")]
+    assert "No space left on device" in warning.getMessage()
+    assert HEADER.id in warning.getMessage()
+    assert "Ana" not in warning.getMessage()
