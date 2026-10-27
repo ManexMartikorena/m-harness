@@ -1,4 +1,4 @@
-from mharness.application.approvals import SessionApprovals
+from mharness.application.approvals import AllowList, SessionApprovals
 from mharness.domain.approval import ApprovalRequest
 
 EDIT = ApprovalRequest(
@@ -66,3 +66,37 @@ def test_a_request_without_scope_is_never_kept() -> None:
     approvals.record(OUTSIDE, "session")
 
     assert not approvals.covers(OUTSIDE)
+
+
+# Without a person (spec hito 8, §1.2): `--allow TOOL` approves what has a
+# scope; what with a person asks every time is always denied.
+
+
+def question(tool: str, scope: str | None) -> ApprovalRequest:
+    return ApprovalRequest(tool=tool, title=f"{tool} x", detail="", scope=scope)
+
+
+async def test_allow_list_approves_once_a_listed_tool_with_a_scope() -> None:
+    gate = AllowList(["write_file", "edit_file"])
+
+    assert await gate.decide(question("edit_file", "edit_file")) == "once"
+    assert await gate.decide(question("write_file", "write_file")) == "once"
+
+
+async def test_allow_list_denies_what_asks_every_time_even_if_listed() -> None:
+    # Outside the working directory, a secret, a file that runs code.
+    gate = AllowList(["read_file", "edit_file"])
+
+    assert await gate.decide(question("read_file", None)) == "deny"
+    assert await gate.decide(question("edit_file", None)) == "deny"
+
+
+async def test_allow_list_denies_a_tool_not_listed() -> None:
+    gate = AllowList(["edit_file"])
+
+    assert await gate.decide(question("run_command", "run: ls")) == "deny"
+    assert await gate.decide(question("write_file", "write_file")) == "deny"
+
+
+async def test_an_empty_allow_list_denies_everything() -> None:
+    assert await AllowList([]).decide(question("edit_file", "edit_file")) == "deny"

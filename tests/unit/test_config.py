@@ -1,10 +1,12 @@
 import re
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from mharness import config
 from mharness.config import BUILTIN_PROVIDERS, ConfigError, ProviderSettings
+from mharness.domain.limits import TurnLimits
 
 KEY = "sk-test-0000000000000000"
 
@@ -113,6 +115,51 @@ def test_without_model_says_what_to_write(home: Path, project: Path) -> None:
     assert "no model configured" in message
     assert str(home / "maha" / "config.toml") in message
     assert 'provider = "opencode-go"' in message
+
+
+# The limits of each turn (spec hito 8, §1.1 and §3.2).
+
+
+def test_without_limits_the_turn_has_the_default_ones(
+    home: Path, project: Path
+) -> None:
+    write_user(home, 'model = "m"\n')
+
+    assert load(home, project).limits == TurnLimits()
+
+
+def test_the_user_sets_the_limits(home: Path, project: Path) -> None:
+    write_user(
+        home,
+        'model = "m"\n[limits]\nmax_steps = 10\nmax_cost = 0.50\n'
+        "max_tokens = 400000\ntimeout = 600\n",
+    )
+
+    assert load(home, project).limits == TurnLimits(
+        max_steps=10, max_cost=Decimal("0.50"), max_tokens=400_000, timeout=600
+    )
+
+
+def test_a_project_can_only_tighten_the_limits(home: Path, project: Path) -> None:
+    # Spec hito 8, §3.2: a project's limits only restrict. Of each limit,
+    # the stricter of the two files wins; a foreign repository cannot
+    # loosen what the user set.
+    write_user(home, 'model = "m"\n[limits]\nmax_steps = 10\nmax_cost = 1\n')
+    write_project(project, "[limits]\nmax_steps = 1000\nmax_cost = 0.2\ntimeout = 60\n")
+
+    assert load(home, project).limits == TurnLimits(
+        max_steps=10, max_cost=Decimal("0.2"), timeout=60
+    )
+
+
+def test_a_wrong_limit_is_an_error(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\n[limits]\nmax_steps = 0\nmax_turns = 3\n')
+
+    with pytest.raises(ConfigError) as raised:
+        load(home, project)
+
+    assert "limits.max_steps" in str(raised.value)
+    assert "limits.max_turns: unknown field" in str(raised.value)
 
 
 def test_unknown_provider(home: Path, project: Path) -> None:

@@ -68,12 +68,17 @@ class ModelCallFinished(BaseModel, frozen=True):
 
 
 class TurnFinished(BaseModel, frozen=True):
-    """The turn ended and was kept in the history."""
+    """The turn ended and was kept in the history (after a timeout, only if
+    a tool ran, as after Ctrl+C)."""
 
     type: Literal["turn_finished"] = "turn_finished"
-    # `end_turn`: the model answered without calls. `max_steps`: the limit.
-    # `denied`: the user denied a call.
-    reason: Literal["end_turn", "max_steps", "denied"]
+    # `end_turn`: the model answered without calls. `max_steps`,
+    # `max_cost`, `max_tokens`: a limit of the turn (spec hito 8, §1.1).
+    # `timeout`: the time limit passed; the turn keeps what ran, as after
+    # Ctrl+C. `denied`: the user denied a call.
+    reason: Literal[
+        "end_turn", "max_steps", "max_cost", "max_tokens", "timeout", "denied"
+    ]
     # Summed over every call to the model in the turn.
     usage: Usage
     # Calls handled by the loop; not those skipped after a denial.

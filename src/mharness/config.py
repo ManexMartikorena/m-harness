@@ -1,6 +1,7 @@
 """Load and validate the configuration (spec hito 2, §1.10).
 
-Three levels, the later one winning for `provider` and `model`:
+Three levels, the later one winning for `provider` and `model`; of each
+limit of the turn, the stricter one wins (spec hito 8, §3.2):
 
 1. built-in providers, in this module;
 2. the user's file, `$XDG_CONFIG_HOME/maha/config.toml`;
@@ -14,10 +15,13 @@ Start-up plumbing: only `mharness.bootstrap` uses it, once, before the core.
 
 import tomllib
 from collections.abc import Mapping
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
+
+from mharness.domain.limits import TurnLimits
 
 PROJECT_FILE = Path(".maha") / "config.toml"
 DEFAULT_PROVIDER = "opencode-go"
@@ -58,13 +62,24 @@ class Settings(BaseModel, frozen=True):
     provider_name: str
     provider: ProviderSettings
     model: str
+    limits: TurnLimits = TurnLimits()
     # Kept out of repr, so it never lands in a log or a traceback.
     api_key: str | None = Field(default=None, repr=False)
+
+
+class _Limits(BaseModel, extra="forbid"):
+    """`[limits]`: each one, if the file sets it."""
+
+    max_steps: int | None = Field(default=None, ge=1)
+    max_cost: Decimal | None = Field(default=None, ge=0)
+    max_tokens: int | None = Field(default=None, ge=1)
+    timeout: float | None = Field(default=None, gt=0)
 
 
 class _ProjectFile(BaseModel, extra="forbid"):
     provider: str | None = Field(default=None, min_length=1)
     model: str | None = Field(default=None, min_length=1)
+    limits: _Limits = _Limits()
 
 
 class _UserFile(_ProjectFile):
@@ -143,8 +158,22 @@ def load(*, cwd: Path, env: Mapping[str, str]) -> Settings:
         provider_name=provider_name,
         provider=provider,
         model=model,
+        limits=_stricter(user.limits, project.limits),
         api_key=_api_key(provider_name, provider, env),
     )
+
+
+def _stricter(user: _Limits, project: _Limits) -> TurnLimits:
+    """Of each limit, the lower of the two files: a project can tighten the
+    user's limits, never loosen them."""
+    values: dict[str, Any] = {}
+    for name in _Limits.model_fields:
+        set_to = [
+            v for v in (getattr(user, name), getattr(project, name)) if v is not None
+        ]
+        if set_to:
+            values[name] = min(set_to)
+    return TurnLimits(**values)
 
 
 def _home() -> Path:

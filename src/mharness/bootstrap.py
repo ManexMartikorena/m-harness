@@ -158,6 +158,7 @@ async def _converse(
                 model=model,
                 catalog=catalog,
                 provider=settings.provider_name,
+                limits=settings.limits,
                 history=history,
             )
 

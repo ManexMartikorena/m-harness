@@ -25,9 +25,11 @@ from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import ModelInfo, Prices
 from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta, ToolCallDelta
+from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from mharness.domain.tools import ToolError
+from mharness.ports.approval import ApprovalGate
 from tests.fakes.approval import FakeApproval, HangingApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FAKE_MODEL, HANG, FakeModelClient, reply, tool_calls
@@ -49,8 +51,9 @@ def agent(
     fake: FakeModelClient,
     *tools: FakeTool,
     max_steps: int = 25,
-    gate: FakeApproval | None = None,
+    gate: ApprovalGate | None = None,
     catalog: MemoryCatalog | None = None,
+    limits: TurnLimits | None = None,
 ) -> Agent:
     registry = ToolRegistry(tools or [FakeTool()])
     # With no script, being asked fails the test.
@@ -61,7 +64,7 @@ def agent(
         model=MODEL,
         catalog=catalog or MemoryCatalog(),
         provider=PROVIDER,
-        max_steps=max_steps,
+        limits=limits or TurnLimits(max_steps=max_steps),
     )
 
 
@@ -1148,6 +1151,180 @@ async def test_a_turn_at_the_step_limit_has_its_cost() -> None:
     turn = events[-1]
     assert isinstance(turn, TurnFinished)
     assert (turn.reason, turn.cost) == ("max_steps", Decimal("0.3"))
+
+
+def always_calls(usage: Usage, steps: int = 5) -> FakeModelClient:
+    """A model that asks for a tool at every step, spending `usage`."""
+    return FakeModelClient(
+        [tool_calls(call(f"c{i}"), usage=usage) for i in range(steps)]
+    )
+
+
+async def test_the_token_limit_stops_before_the_call_that_would_pass_it() -> None:
+    # Spec hito 8, §1.1: 600 + 600 reach 1000, so no third call; what ran
+    # stays in the history.
+    echo = FakeTool()
+    fake = always_calls(Usage(input_tokens=500, output_tokens=100))
+    subject = agent(fake, echo, limits=TurnLimits(max_tokens=1000))
+
+    events = await run(subject)
+
+    assert events[-1] == TurnFinished(
+        reason="max_tokens",
+        usage=Usage(input_tokens=1000, output_tokens=200),
+        tool_calls=2,
+        steps=2,
+        cost=None,
+    )
+    assert len(fake.requests) == 2
+    assert len(echo.calls) == 2
+    assert [m.role for m in subject.messages] == [
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+        "tool",
+    ]
+
+
+async def test_the_cost_limit_stops_before_the_call_that_would_pass_it() -> None:
+    # 0.15 per call: after two, 0.30 reaches 0.20.
+    fake = always_calls(Usage(input_tokens=1_000_000))
+    catalog = MemoryCatalog([priced(FAKE_MODEL, "0.15", "0.50")])
+    limits = TurnLimits(max_cost=Decimal("0.20"))
+
+    events = await run(agent(fake, catalog=catalog, limits=limits))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert (turn.reason, turn.steps, turn.cost) == ("max_cost", 2, Decimal("0.30"))
+
+
+async def test_a_cost_limit_without_a_known_cost_stops_the_turn() -> None:
+    # Decision 7: a limit of money that cannot be checked is not a limit.
+    fake = always_calls(Usage(input_tokens=10))
+    limits = TurnLimits(max_cost=Decimal(5))
+
+    events = await run(agent(fake, limits=limits))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert (turn.reason, turn.steps, turn.cost) == ("max_cost", 1, None)
+    assert len(fake.requests) == 1
+
+
+async def test_a_turn_within_its_limits_ends_as_always() -> None:
+    fake = FakeModelClient(
+        [
+            tool_calls(call("c1"), usage=Usage(input_tokens=1_000_000)),
+            reply("Hecho", usage=Usage(input_tokens=1_000_000)),
+        ]
+    )
+    catalog = MemoryCatalog([priced(FAKE_MODEL, "0.15", "0.50")])
+    limits = TurnLimits(max_cost=Decimal(1), max_tokens=10_000_000)
+
+    events = await run(agent(fake, catalog=catalog, limits=limits))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert (turn.reason, turn.steps) == ("end_turn", 2)
+
+
+# The time limit of the turn (spec hito 8, §1.1): the loop stops waiting and
+# ends the turn, keeping what ran, as Ctrl+C does.
+
+LIMIT = TurnLimits(timeout=0.05)
+
+
+async def test_the_time_limit_while_the_model_answers_keeps_nothing_new() -> None:
+    subject = agent(FakeModelClient([[TextDelta(text="Ya est"), HANG]]), limits=LIMIT)
+
+    events = await run(subject)
+
+    assert events[-1] == TurnFinished(
+        reason="timeout", usage=Usage(), tool_calls=0, steps=1, cost=Decimal(0)
+    )
+    # Nothing ran: the user writes again, as after Ctrl+C. The half answer
+    # is not kept: its mark would say the user cut it.
+    assert subject.messages == ()
+
+
+async def test_the_time_limit_while_a_tool_runs_keeps_the_turn() -> None:
+    echo = FakeTool(gate=asyncio.Event())
+    subject = agent(FakeModelClient([tool_calls(call("c1"))]), echo, limits=LIMIT)
+
+    events = await run(subject)
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert (turn.reason, turn.tool_calls, turn.steps) == ("timeout", 0, 1)
+    *_, results = subject.messages
+    assert results.blocks == [
+        ToolResultBlock(
+            call_id="c1", content="error: stopped by the time limit", is_error=True
+        )
+    ]
+
+
+async def test_the_time_limit_while_asking_after_a_run_keeps_the_turn() -> None:
+    fake = FakeModelClient([tool_calls(call("c1")), tool_calls(call("c2"), call("c3"))])
+    # The first call is approved once, the second waits forever.
+    effect = FakeTool(permission="effect", requests=[ask(), ask()])
+    gate = OnceThenHang()
+
+    subject = agent(fake, effect, gate=gate, limits=LIMIT)
+    events = await run(subject)
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert (turn.reason, turn.tool_calls, turn.steps) == ("timeout", 1, 2)
+    assert len(gate.requests) == 2
+    *_, results = subject.messages
+    assert [b.content for b in results.blocks] == [  # type: ignore[union-attr]
+        "error: stopped by the time limit",
+        "error: not run",
+    ]
+
+
+class OnceThenHang(HangingApproval):
+    """Approves the first request; then never answers."""
+
+    async def decide(self, request: ApprovalRequest) -> Decision:
+        if not self.requests:
+            self.requests.append(request)
+            return "once"
+        return await super().decide(request)
+
+
+async def test_the_time_limit_is_for_the_whole_turn() -> None:
+    # Three calls of 0.03 s each: no single wait passes 0.05, the turn does.
+    class SlowTool(FakeTool):
+        async def run(self, params: EchoParams) -> str:
+            await asyncio.sleep(0.03)
+            return await super().run(params)
+
+    slow = SlowTool()
+    fake = FakeModelClient([tool_calls(call(f"c{i}")) for i in range(3)])
+
+    events = await run(agent(fake, slow, limits=LIMIT))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    # The first ran; the second was cut while it ran.
+    assert (turn.reason, turn.tool_calls) == ("timeout", 1)
+    assert len(fake.requests) == 2
+
+
+async def test_a_timeout_of_the_tool_itself_is_not_the_turns() -> None:
+    # A TimeoutError that the limit did not cause is the tool's failure.
+    echo = FakeTool(results=[TimeoutError("slow server")])
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Vaya.")])
+
+    events = await run(agent(fake, echo, limits=TurnLimits(timeout=10)))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert turn.reason == "end_turn"
 
 
 async def test_the_cost_the_provider_gives_wins_over_the_catalog() -> None:

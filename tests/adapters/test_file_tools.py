@@ -32,6 +32,7 @@ from mharness.adapters.tools.files import (
     ReadFileParams,
     WriteFileParams,
 )
+from mharness.application.approvals import AllowList
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.tools import ToolError
 from mharness.ports.tools import Tool
@@ -2802,3 +2803,31 @@ async def test_listing_stops_reading_past_the_scan_limit(
     assert (
         lines[-1] == "… [truncated: 10 shown; the directory has more than 30 entries]"
     )
+
+
+# Without a person, `AllowList` denies what asks every time (spec hito 8,
+# §1.2): it relies on these requests coming without a scope.
+
+
+async def test_what_asks_every_time_is_denied_without_a_person(tmp_path: Path) -> None:
+    (tmp_path / "work").mkdir()
+    (tmp_path / "work" / ".env").write_text("CLAVE=inventada\n")
+    (tmp_path / "fuera.txt").write_text("x\n")
+    workspace = Workspace(tmp_path / "work")
+    gate = AllowList(["read_file", "write_file"])
+    requests = [
+        await ReadFile(workspace).approval(ReadFileParams(path=".env")),
+        await ReadFile(workspace).approval(ReadFileParams(path="../fuera.txt")),
+        await WriteFile(workspace).approval(
+            WriteFileParams(path=".github/workflows/ci.yml", content="on: push\n")
+        ),
+    ]
+
+    assert all(r is not None and r.scope is None for r in requests)
+    assert [await gate.decide(r) for r in requests if r is not None] == ["deny"] * 3
+    # A plain file inside is approved.
+    plain = await WriteFile(workspace).approval(
+        WriteFileParams(path="notas.txt", content="hola\n")
+    )
+    assert plain is not None
+    assert await gate.decide(plain) == "once"

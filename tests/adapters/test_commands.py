@@ -15,7 +15,7 @@ from mharness.adapters.cli.conversation import converse
 from mharness.application.agent import Agent
 from mharness.application.sessions import Sessions
 from mharness.application.tools import ToolRegistry
-from mharness.domain.agent_events import ModelCallFinished, TurnStarted
+from mharness.domain.agent_events import ModelCallFinished, TurnFinished, TurnStarted
 from mharness.domain.catalog import ModelInfo
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock
 from mharness.domain.model import ModelResponse, Usage
@@ -528,6 +528,29 @@ async def test_trace_says_how_a_turn_ended_badly() -> None:
         in out
     )
     assert "· unfinished\n" in out
+
+
+async def test_trace_names_the_limits_of_the_turn() -> None:
+    maha = Maha(MemorySessionStore(), [])
+    log = await maha.traces.open(OTHER, new=True)
+    for reason in ("max_cost", "max_tokens", "timeout"):
+        for event in (
+            TurnStarted(text="A"),
+            TurnFinished(
+                reason=reason,
+                usage=Usage(),
+                tool_calls=0,
+                steps=1,
+                cost=None,
+            ),
+        ):
+            await log.write(TraceRecord(at=NOW, session=OTHER, event=event))
+
+    _, out, _ = await maha.run(f"/trace {OTHER}", "/exit")
+
+    assert "· cost limit\n" in out
+    assert "· token limit\n" in out
+    assert "· time limit\n" in out
 
 
 async def test_what_the_trace_brings_from_the_disk_is_escaped() -> None:

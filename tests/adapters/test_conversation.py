@@ -25,6 +25,7 @@ from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import ModelInfo
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import TextDelta
+from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
 from mharness.domain.model import ModelResponse, Usage
 from mharness.domain.tools import ToolError
@@ -581,7 +582,11 @@ def call(id: str, arguments: str = '{"text": "Hola"}') -> ToolCallBlock:
 
 
 async def run_with_tools(
-    fake: FakeModelClient, *lines: str, tool: FakeTool | None = None, steps: int = 25
+    fake: FakeModelClient,
+    *lines: str,
+    tool: FakeTool | None = None,
+    steps: int = 25,
+    limits: TurnLimits | None = None,
 ) -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
     registry = ToolRegistry([tool or FakeTool()])
@@ -594,7 +599,7 @@ async def run_with_tools(
                 model="m",
                 catalog=MemoryCatalog(),
                 provider="opencode-go",
-                max_steps=steps,
+                limits=limits or TurnLimits(max_steps=steps),
             )
         ),
         provider="p",
@@ -691,6 +696,30 @@ async def test_step_limit_is_shown() -> None:
     _, out, _ = await run_with_tools(fake, "Hola", "/exit", steps=2)
 
     assert "  [step limit reached: 2]\n  [tokens: 2 in · 2 out · 2 calls]\n" in out
+
+
+async def test_the_token_and_cost_limits_are_shown() -> None:
+    # Spec hito 8, §1.1. Without a price, the cost limit says why.
+    usage = Usage(input_tokens=1, output_tokens=1)
+    fake = FakeModelClient([tool_calls(call(f"c{i}"), usage=usage) for i in range(3)])
+    _, out, _ = await run_with_tools(
+        fake, "Hola", "/exit", limits=TurnLimits(max_tokens=4)
+    )
+    assert "  [token limit reached: 4 tokens]\n" in out
+
+    fake = FakeModelClient([tool_calls(call("c1"), usage=usage)])
+    _, out, _ = await run_with_tools(
+        fake, "Hola", "/exit", limits=TurnLimits(max_cost=Decimal(1))
+    )
+    assert "  [cost limit: the cost of a call is not known]\n" in out
+
+    fake = FakeModelClient([[HANG]])
+    _, out, _ = await run_with_tools(
+        fake, "Hola", "/exit", limits=TurnLimits(timeout=0.05)
+    )
+    assert "  [time limit reached]\n" in out
+    # No call ended: there are no tokens to show (found by hand, 2026-10-27).
+    assert "[tokens:" not in out
 
 
 async def test_internal_tool_error_goes_to_stderr_and_the_log(
