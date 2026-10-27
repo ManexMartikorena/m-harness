@@ -1,7 +1,7 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-27. **Hito 7 cerrado (`v0.7.0`). Plan
-completado y ordenado para empezar el hito 8. Cero deuda conocida.**
+ampliado y ordenado para empezar el hito 8. Cero deuda conocida.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -43,7 +43,7 @@ Después del hito 7 (2026-10-27, todo de documentación, decidido por el
 mantenedor):
 - **Segundo objetivo:** un producto profesional, lo más completo posible e
   intuitivo (ANALISIS §4); la distribución pública entra en la 1.0.
-- **Plan completado** con la comparativa de OpenCode y Claude Code
+- **Plan ampliado** con la comparativa de OpenCode y Claude Code
   (`docs/COMPARATIVA.md`): hitos ampliados, dos nuevos (12 deshacer, 18
   hooks) y la 1.0 en el hito 23.
 - **El hito 21 es una TUI completa**, con OpenCode como referencia.
@@ -145,8 +145,9 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   herramientas (spec 4, §5) y la marca `[interrupted by the user]` (spec 6).
 - **Hito 10:** el modelo no sabe en qué directorio trabaja tras retomar una
   sesión de otro (spec 6, §1.8).
-- **Hito 11:** ~700 tokens de entrada por llamada solo por las herramientas;
-  compactar (spec 4, §12.14).
+- **Hito 11:** el coste en tokens de las herramientas en cada llamada (~700
+  con las cuatro del hito 4; hoy son siete, por medir) y compactar (spec 4,
+  §12.14).
 - **Hito 15:** detectar secretos con otro nombre (`credenciales.txt`)
   mirando el contenido (mejora `2026-10-23`, E5).
 - **Hito 16:** llamadas a herramientas en paralelo (spec 4, §11).
@@ -209,7 +210,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [ ] 20. Multimodal. `v0.20.0`
 - [ ] 21. Interfaz completa (TUI). `v0.21.0`
 - [ ] 22. Exportador OpenTelemetry. `v0.22.0`
-- [ ] 23. Versión 1.0 y distribución. `v0.23.0` y `v1.0.0`
+- [ ] 23. Versión 1.0 y distribución. `v1.0.0`
 
 *(Plan reordenado el 2026-10-27 por decisión del mantenedor, DESIGN §14 y
 `docs/COMPARATIVA.md`.)*

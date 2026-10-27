@@ -29,7 +29,10 @@ referencia con nuestro plan, y propone qué entra y cuándo.
   agente propio, construido a mano y pieza a pieza (AGENTS.md).
 
 Leyenda de la columna **`maha`**: ✓ hecho (`v0.7.0`) · **hN** planeado en el
-hito N · — no planeado. Columna **Propuesta**: dónde encajaría.
+hito N · — no planeado. Columna **Propuesta**: dónde encajaría. Lo principal
+(P1 a P15) está en DESIGN §14; el detalle por áreas es la lista de partida
+de la spec de cada hito, y lo que queda abierto ("o", "mejora pequeña") se
+decide en esa spec.
 
 ## Resumen: lo que se propone
 
@@ -39,7 +42,7 @@ Lo más importante, en una tabla. El detalle, por áreas, después.
 |---|---|---|---|
 | P1 | **Modo no interactivo completo:** `-p`, `-c`, `-r`, `--model`, salida JSON, entrada por stdin, códigos de salida, `--max-turns` y tope de coste | Los dos lo tienen; los evals y los scripts lo necesitan | Hito 8 (ya planeado en parte) |
 | P2 | **Comandos de línea:** `maha models`, `maha sessions`, `maha stats` (coste acumulado) y `maha export` | Gestionar sin abrir la conversación | Hito 8 |
-| P3 | **Variantes de razonamiento** (*effort*) y **modelo de respaldo** | Los dos las tienen; los proveedores las admiten | Hito 9 |
+| P3 | **Variantes de razonamiento** (*effort*) y **modelo de respaldo** | Los dos las tienen; los proveedores las admiten | Hito 9 (el respaldo, hito 8) |
 | P4 | **`/init`**, compatibilidad con `CLAUDE.md` e instrucciones extra | Crear y reutilizar las instrucciones de proyecto | Hito 10 |
 | P5 | **Herramientas de flujo:** lista de tareas (*todo*) y pregunta estructurada al usuario | Los dos las tienen; mejoran tareas largas | Hito 10 |
 | P6 | **`/compact`, `/context` y compactación automática** con lo que sobrevive | Ya en el plan; se concreta | Hito 11 |
@@ -272,7 +275,7 @@ https://code.claude.com/docs/en/model-config.md *(sin comprobar del todo)*.
 | Proveedores compatibles propios | sí | pasarelas | ✓ (configuración) | — |
 | Modelos locales (Ollama, LM Studio) | sí | — | ✓ (compatibles con OpenAI) | documentar en h23 |
 | Esfuerzo o variantes de razonamiento | variantes | `/effort` | — | h9 (P3) |
-| Modelo de respaldo | — | `--fallback-model` | — | h8 o h9 (P3) |
+| Modelo de respaldo | — | `--fallback-model` | — | h8 (P3) |
 | Modelo pequeño para títulos | `small_model` | — | — | h10 |
 | Iniciar sesión (OAuth, clave guardada) | `/connect` | `/login` | — | h23 |
 

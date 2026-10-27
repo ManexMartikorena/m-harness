@@ -127,7 +127,7 @@ class _Asked:
     compares: the same call, the same resolved path (decision D1, review of
     PR 2, fix 5) and, to change a file, the same bytes it would replace
     (decision W6). One slot is enough because calls run one at a time; with
-    parallel calls (hito 15) it must keep one per call.
+    parallel calls (hito 16) it must keep one per call.
     """
 
     def __init__(self) -> None:

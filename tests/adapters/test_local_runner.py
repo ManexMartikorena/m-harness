@@ -158,7 +158,7 @@ async def test_a_background_child_does_not_make_it_wait_for_the_limit(
 async def test_a_process_that_leaves_the_group_does_not_survive(tmp_path: Path) -> None:
     # `setsid` leaves the process group, so killpg misses it. maha adopts the
     # orphans (subreaper) and kills what is left of the command (decision of
-    # the maintainer, 2026-10-23: E2 comes forward from hito 14).
+    # the maintainer, 2026-10-23: E2 comes forward from the sandbox, now hito 15).
     pidfile = tmp_path / "pid"
 
     result = await run(

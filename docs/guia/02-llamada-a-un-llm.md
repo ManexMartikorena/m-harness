@@ -134,7 +134,7 @@ Dos superficies de ataque:
 | Errores y reintentos | Errores propios, sin reintentos | Reintentos con espera exponencial del SDK `openai`; tenacity | En producción y sin persona delante |
 | Configuración | TOML + Pydantic | pydantic-settings; Dynaconf; YAML o JSON | pydantic-settings: mezclar variables de entorno y ficheros con poco código |
 | Tests HTTP | respx + respuestas de ejemplo | VCR.py, pytest-recording (graban respuestas reales) | Para fijar respuestas reales de un proveedor |
-| Entrada en la terminal | Lectura de stdin sin hilos | prompt_toolkit, Rich, Textual | Historial, autocompletado, interfaz completa (hito 19) |
+| Entrada en la terminal | Lectura de stdin sin hilos | prompt_toolkit, Rich, Textual | Historial, autocompletado, interfaz completa (hito 21) |
 
 Los SDK hacen exactamente esto por dentro: un POST con JSON, tipos para la
 respuesta y una jerarquía de errores (`AuthenticationError`,

@@ -162,7 +162,7 @@ parezca colgado, gira un spinner con "maha", cada letra en un color:
   Se para con el primer evento, y `\r\x1b[2K` borra la línea antes del
   texto.
 - Los colores son códigos de escape ANSI escritos a mano (`\x1b[31m` es rojo).
-  Rich llega en el hito 19.
+  Rich llega en el hito 21.
 - Solo se dibuja si la salida es una terminal (`isatty()`). Con
   `maha < notas.txt > salida.txt`, el fichero queda limpio.
 - Con la variable `NO_COLOR` (convención de https://no-color.org), gira sin
@@ -177,7 +177,7 @@ parezca colgado, gira un spinner con "maha", cada letra en un color:
 | Eventos del modelo | Unión de tipos propios | Los tipos del SDK de cada proveedor | Cuando no se piensa cambiar de proveedor |
 | Cancelación | `Task.cancel()` desde SIGINT | `KeyboardInterrupt` en código síncrono | Código síncrono |
 | Tokens en streaming | `stream_options.include_usage` | Contar con un tokenizador | Cuando el proveedor no informa de `usage` |
-| Spinner y colores | ANSI a mano | Rich, yaspin, Halo | En cuanto la interfaz crece (hito 19) |
+| Spinner y colores | ANSI a mano | Rich, yaspin, Halo | En cuanto la interfaz crece (hito 21) |
 | Tests de streaming | respx con respuestas SSE simuladas | Servidor local de pruebas; VCR.py | Fijar respuestas reales |
 
 Los SDK hacen esto mismo por dentro: abren la respuesta, parten el SSE, y

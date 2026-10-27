@@ -21,11 +21,11 @@ $ maha
 maha 0.7.0 · opencode-go · glm-5.3-flash · /help for commands
 > Lee notas.txt con read_file y dime qué pone, en una frase.
   → read_file(path="notas.txt")
-  ✓ 1 line
-En notas.txt pone: "comprar pan".
-  [tokens: 2542 in · 26 out · 1 call · $0.0004 · session $0.0004]
+  ✓ 2 lines
+El archivo notas.txt contiene dos líneas con las palabras "uno" y "dos".
+  [tokens: 2547 in · 53 out (20 reasoning) · 1 call · $0.0003 · session $0.0003]
 > Cambia la segunda línea de notas.txt por 'tres' con edit_file.
-  → edit_file(new_string="tres", old_string="dos", path="notas.txt")
+  → edit_file(path="notas.txt", old_string="dos", new_string="tres")
   ┌ edit notas.txt
   │ @@ -1,2 +1,2 @@
   │  uno
@@ -33,18 +33,30 @@ En notas.txt pone: "comprar pan".
   │ +tres
   └ Allow? [y] yes · [a] always this session · [n] no: y
   ✓ 1 replacement
+Hecho: la segunda línea de notas.txt ahora dice "tres" (el archivo queda con "uno" y "tres").
+  [tokens: 2689 in · 128 out (72 reasoning) · 1 call · $0.0002 · session $0.0004]
+> /trace
+  20261027-151848-9e34 · glm-5.3-flash · 2 turns · 4 model calls · 2 tools
+  1  16:18:48  2 calls · 1 tool · 2547 in · 53 out · $0.0003 · 2.7 s
+  2  16:18:51  2 calls · 1 tool · 2689 in · 128 out · $0.0002 · 2.9 s
+  total: 5236 in · 181 out · $0.0004
+  [trace: ~/.local/share/maha/traces/20261027-151848-9e34.jsonl]
 ```
+
+*(Una sesión real. Los totales son exactos; cada turno se redondea a cuatro
+decimales.)*
 
 ## Qué hace
 
 - **Trabaja en tu proyecto.** Lee, lista y busca ficheros (`read_file`,
-  `list_dir`, `glob`, `grep`, respetando `.gitignore`), los escribe y edita
-  (`write_file`, `edit_file`, con el diff a la vista) y ejecuta comandos
-  (`run_command`).
+  `list_dir`, `glob`, `grep`; `glob` y `grep` se saltan lo que ignora
+  `.gitignore`), los escribe y edita (`write_file`, `edit_file`, con el diff
+  a la vista) y ejecuta comandos (`run_command`).
 - **Nada cambia sin tu permiso.** Cada escritura y cada comando te preguntan
   antes, con el diff o el comando: una vez, siempre en esta sesión, o no.
-  Leer fuera del directorio o un fichero secreto (`.env`, claves, `.ssh`…)
-  también pregunta, una vez cada vez. Los comandos corren con un tiempo
+  "Siempre" cubre todas las ediciones siguientes dentro del directorio de
+  trabajo, pero solo ese comando exacto. Leer fuera del directorio o un
+  fichero secreto (`.env`, claves, `.ssh`…) también pregunta, cada vez. Los comandos corren con un tiempo
   límite y sin tu clave del proveedor en el entorno, pero **con tus
   permisos: lee el comando antes de aprobarlo**.
 - **El modelo y el proveedor que quieras.** Formato de OpenAI de serie, con
@@ -58,15 +70,7 @@ En notas.txt pone: "comprar pan".
   que cuenta contra tu límite mensual) o, si no lo da, el de un catálogo con
   los precios de todos los modelos de OpenCode Go y Zen.
 - **Todo queda registrado, sin tus secretos.** Cada sesión deja una traza
-  de lo que hizo el agente; `/trace` la resume:
-
-  ```
-  > /trace
-    20261027-101620-1163 · glm-5.3-flash · 1 turn · 2 model calls · 1 tool
-    1  11:16:20  2 calls · 1 tool · 2542 in · 26 out · $0.0004 · 5.7 s
-    total: 2542 in · 26 out · $0.0004
-    [trace: ~/.local/share/maha/traces/20261027-101620-1163.jsonl]
-  ```
+  de lo que hizo el agente; `/trace` la resume.
 
 ## Instalación
 
@@ -85,7 +89,8 @@ provider = "opencode-go"   # o "opencode-zen"
 model = "glm-5.3-flash"
 ```
 
-y deja la clave en una variable de entorno:
+y deja la clave en una variable de entorno (la sacas de la consola de
+OpenCode, en https://opencode.ai):
 
 ```
 export OPENCODE_API_KEY=...
@@ -93,6 +98,11 @@ maha
 ```
 
 `maha` trabaja sobre el directorio donde lo abres.
+
+**Qué modelos funcionan hoy:** los que se sirven con el formato Chat
+Completions de OpenAI. En OpenCode Go y Zen son GLM, Kimi, DeepSeek, MiMo,
+MiniMax M3.1 Flash y varios más; Claude, GPT, Gemini y Grok usan otras APIs
+que `maha` aún no habla (la de Anthropic llega en el hito 9).
 
 ### Otro proveedor
 
@@ -124,6 +134,10 @@ clave a otro servidor.
 | `/trace [ID]` | Lo que hizo y costó una sesión, turno a turno |
 | `/exit` | Sale (también Ctrl+D) |
 
+- Tras cada respuesta, la línea de tokens dice: tokens de entrada y de
+  salida (y, dentro de la salida, los de razonamiento), llamadas a
+  herramientas, coste del turno y de la sesión. En `/trace`, "calls" son
+  las llamadas al modelo.
 - Mientras espera la respuesta, gira un spinner con "maha".
 - **Ctrl+C** a mitad de una respuesta la corta y vuelve al prompt; el
   modelo sabe que la cortaste. En el prompt, sale.

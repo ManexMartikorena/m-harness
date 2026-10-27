@@ -284,7 +284,7 @@ async def test_a_crash_is_hidden_from_the_model_but_reported() -> None:
 
 
 async def test_a_result_that_is_not_text_is_an_internal_error() -> None:
-    # A tool that breaks its contract (an MCP one, hito 16) does not cut the
+    # A tool that breaks its contract (an MCP one, hito 17) does not cut the
     # turn (spec mejora-2026-10-26-deuda-pre-hito-6, B3).
     echo = FakeTool(results=[cast(str, None)])
 

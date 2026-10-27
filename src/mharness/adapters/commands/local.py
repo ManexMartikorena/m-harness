@@ -9,9 +9,9 @@ command that writes a lot never blocks on a full pipe.
 A process that leaves the group (`setsid`) is caught too: `maha` becomes a
 subreaper, so the orphans of a command become its children instead of
 init's, and the ones left when the command ends are killed (decision of the
-maintainer, 2026-10-23: it came forward from hito 14). Linux only.
+maintainer, 2026-10-23: it came forward from the sandbox, now hito 15). Linux only.
 
-It runs with your permissions and no sandbox until hito 14: the defence is
+It runs with your permissions and no sandbox until hito 15: the defence is
 that you read the command before approving it.
 """
 

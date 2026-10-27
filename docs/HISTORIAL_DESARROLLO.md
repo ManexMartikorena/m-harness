@@ -578,7 +578,7 @@ que quedaban las tomó el mantenedor. Siguiente: la spec del hito 8.**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
-## Fase actual
+#### Fase actual
 
 **Desarrollo. Hito 7 cerrado (`v0.7.0`). Siguiente: hito 8 (evals y modo
 no interactivo), sin spec todavía.**
@@ -588,7 +588,7 @@ no interactivo), sin spec todavía.**
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.7.0
 - Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
-## Para la release
+#### Para la release
 
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
