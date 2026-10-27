@@ -1203,7 +1203,8 @@ def _sync_folder(folder: Path) -> None:
         finally:
             os.close(descriptor)
     except OSError as exc:
-        _log.warning("cannot flush the folder %s: %s", folder, exc.strerror)
+        # Quoted and escaped: a name with a line break cannot forge lines.
+        _log.warning("cannot flush the folder %r: %s", str(folder), exc.strerror)
 
 
 def _as_shown(

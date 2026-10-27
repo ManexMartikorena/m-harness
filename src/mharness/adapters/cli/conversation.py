@@ -197,10 +197,12 @@ async def _answer(
                         mark = "✗" if event.result.is_error else "✓"
                         print(f"  {mark} {clean(event.summary)}", file=out, flush=True)
                         if event.internal_error:
+                            # Only its kind: the message may carry what the
+                            # tool read, and the log never holds content.
                             _log.warning(
                                 "tool %s failed: %s",
                                 event.call.name,
-                                event.internal_error,
+                                event.internal_error.split(":", 1)[0],
                             )
                             print(
                                 f'warning: tool "{clean(event.call.name)}" failed: '
@@ -273,8 +275,8 @@ def _show_turn(turn: TurnFinished, conversation: Conversation, out: TextIO) -> N
         # 5, §1.4).
         print("  [denied: tell maha how to continue]", file=out)
     usage = turn.usage
-    # All zeros means the provider did not report them: nothing to show.
-    if usage == Usage():
+    # All zeros and no cost: the provider reported nothing to show.
+    if usage == Usage() and turn.cost is None:
         out.flush()
         return
     parts = [f"tokens: {usage.input_tokens} in · {usage.output_tokens} out"]

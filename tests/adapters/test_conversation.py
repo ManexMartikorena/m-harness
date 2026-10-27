@@ -704,9 +704,10 @@ async def test_internal_tool_error_goes_to_stderr_and_the_log(
 
     assert '  ✗ error: internal error in tool "echo"\n' in out
     assert err == "warning: tool \"echo\" failed: KeyError: 'boom'\n"
-    # A bug of ours: for whoever maintains maha (spec hito 7, §1.11).
+    # A bug of ours: for whoever maintains maha (spec hito 7, §1.11). Only
+    # its kind: its message may carry what the tool read (final review).
     [warning] = [r for r in caplog.records if r.name.startswith("mharness")]
-    assert warning.getMessage() == "tool echo failed: KeyError: 'boom'"
+    assert warning.getMessage() == "tool echo failed: KeyError"
 
 
 class BrokenGate:
@@ -1046,3 +1047,11 @@ async def test_a_trace_that_fails_is_said_once() -> None:
 
     assert err.count("warning: trace not saved: ") == 1
     assert "No space left on device" in err
+
+
+async def test_a_turn_with_cost_but_no_tokens_still_shows_it() -> None:
+    fake = FakeModelClient([costing("Uno", Usage(), "0.0012")])
+
+    _, out, _ = await run_priced(fake, "A", "/exit")
+
+    assert "  [tokens: 0 in · 0 out · $0.0012 · session $0.0012]\n" in out

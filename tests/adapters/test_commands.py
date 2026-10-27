@@ -541,3 +541,12 @@ async def test_what_the_trace_brings_from_the_disk_is_escaped() -> None:
 
     assert "\x1b[2J" not in out
     assert "glm\\x1b[2J" in out
+
+
+async def test_resume_says_what_the_catalog_knows_of_its_model() -> None:
+    store = MemorySessionStore()
+    await Maha(store, [reply("Uno.")]).run("Hola", "/model desconocido", "/exit")
+
+    _, out, _ = await Maha(store, [], tokens=("b01c",)).run(f"/resume {FIRST}", "/exit")
+
+    assert "  [model not in the catalog: cost only if the provider reports it]\n" in out
