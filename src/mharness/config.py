@@ -73,10 +73,20 @@ class _UserFile(_ProjectFile):
 
 def user_config_path(env: Mapping[str, str]) -> Path:
     """`$XDG_CONFIG_HOME/maha/config.toml`, by default under `~/.config`."""
+    return _config_dir(env) / "config.toml"
+
+
+def user_catalog_path(env: Mapping[str, str]) -> Path:
+    """`$XDG_CONFIG_HOME/maha/models.toml`: the user's prices, which win over
+    the built-in ones (spec hito 7, §1.3). Never a project's."""
+    return _config_dir(env) / "models.toml"
+
+
+def _config_dir(env: Mapping[str, str]) -> Path:
     xdg = env.get("XDG_CONFIG_HOME", "")
     # The XDG spec says to ignore relative paths.
     base = Path(xdg) if Path(xdg).is_absolute() else Path.home() / ".config"
-    return base / "maha" / "config.toml"
+    return base / "maha"
 
 
 def data_dir(env: Mapping[str, str]) -> Path:
