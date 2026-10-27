@@ -4,6 +4,8 @@
 import asyncio
 from collections.abc import Callable
 from contextlib import aclosing
+from datetime import date
+from decimal import Decimal
 from typing import cast
 
 import pytest
@@ -17,18 +19,22 @@ from mharness.domain.agent_events import (
     ToolCallProposed,
     ToolFinished,
     TurnFinished,
+    TurnStarted,
 )
 from mharness.domain.approval import ApprovalRequest, Decision
+from mharness.domain.catalog import ModelInfo, Prices
 from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta, ToolCallDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from mharness.domain.tools import ToolError
 from tests.fakes.approval import FakeApproval, HangingApproval
+from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FAKE_MODEL, HANG, FakeModelClient, reply, tool_calls
 from tests.fakes.tools import EchoParams, FakeTool
 
 MODEL = "glm-5.3-flash"
+PROVIDER = "opencode-go"
 
 
 def call(id: str, text: str = "Hola", name: str = "echo") -> ToolCallBlock:
@@ -44,11 +50,18 @@ def agent(
     *tools: FakeTool,
     max_steps: int = 25,
     gate: FakeApproval | None = None,
+    catalog: MemoryCatalog | None = None,
 ) -> Agent:
     registry = ToolRegistry(tools or [FakeTool()])
     # With no script, being asked fails the test.
     return Agent(
-        fake, registry, gate=gate or FakeApproval(), model=MODEL, max_steps=max_steps
+        fake,
+        registry,
+        gate=gate or FakeApproval(),
+        model=MODEL,
+        catalog=catalog or MemoryCatalog(),
+        provider=PROVIDER,
+        max_steps=max_steps,
     )
 
 
@@ -64,6 +77,7 @@ async def test_without_calls_the_turn_ends() -> None:
     events = await run(subject)
 
     assert events == [
+        TurnStarted(text="Hola"),
         TextDelta(text="Hola,"),
         TextDelta(text=" Ane."),
         ModelCallFinished(usage=usage, model=FAKE_MODEL),
@@ -81,6 +95,7 @@ async def test_one_call_runs_and_its_result_goes_back() -> None:
 
     result = ToolResultBlock(call_id="c1", content="echo: Hola")
     assert [type(e).__name__ for e in events] == [
+        "TurnStarted",
         "ModelCallFinished",
         "ToolCallProposed",
         "ToolFinished",
@@ -89,8 +104,8 @@ async def test_one_call_runs_and_its_result_goes_back() -> None:
         "ModelCallFinished",
         "TurnFinished",
     ]
-    assert events[1] == ToolCallProposed(call=call("c1"))
-    finished = events[2]
+    assert events[2] == ToolCallProposed(call=call("c1"))
+    finished = events[3]
     assert isinstance(finished, ToolFinished)
     assert (finished.result, finished.summary) == (result, "10 chars")
     # The second step sends the call and its result.
@@ -176,7 +191,16 @@ async def test_the_request_carries_the_tool_specs() -> None:
     fake = FakeModelClient([reply("Hola.")])
     registry = ToolRegistry([FakeTool("echo"), FakeTool("shout")])
 
-    await run(Agent(fake, registry, gate=FakeApproval(), model=MODEL))
+    await run(
+        Agent(
+            fake,
+            registry,
+            gate=FakeApproval(),
+            model=MODEL,
+            catalog=MemoryCatalog(),
+            provider=PROVIDER,
+        )
+    )
 
     assert fake.requests[0].tools == registry.specs()
     assert fake.requests[0].model == MODEL
@@ -398,7 +422,14 @@ async def test_cancelling_while_asking_after_a_run_keeps_the_turn() -> None:
     calls = [call("c1"), call("c2", name="write"), call("c3")]
     fake = FakeModelClient([tool_calls(*calls)])
     gate = HangingApproval()
-    subject = Agent(fake, ToolRegistry([echo, write]), gate=gate, model=MODEL)
+    subject = Agent(
+        fake,
+        ToolRegistry([echo, write]),
+        gate=gate,
+        model=MODEL,
+        catalog=MemoryCatalog(),
+        provider=PROVIDER,
+    )
 
     task = asyncio.ensure_future(run(subject))
     await until(lambda: bool(gate.requests))
@@ -432,7 +463,12 @@ async def test_an_unexpected_error_after_a_run_keeps_the_turn() -> None:
     calls = [call("c1"), call("c2", name="write"), call("c3")]
     fake = FakeModelClient([tool_calls(*calls)])
     subject = Agent(
-        fake, ToolRegistry([echo, write]), gate=BrokenApproval(), model=MODEL
+        fake,
+        ToolRegistry([echo, write]),
+        gate=BrokenApproval(),
+        model=MODEL,
+        catalog=MemoryCatalog(),
+        provider=PROVIDER,
     )
 
     with pytest.raises(OSError, match="Input/output error"):
@@ -451,7 +487,14 @@ async def test_cancelling_while_asking_before_any_run_keeps_nothing() -> None:
     write = FakeTool("write", permission="effect", requests=[ask()])
     fake = FakeModelClient([tool_calls(call("c1", name="write"))])
     gate = HangingApproval()
-    subject = Agent(fake, ToolRegistry([write]), gate=gate, model=MODEL)
+    subject = Agent(
+        fake,
+        ToolRegistry([write]),
+        gate=gate,
+        model=MODEL,
+        catalog=MemoryCatalog(),
+        provider=PROVIDER,
+    )
 
     task = asyncio.ensure_future(run(subject))
     await until(lambda: bool(gate.requests))
@@ -551,13 +594,14 @@ async def test_once_asks_first_and_runs() -> None:
 
     events = await run(agent(fake, echo, gate=gate))
 
-    assert [type(e).__name__ for e in events[:4]] == [
+    assert [type(e).__name__ for e in events[:5]] == [
+        "TurnStarted",
         "ModelCallFinished",
         "ToolCallProposed",
         "ApprovalRequested",
         "ToolFinished",
     ]
-    assert events[2] == ApprovalRequested(call=call("c1"), request=ask())
+    assert events[3] == ApprovalRequested(call=call("c1"), request=ask())
     done = finished(events)[0]
     assert done.decision == "once"
     assert done.result == ToolResultBlock(call_id="c1", content="echo: Hola")
@@ -899,6 +943,8 @@ async def test_the_history_given_goes_in_the_first_request() -> None:
         ToolRegistry([FakeTool()]),
         gate=FakeApproval(),
         model=MODEL,
+        catalog=MemoryCatalog(),
+        provider=PROVIDER,
         history=before,
     )
 
@@ -918,3 +964,131 @@ async def test_changing_the_model_changes_the_next_request() -> None:
 
     assert [r.model for r in fake.requests] == [MODEL, "kimi-k3"]
     assert subject.model == "kimi-k3"
+
+
+# Cost (spec hito 7, §1.5, §1.6 and §4.4).
+
+CHECKED = date(2026, 10, 27)
+
+
+def priced(model: str, input: str, output: str) -> ModelInfo:
+    return ModelInfo(
+        provider=PROVIDER,
+        model=model,
+        prices=Prices(input=Decimal(input), output=Decimal(output), checked=CHECKED),
+    )
+
+
+async def test_the_turn_starts_with_its_text() -> None:
+    fake = FakeModelClient([reply("Hola")])
+
+    events = await run(agent(fake), "Arregla el test")
+
+    assert events[0] == TurnStarted(text="Arregla el test")
+
+
+async def test_each_call_has_its_cost() -> None:
+    usage = Usage(input_tokens=1_000_000, output_tokens=100_000)
+    fake = FakeModelClient([reply("Hola", usage=usage)])
+    catalog = MemoryCatalog([priced(FAKE_MODEL, "0.15", "0.50")])
+
+    events = await run(agent(fake, catalog=catalog))
+
+    assert (
+        ModelCallFinished(usage=usage, model=FAKE_MODEL, cost=Decimal("0.2")) in events
+    )
+    assert events[-1] == TurnFinished(
+        reason="end_turn", usage=usage, tool_calls=0, steps=1, cost=Decimal("0.2")
+    )
+
+
+async def test_without_prices_there_is_no_cost() -> None:
+    fake = FakeModelClient([reply("Hola", usage=Usage(input_tokens=10))])
+    catalog = MemoryCatalog([ModelInfo(provider=PROVIDER, model=FAKE_MODEL)])
+
+    events = await run(agent(fake, catalog=catalog))
+
+    finished = [e for e in events if isinstance(e, ModelCallFinished)]
+    assert finished[0].cost is None
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert turn.cost is None
+
+
+async def test_the_turn_cost_is_the_sum_of_its_calls() -> None:
+    fake = FakeModelClient(
+        [
+            tool_calls(call("c1"), usage=Usage(input_tokens=1_000_000)),
+            reply("Hecho", usage=Usage(input_tokens=2_000_000)),
+        ]
+    )
+    catalog = MemoryCatalog([priced(FAKE_MODEL, "0.15", "0.50")])
+
+    events = await run(agent(fake, catalog=catalog))
+
+    costs = [e.cost for e in events if isinstance(e, ModelCallFinished)]
+    assert costs == [Decimal("0.15"), Decimal("0.3")]
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert turn.cost == Decimal("0.45")
+
+
+async def test_one_call_without_price_leaves_the_turn_without_cost() -> None:
+    # The second answer comes from a model the catalog does not know.
+    fake = FakeModelClient(
+        [
+            tool_calls(call("c1"), usage=Usage(input_tokens=1_000_000)),
+            reply("Hecho", usage=Usage(input_tokens=10), model="otro"),
+        ]
+    )
+    catalog = MemoryCatalog([priced(FAKE_MODEL, "0.15", "0.50")])
+
+    events = await run(agent(fake, catalog=catalog))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert turn.cost is None
+
+
+async def test_the_cost_is_that_of_the_model_that_answered() -> None:
+    fake = FakeModelClient(
+        [reply("Hola", usage=Usage(input_tokens=1_000_000), model="kimi-k3")]
+    )
+    catalog = MemoryCatalog(
+        [priced(MODEL, "0.15", "0.50"), priced("kimi-k3", "3.00", "15.00")]
+    )
+
+    events = await run(agent(fake, catalog=catalog))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert turn.cost == Decimal(3)
+
+
+async def test_an_answering_model_unknown_falls_back_to_the_one_asked() -> None:
+    # A provider may name the model its own way ("glm-5.3-flash-0926").
+    fake = FakeModelClient(
+        [reply("Hola", usage=Usage(input_tokens=1_000_000), model="glm-5.3-0926")]
+    )
+    catalog = MemoryCatalog([priced(MODEL, "0.15", "0.50")])
+
+    events = await run(agent(fake, catalog=catalog))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert turn.cost == Decimal("0.15")
+
+
+async def test_the_catalog_is_asked_for_this_provider() -> None:
+    fake = FakeModelClient([reply("Hola", usage=Usage(input_tokens=1_000_000))])
+    other = ModelInfo(
+        provider="opencode-zen",
+        model=FAKE_MODEL,
+        prices=Prices(input=Decimal(1), output=Decimal(1), checked=CHECKED),
+    )
+
+    events = await run(agent(fake, catalog=MemoryCatalog([other])))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert turn.cost is None

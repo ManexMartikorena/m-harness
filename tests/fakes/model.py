@@ -56,18 +56,22 @@ def reply(
     *,
     stop_reason: StopReason = "end_turn",
     usage: Usage | None = None,
+    model: str = FAKE_MODEL,
 ) -> ModelResponse:
     """An assistant answer with a single text block."""
     return ModelResponse(
         message=Message(role="assistant", blocks=[TextBlock(text=text)]),
         stop_reason=stop_reason,
         usage=usage or Usage(),
-        model=FAKE_MODEL,
+        model=model,
     )
 
 
 def tool_calls(
-    *calls: ToolCallBlock, text: str = "", usage: Usage | None = None
+    *calls: ToolCallBlock,
+    text: str = "",
+    usage: Usage | None = None,
+    model: str = FAKE_MODEL,
 ) -> ModelResponse:
     """An assistant answer that asks for tool calls, after optional text."""
     blocks: list[Block] = [TextBlock(text=text)] if text else []
@@ -75,7 +79,7 @@ def tool_calls(
         message=Message(role="assistant", blocks=[*blocks, *calls]),
         stop_reason="tool_use",
         usage=usage or Usage(),
-        model=FAKE_MODEL,
+        model=model,
     )
 
 

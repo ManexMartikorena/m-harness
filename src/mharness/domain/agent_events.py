@@ -1,10 +1,11 @@
-"""What the loop tells the terminal, and later the traces (DESIGN §5).
+"""What the loop tells the terminal and the traces (DESIGN §5).
 
-Hito 4 implements these, and hito 5 adds `ApprovalRequested`; `TurnStarted`,
-`AgentError` and the cost arrive with their hitos (spec hito 4, §1.7, and spec
-hito 5, §1.4).
+Hito 4 implements these, hito 5 adds `ApprovalRequested`, and hito 7
+`TurnStarted` and the cost (spec hito 7, §1.6). There is no `AgentError`:
+errors are exceptions, and the trace records them from outside the loop.
 """
 
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel
@@ -13,6 +14,13 @@ from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
+
+
+class TurnStarted(BaseModel, frozen=True):
+    """The first event of every turn: what the user wrote."""
+
+    type: Literal["turn_started"] = "turn_started"
+    text: str
 
 
 class ToolCallProposed(BaseModel, frozen=True):
@@ -52,6 +60,8 @@ class ModelCallFinished(BaseModel, frozen=True):
     type: Literal["model_call_finished"] = "model_call_finished"
     usage: Usage
     model: str
+    # USD; None if the catalog has no prices for the model.
+    cost: Decimal | None = None
 
 
 class TurnFinished(BaseModel, frozen=True):
@@ -67,10 +77,13 @@ class TurnFinished(BaseModel, frozen=True):
     tool_calls: int
     # Calls to the model in the turn.
     steps: int
+    # USD, summed over its calls; None if one of them has no price.
+    cost: Decimal | None = None
 
 
 type AgentEvent = (
-    TextDelta
+    TurnStarted
+    | TextDelta
     | ToolCallProposed
     | ApprovalRequested
     | ToolFinished

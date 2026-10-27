@@ -27,6 +27,7 @@ from mharness.domain.session import (
     UsageEntry,
 )
 from tests.fakes.approval import FakeApproval
+from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import HANG, FakeModelClient, reply, tool_calls
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
 from tests.fakes.tools import FakeTool
@@ -67,7 +68,15 @@ class World:
 
         def new_agent(model: str, history: Sequence[Message]) -> Agent:
             self.built.append((model, tuple(history)))
-            return Agent(fake, registry, gate=self.gate, model=model, history=history)
+            return Agent(
+                fake,
+                registry,
+                gate=self.gate,
+                model=model,
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
+                history=history,
+            )
 
         self.sessions = Sessions(
             store,
