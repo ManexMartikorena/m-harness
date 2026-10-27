@@ -38,7 +38,10 @@ class TomlEvalSuite:
 
     @asynccontextmanager
     async def workspace(self, task: Task) -> AsyncIterator[Path]:
-        folder = Path(await asyncio.to_thread(tempfile.mkdtemp, prefix="maha-eval-"))
+        # Resolved: the tools and the session name it the same way.
+        folder = await asyncio.to_thread(
+            lambda: Path(tempfile.mkdtemp(prefix="maha-eval-")).resolve()
+        )
         copy = folder / task.fixture
         try:
             await asyncio.to_thread(

@@ -577,3 +577,90 @@ def test_without_a_home_maha_says_so(
 
     assert code == 1
     assert "cannot find your home folder" in capsys.readouterr().err
+
+
+# `maha eval` end to end (spec hito 8, §1.5 to §1.9), on a battery of one
+# task and with the model mocked.
+
+ONE_TASK = """
+instruction = "¿Qué versión declara pyproject.toml?"
+fixture = "tienda"
+
+[check]
+answer_contains = ["1.4.2"]
+file = "pyproject.toml"
+contains = ['version = "1.4.2"']
+"""
+
+
+def battery(root: Path) -> Path:
+    (root / "fixtures" / "tienda").mkdir(parents=True)
+    (root / "fixtures" / "tienda" / "pyproject.toml").write_text('version = "1.4.2"\n')
+    (root / "tasks" / "01-version").mkdir(parents=True)
+    (root / "tasks" / "01-version" / "task.toml").write_text(ONE_TASK, encoding="utf-8")
+    return root
+
+
+def test_eval_saves_a_baseline_and_then_marks_a_regression(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(
+            return_value=sse_response(streamed("Es la 1.4.2.", 1000, 10))
+        )
+
+        assert main(["eval", "--tasks", str(evals), "--repeat", "2", "--save"]) == 0
+
+    out = capsys.readouterr().out
+    assert "  ✓ 01-version · glm-5.3-flash #1 · 1 step ·" in out
+    assert "glm-5.3-flash · no baseline yet\n" in out
+    # 2 * (1000 * 0.15 + 10 * 0.50) per million, exact before rounding.
+    assert "  total        2/2   100%   $0.0003 in all\n" in out
+    [saved] = (evals / "baselines").glob("*.json")
+    baseline = json.loads(saved.read_text())
+    assert (baseline["model"], baseline["repeat"]) == ("glm-5.3-flash", 2)
+    assert baseline["tasks"]["01-version"]["passes"] == 2
+    # Only numbers: never what the model said.
+    assert "1.4.2." not in saved.read_text()
+    # The runs' sessions and traces, apart from the user's.
+    runs = list((workspace / "state" / "maha" / "evals").glob("*/sessions/*.jsonl"))
+    assert len(runs) == 2
+
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(
+            return_value=sse_response(streamed("No lo sé.", 1000, 10))
+        )
+
+        assert main(["eval", "--tasks", str(evals)]) == 1
+
+    out = capsys.readouterr().out
+    assert (
+        "  ✗ 01-version · glm-5.3-flash #1 · the answer does not contain '1.4.2'" in out
+    )
+    assert "  ⚠ 01-version: passed every time in the baseline, now 0/1" in out
+
+
+def test_eval_keeps_a_baseline_only_of_the_whole_battery(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+
+    assert main(["eval", "--save", "--only", "01-version"]) == 1
+
+    assert "--save keeps a baseline of the whole battery" in capsys.readouterr().err
+
+
+def test_eval_names_a_task_that_does_not_exist(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    evals = battery(workspace / "evals")
+
+    assert main(["eval", "--tasks", str(evals), "--only", "99-nope"]) == 1
+
+    assert "error: no task '99-nope'" in capsys.readouterr().err

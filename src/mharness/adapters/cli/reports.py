@@ -16,7 +16,8 @@ def run_line(run: TaskRun) -> str:
     head = f"  {_MARKS[run.outcome]} {run.task} · {run.model} #{run.attempt}"
     if run.outcome == "pass":
         cost = "cost unknown" if run.cost is None else usd(run.cost)
-        return f"{head} · {run.steps} steps · {cost} · {run.duration:.1f} s"
+        steps = f"{run.steps} step" + ("" if run.steps == 1 else "s")
+        return f"{head} · {steps} · {cost} · {run.duration:.1f} s"
     detail = clean_line((run.detail or "").splitlines()[0] if run.detail else "")
     if run.outcome == "error":
         return f"{head} · provider: {detail}"
