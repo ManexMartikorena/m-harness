@@ -1095,23 +1095,39 @@ async def test_a_failed_sync_is_told() -> None:
     assert "Input/output error" in warning
 
 
-async def test_without_a_free_id_for_the_trace_the_turn_goes_on() -> None:
+async def test_however_many_ids_are_taken_the_whole_turn_is_traced() -> None:
+    # No cap on the tries (decision of the maintainer, spec hito 7, §12.34):
+    # taken ids, in a row, never cost a record.
     traces = MemoryTraceSink()
-    tokens = ["3fa2", "b01c", "c0de", "d00d", "e1e1", "f0f0"]
-    for token in tokens[:5]:
-        await traces.open(f"20261026-091502-{token}", new=True)
     store = MemorySessionStore()
+    tokens = [f"{n:04x}" for n in range(12)]
+    for token in tokens[:8]:
+        await traces.open(f"20261026-091502-{token}", new=True)
+    for token in tokens[8:11]:
+        await (
+            await store.create(
+                SessionHeader(
+                    id=f"20261026-091502-{token}",
+                    created_at=NOW,
+                    cwd=CWD,
+                    provider="opencode-go",
+                    model="m",
+                    maha="0.6.0",
+                )
+            )
+        ).close()
     world = World(store, FakeModelClient([reply("Hola")]), traces=traces, tokens=tokens)
     conversation = await world.sessions.start()
 
     await turn(conversation, "Hola")
 
-    warning = conversation.trace_warning()
-    assert warning is not None
-    assert "no free id" in warning
-    assert [type(e).__name__ for e in entries(store, conversation.id)][-1] == (
-        "UsageEntry"
-    )
+    assert conversation.id == "20261026-091502-000b"
+    assert conversation.trace_warning() is None
+    assert traces.events(conversation.id) == [
+        "turn_started",
+        "model_call_finished",
+        "turn_finished",
+    ]
 
 
 async def test_delete_removes_a_trace_left_without_its_session() -> None:

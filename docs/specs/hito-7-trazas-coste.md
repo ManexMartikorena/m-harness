@@ -746,11 +746,12 @@ primero:
     recurre al modelo pedido también si el que contestó está sin precio;
     `ToolFinished.skipped` en vez de reconocer las llamadas saltadas por su
     texto; el fake de trazas falla y lee como el adaptador real.
-34. **Pendiente de decisión del mantenedor:** si cinco ids seguidos chocan
-    (mismo segundo y mismo token aleatorio de 16 bits cinco veces), los
-    registros de ese turno anteriores a encontrar un id libre no se
-    escriben y se avisa; la conversación sigue con un id nuevo y lo
-    siguiente sí se traza. La alternativa es no poner tope a los intentos.
+34. **Tope de intentos de id.** Con un tope de cinco, si cinco ids seguidos
+    chocaban (mismo segundo y mismo token aleatorio de 16 bits cinco veces),
+    los registros de ese turno anteriores a encontrar un id libre no se
+    escribían. **Decisión del mantenedor (2026-10-27): sin tope**; se
+    reintenta hasta encontrar un id libre (el token es aleatorio), y un id
+    tomado nunca cuesta un registro.
 35. **POR VERIFICAR de §10, resuelto (2026-10-27):** depende del modelo y
     de la llamada. Con `glm-5.3-flash`, OpenCode unas veces no manda
     `completion_tokens_details` (con stream ni sin él, y su propio
@@ -824,10 +825,10 @@ primero:
       ruta de una carpeta va escapada;
     - la línea de tokens sale si hay coste aunque los tokens sean 0;
     - un registro de traza sin zona horaria no vale (`AwareDatetime`).
-48. **Pendiente de decisión del mantenedor:** con varios `maha` a la vez,
+48. **Límite aceptado por el mantenedor (2026-10-27):** con varios `maha` a la vez,
     la rotación de `maha.log` (`RotatingFileHandler`) no se coordina entre
     procesos: al rotar puede perderse o descolocarse alguna línea. Cada
     línea se escribe entera (`O_APPEND`); el riesgo está solo en la
-    rotación, cada 1 MiB de avisos. Alternativas: aceptarlo (recomendado:
-    es diagnóstico, y rotar es raro), un fichero por proceso, o un candado
-    al rotar.
+    rotación, cada 1 MiB de avisos. Alternativas que se descartaron: un
+    fichero por proceso, o un candado al rotar. Se acepta: es diagnóstico, y
+    rotar es raro.
