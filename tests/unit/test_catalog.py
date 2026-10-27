@@ -6,8 +6,9 @@ from decimal import Decimal
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from mharness.domain.catalog import ModelInfo, Prices, Tier, Usd, add_cost, cost
+from mharness.domain.catalog import ModelInfo, Prices, Tier, add_cost, cost
 from mharness.domain.model import Usage
+from mharness.domain.money import Usd
 
 CHECKED = date(2026, 10, 26)
 # glm-5.3-flash on OpenCode Go (spec hito 7, §1.1), plus a made-up write price.

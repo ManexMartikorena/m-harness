@@ -1148,3 +1148,26 @@ async def test_a_turn_at_the_step_limit_has_its_cost() -> None:
     turn = events[-1]
     assert isinstance(turn, TurnFinished)
     assert (turn.reason, turn.cost) == ("max_steps", Decimal("0.3"))
+
+
+async def test_the_cost_the_provider_gives_wins_over_the_catalog() -> None:
+    # Spec hito 7, §1.5: exact also with prices by the hour or by tier.
+    answer = reply("Hola", usage=Usage(input_tokens=1_000_000)).model_copy(
+        update={"cost": Decimal("0.075")}
+    )
+    catalog = MemoryCatalog([priced(FAKE_MODEL, "0.15", "0.50")])
+
+    events = await run(agent(FakeModelClient([answer]), catalog=catalog))
+
+    finished_call = next(e for e in events if isinstance(e, ModelCallFinished))
+    assert finished_call.cost == Decimal("0.075")
+
+
+async def test_the_cost_the_provider_gives_needs_no_catalog() -> None:
+    answer = reply("Hola").model_copy(update={"cost": Decimal("0.001")})
+
+    events = await run(agent(FakeModelClient([answer])))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert turn.cost == Decimal("0.001")

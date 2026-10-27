@@ -226,6 +226,15 @@ class ModelCatalog(Protocol):
 
 **Dónde:** `domain/catalog.py`, `cost(usage, prices) -> Decimal`.
 
+*(Añadido el 2026-10-27 por decisión del mantenedor, §11:)* **Primero, el
+coste que da el proveedor.** OpenCode manda en cada respuesta lo que la
+llamada cuenta contra el límite (`usage.opencode.allowance`; medido en Go,
+y coincide al dígito con el del catálogo, §12.35). Cuando el proveedor lo
+da, se usa ese: es exacto también con precios por hora (DeepSeek en Go) y
+por tramos. El catálogo queda para cuando no lo da. El adaptador lo lee en
+este orden: `usage.opencode.allowance`, `usage.opencode.list_cost` y
+`usage.cost` (OpenRouter); va en `MessageEnd.cost` y `ModelResponse.cost`.
+
 ```
 coste = (input − cache_read) × input  +  cache_read × cache_read
       + cache_write × cache_write  +  output × output        (cada uno / 1M)
@@ -529,8 +538,10 @@ costó":
 ## 10. Riesgos
 
 **POR VERIFICAR:**
-- Si OpenCode manda `reasoning_tokens` también sin stream (en la sonda de la
-  spec 3 llegó con stream).
+- ~~Si OpenCode manda `reasoning_tokens` también sin stream~~ Resuelto
+  (§12.35): ya no los manda ni con stream.
+- Qué campos de coste manda OpenCode Zen (pago por uso): no se pudo medir
+  (la cuenta es de Go). Se leen en el orden de §1.5.
 
 **Riesgos y contingencias:**
 - **Precios desfasados:** cambian sin aviso. Van con fecha; el usuario los
@@ -543,6 +554,10 @@ costó":
   contra el límite. La guía y la nota de la terminal lo explican.
 
 ## 11. Decisiones
+
+Del humano (2026-10-27, tras la auditoría): **el coste, primero el que da
+el proveedor, y el del catálogo cuando no lo da** (opción A, recomendada por
+el agente; la B era solo el catálogo). §1.5.
 
 Del humano (2026-10-27, al empezar el PR 2), tras ver que la documentación
 lista muchos más modelos que los cuatro de §1.3 y que varios tienen precios
@@ -736,10 +751,27 @@ primero:
     registros de ese turno anteriores a encontrar un id libre no se
     escriben y se avisa; la conversación sigue con un id nuevo y lo
     siguiente sí se traza. La alternativa es no poner tope a los intentos.
-35. **POR VERIFICAR de §10, resuelto (2026-10-27):** OpenCode ya no manda
-    `completion_tokens_details`, ni con stream ni sin él (en los hitos 3 y 4
-    sí llegaba). Su propio `usage.opencode.tokens.reasoning` vale 0 aunque
-    "OK" cueste 102 tokens de salida: el desglose "(N reasoning)" casi nunca
-    saldrá con OpenCode. A cambio manda su coste: `usage.opencode.list_cost`
+35. **POR VERIFICAR de §10, resuelto (2026-10-27):** depende del modelo.
+    Con `glm-5.3-flash`, OpenCode ya no manda `completion_tokens_details`, ni
+    con stream ni sin él (en los hitos 3 y 4 sí llegaba), y su propio
+    `usage.opencode.tokens.reasoning` vale 0 aunque "OK" cueste 102 tokens
+    de salida. Con `deepseek-v4.1-flash` sí llegan (34 de 36). A cambio manda su coste: `usage.opencode.list_cost`
     coincide al dígito con el que calcula el catálogo (15 de entrada y 120 de
     salida con `glm-5.3-flash`: 0,00006225 $).
+
+### El coste del proveedor (`feature/hito-7-coste-proveedor`, 2026-10-27)
+
+36. **`allowance` no es siempre el precio de lista.** Medido con
+    `deepseek-v4.1-flash` en hora valle (martes, 10:03 UTC): `list_cost` es
+    el precio de valle exacto (485 de entrada y 36 de salida: 0,00009435 $),
+    y `allowance`, lo que cuenta contra el límite, es el 75 % (0,00007076 $),
+    algo que la documentación no dice. Con `glm-5.3-flash` los dos son
+    iguales. Un turno real de `maha` guardó 0,00015896 $: el 75 % del precio
+    de valle de sus 1405 y 2 tokens. El catálogo habría dicho 0,0004239 $
+    (punta y sin el descuento): 2,7 veces más. La decisión del mantenedor
+    (§11) da el coste real.
+37. **Valores raros del proveedor** (texto, `NaN`, booleanos, negativos) se
+    ignoran y decide el catálogo; nunca se pierde la respuesta por ellos.
+38. **`Usd` pasa a `domain/money.py`:** lo usan el modelo (`ModelResponse`,
+    `MessageEnd`) y el catálogo, y `domain/catalog.py` ya importa
+    `domain/model.py`.

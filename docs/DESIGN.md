@@ -205,6 +205,8 @@ ToolSpec(name, description, input_schema)       # JSON Schema generado por Pydan
 
 # Respuesta del modelo, en streaming             (adaptador → bucle)
 ModelEvent = TextDelta | ReasoningDelta | ToolCallDelta | MessageEnd(stop_reason, usage, model)
+# (Corregido el 27/10/2026, spec del hito 7, §1.5: MessageEnd y ModelResponse
+#  llevan `cost`, el que da el proveedor, o None; gana al del catálogo.)
 # (Corregido el 20/10/2026, spec del hito 3, §1.4: MessageEnd lleva `model`, que
 #  ModelResponse exige y solo llega en los trozos. El hito 3 solo implementa
 #  TextDelta y MessageEnd.)

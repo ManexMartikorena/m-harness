@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from mharness.domain.messages import Message
+from mharness.domain.money import Usd
 
 # Why the model stopped. Each adapter maps its provider's reasons to these.
 type StopReason = Literal[
@@ -62,3 +63,6 @@ class ModelResponse(BaseModel, frozen=True):
     usage: Usage
     # The model that answered, as the provider names it.
     model: str
+    # What the call cost, as the provider says; None if it does not say
+    # (spec hito 7, §1.5).
+    cost: Usd | None = None

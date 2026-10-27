@@ -10,10 +10,10 @@ from typing import Literal
 from pydantic import BaseModel
 
 from mharness.domain.approval import ApprovalRequest, Decision
-from mharness.domain.catalog import Usd
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
+from mharness.domain.money import Usd
 
 
 class TurnStarted(BaseModel, frozen=True):

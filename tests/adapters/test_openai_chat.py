@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncIterator
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -277,6 +278,72 @@ async def test_negative_counters_from_the_provider_count_as_zero(
     response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
 
     assert response.usage == Usage(output_tokens=7)
+
+
+# The cost the provider gives (spec hito 7, §1.5). Shape measured on
+# OpenCode Go on 2026-10-27; the numbers are made up.
+OPENCODE_USAGE = {
+    "prompt_tokens": 15,
+    "completion_tokens": 120,
+    "cost": 0,
+    "opencode": {
+        "billing_source": "go",
+        "list_cost": 6.225e-05,
+        "allowance": 6.225e-05,
+        "tokens": {"input": 15, "output": 120, "reasoning": 0},
+    },
+}
+
+
+@respx.mock
+async def test_the_cost_opencode_counts_against_the_limit(
+    client: OpenAIChatClient,
+) -> None:
+    body = fixture("completion.json")
+    body["usage"] = OPENCODE_USAGE
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    # Exact: the float 6.225e-05 of the JSON, not 6.2249999...e-05.
+    assert response.cost == Decimal("0.00006225")
+
+
+@pytest.mark.parametrize(
+    ("usage", "cost"),
+    [
+        (
+            {"cost": 0.0012, "opencode": {"list_cost": 0.0034, "allowance": 0.0056}},
+            "0.0056",
+        ),
+        ({"cost": 0.0012, "opencode": {"list_cost": 0.0034}}, "0.0034"),
+        # OpenRouter's shape.
+        ({"cost": 0.0012}, "0.0012"),
+        ({"cost": 0}, "0"),
+        ({}, None),
+        # A negative cost is not believed: the catalog decides.
+        ({"cost": -0.5}, None),
+        ({"opencode": {"allowance": -1, "list_cost": 0.002}}, "0.002"),
+        # Odd values are ignored, never a reason to lose the answer.
+        ({"cost": "abc"}, None),
+        ({"cost": "NaN"}, None),
+        ({"cost": True}, None),
+        ({"cost": {"usd": 1}}, None),
+        ({"cost": "0.5"}, "0.5"),
+        ({"opencode": None, "cost": 0.25}, "0.25"),
+    ],
+)
+@respx.mock
+async def test_which_cost_of_the_provider_is_taken(
+    client: OpenAIChatClient, usage: dict[str, object], cost: str | None
+) -> None:
+    body = fixture("completion.json")
+    body["usage"] = {"prompt_tokens": 1, "completion_tokens": 1, **usage}
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.cost == (None if cost is None else Decimal(cost))
 
 
 @respx.mock

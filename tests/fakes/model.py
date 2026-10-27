@@ -134,7 +134,10 @@ def _as_events(response: ModelResponse) -> list[StreamItem]:
         for i, call in enumerate(calls)
     )
     end = MessageEnd(
-        stop_reason=response.stop_reason, usage=response.usage, model=response.model
+        stop_reason=response.stop_reason,
+        usage=response.usage,
+        model=response.model,
+        cost=response.cost,
     )
     return [*deltas, end]
 

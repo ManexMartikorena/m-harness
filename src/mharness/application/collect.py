@@ -63,4 +63,5 @@ class Accumulator:
             stop_reason=self._end.stop_reason,
             usage=self._end.usage,
             model=self._end.model,
+            cost=self._end.cost,
         )
