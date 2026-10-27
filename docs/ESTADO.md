@@ -1,16 +1,18 @@
 # Estado del proyecto
 
 Última actualización: 2026-10-27. **Hito 6 cerrado (`v0.6.0`). Hito 7
-(trazas y coste) en curso: spec APROBADA e integrada (PR #61); PR 1 (coste
-en el dominio, #64) y PR 2 (catálogo, #65) integrados. Arreglo de lecturas
-no UTF-8 publicado en `v0.6.1`. Cero deuda conocida.**
+(trazas y coste) en curso: PRs 1 a 4 integrados (#64, #65, #69, #70) y la
+auditoría del mantenedor ("cero deuda antes del hito 8") arreglada en
+`fix/deuda-hito-7`. Falta: el coste que da el proveedor (decisión del
+mantenedor), el PR 5 (terminal) y el cierre. Arreglo de lecturas no UTF-8
+publicado en `v0.6.1`.**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 6 cerrado (`v0.6.0`). En curso: hito 7 (trazas y coste),
-PRs 1 y 2 de 5 integrados.**
+PRs 1 a 4 de 5 integrados, y la auditoría.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.6.1` — Lecturas que no son UTF-8** (2026-10-27):
@@ -29,6 +31,23 @@ un paso fuera de lo normal.
 ## Hecho
 
 Lo más reciente primero.
+
+- **Auditoría del hito 7, 2026-10-27** (rama `fix/deuda-hito-7`). El
+  mantenedor pidió dejar el hito sin deuda antes del hito 8. Dos revisiones
+  independientes del código y el repaso de los pendientes: 11 fallos y 10
+  puntos de deuda, todos arreglados con su test (spec §12.24 a §12.35). Un
+  punto queda para el mantenedor: el tope de 5 intentos de id (§12.34).
+  Comprobado contra OpenCode: su `list_cost` coincide al dígito con el coste
+  del catálogo, y ya no manda el desglose de razonamiento.
+- **Decisión del mantenedor, 2026-10-27:** usar el coste que da el
+  proveedor cuando venga (OpenCode: `usage.opencode`), y el catálogo cuando
+  no. Pendiente de implementar.
+- **Hito 7, PR 4: trazas, 2026-10-27** (PR #70): un JSONL por sesión en
+  `~/.local/share/maha/traces/`, enmascarado, `error` e `interrupted`, el id
+  reservado desde el principio y el resumen de `/trace`.
+- **Hito 7, PR 3: coste en el bucle y la sesión, 2026-10-27** (PR #69): el
+  coste por llamada, turno y sesión; el catálogo se carga al arrancar; un
+  turno cortado guarda lo que gastó.
 
 - **`v0.6.1`, 2026-10-27:** el arreglo de lecturas no UTF-8, publicado
   por decisión del mantenedor antes de cerrar el hito 7. `main` ya llevaba
@@ -551,10 +570,11 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
 subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
 mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** comprobar que la release `v0.6.1` existe en GitHub.
-2. **Agente:** PR 3 de la spec §6 (`feature/hito-7-eventos`): `TurnStarted`,
-   `ModelCallFinished.cost`, `TurnFinished.cost`, `UsageEntry.cost` y el
-   coste de la sesión.
+1. **Mantenedor:** decidir el tope de intentos de id (spec §12.34): dejar
+   5 o no poner tope.
+2. **Agente:** el coste que da el proveedor (decisión del mantenedor del
+   2026-10-27), después el PR 5 de la spec §6 (`feature/hito-7-terminal`) y
+   el cierre del hito (`v0.7.0`).
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
