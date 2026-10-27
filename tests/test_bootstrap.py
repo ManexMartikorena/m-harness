@@ -1,6 +1,7 @@
 """`maha` end to end: configuration, adapter, `Agent` and terminal, no
 network."""
 
+import io
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ import httpx
 import pytest
 import respx
 
+from mharness import bootstrap
 from mharness.adapters.cli import StdinLines
 from mharness.bootstrap import main
 
@@ -505,3 +507,73 @@ def test_without_a_place_for_the_log_maha_starts_and_stays_quiet(
     logging.getLogger("mharness.prueba").warning("nadie lo ve")
 
     assert "nadie lo ve" not in capsys.readouterr().err
+
+
+class DiskFull(io.StringIO):
+    def write(self, text: str) -> int:
+        raise OSError(28, "No space left on device")
+
+
+def test_a_log_that_cannot_be_written_prints_nothing(
+    workspace: Path,
+    state_home: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Disk full, a read-only folder: Python would print "--- Logging error
+    # ---" and the message to the terminal (final review of hito 7).
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    stdin("/exit\n")
+    assert main([]) == 0
+    capsys.readouterr()
+    [handler] = logging.getLogger("mharness").handlers
+    assert isinstance(handler, logging.StreamHandler)
+    old = handler.setStream(DiskFull())
+    assert old is not None
+    old.close()
+
+    logging.getLogger("mharness.prueba").warning("\x1b[2J secreto")
+
+    assert capsys.readouterr().err == ""
+
+
+def test_rotated_logs_are_only_for_the_user_too(
+    workspace: Path,
+    state_home: Path,
+    stdin: Callable[[str], None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(bootstrap, "_LOG_BYTES", 200)
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    stdin("/exit\n")
+    assert main([]) == 0
+    previous = os.umask(0)
+    try:
+        for number in range(10):
+            logging.getLogger("mharness.prueba").warning("línea %d", number)
+    finally:
+        os.umask(previous)
+
+    folder = state_home / "maha"
+    assert stat.S_IMODE((folder / "maha.log").stat().st_mode) == 0o600
+    assert stat.S_IMODE((folder / "maha.log.1").stat().st_mode) == 0o600
+
+
+def test_without_a_home_maha_says_so(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # No HOME and no entry in passwd: Path.home() fails.
+    for name in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"):
+        monkeypatch.delenv(name)
+
+    def no_home() -> Path:
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(Path, "home", no_home)
+
+    code = main([])
+
+    assert code == 1
+    assert "cannot find your home folder" in capsys.readouterr().err

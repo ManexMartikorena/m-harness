@@ -5,6 +5,7 @@ application and starts the `maha` command.
 """
 
 import asyncio
+import io
 import logging
 import os
 import sys
@@ -44,14 +45,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     options = cli.parse(argv)
     if isinstance(options, int):
         return options
-    _log_to(config.state_dir(os.environ) / "maha.log")
+    try:
+        _log_to(config.state_dir(os.environ) / "maha.log")
+    except config.ConfigError:
+        # No home: the error comes, with what to do, from load() below.
+        _log_to(None)
     try:
         settings = config.load(cwd=Path.cwd(), env=os.environ)
         catalog = TomlCatalog.load(config.user_catalog_path(os.environ))
+        data = config.data_dir(os.environ)
     except (config.ConfigError, CatalogError) as exc:
         return cli.fail(str(exc))
     # Resolved once: the tools and the sessions name it the same way.
-    return asyncio.run(_converse(settings, catalog, Path.cwd().resolve()))
+    return asyncio.run(_converse(settings, catalog, data, Path.cwd().resolve()))
 
 
 # The application log: diagnosis for whoever maintains maha, never what was
@@ -60,7 +66,22 @@ _LOG_BYTES = 1024 * 1024
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 
-def _log_to(path: Path) -> None:
+class _PrivateLog(RotatingFileHandler):
+    """maha.log and its rotated copy, only for the user; and quiet when it
+    cannot write: Python would print the error, and the message, to the
+    terminal (final review of hito 7)."""
+
+    def _open(self) -> io.TextIOWrapper:
+        fd = os.open(self.baseFilename, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        # The mode of open() follows the umask: set it after.
+        os.fchmod(fd, 0o600)
+        return open(fd, "a", encoding=self.encoding, errors=self.errors)
+
+    def handleError(self, record: logging.LogRecord) -> None:
+        pass
+
+
+def _log_to(path: Path | None) -> None:
     """Send the warnings of `mharness.*` to `path`, rotated at 1 MiB with one
     copy. Without a place for it, nowhere: never to the terminal."""
     logger = logging.getLogger("mharness")
@@ -70,16 +91,17 @@ def _log_to(path: Path) -> None:
     for old in list(logger.handlers):
         logger.removeHandler(old)
         old.close()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # mkdir follows the umask: the modes are set after.
-        path.parent.chmod(0o700)
-        handler: logging.Handler = RotatingFileHandler(
-            path, maxBytes=_LOG_BYTES, backupCount=1, encoding="utf-8"
-        )
-        path.chmod(0o600)
-    except OSError:
-        handler = logging.NullHandler()
+    handler: logging.Handler = logging.NullHandler()
+    if path is not None:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # mkdir follows the umask: the mode is set after.
+            path.parent.chmod(0o700)
+            handler = _PrivateLog(
+                path, maxBytes=_LOG_BYTES, backupCount=1, encoding="utf-8"
+            )
+        except OSError:
+            pass
     handler.setFormatter(logging.Formatter(_LOG_FORMAT))
     logger.addHandler(handler)
 
@@ -110,7 +132,9 @@ def _gate(lines: cli.StdinLines) -> ApprovalGate:
     return cli.DenyAll(sys.stdout)
 
 
-async def _converse(settings: config.Settings, catalog: ModelCatalog, cwd: Path) -> int:
+async def _converse(
+    settings: config.Settings, catalog: ModelCatalog, data: Path, cwd: Path
+) -> int:
     provider = settings.provider
     # The variables a command gets; never the provider's key (spec
     # mejora-2026-10-23-deuda-hito-5, E1).
@@ -137,7 +161,6 @@ async def _converse(settings: config.Settings, catalog: ModelCatalog, cwd: Path)
                 history=history,
             )
 
-        data = config.data_dir(os.environ)
         sessions = Sessions(
             JsonlSessionStore(data / "sessions"),
             new_agent,
