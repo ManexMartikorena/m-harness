@@ -54,6 +54,7 @@ ficheros.
 | `specs/hito-3-streaming.md` | Spec del hito 3 (IMPLEMENTADA): eventos del modelo, `stream()` en el puerto junto a `complete()`, `collect()`, SSE a mano, spinner de espera y Ctrl+C por respuesta |
 | `specs/hito-6-sesiones.md` | Spec del hito 6 (IMPLEMENTADA): sesiones en JSONL, puerto `SessionStore`, guardado por turno, respuesta cortada marcada y los comandos `/sessions` (de todos los directorios), `/resume`, `/delete`, `/model` y `/help` |
 | `specs/hito-7-trazas-coste.md` | Spec del hito 7 (PROPUESTA): `Usage.reasoning_tokens`, catálogo de modelos en TOML (paquete y usuario), coste por llamada, turno y sesión, `TurnStarted`, trazas JSONL sin credenciales, `/trace`, avisos del catálogo y `maha.log` |
+| `specs/hito-8-evals-no-interactivo.md` | Spec del hito 8 (PROPUESTA): límites del turno, aprobación sin persona (`--allow`), evals con 10 tareas y línea base, `maha -p` con salida de texto o JSON, `-c`/`-r`, reintentos con modelo de respaldo y los comandos `models`, `sessions`, `trace`, `stats`, `export` e `import` |
 
 ## Código: `src/mharness/`
 
