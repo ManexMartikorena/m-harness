@@ -72,9 +72,13 @@ No hay servicios ni base de datos. Cada máquina tiene sus propios datos, y nada
 de esto entra en git:
 - `~/.config/maha/`: configuración del usuario (§3.1).
 - `~/.local/share/maha/`: sesiones (desde el hito 6, en `sessions/`, un
-  fichero `.jsonl` por sesión, solo legibles por el usuario), trazas y
-  memoria. Respeta `XDG_DATA_HOME`. Una sesión guarda todo lo que leyó el
-  agente, también un secreto que aprobaste leer: se borra con `/delete`.
+  fichero `.jsonl` por sesión, solo legibles por el usuario), trazas (desde
+  el hito 7, en `traces/`, una por sesión y con su mismo nombre) y memoria.
+  Respeta `XDG_DATA_HOME`. Una sesión guarda todo lo que leyó el agente,
+  también un secreto que aprobaste leer: se borra con `/delete`, que borra
+  también su traza. La traza enmascara la clave del proveedor, las
+  variables con forma de credencial y las claves con forma conocida
+  (`sk-…`, `ghp_…`…), pero no garantiza que no quede ningún secreto.
 - `~/.local/state/maha/`: registro de la aplicación.
 
 Lo que se haga en una máquina no está en la otra.

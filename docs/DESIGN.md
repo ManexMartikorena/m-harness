@@ -272,7 +272,7 @@ Session(id, created_at, cwd, model, messages, usage)
 | `MemoryStore` | Guardar, buscar y borrar recuerdos | SQLite con FTS5 · en memoria |
 | `SkillSource` | Listar y cargar skills | Carpetas con `SKILL.md` · en memoria |
 | `CommandRunner` | Ejecutar un comando con directorio, entorno y tiempo límite | Proceso local · proceso aislado (hito 14) · `FakeRunner` |
-| `TraceSink` | Recibir cada `AgentEvent` | JSONL en disco · exportador OpenTelemetry (hito 20) · lista en memoria |
+| `TraceSink` | Recibir cada `AgentEvent` | JSONL en disco · exportador OpenTelemetry (hito 20) · lista en memoria. *(Concretado el 27/10/2026, spec del hito 7, §1.7 y §12: `TraceSink` abre, lee y borra la traza de cada sesión y `TraceLog` escribe; los registros llegan ya enmascarados, y la traza de una sesión nueva se crea en exclusiva para reservar su id.)* |
 
 ## 7. Stack
 | Capa | Elección | Por qué (y desviación del stack por defecto) |
