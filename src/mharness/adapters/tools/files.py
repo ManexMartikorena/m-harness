@@ -14,6 +14,7 @@ import errno
 import io
 import itertools
 import json
+import logging
 import os
 import re
 import secrets
@@ -39,6 +40,9 @@ from mharness.domain.paths import (
     read_warning,
 )
 from mharness.domain.tools import Permission, ToolError
+
+# Diagnosis only, never content (spec hito 7, §1.11).
+_log = logging.getLogger(__name__)
 
 MIB = 1024 * 1024
 # A file with a NUL byte in its first bytes is binary.
@@ -1188,15 +1192,18 @@ def _sync_folder(folder: Path) -> None:
     """Flush the entries of `folder` to the disk (POSIX).
 
     The fsync of a file does not cover its entry in the folder: the rename
-    needs an fsync of the folder too (fsync(2)). A failure is ignored: the
-    file is already replaced, and some file systems cannot flush a folder.
+    needs an fsync of the folder too (fsync(2)). A failure does not fail the
+    write: the file is already replaced, and some file systems cannot flush
+    a folder. It goes to maha.log (D11, spec hito 7, §1.11).
     """
-    with contextlib.suppress(OSError):
+    try:
         descriptor = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
         try:
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
+    except OSError as exc:
+        _log.warning("cannot flush the folder %s: %s", folder, exc.strerror)
 
 
 def _as_shown(

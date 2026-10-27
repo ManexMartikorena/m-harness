@@ -11,6 +11,7 @@ writes, and no threads (spec hito 2, §12).
 import contextlib
 import fcntl
 import json
+import logging
 import os
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -228,6 +229,9 @@ class JsonlSessionStore:
         return self._folder / f"{session_id}.jsonl"
 
 
+# Diagnosis only, never content (spec hito 7, §1.11).
+_log = logging.getLogger(__name__)
+
 _CREATE = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_APPEND | os.O_NOFOLLOW
 _OPEN = os.O_RDWR | os.O_APPEND | os.O_NOFOLLOW
 
@@ -353,4 +357,7 @@ def _not_found(session_id: str) -> SessionNotFound:
 
 
 def _cannot_save(path: Path, exc: OSError) -> SessionError:
-    return SessionError(f"cannot save session {path.stem}: {exc.strerror}")
+    message = f"cannot save session {path.stem}: {exc.strerror}"
+    # The id and the error, never what the session holds.
+    _log.warning("%s", message)
+    return SessionError(message)

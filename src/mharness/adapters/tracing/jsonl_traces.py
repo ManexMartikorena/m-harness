@@ -10,6 +10,7 @@ Disk calls are synchronous inside `async def`, as in the session store.
 
 import contextlib
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -17,6 +18,9 @@ from mharness.domain.session import is_session_id
 from mharness.domain.trace import TraceError, TraceExists, TraceRecord
 
 # Read too: to see whether the file ends in a whole line.
+# Diagnosis only, never content (spec hito 7, §1.11).
+_log = logging.getLogger(__name__)
+
 _OPEN = os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW
 
 
@@ -158,4 +162,7 @@ def _line(record: TraceRecord) -> bytes:
 
 
 def _cannot_write(session: str, exc: OSError) -> TraceError:
-    return TraceError(f"cannot write the trace of {session}: {exc.strerror}")
+    message = f"cannot write the trace of {session}: {exc.strerror}"
+    # The id and the error, never what the trace holds.
+    _log.warning("%s", message)
+    return TraceError(message)
