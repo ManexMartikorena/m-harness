@@ -553,9 +553,18 @@ Cada hito es pequeño, deja `maha` funcionando, tiene su spec en
 19. **Interfaz completa.** Markdown renderizado, barra de estado (modelo,
     tokens, coste), historial de entrada y atajos. Guía: la interfaz.
     *(Ampliado el 27/10/2026 por decisión del mantenedor:)* **una TUI
-    completa, bonita y fácil de usar para cualquier persona**, con
-    comandos sencillos y navegación clara. Referencia principal, la de
-    OpenCode; secundaria, la de Claude Code. A pantalla completa, con la
+    completa, bonita y fácil de usar para cualquier persona**, con una
+    navegación intuitiva. No se trata de tener pocos comandos: entran todos
+    los planeados en los hitos y los que vengan; se trata de que se
+    descubran y se usen sin aprenderlos antes. Un menú de comandos (una
+    *command palette*: lista que se filtra al escribir) con todos los
+    disponibles, explicados, que los lanza; `/help` que lleva a él; `/` en
+    el prompt que sugiere comandos; y atajos de teclado para los
+    frecuentes. Referencia principal, la de OpenCode (comprobado en
+    https://opencode.ai/docs/tui/ el 27/10/2026: paleta de comandos con
+    `ctrl+p`, comandos con `/`, `/help` como diálogo, `/models` y
+    `/sessions` como listas, y atajos con una tecla líder, `ctrl+x`);
+    secundaria, la de Claude Code. A pantalla completa, con la
     conversación (Markdown, llamadas a herramientas plegables), una barra o
     panel con modelo, contexto, coste y sesión, el selector de modelo
     navegable (precio, avisos y si `maha` puede usarlo), las aprobaciones
