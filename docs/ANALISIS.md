@@ -66,7 +66,7 @@ tres condiciones:
 al mismo nivel: un producto profesional para cualquier usuario.** Lo más
 completo posible en capacidades (comandos, opciones, herramientas,
 conectores, memoria…) y, a la vez, intuitivo y fácil de usar (DESIGN §14,
-hito 19: una TUI completa). Se sigue construyendo a mano, pieza a pieza y
+hito 21: una TUI completa). Se sigue construyendo a mano, pieza a pieza y
 documentado: los dos objetivos van juntos. Qué capacidades entran, y
 cuándo, sale de comparar el plan con OpenCode y Claude Code
 (`docs/COMPARATIVA.md`).

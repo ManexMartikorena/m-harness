@@ -129,7 +129,7 @@ Desde el hito 8 (DESIGN §9).
   - Desarrollo: un tag `v0.N.0` por hito, con el número del hito. Un
     arreglo publicado entre dos hitos, `v0.N.M` (añadido el 2026-10-23, por
     decisión del mantenedor: `v0.5.1`).
-  - `v1.0.0`: versión 1.0 (hito 21).
+  - `v1.0.0`: versión 1.0 (hito 23; era el 21 hasta el 2026-10-27, DESIGN §14).
   - Mantenimiento: `v1.N.0` si añade o cambia una función, `v1.N.M` si solo
     arregla un fallo. La lista, en docs/ESTADO.md.
 - Credenciales solo en variables de entorno (ver `.env.example`). Nunca en el

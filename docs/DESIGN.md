@@ -107,7 +107,7 @@ m-harness/
 │   ├── adapters/          # Implementaciones de los puertos: el contacto real con el exterior
 │   │   ├── models/        #   openai_chat.py, anthropic.py
 │   │   ├── tools/         #   files.py, search_worker.py, shell.py, web.py…
-│   │   ├── commands/      #   local.py; el aislado, en el hito 14
+│   │   ├── commands/      #   local.py; el aislado, en el hito 15
 │   │   ├── mcp/
 │   │   ├── storage/       #   sessions.py (JSONL), memoria (SQLite)
 │   │   ├── skills/
@@ -195,7 +195,7 @@ ToolCallBlock(id, name, arguments: str)
 ToolResultBlock(call_id, content: str, is_error)
 # (Corregido el 21/10/2026, spec del hito 4, §1.2: `arguments` es el texto JSON
 #  tal como lo escribió el modelo, que puede ser inválido y tiene que quedar en
-#  el historial; `content` es texto hasta que lleguen las imágenes, hito 18.)
+#  el historial; `content` es texto hasta que lleguen las imágenes, hito 18.) *(27/10/2026: hito 20.)*
 
 Message(role: "user" | "assistant" | "tool", blocks: list[Block])
 
@@ -276,8 +276,8 @@ Session(id, created_at, cwd, model, messages, usage)
 | `SessionStore` | Guardar, cargar, listar y borrar sesiones | JSONL en disco · en memoria. *(Ampliado el 27/10/2026, auditoría del hito 7: `exists()`, para que una sesión nueva no tome el id de otra.)* |
 | `MemoryStore` | Guardar, buscar y borrar recuerdos | SQLite con FTS5 · en memoria |
 | `SkillSource` | Listar y cargar skills | Carpetas con `SKILL.md` · en memoria |
-| `CommandRunner` | Ejecutar un comando con directorio, entorno y tiempo límite | Proceso local · proceso aislado (hito 14) · `FakeRunner` |
-| `TraceSink` | Recibir cada `AgentEvent` | JSONL en disco · exportador OpenTelemetry (hito 20) · lista en memoria. *(Concretado el 27/10/2026, spec del hito 7, §1.7 y §12: `TraceSink` abre, lee y borra la traza de cada sesión y `TraceLog` escribe; los registros llegan ya enmascarados, y la traza de una sesión nueva se crea en exclusiva para reservar su id.)* |
+| `CommandRunner` | Ejecutar un comando con directorio, entorno y tiempo límite | Proceso local · proceso aislado (hito 15) · `FakeRunner` |
+| `TraceSink` | Recibir cada `AgentEvent` | JSONL en disco · exportador OpenTelemetry (hito 22) · lista en memoria. *(Concretado el 27/10/2026, spec del hito 7, §1.7 y §12: `TraceSink` abre, lee y borra la traza de cada sesión y `TraceLog` escribe; los registros llegan ya enmascarados, y la traza de una sesión nueva se crea en exclusiva para reservar su id.)* |
 
 ## 7. Stack
 | Capa | Elección | Por qué (y desviación del stack por defecto) |
@@ -333,7 +333,7 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
 | 14 | Web | Se decide en su hito | Brave Search, Tavily, Exa; búsqueda nativa de algunos proveedores; trafilatura, markdownify; Jina Reader |
 | 15 | Trazas | Eventos propios en local | OpenTelemetry (convenciones GenAI); Langfuse, LangSmith, Arize Phoenix, Helicone; OpenLLMetry, OpenLIT |
 | 16 | Evals | Runner propio | Inspect AI, promptfoo, DeepEval, Braintrust; benchmarks SWE-bench, Terminal-Bench |
-| 17 | Interfaz | Rich + prompt_toolkit *(27/10/2026: TUI completa, previsiblemente Textual; se decide en la spec del hito 19)* | Rich, prompt_toolkit, Textual; Typer, Click; las TUI de OpenCode y Claude Code como referencia de uso |
+| 17 | Interfaz | Rich + prompt_toolkit *(27/10/2026: TUI completa, previsiblemente Textual; se decide en la spec del hito 21)* | Rich, prompt_toolkit, Textual; Typer, Click; las TUI de OpenCode y Claude Code como referencia de uso |
 | — | Tests de adaptadores HTTP | respx | VCR.py y pytest-recording (graban y reproducen respuestas reales) |
 
 *Nombres y referencias comprobados el 19/10/2026.*
@@ -361,7 +361,7 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   proyecto + skills + memoria), con plantillas versionadas en el repositorio y
   evaluadas como código (hito 10).
 - **Skills:** formato Agent Skills (`SKILL.md`). El índice va en el prompt y el
-  contenido se carga bajo demanda (hito 12).
+  contenido se carga bajo demanda (hito 13).
 - **Supervisión:** toda herramienta con efecto pide aprobación. "Aprobar para
   toda la sesión" es la única forma de autonomía; no hay modo sin aprobaciones
   en v1.
@@ -410,7 +410,7 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   con `.npmrc`, `.pypirc`, `.envrc`, `*.env`, `*.p12`, los tokens de `gh`,
   `gcloud`, `.azure`, Cargo y Terraform, y la configuración de los
   submódulos.)*
-- **Terminal:** cada comando es `EFFECT`. Desde el hito 14 corre además en un
+- **Terminal:** cada comando es `EFFECT`. Desde el hito 15 corre además en un
   entorno aislado.
   *(Añadido el 21/10/2026, spec del hito 5, §1.9: el comando corre en su propio
   grupo de procesos, con tiempo límite, y sin las variables de entorno con
@@ -457,7 +457,7 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   `WARNING`, rotado a 1 MiB; lo usan solo los adaptadores.)*
 - **En la interfaz:** modelo activo, tokens del contexto y coste de la sesión,
   siempre visibles.
-- **Exportador OpenTelemetry (hito 20, opcional):** permite enviar las trazas a
+- **Exportador OpenTelemetry (hito 22, opcional):** permite enviar las trazas a
   Langfuse (que las acepta en `/api/public/otel`), Phoenix u otra plataforma,
   sin que ninguna sea una dependencia.
 
@@ -497,7 +497,7 @@ método se convierte aquí en distribución.
 - **Cuando el proyecto esté maduro** (fuera de alcance v1): publicación en PyPI
   con *trusted publishing* desde GitHub Actions y documentación de usuario. Se
   documentará en `docs/DISTRIBUCION.md`. *(Cambiado el 27/10/2026 por
-  decisión del mantenedor: entra en la versión 1.0, hito 21. El canal (PyPI
+  decisión del mantenedor: entra en la versión 1.0, hito 23. El canal (PyPI
   u otro) y la documentación de usuario se deciden en su spec.)*
 
 ## 14. Orden de construcción (plan de la fase de código)
@@ -533,29 +533,59 @@ Cada hito es pequeño, deja `maha` funcionando, tiene su spec en
    comandos `/sessions`, `/resume` y `/model`. Guía: historial.
 7. **Trazas y coste.** `TraceSink` en JSONL, catálogo de modelos, coste por
    llamada y por sesión, comando para ver una traza. Guía: observabilidad.
+*(Reordenado y ampliado el 27/10/2026 por decisión del mantenedor, a partir
+de `docs/COMPARATIVA.md`: cada hito recoge lo que OpenCode y Claude Code
+ofrecen en su área, y entran dos hitos nuevos, deshacer (12) y hooks (18).
+Los hitos 12 a 21 de antes pasan a ser los 13 a 17 y 19 a 23; la 1.0, el 23.
+Las propuestas P1 a P15 se citan en cada hito.)*
+
 8. **Evals y modo no interactivo.** `maha -p "<instrucción>"`, batería inicial
    de 10 tareas, `maha eval` y primera línea base. Guía: cómo se evalúa un
-   agente. *(Mata el riesgo de ajustar a ojo.)*
+   agente. *(Mata el riesgo de ajustar a ojo.)* Además (P1, P2): `-c` y
+   `-r` al arrancar, `--model`, salida JSON, entrada por stdin, códigos de
+   salida, topes de pasos y de coste por turno, reintentos ante 429 y 5xx
+   con modelo de respaldo, y los comandos `maha models`, `maha sessions`,
+   `maha stats` (coste acumulado) y `maha export`.
 9. **Adaptador de Anthropic.** Segundo formato de API; evals comparando
-   proveedores. Guía: en qué se diferencian los formatos.
+   proveedores. Guía: en qué se diferencian los formatos. Además (P3): el
+   esfuerzo de razonamiento (*effort*) en los dos formatos, y la caché del
+   prompt del proveedor.
 10. **System prompt por capas.** Base, entorno, `AGENTS.md` del proyecto y
     plantillas versionadas, medido con evals. Guía: el system prompt.
+    Además (P4, P5): `/init`, compatibilidad con `CLAUDE.md`, instrucciones
+    extra, títulos de sesión con un modelo pequeño, y las herramientas de
+    lista de tareas y de pregunta estructurada al usuario.
 11. **Gestión del contexto.** Conteo, umbral y compactación por resumen. Guía:
-    la ventana de contexto.
-12. **Skills.** Formato Agent Skills, índice en el prompt y carga bajo demanda.
-    Guía: skills.
-13. **Memoria persistente.** SQLite con FTS5, herramientas para guardar, buscar
+    la ventana de contexto. Además (P6): `/compact`, `/context` y qué
+    sobrevive a la compactación.
+12. **Deshacer y puntos de control** *(nuevo, P8)*. `/undo`, `/redo` y volver
+    a un punto de la conversación, con los ficheros que cambió el agente.
+    Guía: deshacer.
+13. **Skills y comandos personalizados.** Formato Agent Skills, índice en el
+    prompt y carga bajo demanda; un fichero Markdown es también un comando
+    `/nombre` con plantilla y argumentos (P7). Guía: skills.
+14. **Memoria persistente.** SQLite con FTS5, herramientas para guardar, buscar
     y borrar, y medición del ahorro de tokens con evals. Guía: memoria.
-14. **Sandbox.** `CommandRunner` aislado (la tecnología se decide en su spec).
-    Guía: aislamiento.
-15. **Subagentes.** Herramienta que lanza un agente hijo con contexto limpio,
-    herramientas acotadas y límites propios, con ejecución en paralelo. Guía:
-    subagentes.
-16. **MCP.** Cliente de servidores MCP; sus herramientas entran en el bucle con
-    el sistema de permisos. Guía: MCP.
-17. **Web.** Buscar y leer páginas. Guía: el agente y la web.
-18. **Multimodal.** Imágenes y PDFs. Guía: entrada multimodal.
-19. **Interfaz completa.** Markdown renderizado, barra de estado (modelo,
+15. **Sandbox y modos de permiso.** `CommandRunner` aislado (la tecnología se
+    decide en su spec). Además (P9): modos de permiso (plan, aceptar
+    ediciones), reglas `allow`/`ask`/`deny` con patrones en la
+    configuración, "siempre" que persiste por proyecto, detección de bucles
+    y confianza en una carpeta nueva. Guía: aislamiento.
+16. **Subagentes y agentes propios.** Herramienta que lanza un agente hijo
+    con contexto limpio, herramientas acotadas y límites propios, con
+    ejecución en paralelo. Además (P10, P11): agentes propios en Markdown,
+    `@agente`, cambiar de agente principal y comandos en segundo plano.
+    Guía: subagentes.
+17. **MCP.** Cliente de servidores MCP; sus herramientas entran en el bucle con
+    el sistema de permisos. Además (P12): remotos con OAuth, activar y
+    desactivar, recursos, *prompts* como comandos y herramientas bajo
+    demanda. Guía: MCP.
+18. **Hooks** *(nuevo, P13)*. Acciones que el usuario configura antes y
+    después de una herramienta, de un turno, de compactar…, que pueden
+    bloquear o añadir contexto. Guía: hooks.
+19. **Web.** Buscar y leer páginas. Guía: el agente y la web.
+20. **Multimodal.** Imágenes y PDFs. Guía: entrada multimodal.
+21. **Interfaz completa.** Markdown renderizado, barra de estado (modelo,
     tokens, coste), historial de entrada y atajos. Guía: la interfaz.
     *(Ampliado el 27/10/2026 por decisión del mantenedor:)* **una TUI
     completa, bonita y fácil de usar para cualquier persona**, con una
@@ -577,17 +607,23 @@ Cada hito es pequeño, deja `maha` funcionando, tiene su spec en
     pantallas que se recorren. Es otro adaptador sobre los mismos eventos y
     puertos: el núcleo no cambia, y la interfaz de línea se conserva para el
     modo no interactivo (hito 8), `maha < fichero` y los evals. Se hace en
-    el hito 19, y no antes, porque lo que tiene que enseñar llega en los
-    hitos 10 a 18 (contexto y compactación, skills, memoria, subagentes,
-    MCP). La librería (previsiblemente Textual) y el diseño de pantallas se
+    el hito 21, y no antes, porque lo que tiene que enseñar llega en los
+    hitos 10 a 20 (contexto y compactación, deshacer, skills, memoria,
+    subagentes, MCP, hooks). La librería (previsiblemente Textual) y el diseño de pantallas se
     deciden en su spec.
-20. **Exportador OpenTelemetry.** Opcional; probado con Langfuse. Guía:
+22. **Exportador OpenTelemetry.** Opcional; probado con Langfuse. Guía:
     OpenTelemetry.
-21. **Versión 1.0.** README de uso, índice de la guía, batería de evals completa
+23. **Versión 1.0.** README de uso, índice de la guía, batería de evals completa
     y revisión de los criterios de éxito del análisis. Con él, **`v1.0.0`**.
     *(Ampliado el 27/10/2026 por decisión del mantenedor:)* también la
     distribución pública (instalable para cualquier usuario) y su
-    documentación de usuario (§13).
+    documentación de usuario (§13), con `maha upgrade`, `maha doctor` y
+    `maha auth login` (P14).
+
+**Después de la 1.0** *(27/10/2026, P15)*: LSP y formateadores, plugins y
+herramientas propias, servidor con API y SDK, ACP e integración con editores,
+GitHub Action, las APIs de Responses de OpenAI y de Google, *worktrees*,
+tareas programadas y voz, como versiones `v1.N`.
 
 Después, fase de mantenimiento y mejora continua (`AGENTS.md`).
 

@@ -582,15 +582,17 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
 subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
 mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** escribir `docs/COMPARATIVA.md` (capacidades de OpenCode y
-   Claude Code, comprobadas en su documentación, frente a nuestro plan, con
-   una propuesta de hito o versión para cada una) en un PR de docs.
-   **Mantenedor:** decidir qué entra; el agente lo lleva a DESIGN §14.
+1. **Agente:** separar en GitHub las dos caras del proyecto (decisión del
+   mantenedor del 2026-10-27): el `README.md` como página de producto (qué
+   es, qué hace, cómo instalarlo y usarlo) y un documento del proyecto
+   (objetivo, cómo se ha construido y cómo hacerlo desde cero), en un PR
+   de docs.
 2. **Agente:** proponer la spec del hito 8 (evals y modo no interactivo,
    DESIGN §9 y §14) en su propio PR (`docs/spec-hito-8-…`), con sus dudas y
-   recomendaciones. Entran en ella los pendientes que el hito 8 resuelve
-   (más abajo): reintentos ante 429 y 5xx, límites por turno, `maha -p`,
-   `--continue`/`--resume`, y la batería de evals con su línea base.
+   recomendaciones. El hito 8 ya recoge P1 y P2 de la comparativa: `maha
+   -p`, `-c`/`-r`, `--model`, salida JSON, stdin, códigos de salida, topes
+   de pasos y coste, reintentos con modelo de respaldo, `maha models`,
+   `sessions`, `stats` y `export`, y la batería de evals con su línea base.
 3. **Mantenedor:** responder las dudas de esa spec.
 4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
@@ -645,31 +647,36 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   (verificación a mano del hito 2).
 
 **Decisiones del mantenedor para hitos futuros:**
+- **Plan completado con la comparativa** (2026-10-27, `docs/COMPARATIVA.md`):
+  se amplían los hitos 8 a 17 con lo que ofrecen OpenCode y Claude Code,
+  entran dos hitos nuevos (12 deshacer, 18 hooks) y la 1.0 pasa al hito 23.
+  Después de la 1.0: LSP, plugins, API y SDK, editores, GitHub Action, más
+  APIs de modelo, worktrees, tareas programadas y voz (DESIGN §14).
 - **Segundo objetivo: producto profesional** (2026-10-27), lo más completo
   posible en capacidades e intuitivo (ANALISIS §4). Las 17 piezas son el
   mínimo; la comparación con OpenCode y Claude Code (`docs/COMPARATIVA.md`)
   propone qué más entra y cuándo.
 - **Distribución pública en la 1.0** (2026-10-27): instalable para
-  cualquier usuario y con documentación de usuario (DESIGN §13, hito 21).
-- **Hito 19: una TUI completa** (2026-10-27), bonita y fácil para cualquier
+  cualquier usuario y con documentación de usuario (DESIGN §13, hito 23).
+- **Hito 21: una TUI completa** (2026-10-27), bonita y fácil para cualquier
   persona, con navegación intuitiva: todos los comandos que vayan llegando,
   descubribles en un menú de comandos (como la paleta `ctrl+p` de OpenCode)
   y con `/help`, `/` y atajos. OpenCode como referencia; la interfaz de
-  línea se conserva. DESIGN §14, hito 19.
+  línea se conserva. DESIGN §14, hito 21.
 
 **Se deciden en la spec de su hito:**
-- búsqueda en la memoria (hito 13);
-- tecnología del sandbox (hito 14);
-- cliente MCP a mano o con el SDK oficial (hito 16);
-- proveedor de búsqueda web (hito 17);
-- tratamiento de PDFs (hito 18).
+- búsqueda en la memoria (hito 14);
+- tecnología del sandbox (hito 15);
+- cliente MCP a mano o con el SDK oficial (hito 17);
+- proveedor de búsqueda web (hito 19);
+- tratamiento de PDFs (hito 20).
 
 **Pendientes del hito 3** (anotados en su spec; cada uno con el hito que lo
 resuelve):
 - ~~**Tokens de razonamiento:** desglose y coste~~ **Resuelto** en el
   hito 7: la línea de tokens dice `(N reasoning)` cuando el proveedor lo
   manda, y el coste lo incluye (spec 7, §1.2 y §12.35). Ver el texto del
-  razonamiento (`reasoning_content`): hito 19, con la interfaz.
+  razonamiento (`reasoning_content`): hito 21, con la interfaz.
 - ~~**`refusal` del stream se ignora**~~ **Resuelto** en el hito 5
   (`89e0fec`): llega como texto. Sigue POR VERIFICAR en OpenCode, que no la
   ha mandado nunca (spec 5, §10).
@@ -678,7 +685,7 @@ resuelve):
 - **Sin reintentos** ante 429 o 5xx: hito 8, por decisión del mantenedor
   (spec 7, §11, duda 4).
 - **Lo que se teclea mientras gira el spinner se mezcla con él** en pantalla
-  (solo visual). Hito 19, con la TUI (spec 3, §12.10).
+  (solo visual). Hito 21, con la TUI (spec 3, §12.10).
 - **POR VERIFICAR:** el formato de un error a mitad de stream en OpenCode
   (no se pudo provocar; el código lo lee de forma defensiva) y cortar la red
   a mitad de respuesta a mano (punto 9 de la verificación, no provocado en
@@ -699,7 +706,7 @@ resuelve):
   resuelto** en el hito 5, pieza 6 (`7e39cfb`): preguntan, una a una (spec
   5, §1.6 y §12.6). Los secretos con otro nombre siguen sin detectarse:
   se mantiene así por decisión del mantenedor; mirar el contenido es otra
-  pieza (hito 14; mejora `2026-10-23`, E5).
+  pieza (hito 15; mejora `2026-10-23`, E5).
 - **Tokens:** cada llamada al modelo cuesta ~700 tokens de entrada solo por
   las cuatro herramientas; un turno de dos pasos llegó a 4111. El coste ya
   se ve (hito 7); compactación: hito 11 (spec 4, §12.14).
@@ -707,14 +714,14 @@ resuelve):
   interactivo (spec 4, §11, duda 3).
 - **Las descripciones de las herramientas son prompts:** primeras candidatas
   a la batería de evals del hito 8 (spec 4, §5).
-- **Llamadas en paralelo:** hito 15 (spec 4, §11, duda 5).
+- **Llamadas en paralelo:** hito 16 (spec 4, §11, duda 5).
 - ~~**`.gitignore`**~~ **Resuelto** (`eb675f1`, spec
   `mejora-2026-10-23-deuda-hito-5`, E6): `glob` y `grep` lo leen.
 - **POR VERIFICAR:** si OpenCode llega a partir los argumentos de una
   llamada o a mandar JSON inválido (el código y los tests cubren los dos
   casos; spec 4, §10).
 - **Detalles visuales:** el eco de `^C` y lo que se teclea durante un turno
-  se mezclan con la salida. Hito 19 (spec 4, §12.13).
+  se mezclan con la salida. Hito 21 (spec 4, §12.13).
 
 **Pendientes del hito 5** (anotados en su spec; cada uno con el hito que lo
 resuelve):
@@ -767,7 +774,7 @@ resuelve):
 
 **Por medir:**
 - Línea base de las evals (hito 8).
-- Ahorro de tokens de la memoria (hito 13).
+- Ahorro de tokens de la memoria (hito 14).
 
 ## Versiones
 
@@ -786,15 +793,20 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [ ] 9. Adaptador de Anthropic. `v0.9.0`
 - [ ] 10. System prompt por capas. `v0.10.0`
 - [ ] 11. Gestión del contexto. `v0.11.0`
-- [ ] 12. Skills. `v0.12.0`
-- [ ] 13. Memoria persistente. `v0.13.0`
-- [ ] 14. Sandbox. `v0.14.0`
-- [ ] 15. Subagentes. `v0.15.0`
-- [ ] 16. MCP. `v0.16.0`
-- [ ] 17. Web. `v0.17.0`
-- [ ] 18. Multimodal. `v0.18.0`
-- [ ] 19. Interfaz completa. `v0.19.0`
-- [ ] 20. Exportador OpenTelemetry. `v0.20.0`
-- [ ] 21. Versión 1.0. `v0.21.0` y `v1.0.0`
+- [ ] 12. Deshacer y puntos de control. `v0.12.0` *(nuevo, 2026-10-27)*
+- [ ] 13. Skills y comandos personalizados. `v0.13.0`
+- [ ] 14. Memoria persistente. `v0.14.0`
+- [ ] 15. Sandbox y modos de permiso. `v0.15.0`
+- [ ] 16. Subagentes y agentes propios. `v0.16.0`
+- [ ] 17. MCP. `v0.17.0`
+- [ ] 18. Hooks. `v0.18.0` *(nuevo, 2026-10-27)*
+- [ ] 19. Web. `v0.19.0`
+- [ ] 20. Multimodal. `v0.20.0`
+- [ ] 21. Interfaz completa (TUI). `v0.21.0`
+- [ ] 22. Exportador OpenTelemetry. `v0.22.0`
+- [ ] 23. Versión 1.0 y distribución. `v0.23.0` y `v1.0.0`
+
+*(Plan reordenado el 2026-10-27 por decisión del mantenedor, DESIGN §14 y
+`docs/COMPARATIVA.md`.)*
 
 **Mantenimiento.** `v1.N.0` para una mejora y `v1.N.M` para un arreglo.
