@@ -168,6 +168,11 @@ Desde el hito 8 (DESIGN §9).
   se parte.
 - **Cada PR usa la plantilla** `.github/pull_request_template.md`: qué hace
   cada fichero y por qué.
+- **Cada PR va a su milestone** en GitHub: uno por hito (`Hito N — nombre`,
+  con su descripción y el enlace a DESIGN §14). Los PRs que no son de un
+  hito (arreglos entre hitos, documentación general) van sin milestone. Al
+  cerrar el hito, su milestone se cierra. *(Añadido el 2026-10-27, por
+  decisión del mantenedor: GitHub ordenado para lo que viene.)*
 - **Push y PR:** los hace el humano, o el agente (`git push`,
   `gh pr create`) cuando el humano se lo pide en esa sesión.
 - **Integración con merge commit**, desde GitHub y solo con el CI en verde.
@@ -230,8 +235,12 @@ Mantenimiento de docs/ESTADO.md:
   cerrar sesión. Nunca queda desactualizado más de una sesión.
 - "Siguiente paso" es una acción concreta y ejecutable, con responsable
   (humano o agente), no un hito.
-- Al cerrar la fase de desarrollo, su historial sale a
-  docs/HISTORIAL_DESARROLLO.md, tal cual.
+- ESTADO es corto: fase, siguiente paso, pendientes y versiones, y una
+  línea por hito en "Hecho". El detalle de lo hecho va a
+  docs/HISTORIAL_DESARROLLO.md, lo más reciente primero: al cerrar cada
+  hito, su detalle pasa allí. *(Cambiado el 2026-10-27, por decisión del
+  mantenedor; antes, el historial salía solo al cerrar la fase de
+  desarrollo.)*
 
 ## Memoria y contexto (varios PCs, varios agentes)
 - El humano trabaja este proyecto desde varios PCs sincronizados por git, y

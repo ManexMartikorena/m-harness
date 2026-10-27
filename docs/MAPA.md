@@ -32,7 +32,8 @@ ficheros.
 | `DESIGN.md` | Fase 2: arquitectura, contrato de datos, stack y plan de hitos |
 | `PROYECTO.md` | La cara del proyecto: objetivo, cómo funciona un agente, el principio, la arquitectura, cómo se trabaja, la hoja de ruta y cómo construir un agente desde cero siguiendo el repositorio |
 | `COMPARATIVA.md` | Capacidades de OpenCode y Claude Code (comprobadas en su documentación) frente al plan, y qué se propone que entre y cuándo |
-| `ESTADO.md` | Tablero: fase, hecho, siguiente paso, pendientes y versiones |
+| `ESTADO.md` | Tablero corto: fase, una línea por hito, siguiente paso, pendientes y versiones |
+| `HISTORIAL_DESARROLLO.md` | El detalle de lo hecho en cada hito y sesión, lo más reciente primero (sale de ESTADO al cerrar cada hito) |
 | `PUESTA_EN_MARCHA.md` | Lo que no viaja por git: entorno, `.env` y ajustes de GitHub |
 | `MAPA.md` | Este fichero |
 | `guia/README.md` | Índice de la guía de conceptos (una nota por hito) |
