@@ -380,6 +380,9 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   un comando que tiene que terminar bien, o un fichero con un contenido
   esperado.
   - Tamaño inicial: 10 tareas (hito 8). Objetivo: 30 o más al cerrar v1.
+    *(Cambiado el 27/10/2026 por decisión del mantenedor, spec del hito 8,
+    §1.6: 20 tareas en el hito 8, en dos niveles. Con las 10 básicas los dos
+    modelos pasaban 99 de 100: se detectaban regresiones, no mejoras.)*
   - Un 20 % se reserva como conjunto de validación y no se mira al ajustar
     prompts.
   - Solo datos inventados: el repositorio es público.

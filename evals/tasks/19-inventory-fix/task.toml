@@ -1,0 +1,9 @@
+# In English: a bug with two causes, behind failing tests.
+instruction = "The tests of the inventory fail. Fix the code so that they pass, without changing the tests."
+fixture = "inventario"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = "python3 -m unittest -q test_inventory"
+file = "test_inventory.py"
+contains = ["Inventory().remove(\"ghost\", 1)"]

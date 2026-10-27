@@ -1,0 +1,9 @@
+# In English: an exact edit of a text (old_string must match).
+instruction = 'Fix the typo "recieve" in README.md.'
+fixture = "toolkit"
+allow = ["write_file", "edit_file"]
+
+[check]
+file = "README.md"
+contains = ["receive"]
+absent = ["recieve"]

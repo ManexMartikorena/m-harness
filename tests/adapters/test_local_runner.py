@@ -314,3 +314,24 @@ async def test_a_process_with_a_name_that_is_not_ascii(tmp_path: Path) -> None:
         await other.wait()
 
     assert (result.exit_code, result.output) == (0, "hola\n")
+
+
+async def test_commands_at_the_same_time_do_not_kill_each_other(
+    tmp_path: Path,
+) -> None:
+    # The evals run several checks at once (spec hito 8, §1.9). The first
+    # command to end cleaned up as escaped the later ones still running:
+    # they were children of maha it did not know (found 2026-10-27).
+    runner = LocalCommandRunner()
+    first = asyncio.ensure_future(
+        runner.run("sleep 0.2; echo first", cwd=tmp_path, time_limit=10, env=ENV)
+    )
+    await asyncio.sleep(0.1)
+    later = asyncio.ensure_future(
+        runner.run("sleep 0.6; echo later", cwd=tmp_path, time_limit=10, env=ENV)
+    )
+
+    done_first, done_later = await first, await later
+
+    assert (done_first.exit_code, done_first.output) == (0, "first\n")
+    assert (done_later.exit_code, done_later.output) == (0, "later\n")

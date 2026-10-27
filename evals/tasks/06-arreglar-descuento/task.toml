@@ -1,0 +1,9 @@
+# Arreglar un fallo con su test: leer, entender y editar.
+instruction = "El test de descuentos falla. Arregla el código para que pase, sin tocar el test."
+fixture = "tienda"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = "PYTHONPATH=src python3 -m unittest -q tests.test_descuentos"
+file = "tests/test_descuentos.py"
+contains = ["self.assertEqual(aplicar_descuento(100, 20), 80)"]

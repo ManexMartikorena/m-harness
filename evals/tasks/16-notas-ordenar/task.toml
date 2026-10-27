@@ -1,0 +1,12 @@
+# Una opción nueva en un programa de línea de comandos.
+instruction = "Añade a la orden lista de notas.py una opción --ordenar que muestre las notas en orden alfabético, sin distinguir mayúsculas, numeradas desde 1. Sin la opción, la lista sigue como ahora."
+fixture = "notas"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = '''
+rm -f notas.txt notas.json &&
+python3 notas.py nueva pan && python3 notas.py nueva Aceite && python3 notas.py nueva leche &&
+test "$(python3 notas.py lista --ordenar)" = "$(printf '1. Aceite\n2. leche\n3. pan')" &&
+test "$(python3 notas.py lista)" = "$(printf '1. pan\n2. Aceite\n3. leche')"
+'''

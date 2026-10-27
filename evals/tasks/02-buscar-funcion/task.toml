@@ -1,0 +1,6 @@
+# Buscar dónde se define algo: grep o glob.
+instruction = "¿En qué fichero se define la función calcular_iva? Dime su ruta."
+fixture = "tienda"
+
+[check]
+answer_contains = ["iva.py"]

@@ -1,0 +1,15 @@
+# Cambiar dos funciones sin romper lo que ya funcionaba.
+instruction = "Las líneas de un pedido pueden llevar ahora un tercer elemento, la categoría: (cantidad, precio, categoria). Haz que total y total_con_iva acepten las dos formas de línea, y que total_con_iva aplique un 10 % de IVA a las líneas de la categoría 'alimentacion' y el 21 % al resto (también a las de dos elementos)."
+fixture = "tienda"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = '''
+PYTHONPATH=src python3 -m unittest -q tests.test_pedidos && PYTHONPATH=src python3 -c "
+from tienda.pedidos import total, total_con_iva
+assert total([(1, 100.0, 'alimentacion'), (2, 10.0)]) == 120.0
+assert total_con_iva([(1, 100.0)]) == 121.0
+assert total_con_iva([(1, 100.0, 'alimentacion')]) == 110.0
+assert total_con_iva([(2, 50.0, 'alimentacion'), (1, 100.0, 'ropa')]) == 231.0
+"
+'''

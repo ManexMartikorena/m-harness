@@ -1,0 +1,9 @@
+# Crear un fichero nuevo: write_file.
+instruction = "Crea un .gitignore en la raíz del proyecto que ignore __pycache__/ y .venv/."
+fixture = "tienda"
+split = "validation"
+allow = ["write_file", "edit_file"]
+
+[check]
+file = ".gitignore"
+contains = ["__pycache__", ".venv"]

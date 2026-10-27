@@ -1,0 +1,9 @@
+# Encontrar la causa real de varios tests que fallan.
+instruction = "Los tests de la agenda fallan. Encuentra la causa y arréglala sin tocar los tests."
+fixture = "agenda"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = "python3 -m unittest -q test_calendario"
+file = "test_calendario.py"
+contains = ["self.assertFalse(es_bisiesto(1900))"]

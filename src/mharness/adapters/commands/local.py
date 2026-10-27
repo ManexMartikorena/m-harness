@@ -14,6 +14,12 @@ subreaper, so the orphans of a command become its children instead of
 init's, and the ones left when the command ends are killed (decision of the
 maintainer, 2026-10-23: it came forward from the sandbox, now hito 15). Linux only.
 
+One command at a time in the whole process: the cleanup takes every child
+of `maha` it did not know as escaped, and so killed the commands that
+started after it and were still running (found running the evals in
+parallel, 2026-10-27). Running several at once needs another way to tell
+them apart (hito 16).
+
 It runs with your permissions and no sandbox until hito 15: the defence is
 that you read the command before approving it.
 """
@@ -23,6 +29,7 @@ import contextlib
 import ctypes
 import os
 import signal
+import weakref
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -43,11 +50,25 @@ ESCAPED_ROUNDS = 50
 ESCAPED_PAUSE = 0.02
 
 
+# One lock per event loop, shared by every runner: being the subreaper is
+# a matter of the whole process.
+_turns: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
+    weakref.WeakKeyDictionary()
+)
+
+
 class LocalCommandRunner:
     def __init__(self) -> None:
         _become_subreaper()
 
     async def run(
+        self, command: str, *, cwd: Path, time_limit: float, env: Mapping[str, str]
+    ) -> CommandResult:
+        loop = asyncio.get_running_loop()
+        async with _turns.setdefault(loop, asyncio.Lock()):
+            return await self._run(command, cwd=cwd, time_limit=time_limit, env=env)
+
+    async def _run(
         self, command: str, *, cwd: Path, time_limit: float, env: Mapping[str, str]
     ) -> CommandResult:
         # Children that are not this command's: they are left alone.

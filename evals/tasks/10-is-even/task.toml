@@ -1,0 +1,12 @@
+# In English: add a function to an existing file.
+instruction = "Add a function is_even(n) to utils.py that returns True when the integer n is even."
+fixture = "toolkit"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = '''python3 -c "
+from utils import clamp, is_even, is_odd
+assert is_even(4) and is_even(0) and is_even(-2)
+assert not is_even(7) and not is_even(-3)
+assert clamp(12, 0, 10) == 10 and is_odd(3)
+"'''

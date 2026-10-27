@@ -1,0 +1,12 @@
+# Cambiar el formato de los datos, con migración.
+instruction = "Haz que notas.py guarde las notas en notas.json, como una lista JSON de textos, en vez de en notas.txt. Si hay un notas.txt antiguo y todavía no hay notas.json, sus notas se pasan a notas.json la primera vez que se leen."
+fixture = "notas"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = '''
+rm -f notas.txt notas.json && printf 'vieja\n' > notas.txt &&
+python3 notas.py nueva nueva &&
+python3 -c "import json; assert json.load(open('notas.json', encoding='utf-8')) == ['vieja', 'nueva']" &&
+test "$(python3 notas.py lista)" = "$(printf '1. vieja\n2. nueva')"
+'''

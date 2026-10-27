@@ -1,0 +1,6 @@
+# Leer un fichero y responder: read_file.
+instruction = "¿Qué versión del proyecto declara pyproject.toml?"
+fixture = "tienda"
+
+[check]
+answer_contains = ["1.4.2"]
