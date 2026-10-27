@@ -272,3 +272,9 @@ def test_replay_without_turns_costs_nothing() -> None:
     session = replay(HEADER, [])
 
     assert (session.cost, session.uncosted_turns) == (Decimal(0), 0)
+
+
+def test_a_negative_cost_is_not_a_cost() -> None:
+    # A hand-edited file: never "$-0.5000" (final review of hito 7).
+    with pytest.raises(ValidationError):
+        UsageEntry(usage=Usage(), cost=Decimal("-0.5"))

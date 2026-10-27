@@ -1,11 +1,12 @@
 import argparse
 import tomllib
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from mharness.adapters import cli
-from mharness.adapters.cli.text import clean
+from mharness.adapters.cli.text import clean, usd
 
 PYPROJECT = Path(__file__).parents[2] / "pyproject.toml"
 
@@ -85,3 +86,23 @@ def test_fail_escapes_control_characters(capsys: pytest.CaptureFixture[str]) -> 
 )
 def test_clean_escapes_only_unsafe_characters(text: str, shown: str) -> None:
     assert clean(text) == shown
+
+
+# usd(): the cost in the terminal (spec hito 7, §1.5; final review).
+
+
+@pytest.mark.parametrize(
+    ("amount", "shown"),
+    [
+        ("0", "$0"),
+        ("0.0008", "$0.0008"),
+        ("0.00005", "$0.0001"),
+        ("0.0000499", "<$0.0001"),
+        ("0.000000123", "<$0.0001"),
+        ("12.34567", "$12.3457"),
+        # Huge: never an error that hides the line.
+        ("1E+30", "$1000000000000000000000000000000"),
+    ],
+)
+def test_usd(amount: str, shown: str) -> None:
+    assert usd(Decimal(amount)) == shown
