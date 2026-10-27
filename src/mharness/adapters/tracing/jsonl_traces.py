@@ -16,7 +16,8 @@ from pathlib import Path
 from mharness.domain.session import is_session_id
 from mharness.domain.trace import TraceError, TraceExists, TraceRecord
 
-_OPEN = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW
+# Read too: to see whether the file ends in a whole line.
+_OPEN = os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW
 
 
 class JsonlTraceLog:
@@ -25,22 +26,28 @@ class JsonlTraceLog:
     def __init__(self, fd: int, session: str) -> None:
         self._fd: int | None = fd
         self._session = session
+        # Whether the file may end in a cut line: just opened (maha died
+        # writing), or a failed write that could not be cut back.
+        self._unsure = True
 
     async def write(self, record: TraceRecord) -> None:
         fd = self._descriptor()
         line = _line(record)
         try:
+            if self._unsure:
+                _end_line(fd)
+                self._unsure = False
             size = os.fstat(fd).st_size
         except OSError as exc:
             raise _cannot_write(self._session, exc) from None
         try:
-            view = memoryview(line)
-            while view:
-                view = view[os.write(fd, view) :]
+            _write_all(fd, line)
         except OSError as exc:
             # A half line would spoil the next one too.
-            with contextlib.suppress(OSError):
+            try:
                 os.ftruncate(fd, size)
+            except OSError:
+                self._unsure = True
             raise _cannot_write(self._session, exc) from None
 
     async def sync(self) -> None:
@@ -51,8 +58,10 @@ class JsonlTraceLog:
 
     async def close(self) -> None:
         if self._fd is not None:
-            os.close(self._fd)
-            self._fd = None
+            fd, self._fd = self._fd, None
+            # What matters was synced: a failing close loses nothing.
+            with contextlib.suppress(OSError):
+                os.close(fd)
 
     def _descriptor(self) -> int:
         if self._fd is None:
@@ -122,6 +131,20 @@ class JsonlTraceSink:
         if not is_session_id(session):
             raise TraceError(f"no session {session}")
         return self._folder / f"{session}.jsonl"
+
+
+def _end_line(fd: int) -> None:
+    """If the file ends in a cut line, end it: the next record starts on a
+    line of its own, and the reader skips the broken one."""
+    size = os.fstat(fd).st_size
+    if size and os.pread(fd, 1, size - 1) != b"\n":
+        _write_all(fd, b"\n")
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    view = memoryview(data)
+    while view:
+        view = view[os.write(fd, view) :]
 
 
 def _line(record: TraceRecord) -> bytes:
