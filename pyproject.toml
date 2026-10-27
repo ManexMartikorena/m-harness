@@ -39,6 +39,11 @@ dev = [
 [tool.ruff]
 target-version = "py314"
 line-length = 88
+# The repositories the eval tasks work on: code of a made-up user, with
+# its own style and its bugs on purpose (spec hito 8, §1.5).
+extend-exclude = ["evals/fixtures"]
+# Also when pre-commit names the files one by one.
+force-exclude = true
 
 [tool.ruff.lint]
 select = [

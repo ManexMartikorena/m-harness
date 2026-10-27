@@ -103,12 +103,13 @@ class Evaluator:
                 result = await run_once(conversation, task.instruction)
             if result.reason == "error":
                 return _run(task, model, attempt, result, "error", result.error)
-            detail = await self._check(task.check, path, result.text)
+            detail = await self.check(task.check, path, result.text)
         outcome: Outcome = "pass" if detail is None else "fail"
         return _run(task, model, attempt, result, outcome, detail)
 
-    async def _check(self, check: Check, path: Path, answer: str) -> str | None:
-        """Why the run does not pass its check, or None."""
+    async def check(self, check: Check, path: Path, answer: str) -> str | None:
+        """Why a run, with the copy at `path` and its final `answer`, does
+        not pass `check`; None if it passes."""
         if (why := check.answer_fails(answer)) is not None:
             return why
         if check.file is not None:
