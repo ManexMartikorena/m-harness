@@ -55,9 +55,6 @@ from mharness.domain.trace import (
 from mharness.ports.sessions import SessionLog, SessionStore
 from mharness.ports.tracing import TraceLog, TraceSink
 
-# Ids tried for a new session before giving up: each clash takes another.
-ID_ATTEMPTS = 5
-
 # Builds the agent of a conversation: its model and the history it starts
 # with. Which client and tools it has is not this module's business.
 type NewAgent = Callable[[str, Sequence[Message]], Agent]
@@ -274,11 +271,13 @@ class Conversation:
         """The trace of this session. A new session takes an id that no
         session has, and reserves it creating its trace only if there is
         none; another maha cannot create a session with that id in
-        between, because it would need that same trace first."""
+        between, because it would need that same trace first. No cap on
+        the tries (decision of the maintainer, spec hito 7, §12.34): the
+        token is random, and a taken id never costs a record."""
         traces = self._origin.traces
         if self._reserved:
             return await traces.open(self.id)
-        for _ in range(ID_ATTEMPTS):
+        while True:
             if await self._store.exists(self.id):
                 # A session without a trace (of hito 6) has it.
                 self.id = self._new_id()
@@ -290,7 +289,6 @@ class Conversation:
                 continue
             self._reserved = True
             return log
-        raise TraceError(f"no free id for a new trace after {ID_ATTEMPTS} tries")
 
     async def _sync_trace(self) -> None:
         if self._trace is None:
@@ -326,8 +324,8 @@ class Conversation:
     async def _create(self) -> SessionLog:
         """The session's file, with this conversation's id. If a session
         that has no trace (one of hito 6) took it, another id, and the
-        trace goes with it."""
-        for _ in range(ID_ATTEMPTS):
+        trace goes with it. No cap on the tries, as in `_open_trace()`."""
+        while True:
             header = SessionHeader(
                 id=self.id,
                 created_at=self._created,
@@ -344,7 +342,6 @@ class Conversation:
             self._reserved = True
             self._stored = True
             return log
-        raise SessionError(f"no free id for a new session after {ID_ATTEMPTS} tries")
 
     async def _take_another_id(self) -> None:
         """Leave an id that a session already has. The trace written so far
