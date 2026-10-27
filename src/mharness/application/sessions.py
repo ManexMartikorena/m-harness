@@ -17,7 +17,7 @@ from decimal import Decimal
 
 from mharness.application.agent import Agent
 from mharness.application.traces import TraceSummary, summarize
-from mharness.domain.agent_events import AgentEvent, ModelCallFinished
+from mharness.domain.agent_events import AgentEvent, ModelCallFinished, TurnFinished
 from mharness.domain.catalog import add_cost
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
@@ -155,6 +155,8 @@ class Conversation:
         calls = 0
         # None once a call has no price.
         cost: Decimal | None = Decimal(0)
+        # Once the turn finished, what comes after is not about it.
+        finished = False
         try:
             async with aclosing(self._agent.run(text)) as events:
                 async for event in events:
@@ -164,18 +166,21 @@ class Conversation:
                         cost = add_cost(cost, event.cost)
                     if not isinstance(event, TextDelta):
                         await self._record(event)
+                    finished = isinstance(event, TurnFinished)
                     yield event
         except BaseException as exc:
-            # Ctrl+C arrives as CancelledError while waiting, or as
-            # GeneratorExit when the terminal closes the turn.
-            by_user = isinstance(
-                exc, asyncio.CancelledError | GeneratorExit | KeyboardInterrupt
-            )
-            await self._record(
-                TurnInterrupted()
-                if by_user
-                else TurnFailed(kind=type(exc).__name__, message=str(exc))
-            )
+            if not finished:
+                # Cut before it finished: Ctrl+C (CancelledError while
+                # waiting, KeyboardInterrupt), its reader closing it
+                # (GeneratorExit), or a time limit. Anything else failed.
+                cut = isinstance(
+                    exc, asyncio.CancelledError | GeneratorExit | KeyboardInterrupt
+                )
+                await self._record(
+                    TurnInterrupted()
+                    if cut
+                    else TurnFailed(kind=type(exc).__name__, message=str(exc))
+                )
             raise
         finally:
             fresh = self._agent.messages[self._queued :]

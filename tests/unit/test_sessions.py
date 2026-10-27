@@ -12,7 +12,7 @@ import pytest
 from mharness.application.agent import Agent
 from mharness.application.sessions import Conversation, Sessions
 from mharness.application.tools import ToolRegistry
-from mharness.domain.agent_events import AgentEvent, TurnStarted
+from mharness.domain.agent_events import AgentEvent, TurnFinished, TurnStarted
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.catalog import ModelInfo, Prices
 from mharness.domain.errors import ModelUnavailableError
@@ -34,7 +34,7 @@ from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import HANG, FakeModelClient, reply, tool_calls
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
-from tests.fakes.tools import FakeTool
+from tests.fakes.tools import EchoParams, FakeTool
 from tests.fakes.tracing import MemoryTraceSink
 from tests.unit.test_agent import until
 
@@ -982,3 +982,53 @@ async def test_trace_of_an_id_of_another_form_is_an_error() -> None:
 
     with pytest.raises(TraceError, match="no session"):
         await world.sessions.trace("../../etc/passwd", current=conversation)
+
+
+async def test_a_turn_closed_by_its_reader_is_traced_as_interrupted() -> None:
+    # The terminal closes the turn (Ctrl+C while it was printing).
+    world = World(MemorySessionStore(), FakeModelClient([reply("Hola, Ana")]))
+    conversation = await world.sessions.start()
+
+    async with aclosing(conversation.run("Hola")) as events:
+        async for event in events:
+            if isinstance(event, TextDelta):
+                break
+
+    assert world.traces.events(FIRST) == ["turn_started", "interrupted"]
+
+
+async def test_nothing_is_traced_after_the_turn_finished() -> None:
+    # The terminal failed printing the end of a turn that went well: the
+    # trace keeps it as it ended (audit of hito 7, 3).
+    world = World(MemorySessionStore(), FakeModelClient([reply("Hola")]))
+    conversation = await world.sessions.start()
+
+    async def print_turn() -> None:
+        async with aclosing(conversation.run("Hola")) as events:
+            async for event in events:
+                if isinstance(event, TurnFinished):
+                    raise RuntimeError("the terminal broke")
+
+    with pytest.raises(RuntimeError, match="terminal"):
+        await print_turn()
+
+    assert world.traces.events(FIRST)[-1] == "turn_finished"
+
+
+class CtrlC(FakeTool):
+    async def run(self, params: EchoParams) -> str:
+        raise KeyboardInterrupt
+
+
+async def test_keyboard_interrupt_is_traced_as_interrupted() -> None:
+    world = World(
+        MemorySessionStore(),
+        FakeModelClient([tool_calls(echo_call()), reply("No llega")]),
+        tools=[CtrlC()],
+    )
+    conversation = await world.sessions.start()
+
+    with pytest.raises(KeyboardInterrupt):
+        await turn(conversation, "Hola")
+
+    assert world.traces.events(FIRST)[-1] == "interrupted"

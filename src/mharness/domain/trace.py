@@ -74,7 +74,8 @@ class TurnFailed(BaseModel, frozen=True):
 
 
 class TurnInterrupted(BaseModel, frozen=True):
-    """The user cut the turn with Ctrl+C."""
+    """The turn was cut before it finished: Ctrl+C, whoever was reading it
+    stopped, or a time limit."""
 
     type: Literal["interrupted"] = "interrupted"
 
