@@ -12,7 +12,7 @@ import httpx
 import pytest
 import respx
 
-from mharness.adapters.models import OpenAIChatClient
+from mharness.adapters.models import OpenAIChatClient, openai_chat
 from mharness.domain.errors import (
     ModelAuthError,
     ModelError,
@@ -590,3 +590,63 @@ async def test_the_end_carries_the_cost_the_provider_gives(
 
     assert isinstance(end, MessageEnd)
     assert end.cost == Decimal("0.00005325")
+
+
+# A stream that stays open without progress (found running the evals,
+# 2026-10-27: a call hung five minutes after a tool, and the 120 s of
+# silence between bytes never passed, so something kept arriving).
+
+
+async def alive_but_silent(after: bytes) -> AsyncIterator[bytes]:
+    """`after`, then only SSE comments, forever."""
+    yield after
+    while True:
+        await asyncio.sleep(0.01)
+        yield b": keep-alive\n\n"
+
+
+@respx.mock
+async def test_a_stream_with_comments_but_no_data_fails(
+    client: OpenAIChatClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(openai_chat, "STALL_SECONDS", 0.1)
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=alive_but_silent(sse(chunk("Hola"))),
+        )
+    )
+    seen: list[ModelEvent] = []
+
+    async def read_all() -> None:
+        async for event in client.stream(REQUEST):
+            seen.append(event)
+
+    with pytest.raises(ModelUnavailableError, match=r"sent nothing for 0\.1 s"):
+        await read_all()
+
+    assert seen == [TextDelta(text="Hola")]
+
+
+@respx.mock
+async def test_a_slow_stream_that_keeps_sending_data_is_not_cut(
+    client: OpenAIChatClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(openai_chat, "STALL_SECONDS", 0.1)
+
+    async def slow() -> AsyncIterator[bytes]:
+        for _ in range(5):
+            await asyncio.sleep(0.05)
+            yield sse(chunk("a"))
+        yield sse(chunk("", finish_reason="stop"), usage_chunk(), "[DONE]")
+
+    respx.post(ENDPOINT).mock(
+        return_value=httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, content=slow()
+        )
+    )
+
+    got = await events(client)
+
+    assert [e for e in got if isinstance(e, TextDelta)] == [TextDelta(text="a")] * 5

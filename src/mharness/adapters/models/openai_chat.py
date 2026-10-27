@@ -7,6 +7,7 @@ this format: OpenCode Go, OpenCode Zen, OpenRouter, Ollama… It decides nothing
 about the agent.
 """
 
+import asyncio
 import codecs
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
@@ -41,6 +42,10 @@ USER_AGENT = f"maha/{__version__} (+https://github.com/ManexMartikorena/m-harnes
 # `read` is the longest silence between two chunks, not the time of the whole
 # answer: a long answer that keeps arriving is never cut (spec hito 3, §1.8).
 TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0)
+# The longest wait for the next event with data. Comments (`: keep-alive`)
+# reset `read` but are no progress: a stream that only sends them stayed
+# open five minutes in the evals (spec hito 8, §12).
+STALL_SECONDS = 120.0
 
 STOP_REASONS: dict[str, StopReason] = {
     "stop": "end_turn",
@@ -161,7 +166,17 @@ class OpenAIChatClient:
         finish_reason: str | None = None
         usage: _Usage | None = None
         model: str | None = None
-        async for data in parse_sse(_text(response)):
+        datas = parse_sse(_text(response))
+        while True:
+            try:
+                async with asyncio.timeout(STALL_SECONDS):
+                    data = await anext(datas)
+            except StopAsyncIteration:
+                break
+            except TimeoutError:
+                raise ModelUnavailableError(
+                    f"the provider sent nothing for {STALL_SECONDS:g} s"
+                ) from None
             if data == "[DONE]":
                 # Anything after it is not read; leaving closes the connection.
                 break
