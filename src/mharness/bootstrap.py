@@ -7,8 +7,10 @@ application and starts the `maha` command.
 import argparse
 import asyncio
 import io
+import json
 import logging
 import os
+import secrets
 import subprocess
 import sys
 from collections.abc import AsyncIterator, Mapping, Sequence
@@ -41,7 +43,7 @@ from mharness.application.evals import Evaluator, choose
 from mharness.application.sessions import Conversation, Sessions
 from mharness.application.tools import ToolRegistry
 from mharness.domain.environment import command_env
-from mharness.domain.evals import Baseline, EvalError, Task, by_task, stats
+from mharness.domain.evals import Baseline, EvalError, Task, TaskRun, by_task, stats
 from mharness.domain.messages import Message
 from mharness.domain.trace import known_secrets
 from mharness.ports.approval import ApprovalGate
@@ -170,12 +172,10 @@ async def _eval(
     drop = [provider.api_key_env] if provider.api_key_env else []
     env = command_env(os.environ, drop=drop)
     masked = known_secrets(os.environ, also=[settings.api_key])
-    # Each run's sessions and traces, apart from the user's.
-    run_dir = (
-        config.state_dir(os.environ)
-        / "evals"
-        / datetime.now().strftime("%Y%m%d-%H%M%S")
-    )
+    # Each run's sessions and traces, apart from the user's; the suffix
+    # keeps two `maha eval` of the same second apart.
+    stamp = f"{datetime.now():%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
+    run_dir = config.state_dir(os.environ) / "evals" / stamp
 
     @asynccontextmanager
     async def open_run(
@@ -234,6 +234,8 @@ async def _eval(
         on_run=lambda run: print(cli.run_line(run), flush=True),
     )
     regressed = cli.eval_report(runs, baselines, sys.stdout)
+    # Every run in full: the report shows one line of a failure.
+    await asyncio.to_thread(_write_runs, run_dir / "runs.json", runs)
     if options.save:
         commit = _commit()
         for model in models:
@@ -253,6 +255,12 @@ async def _eval(
             print(f"\nsaved: {where}")
     print(f"\nsessions and traces of these runs: {run_dir}")
     return 1 if regressed else 0
+
+
+def _write_runs(path: Path, runs: Sequence[TaskRun]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps([run.model_dump(mode="json") for run in runs], indent=2)
+    path.write_text(text + "\n", encoding="utf-8")
 
 
 def _commit() -> str | None:

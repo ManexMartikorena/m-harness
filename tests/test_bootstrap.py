@@ -643,6 +643,13 @@ def test_eval_saves_a_baseline_and_then_marks_a_regression(
         "  ✗ 01-version · glm-5.3-flash #1 · the answer does not contain '1.4.2'" in out
     )
     assert "  ⚠ 01-version: passed every time in the baseline, now 0/1" in out
+    # Every run in full, to look at a failure: the report shows one line.
+    [second] = sorted((workspace / "state" / "maha" / "evals").iterdir())[1:]
+    [failed] = json.loads((second / "runs.json").read_text())
+    assert (failed["outcome"], failed["detail"]) == (
+        "fail",
+        "the answer does not contain '1.4.2'",
+    )
 
 
 def test_eval_keeps_a_baseline_only_of_the_whole_battery(
