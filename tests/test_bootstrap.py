@@ -644,8 +644,10 @@ def test_eval_saves_a_baseline_and_then_marks_a_regression(
     )
     assert "  ⚠ 01-version: passed every time in the baseline, now 0/1" in out
     # Every run in full, to look at a failure: the report shows one line.
-    [second] = sorted((workspace / "state" / "maha" / "evals").iterdir())[1:]
-    [failed] = json.loads((second / "runs.json").read_text())
+    # By content: two `maha eval` of the same second do not sort by time.
+    folders = (workspace / "state" / "maha" / "evals").iterdir()
+    every = [run for f in folders for run in json.loads((f / "runs.json").read_text())]
+    [failed] = [run for run in every if run["outcome"] == "fail"]
     assert (failed["outcome"], failed["detail"]) == (
         "fail",
         "the answer does not contain '1.4.2'",
