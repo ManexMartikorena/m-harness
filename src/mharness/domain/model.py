@@ -35,6 +35,7 @@ class ModelRequest(BaseModel, frozen=True):
 class Usage(BaseModel, frozen=True):
     """Tokens used by one call, as the provider reports them."""
 
+    # Every prompt token, the cached ones included (as OpenAI counts them).
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
