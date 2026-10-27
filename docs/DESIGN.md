@@ -13,7 +13,10 @@ repite: decide cómo se construye.
 ## 1. Contexto y objetivo
 M-Harness es un agente de terminal, en la línea de Claude Code u OpenCode,
 construido pieza a pieza para que cada parte del arnés (bucle, herramientas,
-permisos, contexto, memoria, subagentes…) se pueda estudiar por separado. Desde
+permisos, contexto, memoria, subagentes…) se pueda estudiar por separado.
+*(Ampliado el 27/10/2026 por decisión del mantenedor, ANALISIS §4:)* y para
+ser, a la vez, un producto profesional para cualquier usuario: lo más
+completo posible en capacidades e intuitivo de usar. Desde
 fuera es un programa de terminal, `maha`: el usuario conversa con el agente, que
 usa herramientas sobre el directorio de trabajo y pide aprobación antes de
 cualquier efecto.
@@ -493,7 +496,9 @@ método se convierte aquí en distribución.
   GitHub Release con sus notas (§12).
 - **Cuando el proyecto esté maduro** (fuera de alcance v1): publicación en PyPI
   con *trusted publishing* desde GitHub Actions y documentación de usuario. Se
-  documentará en `docs/DISTRIBUCION.md`.
+  documentará en `docs/DISTRIBUCION.md`. *(Cambiado el 27/10/2026 por
+  decisión del mantenedor: entra en la versión 1.0, hito 21. El canal (PyPI
+  u otro) y la documentación de usuario se deciden en su spec.)*
 
 ## 14. Orden de construcción (plan de la fase de código)
 Los hitos siguen las dependencias entre piezas, y antes van los riesgos que
@@ -580,6 +585,9 @@ Cada hito es pequeño, deja `maha` funcionando, tiene su spec en
     OpenTelemetry.
 21. **Versión 1.0.** README de uso, índice de la guía, batería de evals completa
     y revisión de los criterios de éxito del análisis. Con él, **`v1.0.0`**.
+    *(Ampliado el 27/10/2026 por decisión del mantenedor:)* también la
+    distribución pública (instalable para cualquier usuario) y su
+    documentación de usuario (§13).
 
 Después, fase de mantenimiento y mejora continua (`AGENTS.md`).
 

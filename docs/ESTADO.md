@@ -582,13 +582,17 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
 subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
 mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** proponer la spec del hito 8 (evals y modo no interactivo,
+1. **Agente:** escribir `docs/COMPARATIVA.md` (capacidades de OpenCode y
+   Claude Code, comprobadas en su documentación, frente a nuestro plan, con
+   una propuesta de hito o versión para cada una) en un PR de docs.
+   **Mantenedor:** decidir qué entra; el agente lo lleva a DESIGN §14.
+2. **Agente:** proponer la spec del hito 8 (evals y modo no interactivo,
    DESIGN §9 y §14) en su propio PR (`docs/spec-hito-8-…`), con sus dudas y
    recomendaciones. Entran en ella los pendientes que el hito 8 resuelve
    (más abajo): reintentos ante 429 y 5xx, límites por turno, `maha -p`,
    `--continue`/`--resume`, y la batería de evals con su línea base.
-2. **Mantenedor:** responder las dudas de esa spec.
-3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+3. **Mantenedor:** responder las dudas de esa spec.
+4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -641,6 +645,12 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   (verificación a mano del hito 2).
 
 **Decisiones del mantenedor para hitos futuros:**
+- **Segundo objetivo: producto profesional** (2026-10-27), lo más completo
+  posible en capacidades e intuitivo (ANALISIS §4). Las 17 piezas son el
+  mínimo; la comparación con OpenCode y Claude Code (`docs/COMPARATIVA.md`)
+  propone qué más entra y cuándo.
+- **Distribución pública en la 1.0** (2026-10-27): instalable para
+  cualquier usuario y con documentación de usuario (DESIGN §13, hito 21).
 - **Hito 19: una TUI completa** (2026-10-27), bonita y fácil para cualquier
   persona, con navegación intuitiva: todos los comandos que vayan llegando,
   descubribles en un menú de comandos (como la paleta `ctrl+p` de OpenCode)

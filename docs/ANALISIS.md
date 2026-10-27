@@ -62,6 +62,15 @@ tres condiciones:
 - cambia de modelo y de proveedor solo con configuración;
 - el repositorio público documenta su construcción de forma profesional.
 
+*(Ampliado el 27/10/2026 por decisión del mantenedor:)* **Segundo objetivo,
+al mismo nivel: un producto profesional para cualquier usuario.** Lo más
+completo posible en capacidades (comandos, opciones, herramientas,
+conectores, memoria…) y, a la vez, intuitivo y fácil de usar (DESIGN §14,
+hito 19: una TUI completa). Se sigue construyendo a mano, pieza a pieza y
+documentado: los dos objetivos van juntos. Qué capacidades entran, y
+cuándo, sale de comparar el plan con OpenCode y Claude Code
+(`docs/COMPARATIVA.md`).
+
 ## 5. Alcance
 El sistema son 17 piezas, que se construyen de forma incremental en el orden
 que fije el diseño, empezando por las herramientas más comunes.
@@ -86,12 +95,17 @@ que fije el diseño, empezando por las herramientas más comunes.
 | 16 | Evals | Batería de tareas con resultado comprobable; comparación con la línea base |
 | 17 | Interfaz de terminal | Programa interactivo, como Claude Code u OpenCode |
 
+Las 17 piezas son el mínimo, no el techo *(27/10/2026)*: la comparación con
+OpenCode y Claude Code puede añadir capacidades a los hitos o a las
+versiones posteriores a la 1.0, siempre por decisión del mantenedor.
+
 **Fuera de alcance:**
 - **Varios usuarios, interfaz de escritorio o web, y despliegue en servidor.**
   Son capas de producto que no aportan al objetivo de entender el arnés.
-- **Distribución pública** (paquete instalable, documentación de usuario). Se
+- ~~**Distribución pública** (paquete instalable, documentación de usuario). Se
   abordará cuando el proyecto esté maduro. Hasta entonces, la estructura del
-  código no lo impide.
+  código no lo impide.~~ *(Cambiado el 27/10/2026 por decisión del
+  mantenedor: entra en la versión 1.0, DESIGN §13.)*
 
 ## 6. Requisitos funcionales
 1. Es un programa interactivo de terminal: el usuario escribe, el agente responde
