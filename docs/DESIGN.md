@@ -14,9 +14,9 @@ repite: decide cómo se construye.
 M-Harness es un agente de terminal, en la línea de Claude Code u OpenCode,
 construido pieza a pieza para que cada parte del arnés (bucle, herramientas,
 permisos, contexto, memoria, subagentes…) se pueda estudiar por separado.
-*(Ampliado el 27/10/2026 por decisión del mantenedor, ANALISIS §4:)* y para
-ser, a la vez, un producto profesional para cualquier usuario: lo más
-completo posible en capacidades e intuitivo de usar. Desde
+*(Ampliado el 27/10/2026 por decisión del mantenedor, ANALISIS §4:)* Además,
+es un producto profesional para cualquier usuario: lo más completo posible
+en capacidades e intuitivo de usar. Desde
 fuera es un programa de terminal, `maha`: el usuario conversa con el agente, que
 usa herramientas sobre el directorio de trabajo y pide aprobación antes de
 cualquier efecto.
@@ -290,7 +290,7 @@ Session(id, created_at, cwd, model, messages, usage)
 | Validación y esquemas | Pydantic v2 | Herramientas, JSON Schema para el modelo, configuración, tipos del dominio |
 | Configuración | TOML (`tomllib`) validado con Pydantic. Usuario: `~/.config/maha/config.toml`; proyecto: `.maha/config.toml` | Biblioteca estándar. La configuración del proyecto prevalece sobre la del usuario, pero solo puede elegir proveedor y modelo: los proveedores (URL y variable de la clave) solo se declaran en la del usuario. *(Corregido el 20/10/2026, spec del hito 2, §1.10: un repositorio ajeno podría desviar la clave del usuario a otro servidor.)* |
 | Credenciales | Variables de entorno (por ejemplo, `OPENCODE_API_KEY`). En desarrollo, `.env` cargado con `uv run --env-file .env` | `maha` nunca lee un `.env` por su cuenta, para no cargar secretos de los proyectos donde trabaja |
-| Interfaz de terminal | Rich (pintar) + prompt_toolkit (entrada) | Fontanería estándar. Textual queda como opción si algún día se quiere una TUI completa. *(Cambiado el 27/10/2026 por decisión del mantenedor: el hito 19 es una TUI completa, con Textual salvo que su spec justifique otra cosa; la interfaz de línea se conserva para el modo no interactivo, `maha < fichero` y los evals.)* |
+| Interfaz de terminal | Rich (pintar) + prompt_toolkit (entrada) | Fontanería estándar. Textual queda como opción si algún día se quiere una TUI completa. *(Cambiado el 27/10/2026 por decisión del mantenedor: el hito 21 es una TUI completa, con Textual salvo que su spec justifique otra cosa; la interfaz de línea se conserva para el modo no interactivo, `maha < fichero` y los evals.)* |
 | Argumentos de línea de comandos | `argparse` | Biblioteca estándar; bastan unas pocas opciones |
 | Persistencia | JSONL (sesiones, trazas) y SQLite (memoria) en `~/.local/share/maha/` | Sin servidor: es un producto local (XDG) |
 | Calidad | ruff (lint y formato), mypy estricto, pytest + pytest-asyncio, respx (simular httpx), import-linter | Stack por defecto + lo propio del proyecto |
@@ -500,7 +500,7 @@ método se convierte aquí en distribución.
   cada hito (`AGENTS.md`).
 - **Cada hito:** tag anotado `v0.N.0`. Su push dispara el workflow que crea la
   GitHub Release con sus notas (§12).
-- **Cuando el proyecto esté maduro** (fuera de alcance v1): publicación en PyPI
+- **Cuando el proyecto esté maduro** ~~(fuera de alcance v1)~~: publicación en PyPI
   con *trusted publishing* desde GitHub Actions y documentación de usuario. Se
   documentará en `docs/DISTRIBUCION.md`. *(Cambiado el 27/10/2026 por
   decisión del mantenedor: entra en la versión 1.0, hito 23. El canal (PyPI
@@ -539,11 +539,14 @@ Cada hito es pequeño, deja `maha` funcionando, tiene su spec en
    comandos `/sessions`, `/resume` y `/model`. Guía: historial.
 7. **Trazas y coste.** `TraceSink` en JSONL, catálogo de modelos, coste por
    llamada y por sesión, comando para ver una traza. Guía: observabilidad.
+
 *(Reordenado y ampliado el 27/10/2026 por decisión del mantenedor, a partir
 de `docs/COMPARATIVA.md`: cada hito recoge lo que OpenCode y Claude Code
 ofrecen en su área, y entran dos hitos nuevos, deshacer (12) y hooks (18).
 Los hitos 12 a 21 de antes pasan a ser los 13 a 17 y 19 a 23; la 1.0, el 23.
-Las propuestas P1 a P15 se citan en cada hito.)*
+Las propuestas P1 a P15 se citan en cada hito; el detalle por áreas de la
+comparativa es la lista de partida de la spec de cada hito, y lo que allí
+queda abierto ("o", "mejora pequeña") se decide en esa spec.)*
 
 8. **Evals y modo no interactivo.** `maha -p "<instrucción>"`, batería inicial
    de 10 tareas, `maha eval` y primera línea base. Guía: cómo se evalúa un

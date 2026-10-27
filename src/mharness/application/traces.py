@@ -2,7 +2,7 @@
 
 One row per turn: when it started, calls to the model, tools, tokens, cost,
 how long it took and how it ended; and the total. For the detail, the file
-itself (or Langfuse, hito 20).
+itself (or Langfuse, hito 22).
 """
 
 from collections.abc import Sequence

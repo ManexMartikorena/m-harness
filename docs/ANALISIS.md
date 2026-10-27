@@ -102,6 +102,8 @@ versiones posteriores a la 1.0, siempre por decisión del mantenedor.
 **Fuera de alcance:**
 - **Varios usuarios, interfaz de escritorio o web, y despliegue en servidor.**
   Son capas de producto que no aportan al objetivo de entender el arnés.
+  *(Precisado el 27/10/2026: fuera de alcance de la versión 1.0; lo que se
+  plantea después de la 1.0, como un servidor con API, está en DESIGN §14.)*
 - ~~**Distribución pública** (paquete instalable, documentación de usuario). Se
   abordará cuando el proyecto esté maduro. Hasta entonces, la estructura del
   código no lo impide.~~ *(Cambiado el 27/10/2026 por decisión del

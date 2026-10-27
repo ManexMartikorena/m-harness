@@ -192,7 +192,7 @@ sería la línea siguiente del fichero, y una `y` aprobaría un comando:
   - *Subreaper:* el proceso que adopta a los descendientes que se quedan
     huérfanos.
 - **Lo que NO protege:** el comando corre con tus permisos y puede hacer
-  `cd ..` o borrar lo que tú puedas borrar. Hasta el sandbox (hito 14),
+  `cd ..` o borrar lo que tú puedas borrar. Hasta el sandbox (hito 15),
   **la única defensa es que leas el comando antes de aprobarlo**.
 
 ### 6. La regex del modelo, aparte
@@ -224,7 +224,7 @@ Qué pregunta una ruta (fuera, secreto, ejecuta código) es una regla pura:
 vive en `domain/paths.py`. Qué variables recibe un comando, en
 `domain/environment.py`. Qué ignora git, en `domain/gitignore.py`. Los
 adaptadores solo resuelven rutas, leen el disco y lanzan procesos. Así
-`run_command`, MCP (hito 16) o el sandbox (hito 14) reutilizan las reglas
+`run_command`, MCP (hito 17) o el sandbox (hito 15) reutilizan las reglas
 sin copiarlas.
 
 ## En la industria
@@ -234,7 +234,7 @@ sin copiarlas.
 | Aprobaciones | Una vez / sesión por ámbito / no, en código | Reglas allow/ask/deny por patrón (Claude Code); modos de aprobación (Codex); *human-in-the-loop* de LangGraph (`interrupt`) | Muchos comandos repetidos; flujos sin persona |
 | Editar ficheros | `old_string` → `new_string` exacto | Diffs o parches (aider, `apply_patch` de Codex); reescribir el fichero entero | Cambios grandes o en muchos ficheros |
 | Escritura atómica | Temporal + `os.replace`; en el sitio si hay enlaces | `atomicwrites` (archivada); editores como Vim (`backupcopy`) | — |
-| Ejecutar comandos | Subproceso local con grupo propio, tiempo límite y salida acotada | Contenedor o sandbox (seatbelt, landlock, bubblewrap, Docker, E2B) | Código no confiable: hito 14 |
+| Ejecutar comandos | Subproceso local con grupo propio, tiempo límite y salida acotada | Contenedor o sandbox (seatbelt, landlock, bubblewrap, Docker, E2B) | Código no confiable: hito 15 |
 | Credenciales | Lista de variables permitidas | Herencia con filtros por patrón; gestores de secretos | Equipos y producción |
 | Sin terminal | Denegar todo | Política automática configurable | Evals y CI (hito 8) |
 | `.gitignore` | Traductor propio | `pathspec`, el crate `ignore` de ripgrep | Siempre que no haya que hacerlo a mano |

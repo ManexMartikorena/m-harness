@@ -153,7 +153,7 @@ class Agent:
                     )
                     return
                 results = []
-                # In order, not in parallel, until hito 15 (spec hito 4, §1.7).
+                # In order, not in parallel, until hito 16 (spec hito 4, §1.7).
                 for call in calls:
                     yield ToolCallProposed(call=call)
                     if denied:

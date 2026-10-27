@@ -20,11 +20,11 @@ $ maha
 maha 0.7.0 · opencode-go · glm-5.3-flash · /help for commands
 > Lee notas.txt con read_file y dime qué pone, en una frase.
   → read_file(path="notas.txt")
-  ✓ 1 line
-En notas.txt pone: "comprar pan".
-  [tokens: 2542 in · 26 out · 1 call · $0.0004 · session $0.0004]
+  ✓ 2 lines
+El archivo notas.txt contiene dos líneas con las palabras "uno" y "dos".
+  [tokens: 2547 in · 53 out (20 reasoning) · 1 call · $0.0003 · session $0.0003]
 > Cambia la segunda línea de notas.txt por 'tres' con edit_file.
-  → edit_file(new_string="tres", old_string="dos", path="notas.txt")
+  → edit_file(path="notas.txt", old_string="dos", new_string="tres")
   ┌ edit notas.txt
   │ @@ -1,2 +1,2 @@
   │  uno
@@ -32,42 +32,45 @@ En notas.txt pone: "comprar pan".
   │ +tres
   └ Allow? [y] yes · [a] always this session · [n] no: y
   ✓ 1 replacement
+Hecho: la segunda línea de notas.txt ahora dice "tres" (el archivo queda con "uno" y "tres").
+  [tokens: 2689 in · 128 out (72 reasoning) · 1 call · $0.0002 · session $0.0004]
+> /trace
+  20261027-151848-9e34 · glm-5.3-flash · 2 turns · 4 model calls · 2 tools
+  1  16:18:48  2 calls · 1 tool · 2547 in · 53 out · $0.0003 · 2.7 s
+  2  16:18:51  2 calls · 1 tool · 2689 in · 128 out · $0.0002 · 2.9 s
+  total: 5236 in · 181 out · $0.0004
+  [trace: ~/.local/share/maha/traces/20261027-151848-9e34.jsonl]
 ```
 
-*(A real session, in Spanish: you talk to `maha` in any language.)*
+*(A real session, in Spanish: you can talk to `maha` in any language. The
+totals are exact; each turn is rounded to four decimals.)*
 
 ## What it does
 
 - **Works on your project.** Reads, lists and searches files (`read_file`,
-  `list_dir`, `glob`, `grep`, honoring `.gitignore`), writes and edits them
-  (`write_file`, `edit_file`, showing the diff) and runs commands
-  (`run_command`).
+  `list_dir`, `glob`, `grep`; `glob` and `grep` skip what `.gitignore`
+  ignores), writes and edits them (`write_file`, `edit_file`, showing the
+  diff) and runs commands (`run_command`).
 - **Nothing changes without your permission.** Every write and every command
   asks first, showing the diff or the command: once, always in this session,
-  or no. Reading outside the working directory or a secret file (`.env`,
-  keys, `.ssh`…) asks too, every time. Commands run with a time limit and
+  or no. "Always" covers every later edit inside the working directory, but
+  only that exact command. Reading outside the working directory or a
+  secret file (`.env`, keys, `.ssh`…) asks too, every time. Commands run with a time limit and
   without your provider key in their environment, but **with your
   permissions: read the command before approving it**.
 - **The model and provider you want.** OpenAI format out of the box, with
   OpenCode Go and Zen already configured, and any compatible server you
   declare. Switch models with `/model` or in the configuration.
-- **Sessions that are never lost.** Every conversation saves itself, turn by
-  turn (also the answer you cut), and can be resumed from any directory.
+- **Sessions that are never lost.** Every conversation is saved
+  automatically, turn by turn (including an answer you interrupt), and can
+  be resumed from any directory.
   When you resume, approvals start from scratch.
 - **You know what you spend.** Every turn shows its tokens and cost, and the
   session its total: the cost the provider reports (with OpenCode Go, what
   counts against your monthly limit) or, if it reports none, the one from a
   catalog with the prices of every OpenCode Go and Zen model.
 - **Everything is recorded, without your secrets.** Each session leaves a
-  trace of what the agent did; `/trace` summarizes it:
-
-  ```
-  > /trace
-    20261027-101620-1163 · glm-5.3-flash · 1 turn · 2 model calls · 1 tool
-    1  11:16:20  2 calls · 1 tool · 2542 in · 26 out · $0.0004 · 5.7 s
-    total: 2542 in · 26 out · $0.0004
-    [trace: ~/.local/share/maha/traces/20261027-101620-1163.jsonl]
-  ```
+  trace of what the agent did; `/trace` summarizes it.
 
 ## Installation
 
@@ -86,7 +89,8 @@ provider = "opencode-go"   # or "opencode-zen"
 model = "glm-5.3-flash"
 ```
 
-and put the key in an environment variable:
+and put the key in an environment variable (you get it in the OpenCode
+console, at https://opencode.ai):
 
 ```
 export OPENCODE_API_KEY=...
@@ -94,6 +98,11 @@ maha
 ```
 
 `maha` works on the directory where you open it.
+
+**Which models work today:** those served with the OpenAI Chat Completions
+format. In OpenCode Go and Zen that is GLM, Kimi, DeepSeek, MiMo, MiniMax M3.1
+Flash and several more; Claude, GPT, Gemini and Grok use other APIs that
+`maha` does not speak yet (Anthropic's comes in milestone 9).
 
 ### Another provider
 
@@ -125,9 +134,12 @@ another server.
 | `/trace [ID]` | What a session did and cost, turn by turn |
 | `/exit` | Quits (also Ctrl+D) |
 
-- While it waits for the answer, a spinner with "maha" turns.
-- **Ctrl+C** in the middle of an answer cuts it and returns to the prompt;
-  the model knows you cut it. At the prompt, it quits.
+- After each answer, the tokens line shows: input and output tokens (and,
+  within the output, the reasoning ones), tool calls, the cost of the turn
+  and of the session. In `/trace`, "calls" are the calls to the model.
+- While it waits for the answer, a spinner with "maha" spins.
+- **Ctrl+C** in the middle of an answer interrupts it and returns to the
+  prompt; the model knows you interrupted it. At the prompt, it quits.
 - **Without a terminal** (`maha < instructions.txt`), everything with an
   effect is denied.
 

@@ -149,7 +149,7 @@ general:
 
 | Pieza | M-Harness | Alternativas | Cuándo se elegirían |
 |---|---|---|---|
-| Trazas | JSONL propio por sesión | OpenTelemetry con las convenciones GenAI; Langfuse, LangSmith, Arize Phoenix, Helicone; OpenLLMetry, OpenLIT | Equipos, varios servicios, paneles: el exportador del hito 20 |
+| Trazas | JSONL propio por sesión | OpenTelemetry con las convenciones GenAI; Langfuse, LangSmith, Arize Phoenix, Helicone; OpenLLMetry, OpenLIT | Equipos, varios servicios, paneles: el exportador del hito 22 |
 | Coste | El del proveedor; si no, tokens × precio en `Decimal` | Solo la tabla de precios (LiteLLM, Langfuse); solo la factura | Proveedores que no dan coste |
 | Catálogo | TOML propio con fecha, y el del usuario | models.dev (datos abiertos de OpenCode); `model_prices_and_context_window.json` de LiteLLM | Muchos proveedores; precios siempre al día |
 | Secretos en logs | Valores conocidos (también escapados) + formas | Filtros de structlog, detect-secrets, el enmascarado de Langfuse | Volúmenes grandes |
@@ -157,5 +157,5 @@ general:
 
 *OpenTelemetry:* un estándar abierto para trazas, métricas y logs. Una
 traza se compone de *spans* (un tramo con nombre, inicio y fin: una llamada
-al modelo, una herramienta). El hito 20 exporta la traza de `maha` a ese
+al modelo, una herramienta). El hito 22 exporta la traza de `maha` a ese
 formato, para verla en Langfuse o Phoenix sin depender de ellos.

@@ -56,8 +56,8 @@ este bucle.
 Monolito modular con arquitectura hexagonal (puertos y adaptadores):
 
 - **`domain`:** tipos y reglas puras (mensajes, herramientas, eventos, coste).
-- **`ports`:** interfaces con el exterior (modelo, herramientas, aprobaciones,
-  sesiones, trazas, catálogo).
+- **`ports`:** interfaces con el exterior (modelo, herramientas, comandos,
+  aprobaciones, sesiones, trazas, catálogo).
 - **`application`:** casos de uso (el bucle, las sesiones, el resumen de
   trazas).
 - **`adapters`:** implementaciones reales (proveedores de modelos, ficheros,

@@ -109,7 +109,9 @@ Desde el hito 8 (DESIGN §9).
 - Código en inglés (nombres, comentarios, docstrings). Documentación, commits y
   PRs en español. Excepción: la cara de producto va en los dos idiomas,
   `README.md` en inglés y `README.es.md` en español, siempre con el mismo
-  contenido *(decisión del mantenedor, 2026-10-27)*.
+  contenido; solo cambian las notas sobre el idioma (por ejemplo, que la
+  documentación del proyecto está en español) *(decisión del mantenedor,
+  2026-10-27)*.
 - Cada fallo encontrado se convierte en test antes de arreglarse.
 - Ningún fallo conocido se deja sin arreglar por decisión del agente: o se
   arregla, o se para y se pregunta al mantenedor, con opciones y

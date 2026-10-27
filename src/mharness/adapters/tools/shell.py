@@ -51,7 +51,7 @@ class RunCommand:
         lines = [f"in {self._root}"]
         if params.timeout != DEFAULT_TIMEOUT:
             lines.append(f"time limit: {params.timeout} s")
-        # No perimeter until the sandbox (hito 14): the question says so.
+        # No perimeter until the sandbox (hito 15): the question says so.
         lines.append("with your permissions: it can change any file you can")
         return ApprovalRequest(
             tool=self.name,

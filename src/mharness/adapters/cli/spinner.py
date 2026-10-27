@@ -1,6 +1,6 @@
 """A spinner with "maha" while the first token arrives (spec hito 3, §1.12).
 
-Drawn with ANSI escape codes by hand, until Rich arrives in hito 19.
+Drawn with ANSI escape codes by hand, until the full interface of hito 21.
 """
 
 import asyncio
