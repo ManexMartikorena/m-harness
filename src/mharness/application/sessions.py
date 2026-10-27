@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from mharness.application.agent import Agent
+from mharness.application.traces import TraceSummary, summarize
 from mharness.domain.agent_events import AgentEvent, ModelCallFinished
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
@@ -343,8 +344,17 @@ class Resumed:
     left_unsaved: str | None = None
 
 
+@dataclass(frozen=True)
+class TraceReport:
+    """What /trace shows: the summary, and where the whole trace is."""
+
+    summary: TraceSummary
+    location: str
+
+
 class Sessions:
-    """Starts, resumes, lists and deletes the sessions of this maha."""
+    """Starts, resumes, lists and deletes the sessions of this maha, and
+    reads their traces."""
 
     def __init__(
         self,
@@ -434,6 +444,18 @@ class Sessions:
             raise SessionError(
                 f"session {session} deleted, but not its trace: {exc}"
             ) from None
+
+    async def trace(self, session: str | None, *, current: Conversation) -> TraceReport:
+        """The trace of `session`, of any directory, or of the current one.
+        It only reads: a session open in another maha has its trace too.
+        Raises `TraceError`."""
+        target = session if session is not None else current.id
+        traces = self._origin.traces
+        # Before its first turn the id is not yet the current one's: another
+        # session may have it.
+        own = session is not None or current.exists
+        records = await traces.read(target) if own else []
+        return TraceReport(summarize(target, records), traces.location(target))
 
     async def _open_last_here(
         self, current: Conversation

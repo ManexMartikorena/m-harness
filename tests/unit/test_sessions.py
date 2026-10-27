@@ -12,7 +12,7 @@ import pytest
 from mharness.application.agent import Agent
 from mharness.application.sessions import Conversation, Sessions
 from mharness.application.tools import ToolRegistry
-from mharness.domain.agent_events import AgentEvent
+from mharness.domain.agent_events import AgentEvent, TurnStarted
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.catalog import ModelInfo, Prices
 from mharness.domain.errors import ModelUnavailableError
@@ -29,7 +29,7 @@ from mharness.domain.session import (
     SessionNotFound,
     UsageEntry,
 )
-from mharness.domain.trace import TraceError, TurnFailed
+from mharness.domain.trace import TraceError, TraceRecord, TurnFailed
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import HANG, FakeModelClient, reply, tool_calls
@@ -926,3 +926,59 @@ async def test_a_secret_that_breaks_a_record_does_not_cut_the_turn() -> None:
     warning = conversation.trace_warning()
     assert warning is not None
     assert "cannot trace" in warning
+
+
+# /trace (spec hito 7, §1.9 and §4.6.2).
+
+
+async def test_trace_without_id_is_that_of_the_current_session() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([reply("Uno"), reply("Dos")]))
+    conversation = await world.sessions.start()
+    await turn(conversation, "A")
+    await turn(conversation, "B")
+
+    report = await world.sessions.trace(None, current=conversation)
+
+    assert report.summary.session == FIRST
+    assert len(report.summary.turns) == 2
+    assert report.location == f"/traces/{FIRST}.jsonl"
+
+
+async def test_trace_of_another_session_needs_no_lock() -> None:
+    store = MemorySessionStore()
+    traces = MemoryTraceSink()
+    world = World(store, FakeModelClient([reply("Uno")]), traces=traces)
+    first = await world.sessions.start()
+    await turn(first, "A")
+    # Still open in this maha: /trace only reads.
+    other = World(store, FakeModelClient([]), traces=traces, tokens=["b01c"])
+    current = await other.sessions.start()
+
+    report = await other.sessions.trace(FIRST, current=current)
+
+    assert len(report.summary.turns) == 1
+
+
+async def test_trace_before_the_first_turn_has_no_turns() -> None:
+    # Not even if another session has the id the new one will try first.
+    traces = MemoryTraceSink()
+    await traces.open(FIRST, new=True)
+    traces.traces[FIRST].append(
+        TraceRecord(
+            at=NOW, session=FIRST, event=TurnStarted(text="Ajena")
+        ).model_dump_json()
+    )
+    world = World(MemorySessionStore(), FakeModelClient([]), traces=traces)
+    conversation = await world.sessions.start()
+
+    report = await world.sessions.trace(None, current=conversation)
+
+    assert report.summary.turns == []
+
+
+async def test_trace_of_an_id_of_another_form_is_an_error() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]))
+    conversation = await world.sessions.start()
+
+    with pytest.raises(TraceError, match="no session"):
+        await world.sessions.trace("../../etc/passwd", current=conversation)
