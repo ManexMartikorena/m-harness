@@ -3,7 +3,7 @@
 Última actualización: 2026-10-27. **Hito 6 cerrado (`v0.6.0`). Hito 7
 (trazas y coste) en curso: spec APROBADA e integrada (PR #61); PR 1 (coste
 en el dominio, #64) y PR 2 (catálogo, #65) integrados. Arreglo de lecturas
-no UTF-8 integrado (#66), sin publicar. Cero deuda conocida.**
+no UTF-8 publicado en `v0.6.1`. Cero deuda conocida.**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
@@ -13,8 +13,8 @@ Lo primero al abrir: "Siguiente paso", más abajo.
 PRs 1 y 2 de 5 integrados.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.6.0` — Sesiones e historial** (2026-10-26):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.6.0
+- Última versión: **`v0.6.1` — Lecturas que no son UTF-8** (2026-10-27):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.6.1
 - Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
@@ -22,7 +22,7 @@ PRs 1 y 2 de 5 integrados.**
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
 
-- Nada pendiente. `v0.6.0` salió sin pasos fuera de lo normal: ninguna
+- Nada pendiente. `v0.6.1` sale sin pasos fuera de lo normal. `v0.6.0` salió sin pasos fuera de lo normal: ninguna
   variable nueva. Desde esta versión `maha` escribe en
   `~/.local/share/maha/sessions/` (`PUESTA_EN_MARCHA` §3).
 
@@ -30,7 +30,10 @@ un paso fuera de lo normal.
 
 Lo más reciente primero.
 
-- **Arreglo de lecturas no UTF-8, 2026-10-27** (PR #66, sin publicar): un
+- **`v0.6.1`, 2026-10-27:** el arreglo de lecturas no UTF-8, publicado
+  por decisión del mantenedor antes de cerrar el hito 7. `main` ya llevaba
+  los PRs 1 y 2 del hito 7, sin cablear: no cambian lo que hace `maha`.
+- **Arreglo de lecturas no UTF-8, 2026-10-27** (PR #66): un
   `config.toml` que no es UTF-8 tiraba `maha` con una traza; un proceso de
   la máquina con nombre no ASCII (`ñandú`) hacía fallar todos los
   `run_command` (`/proc/<pid>/stat` leído como ASCII). Los dos, con su test.
@@ -548,11 +551,7 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
 subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
 mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Mantenedor:** decidir si se publica ya `v0.6.1` con el arreglo del
-   PR #66 o si sale con `v0.7.0`. El agente recomienda publicarlo: el fallo
-   de `/proc` rompe todos los comandos en una máquina con un proceso de
-   nombre no ASCII. `main` ya lleva los PRs 1 y 2 del hito 7, pero sin
-   cablear: no cambian nada de lo que hace `maha`.
+1. **Agente:** comprobar que la release `v0.6.1` existe en GitHub.
 2. **Agente:** PR 3 de la spec §6 (`feature/hito-7-eventos`): `TurnStarted`,
    `ModelCallFinished.cost`, `TurnFinished.cost`, `UsageEntry.cost` y el
    coste de la sesión.
@@ -583,7 +582,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.6.0`).
+   `maha 0.6.1`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -724,7 +723,8 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 4. Tool calling y bucle agéntico. `v0.4.0` (2026-10-21)
 - [x] 5. Permisos y herramientas con efecto. `v0.5.0` (2026-10-23) y los
   arreglos `v0.5.1` (2026-10-23) y `v0.5.2` (2026-10-26)
-- [x] 6. Sesiones e historial. `v0.6.0` (2026-10-26)
+- [x] 6. Sesiones e historial. `v0.6.0` (2026-10-26) y el arreglo `v0.6.1`
+  (2026-10-27)
 - [ ] 7. Trazas y coste. `v0.7.0`
 - [ ] 8. Evals y modo no interactivo. `v0.8.0`
 - [ ] 9. Adaptador de Anthropic. `v0.9.0`
