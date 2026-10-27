@@ -1,4 +1,5 @@
-Estado: PROPUESTA (2026-10-26)
+Estado: PROPUESTA (2026-10-26) → APROBADA (2026-10-27, por el humano, sin
+cambios)
 
 # Spec — Hito 7: Trazas y coste
 
@@ -494,7 +495,23 @@ costó":
 
 ## 11. Decisiones
 
-Dudas para el mantenedor, con la recomendación del agente:
+Del humano (2026-10-27): **acepta las cinco recomendaciones**, "si son las
+decisiones más pro para el producto final". El agente las repasó con ese
+criterio antes de aprobar:
+
+1. Catálogo propio con fecha y otro del usuario que manda: el producto no
+   depende de la red ni de una fuente ajena para decir lo que cuesta.
+   Refrescar desde models.dev a una caché, a petición, queda como mejora
+   posible si mantener los precios a mano pesa.
+2. Coste en dólares: en OpenCode Go es la unidad del límite mensual, así
+   que es lo que la persona necesita saber.
+3. Sin `AgentError`: las excepciones son lo idiomático en Python; la traza
+   las apunta igual, y el exportador del hito 20 las lleva al span.
+4. Reintentos en el hito 8: imprescindibles en el producto final, pero son
+   del adaptador y de los límites por turno, no de trazas y coste.
+5. `/trace` dentro de `maha`, y `maha trace ID` con las opciones del hito 8.
+
+Dudas que se plantearon al mantenedor (registro):
 
 1. **El catálogo** (§1.3). Propuesta: un TOML propio en el paquete, con
    fecha, y otro opcional del usuario que manda. Alternativa: descargar
