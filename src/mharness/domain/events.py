@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from mharness.domain.model import StopReason, Usage
+from mharness.domain.money import Usd
 
 
 class TextDelta(BaseModel, frozen=True):
@@ -42,6 +43,8 @@ class MessageEnd(BaseModel, frozen=True):
     usage: Usage
     # The model that answered, as the provider names it.
     model: str
+    # What the call cost, as the provider says; None if it does not say.
+    cost: Usd | None = None
 
 
 type ModelEvent = TextDelta | ToolCallDelta | MessageEnd

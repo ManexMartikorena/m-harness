@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from decimal import Decimal
 
 import pytest
 
@@ -31,11 +32,12 @@ async def test_joins_the_deltas_in_one_block() -> None:
     )
 
 
-async def test_takes_stop_reason_usage_and_model_from_the_end() -> None:
+async def test_takes_stop_reason_usage_model_and_cost_from_the_end() -> None:
     end = MessageEnd(
         stop_reason="max_tokens",
         usage=Usage(input_tokens=5, output_tokens=7),
         model="glm-5.3-flash-0401",
+        cost=Decimal("0.00006225"),
     )
 
     response = await collect(events(TextDelta(text="Hola"), end))
@@ -45,7 +47,14 @@ async def test_takes_stop_reason_usage_and_model_from_the_end() -> None:
         stop_reason="max_tokens",
         usage=Usage(input_tokens=5, output_tokens=7),
         model="glm-5.3-flash-0401",
+        cost=Decimal("0.00006225"),
     )
+
+
+async def test_a_provider_that_says_no_cost_leaves_it_unknown() -> None:
+    response = await collect(events(TextDelta(text="Hola"), END))
+
+    assert response.cost is None
 
 
 async def test_without_text_the_message_has_no_blocks() -> None:

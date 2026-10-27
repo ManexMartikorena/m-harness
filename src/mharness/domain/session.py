@@ -13,9 +13,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from mharness.domain.catalog import Usd
 from mharness.domain.messages import Message, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
+from mharness.domain.money import Usd
 
 # Date and time in UTC, and 4 random hex digits: short to type, sorted by
 # date, and two sessions in the same second do not clash.
