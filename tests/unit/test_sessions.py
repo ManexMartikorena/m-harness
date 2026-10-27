@@ -29,11 +29,13 @@ from mharness.domain.session import (
     SessionNotFound,
     UsageEntry,
 )
+from mharness.domain.trace import TraceError, TurnFailed
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import HANG, FakeModelClient, reply, tool_calls
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
 from tests.fakes.tools import FakeTool
+from tests.fakes.tracing import MemoryTraceSink
 from tests.unit.test_agent import until
 
 CWD = "/home/ana/proyecto"
@@ -64,8 +66,11 @@ class World:
         gate: FakeApproval | None = None,
         tokens: Sequence[str] = ("3fa2", "b01c", "c0de"),
         catalog: MemoryCatalog | None = None,
+        traces: MemoryTraceSink | None = None,
+        secrets: Sequence[str] = (),
     ) -> None:
         self.gate = gate or FakeApproval()
+        self.traces = traces or MemoryTraceSink()
         self.built: list[tuple[str, tuple[Message, ...]]] = []
         registry = ToolRegistry(list(tools) or [FakeTool()])
         left = list(tokens)
@@ -89,6 +94,8 @@ class World:
             provider=provider,
             model=model,
             version="0.6.0",
+            traces=self.traces,
+            masked=secrets,
             now=lambda: NOW,
             token=lambda: left.pop(0),
         )
@@ -112,7 +119,8 @@ async def test_without_turns_no_session_is_created() -> None:
 
     await conversation.close()
 
-    assert conversation.id is None
+    # It has an id from the start (spec hito 7, §1.7), but nothing on disk.
+    assert not conversation.exists
     assert store.sessions == {}
 
 
@@ -596,7 +604,13 @@ async def test_a_failure_after_opening_lets_the_session_go() -> None:
         raise RuntimeError("no agent")
 
     sessions = Sessions(
-        store, broken, cwd=CWD, provider="opencode-go", model="m", version="0.6.0"
+        store,
+        broken,
+        cwd=CWD,
+        provider="opencode-go",
+        model="m",
+        version="0.6.0",
+        traces=MemoryTraceSink(),
     )
     with pytest.raises(RuntimeError):
         await sessions.resume(session_id, current=current)
@@ -690,3 +704,225 @@ async def test_a_resumed_session_goes_on_from_its_saved_cost() -> None:
     await turn(resumed.conversation, "B")
 
     assert resumed.conversation.cost == Decimal(2)
+
+
+# Traces (spec hito 7, §1.7, §1.8 and §4.5).
+
+SECRET = "sk-inventada-0000000000000000"
+
+
+def echo_call(text: str = "x") -> ToolCallBlock:
+    return ToolCallBlock(id="c1", name="echo", arguments=f'{{"text": "{text}"}}')
+
+
+async def test_the_id_is_there_before_the_first_turn() -> None:
+    conversation = await World(
+        MemorySessionStore(), FakeModelClient([])
+    ).sessions.start()
+
+    assert conversation.id == FIRST
+
+
+async def test_each_event_but_the_text_is_traced_with_its_session() -> None:
+    world = World(
+        MemorySessionStore(),
+        FakeModelClient([tool_calls(echo_call()), reply("Hecho.")]),
+    )
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "Hola")
+
+    assert world.traces.events(FIRST) == [
+        "turn_started",
+        "model_call_finished",
+        "tool_call_proposed",
+        "tool_finished",
+        "model_call_finished",
+        "turn_finished",
+    ]
+    records = await world.traces.read(FIRST)
+    assert {(r.session, r.at) for r in records} == {(FIRST, NOW)}
+    # Once per turn: what the next turn needs is on the disk.
+    assert world.traces.synced == 1
+
+
+async def test_the_session_and_its_trace_have_the_same_id() -> None:
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Hola")]))
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "Hola")
+
+    assert list(store.sessions) == list(world.traces.traces) == [FIRST]
+
+
+async def test_a_failed_call_to_the_model_is_traced_as_an_error() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([ModelUnavailableError("503")]))
+    conversation = await world.sessions.start()
+
+    with pytest.raises(ModelUnavailableError):
+        await turn(conversation, "Hola")
+
+    records = await world.traces.read(FIRST)
+    assert records[-1].event == TurnFailed(kind="ModelUnavailableError", message="503")
+
+
+async def test_ctrl_c_is_traced_as_interrupted() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([[TextDelta(text="Me"), HANG]]))
+    conversation = await world.sessions.start()
+    seen: list[AgentEvent] = []
+
+    async def consume() -> None:
+        async for event in conversation.run("Cuéntame"):
+            seen.append(event)
+
+    task = asyncio.ensure_future(consume())
+    await until(lambda: TextDelta(text="Me") in seen)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert world.traces.events(FIRST) == ["turn_started", "interrupted"]
+
+
+async def test_secrets_are_masked_in_the_trace_but_not_in_the_session() -> None:
+    store = MemorySessionStore()
+    world = World(
+        store,
+        FakeModelClient([tool_calls(echo_call(SECRET)), reply("Hecho.")]),
+        secrets=[SECRET],
+    )
+    conversation = await world.sessions.start()
+
+    await turn(conversation, f"Usa {SECRET}")
+
+    trace = "\n".join(world.traces.traces[FIRST])
+    assert SECRET not in trace
+    assert "[redacted]" in trace
+    saved = "".join(entry.model_dump_json() for entry in entries(store))
+    assert SECRET in saved
+
+
+async def test_a_trace_that_fails_does_not_cut_the_turn_and_warns_once() -> None:
+    store = MemorySessionStore()
+    traces = MemoryTraceSink()
+    traces.failures = 3
+    world = World(store, FakeModelClient([reply("Uno"), reply("Dos")]), traces=traces)
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "A")
+    warning = conversation.trace_warning()
+    await turn(conversation, "B")
+
+    assert warning is not None
+    assert "No space left on device" in warning
+    assert conversation.trace_warning() is None
+    # The session is saved whole.
+    assert [type(e).__name__ for e in entries(store)].count("UsageEntry") == 2
+
+
+async def test_a_resumed_session_goes_on_in_its_trace() -> None:
+    store = MemorySessionStore()
+    traces = MemoryTraceSink()
+    fake = FakeModelClient([reply("Uno"), reply("Dos")])
+    world = World(store, fake, traces=traces, tokens=["3fa2", "b01c", "c0de"])
+    first = await world.sessions.start()
+    await turn(first, "A")
+    await first.close()
+    other = await world.sessions.start()
+
+    resumed = await world.sessions.resume(FIRST, current=other)
+    await turn(resumed.conversation, "B")
+
+    assert traces.events(FIRST).count("turn_started") == 2
+
+
+async def test_delete_removes_the_session_and_its_trace() -> None:
+    store = MemorySessionStore()
+    traces = MemoryTraceSink()
+    world = World(store, FakeModelClient([reply("Uno")]), traces=traces)
+    first = await world.sessions.start()
+    await turn(first, "A")
+    await first.close()
+    current = await world.sessions.start()
+
+    await world.sessions.delete(FIRST, current=current)
+
+    assert FIRST not in store.sessions
+    assert FIRST not in traces.traces
+
+
+class StuckTraces(MemoryTraceSink):
+    async def delete(self, session: str) -> None:
+        raise TraceError(f"cannot delete the trace of {session}: Permission denied")
+
+
+async def test_a_trace_that_cannot_be_deleted_is_said() -> None:
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Uno")]), traces=StuckTraces())
+    first = await world.sessions.start()
+    await turn(first, "A")
+    await first.close()
+    current = await world.sessions.start()
+
+    with pytest.raises(SessionError, match="deleted, but not its trace"):
+        await world.sessions.delete(FIRST, current=current)
+    assert FIRST not in store.sessions
+
+
+async def test_an_id_whose_trace_exists_is_not_taken() -> None:
+    # Another maha started in the same second with the same token.
+    traces = MemoryTraceSink()
+    await traces.open(FIRST, new=True)
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Uno")]), traces=traces)
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "A")
+
+    second = "20261026-091502-b01c"
+    assert conversation.id == second
+    assert list(store.sessions) == [second]
+    assert traces.events(FIRST) == []
+    assert traces.events(second)[0] == "turn_started"
+
+
+async def test_an_id_whose_session_exists_moves_the_trace_to_a_new_one() -> None:
+    # A session without trace (of hito 6) already has the id.
+    store = MemorySessionStore()
+    old = World(store, FakeModelClient([reply("Viejo")]))
+    first = await old.sessions.start()
+    await turn(first, "A")
+    await first.close()
+    traces = MemoryTraceSink()
+    world = World(store, FakeModelClient([reply("Nuevo")]), traces=traces)
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "B")
+
+    second = "20261026-091502-b01c"
+    assert conversation.id == second
+    assert entries(store, second)[0] == MessageEntry(message=user("B"))
+    assert FIRST not in traces.traces
+    records = await traces.read(second)
+    assert records[0].event.type == "turn_started"
+    assert {r.session for r in records} == {second}
+
+
+async def test_a_secret_that_breaks_a_record_does_not_cut_the_turn() -> None:
+    # "tool_call" is also the `type` of a block: masked, the record is no
+    # longer valid. The record is lost, never the turn.
+    store = MemorySessionStore()
+    world = World(
+        store,
+        FakeModelClient([tool_calls(echo_call()), reply("Hecho.")]),
+        secrets=["tool_call"],
+    )
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "Hola")
+
+    assert entries(store)[-1] == UsageEntry(usage=Usage())
+    warning = conversation.trace_warning()
+    assert warning is not None
+    assert "cannot trace" in warning

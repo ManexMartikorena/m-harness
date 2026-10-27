@@ -33,6 +33,7 @@ from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply, tool_call
 from tests.fakes.sessions import MemorySessionStore
 from tests.fakes.terminal import ScriptedInput
 from tests.fakes.tools import FakeTool
+from tests.fakes.tracing import MemoryTraceSink
 
 HEADER = (
     f"maha {version('m-harness')} · opencode-go · glm-5.3-flash · /help for commands"
@@ -48,6 +49,7 @@ def solo(agent: Agent) -> Sessions:
         provider="opencode-go",
         model=agent.model,
         version="0.6.0",
+        traces=MemoryTraceSink(),
     )
 
 

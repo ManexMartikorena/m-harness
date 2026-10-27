@@ -385,6 +385,36 @@ def test_sessions_go_to_the_data_home_of_the_test(
     assert len(list((data_home / "maha" / "sessions").glob("*.jsonl"))) == 1
 
 
+def test_a_turn_leaves_a_trace_with_its_cost_and_without_the_key(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    data_home: Path,
+) -> None:
+    # Spec hito 7, §4.8: glm-5.3-flash on Go costs 0.15 and 0.50 per million.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(
+            return_value=sse_response(streamed(f"Tu clave es {KEY}", 1000, 100))
+        )
+        stdin(f"Repite {KEY}\n/exit\n")
+
+        assert main([]) == 0
+
+    [session] = (data_home / "maha" / "sessions").glob("*.jsonl")
+    trace = data_home / "maha" / "traces" / session.name
+    text = trace.read_text(encoding="utf-8")
+    events = [json.loads(line)["event"] for line in text.splitlines()]
+    assert [event["type"] for event in events] == [
+        "turn_started",
+        "model_call_finished",
+        "turn_finished",
+    ]
+    # 1000 * 0.15 + 100 * 0.50, per million.
+    assert events[1]["cost"] == "0.0002"
+    assert KEY not in text
+    assert "[redacted]" in text
+
+
 @respx.mock
 def test_a_second_maha_resumes_the_first_one(
     workspace: Path,

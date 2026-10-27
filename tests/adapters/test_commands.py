@@ -27,6 +27,7 @@ from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FakeModelClient, reply
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
 from tests.fakes.terminal import ScriptedInput
+from tests.fakes.tracing import MemoryTraceSink
 
 
 @pytest.mark.parametrize(
@@ -90,6 +91,7 @@ class Maha:
         tokens: tuple[str, ...] = ("3fa2", "b01c", "c0de", "d00d"),
     ) -> None:
         self.fake = FakeModelClient(list(replies))
+        self.traces = MemoryTraceSink()
         left = list(tokens)
         self.sessions = Sessions(
             store,
@@ -106,6 +108,7 @@ class Maha:
             provider="opencode-go",
             model="glm-5.3-flash",
             version="0.6.0",
+            traces=self.traces,
             now=lambda: NOW,
             token=lambda: left.pop(0),
         )
@@ -420,7 +423,8 @@ async def test_leaving_a_conversation_never_saved_says_so() -> None:
     store = Full()
     store.sessions.update(good.sessions)
 
-    _, _, err = await Maha(store, [reply("Ahora.")]).run(
+    # Another token, another id.
+    _, _, err = await Maha(store, [reply("Ahora.")], tokens=("b01c",)).run(
         "ahora", "/resume 20261026-091502-3fa2", "/exit"
     )
 
