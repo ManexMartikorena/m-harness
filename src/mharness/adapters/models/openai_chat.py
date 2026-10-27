@@ -339,10 +339,15 @@ class _PromptTokensDetails(BaseModel):
     cached_tokens: int | None = None
 
 
+class _CompletionTokensDetails(BaseModel):
+    reasoning_tokens: int | None = None
+
+
 class _Usage(BaseModel):
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     prompt_tokens_details: _PromptTokensDetails | None = None
+    completion_tokens_details: _CompletionTokensDetails | None = None
 
 
 class _Completion(BaseModel):
@@ -418,9 +423,11 @@ async def _text(response: httpx.Response) -> AsyncIterator[str]:
 def _usage(usage: _Usage | None) -> Usage:
     if usage is None:
         return Usage()
-    details = usage.prompt_tokens_details
+    prompt = usage.prompt_tokens_details
+    completion = usage.completion_tokens_details
     return Usage(
         input_tokens=usage.prompt_tokens or 0,
         output_tokens=usage.completion_tokens or 0,
-        cache_read_tokens=(details.cached_tokens or 0) if details else 0,
+        cache_read_tokens=(prompt.cached_tokens or 0) if prompt else 0,
+        reasoning_tokens=(completion.reasoning_tokens or 0) if completion else 0,
     )

@@ -39,6 +39,8 @@ class Usage(BaseModel, frozen=True):
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    # Already inside output_tokens: they are billed as output.
+    reasoning_tokens: int = 0
 
     def __add__(self, more: Usage) -> Usage:
         """The tokens of both calls, field by field."""
@@ -47,6 +49,7 @@ class Usage(BaseModel, frozen=True):
             output_tokens=self.output_tokens + more.output_tokens,
             cache_read_tokens=self.cache_read_tokens + more.cache_read_tokens,
             cache_write_tokens=self.cache_write_tokens + more.cache_write_tokens,
+            reasoning_tokens=self.reasoning_tokens + more.reasoning_tokens,
         )
 
 

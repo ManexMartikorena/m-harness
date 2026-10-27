@@ -237,6 +237,31 @@ async def test_usage_without_cached_tokens(client: OpenAIChatClient) -> None:
 
 
 @respx.mock
+async def test_usage_with_reasoning_tokens(client: OpenAIChatClient) -> None:
+    # They come inside completion_tokens, and stay inside output_tokens.
+    body = fixture("completion.json")
+    body["usage"]["completion_tokens_details"] = {"reasoning_tokens": 3}
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.usage == Usage(
+        input_tokens=31, output_tokens=5, cache_read_tokens=12, reasoning_tokens=3
+    )
+
+
+@respx.mock
+async def test_usage_with_null_reasoning_tokens(client: OpenAIChatClient) -> None:
+    body = fixture("completion.json")
+    body["usage"]["completion_tokens_details"] = {"reasoning_tokens": None}
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.usage.reasoning_tokens == 0
+
+
+@respx.mock
 async def test_usage_with_null_counters(client: OpenAIChatClient) -> None:
     body = fixture("completion.json")
     body["usage"] = {
