@@ -265,9 +265,12 @@ class Agent:
             raise
 
     def _cost(self, response: ModelResponse) -> Decimal | None:
-        """What one call cost: at the prices of the model that answered, or,
-        if the catalog has none for that name, of the one asked (a provider
-        may name it its own way)."""
+        """What one call cost: as the provider says, if it does (exact also
+        with prices by the hour or by tier); if not, at the catalog's prices
+        of the model that answered, or, if it has none for that name, of the
+        one asked (a provider may name it its own way)."""
+        if response.cost is not None:
+            return response.cost
         for model in (response.model, self.model):
             info = self._catalog.get(self._provider, model)
             if info is not None and info.prices is not None:
