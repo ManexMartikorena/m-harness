@@ -34,6 +34,8 @@ def eval_report(
         mine = [run for run in runs if run.model == model]
         tasks = by_task(mine)
         width = max([len("task"), *(len(task) for task in tasks)]) + 3
+        # Wide enough for the total, "48/50" or more.
+        passed = max(len("pass"), len(_passed(stats(mine)))) + 2
         print(file=out)
         if baseline is None:
             print(f"{model} · no baseline yet", file=out)
@@ -45,14 +47,14 @@ def eval_report(
                 file=out,
             )
         print(
-            f"  {'task':<{width}}{'pass':<6}{'steps':<7}{'tool errors':<13}"
+            f"  {'task':<{width}}{'pass':<{passed}}{'steps':<7}{'tool errors':<13}"
             f"{'tokens':<8}{'cost':<9}time",
             file=out,
         )
         for task, row in tasks.items():
             cost = "?" if row.cost is None else usd(row.cost)
             print(
-                f"  {task:<{width}}{_passed(row):<6}{row.steps:<7.1f}"
+                f"  {task:<{width}}{_passed(row):<{passed}}{row.steps:<7.1f}"
                 f"{row.tool_errors:<13.1f}{round(row.tokens):<8}{cost:<9}"
                 f"{row.duration:.1f} s",
                 file=out,
@@ -61,8 +63,8 @@ def eval_report(
         if len(splits) > 1:
             for split in ("train", "validation"):
                 part = stats([run for run in mine if run.split == split])
-                _total(split, part, None, width, out)
-        _total("total", stats(mine), _spent(mine), width, out)
+                _total(split, part, None, width, passed, out)
+        _total("total", stats(mine), _spent(mine), width, passed, out)
         errors = sum(run.outcome == "error" for run in mine)
         if errors:
             print(
@@ -82,10 +84,15 @@ def _passed(row: Stats) -> str:
 
 
 def _total(
-    label: str, row: Stats, spent: Decimal | None, width: int, out: TextIO
+    label: str,
+    row: Stats,
+    spent: Decimal | None,
+    width: int,
+    passed: int,
+    out: TextIO,
 ) -> None:
     rate = "—" if row.success is None else f"{row.success:.0%}"
-    line = f"  {label:<{width}}{_passed(row):<6}{rate:<7}"
+    line = f"  {label:<{width}}{_passed(row):<{passed}}{rate:<7}"
     if label == "total":
         line += "cost unknown" if spent is None else f"{usd(spent)} in all"
     print(line.rstrip(), file=out)

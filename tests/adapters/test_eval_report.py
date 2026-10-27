@@ -77,6 +77,15 @@ def test_the_report_of_a_model_without_baseline() -> None:
     )
 
 
+def test_the_pass_column_fits_the_total() -> None:
+    out = io.StringIO()
+
+    eval_report([run(attempt=n) for n in range(1, 11)], {"glm-5.3-flash": None}, out)
+
+    assert "  01-version   10/10  2.0" in out.getvalue()
+    assert "  total        10/10  100%" in out.getvalue()
+
+
 def test_the_report_marks_the_regressions_against_the_baseline() -> None:
     before = by_task([run()] * 5)
     baseline = Baseline(

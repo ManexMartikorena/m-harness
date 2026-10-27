@@ -220,7 +220,8 @@ async def _eval(
 
     print(
         f"evals: {len(tasks)} tasks · {', '.join(models)} · "
-        f"{options.repeat} runs each · {options.jobs} at once",
+        f"{options.repeat} run{'' if options.repeat == 1 else 's'} each · "
+        f"{options.jobs} at once",
         flush=True,
     )
     evaluator = Evaluator(suite, open_run, LocalCommandRunner(), env)
