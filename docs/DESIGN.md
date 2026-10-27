@@ -358,8 +358,8 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   user-agent y un identificador de sesión estable, como pide OpenCode Go a los
   clientes de terceros.
 - **Herramientas:** tipadas con Pydantic, con mínimo privilegio. Crecen por
-  hitos: solo lectura (hito 4) → efecto (5) → memoria (13) → subagentes (15) →
-  MCP (16) → web (17).
+  hitos: solo lectura (hito 4) → efecto (5) → memoria (14) → subagentes (16) →
+  MCP (17) → web (19). *(Números al día con el plan del 27/10/2026.)*
 - **System prompt:** composición por capas (base + entorno + `AGENTS.md` del
   proyecto + skills + memoria), con plantillas versionadas en el repositorio y
   evaluadas como código (hito 10).
