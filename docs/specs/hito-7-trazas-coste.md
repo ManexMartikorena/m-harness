@@ -541,7 +541,7 @@ costó":
 
 **POR VERIFICAR:**
 - ~~Si OpenCode manda `reasoning_tokens` también sin stream~~ Resuelto
-  (§12.35): ya no los manda ni con stream.
+  (§12.35): depende del modelo y de la llamada, con stream o sin él.
 - Qué campos de coste manda OpenCode Zen (pago por uso): no se pudo medir
   (la cuenta es de Go). Se leen en el orden de §1.5.
 
@@ -618,8 +618,8 @@ Dudas que se plantearon al mantenedor (registro):
    entrada, la parte sin caché cuenta 0.
 4. **Los tokens de razonamiento** se leen de `completion_tokens_details`,
    con stream y sin él (los trozos medidos en los hitos 3 y 4 ya los
-   traían: 25 y 40). Sigue POR VERIFICAR que OpenCode los mande sin stream
-   (§10).
+   traían: 25 y 40). Si OpenCode los manda sin stream: resuelto en §12.35
+   (depende del modelo y de la llamada).
 
 ### PR 2 (`feature/hito-7-catalogo`, 2026-10-27)
 
