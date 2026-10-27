@@ -3,7 +3,7 @@ application relies on it (spec hito 7, §1.7): records through JSON, ids
 checked, and writes that can be made to fail."""
 
 from mharness.domain.session import is_session_id
-from mharness.domain.trace import TraceError, TraceRecord
+from mharness.domain.trace import TraceError, TraceExists, TraceRecord
 
 
 class MemoryTraceLog:
@@ -42,8 +42,12 @@ class MemoryTraceSink:
         self.synced = 0
         self.logs: list[MemoryTraceLog] = []
 
-    async def open(self, session: str) -> MemoryTraceLog:
+    async def open(self, session: str, *, new: bool = False) -> MemoryTraceLog:
         _check(session)
+        if new and session in self.traces:
+            raise TraceExists(f"the trace of {session} already exists")
+        # The file exists from here on, even without records.
+        self.traces.setdefault(session, [])
         log = MemoryTraceLog(self, session)
         self.logs.append(log)
         return log

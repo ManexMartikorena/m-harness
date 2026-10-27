@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 from mharness.domain.session import is_session_id
-from mharness.domain.trace import TraceError, TraceRecord
+from mharness.domain.trace import TraceError, TraceExists, TraceRecord
 
 _OPEN = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW
 
@@ -66,13 +66,16 @@ class JsonlTraceSink:
     def __init__(self, folder: Path) -> None:
         self._folder = folder
 
-    async def open(self, session: str) -> JsonlTraceLog:
+    async def open(self, session: str, *, new: bool = False) -> JsonlTraceLog:
         path = self._path(session)
+        flags = _OPEN | os.O_EXCL if new else _OPEN
         try:
             self._folder.mkdir(parents=True, exist_ok=True)
             # mkdir follows the umask: the modes are set after.
             self._folder.chmod(0o700)
-            fd = os.open(path, _OPEN, 0o600)
+            fd = os.open(path, flags, 0o600)
+        except FileExistsError:
+            raise TraceExists(f"the trace of {session} already exists") from None
         except OSError as exc:
             raise _cannot_write(session, exc) from None
         try:

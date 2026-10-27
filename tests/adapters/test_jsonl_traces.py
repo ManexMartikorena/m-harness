@@ -11,7 +11,7 @@ import pytest
 from mharness.adapters.tracing import JsonlTraceSink
 from mharness.domain.agent_events import ToolFinished, TurnStarted
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
-from mharness.domain.trace import TraceError, TraceRecord, TurnFailed
+from mharness.domain.trace import TraceError, TraceExists, TraceRecord, TurnFailed
 from mharness.ports.tracing import TraceSink
 
 SESSION = "20261027-091502-3fa2"
@@ -253,3 +253,15 @@ async def test_an_error_record_comes_back(folder: Path) -> None:
     await log.close()
 
     assert await sink.read(SESSION) == [failed]
+
+
+async def test_a_new_trace_is_created_only_if_free(folder: Path) -> None:
+    # A new session reserves its id with its trace (spec hito 7, §12).
+    sink = JsonlTraceSink(folder)
+    log = await sink.open(SESSION, new=True)
+    await log.write(record("Uno"))
+    await log.close()
+
+    with pytest.raises(TraceExists, match=f"trace of {SESSION} already exists"):
+        await sink.open(SESSION, new=True)
+    assert await sink.read(SESSION) == [record("Uno")]

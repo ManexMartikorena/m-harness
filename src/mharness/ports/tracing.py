@@ -29,8 +29,10 @@ class TraceSink(Protocol):
     An id of another form raises `TraceError` before anything else.
     """
 
-    async def open(self, session: str) -> TraceLog:
-        """The trace of `session`, to append to; created if new."""
+    async def open(self, session: str, *, new: bool = False) -> TraceLog:
+        """The trace of `session`, to append to; created if missing. With
+        `new`, only if there is none: otherwise `TraceExists`, and the
+        caller takes another id."""
         ...
 
     async def read(self, session: str) -> list[TraceRecord]:

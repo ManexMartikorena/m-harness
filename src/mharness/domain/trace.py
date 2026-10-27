@@ -55,6 +55,10 @@ class TraceError(Exception):
     It never cuts a conversation (spec hito 7, §1.7)."""
 
 
+class TraceExists(TraceError):
+    """A new session's trace would take an id already in use."""
+
+
 class TurnFailed(BaseModel, frozen=True):
     """The turn ended with an exception: a failed call to the model, or a
     bug. There is no `AgentError` event: the trace notes it from outside

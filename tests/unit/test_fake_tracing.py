@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from mharness.domain.agent_events import TurnStarted
-from mharness.domain.trace import TraceError, TraceRecord
+from mharness.domain.trace import TraceError, TraceExists, TraceRecord
 from mharness.ports.tracing import TraceSink
 from tests.fakes.tracing import MemoryTraceSink
 
@@ -56,3 +56,11 @@ async def test_delete_forgets_the_trace() -> None:
     await sink.delete(SESSION)
 
     assert await sink.read(SESSION) == []
+
+
+async def test_a_new_trace_needs_a_free_id() -> None:
+    sink = MemoryTraceSink()
+    await sink.open(SESSION, new=True)
+
+    with pytest.raises(TraceExists):
+        await sink.open(SESSION, new=True)
