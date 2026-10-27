@@ -64,3 +64,37 @@ async def test_a_new_trace_needs_a_free_id() -> None:
 
     with pytest.raises(TraceExists):
         await sink.open(SESSION, new=True)
+
+
+async def test_every_operation_can_fail() -> None:
+    sink = MemoryTraceSink()
+    sink.open_failures = sink.sync_failures = sink.read_failures = 1
+
+    with pytest.raises(TraceError):
+        await sink.open(SESSION)
+    log = await sink.open(SESSION)
+    with pytest.raises(TraceError):
+        await log.sync()
+    with pytest.raises(TraceError):
+        await sink.read(SESSION)
+    await log.sync()
+    assert await sink.read(SESSION) == []
+
+
+async def test_broken_lines_are_skipped_as_by_the_real_one() -> None:
+    sink = MemoryTraceSink()
+    log = await sink.open(SESSION)
+    await log.write(RECORD)
+    sink.traces[SESSION].append('{"no es": "un registro"}')
+
+    assert await sink.read(SESSION) == [RECORD]
+
+
+async def test_writing_after_a_delete_goes_nowhere() -> None:
+    sink = MemoryTraceSink()
+    log = await sink.open(SESSION)
+    await sink.delete(SESSION)
+
+    await log.write(RECORD)
+
+    assert SESSION not in sink.traces
