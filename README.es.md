@@ -11,7 +11,7 @@
 hacerlo, **preguntándote antes de cada cambio**. Funciona con el proveedor y
 el modelo que elijas, y te dice en cada turno lo que ha costado.
 
-> 🚧 **En desarrollo: `v0.7.0`.** Ya es usable para trabajar en un
+> 🚧 **En desarrollo: `v0.7.1`.** Ya es usable para trabajar en un
 > proyecto: conversar, leer y cambiar ficheros, ejecutar comandos, guardar y
 > retomar sesiones, y ver el coste. Lo que viene, en la [hoja de
 > ruta](#hoja-de-ruta).
@@ -56,9 +56,12 @@ decimales.)*
   antes, con el diff o el comando: una vez, siempre en esta sesión, o no.
   "Siempre" cubre todas las ediciones siguientes dentro del directorio de
   trabajo, pero solo ese comando exacto. Leer fuera del directorio o un
-  fichero secreto (`.env`, claves, `.ssh`…) también pregunta, cada vez. Los comandos corren con un tiempo
-  límite y sin tu clave del proveedor en el entorno, pero **con tus
-  permisos: lee el comando antes de aprobarlo**.
+  fichero secreto también pregunta, cada vez; un secreto se reconoce por
+  el nombre (`.env`, claves, `.ssh`…), no por el contenido. Los comandos
+  corren con un tiempo límite, sin terminal (uno que pide algo, como una
+  contraseña o un editor, falla al momento) y sin tu clave del proveedor en
+  el entorno, pero **con tus permisos: lee el comando antes de
+  aprobarlo**.
 - **El modelo y el proveedor que quieras.** Formato de OpenAI de serie, con
   OpenCode Go y Zen ya configurados, y cualquier servidor compatible que
   declares. Cambias de modelo con `/model` o en la configuración.
@@ -78,7 +81,7 @@ Necesitas [uv](https://docs.astral.sh/uv/) (instala también Python 3.14 si
 falta).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.7.0
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.7.1
 ```
 
 Después, elige proveedor y modelo:

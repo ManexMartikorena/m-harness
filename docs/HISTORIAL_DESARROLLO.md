@@ -13,6 +13,16 @@ en GitHub.
 
 Lo más reciente primero.
 
+- **Arreglo `v0.7.1`, 2026-10-27: comandos sin terminal.** El mantenedor
+  revisó los límites aceptados: confirmó E5, D7, D14 y la rotación de
+  `maha.log`, y los comandos interactivos, que no eran una decisión suya,
+  se arreglaron. Cada comando corre en su propia sesión, sin terminal: uno
+  que pedía la contraseña en `/dev/tty` (`sudo`, `ssh`) esperaba hasta el
+  tiempo límite y ahora falla al momento. `GIT_EDITOR`, `VISUAL` y `EDITOR`
+  valen `true`: `git commit` sin `-m` ya no devuelve los códigos de pantalla
+  de `vi`. La descripción de `run_command` pide comandos que no pregunten,
+  como daba por hecho la spec 5 (§10). Los README precisan que los secretos
+  se reconocen por el nombre. 1319 tests.
 - **Hito 7 cerrado, 2026-10-27: `v0.7.0` — Trazas y coste.** Spec
   IMPLEMENTADA con la verificación a mano (diez puntos en verde) y la nota
   07 de la guía. PRs: #61, #64, #65, #66 (`v0.6.1`), #69, #70, #71, #72, #73,

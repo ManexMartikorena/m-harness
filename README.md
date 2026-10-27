@@ -11,7 +11,7 @@
 done, **asking you before every change**. It works with the provider and
 model you choose, and tells you what each turn cost.
 
-> 🚧 **In development: `v0.7.0`.** Already usable to work on a project:
+> 🚧 **In development: `v0.7.1`.** Already usable to work on a project:
 > chat, read and change files, run commands, save and resume sessions, and
 > see the cost. What comes next is in the [roadmap](#roadmap).
 
@@ -55,9 +55,12 @@ totals are exact; each turn is rounded to four decimals.)*
   asks first, showing the diff or the command: once, always in this session,
   or no. "Always" covers every later edit inside the working directory, but
   only that exact command. Reading outside the working directory or a
-  secret file (`.env`, keys, `.ssh`…) asks too, every time. Commands run with a time limit and
-  without your provider key in their environment, but **with your
-  permissions: read the command before approving it**.
+  secret file asks too, every time; a secret is recognized by its name
+  (`.env`, keys, `.ssh`…), not by its content. Commands run with a time
+  limit, without a terminal (one that asks for something, such as a
+  password or an editor, fails at once) and without your provider key in
+  their environment, but **with your permissions: read the command before
+  approving it**.
 - **The model and provider you want.** OpenAI format out of the box, with
   OpenCode Go and Zen already configured, and any compatible server you
   declare. Switch models with `/model` or in the configuration.
@@ -78,7 +81,7 @@ You need [uv](https://docs.astral.sh/uv/) (it also installs Python 3.14 if
 missing).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.7.0
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.7.1
 ```
 
 Then choose a provider and a model:

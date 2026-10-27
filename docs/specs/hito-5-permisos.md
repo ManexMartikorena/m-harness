@@ -417,6 +417,10 @@ run_command: Run a shell command in the working directory, with a timeout.
   The user approves it first. Example: {"command": "uv run pytest -q"}
 ```
 
+*(2026-10-27: `run_command` añade "It gets no input and no terminal: use
+options that ask nothing (git commit -m)." §10 daba por hecho que la
+descripción pedía comandos no interactivos, y no lo pedía. `7b6cea9`.)*
+
 ### 3.3 Configuración nueva
 
 Ninguna. La variable de la clave que se quita del entorno sale de la
@@ -586,6 +590,13 @@ las herramientas con efecto se prueban así), creado para la prueba.
 - **Comandos interactivos** (un editor, `git commit` sin `-m`): sin stdin
   terminan o se quedan hasta el `timeout`. La descripción pide comandos no
   interactivos.
+  *(Revisado el 2026-10-27, por decisión del mantenedor: no era un límite
+  aceptado. Los que leían `/dev/tty` (`sudo`, `ssh`) sí se quedaban hasta
+  el `timeout`, y un editor devolvía sus códigos de pantalla. Ahora cada
+  comando corre en su propia sesión, sin terminal, y con `GIT_EDITOR`,
+  `VISUAL` y `EDITOR` a `true`: fallan al momento con un error claro
+  (`e473824`, `7cdcdcd`). Los comandos que esperan entrada, de verdad, con
+  los comandos en segundo plano del hito 16.)*
 - **Ediciones concurrentes** (tú editas el mismo fichero a la vez): el diff
   se calcula al preguntar y se aplica al aprobar; si el texto cambió entre
   medias, `edit_file` lo vuelve a comprobar y falla con `ToolError`.
