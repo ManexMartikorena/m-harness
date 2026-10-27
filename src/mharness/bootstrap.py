@@ -12,6 +12,7 @@ from pathlib import Path
 
 from mharness import __version__, config
 from mharness.adapters import cli
+from mharness.adapters.catalog import CatalogError, TomlCatalog
 from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.models import OpenAIChatClient
 from mharness.adapters.storage import JsonlSessionStore
@@ -31,6 +32,7 @@ from mharness.application.tools import ToolRegistry
 from mharness.domain.environment import command_env
 from mharness.domain.messages import Message
 from mharness.ports.approval import ApprovalGate
+from mharness.ports.catalog import ModelCatalog
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -40,10 +42,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return options
     try:
         settings = config.load(cwd=Path.cwd(), env=os.environ)
-    except config.ConfigError as exc:
+        catalog = TomlCatalog.load(config.user_catalog_path(os.environ))
+    except (config.ConfigError, CatalogError) as exc:
         return cli.fail(str(exc))
     # Resolved once: the tools and the sessions name it the same way.
-    return asyncio.run(_converse(settings, Path.cwd().resolve()))
+    return asyncio.run(_converse(settings, catalog, Path.cwd().resolve()))
 
 
 def _tools(cwd: Path, env: Mapping[str, str]) -> ToolRegistry:
@@ -72,7 +75,7 @@ def _gate(lines: cli.StdinLines) -> ApprovalGate:
     return cli.DenyAll(sys.stdout)
 
 
-async def _converse(settings: config.Settings, cwd: Path) -> int:
+async def _converse(settings: config.Settings, catalog: ModelCatalog, cwd: Path) -> int:
     provider = settings.provider
     # The variables a command gets; never the provider's key (spec
     # mejora-2026-10-23-deuda-hito-5, E1).
@@ -89,7 +92,15 @@ async def _converse(settings: config.Settings, cwd: Path) -> int:
     ) as client:
 
         def new_agent(model: str, history: Sequence[Message]) -> Agent:
-            return Agent(client, tools, gate=gate, model=model, history=history)
+            return Agent(
+                client,
+                tools,
+                gate=gate,
+                model=model,
+                catalog=catalog,
+                provider=settings.provider_name,
+                history=history,
+            )
 
         sessions = Sessions(
             JsonlSessionStore(config.data_dir(os.environ) / "sessions"),

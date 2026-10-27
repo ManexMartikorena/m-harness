@@ -102,6 +102,25 @@ del hito 2, §1.10).
 Ids de modelo comprobados el 2026-10-20 en https://opencode.ai/docs/go/:
 `glm-5.3-flash`, `glm-5.3`, `kimi-k3`, `deepseek-v4.1-flash`.
 
+### 3.2 `~/.config/maha/models.toml` (opcional)
+
+Desde el hito 7. Precios y ventana de contexto de los modelos, con el mismo
+formato que el catálogo que trae `maha` (`src/mharness/adapters/catalog/models.toml`,
+todos los modelos de OpenCode Go y Zen). Sirve para un proveedor propio o
+para corregir un precio sin esperar a una versión: cada modelo que pongas
+aquí sustituye entero al del paquete. Respeta `XDG_CONFIG_HOME`. Si tiene un
+error, `maha` no arranca y dice qué y dónde. Nunca se lee de un proyecto.
+
+```toml
+[providers.local]
+checked = 2026-10-27        # la fecha de tus precios
+
+[models."local/qwen-local"]
+context = 32_768
+input = 0                   # USD por millón de tokens
+output = 0
+```
+
 ## 4. Comprobar que todo está en pie
 
 Desde el hito 1:

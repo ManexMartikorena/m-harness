@@ -28,6 +28,7 @@ from mharness.domain.model import Usage
 from mharness.domain.tools import ToolError
 from tests.adapters.test_local_runner import gone, written_pid
 from tests.fakes.approval import FakeApproval
+from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply, tool_calls
 from tests.fakes.sessions import MemorySessionStore
 from tests.fakes.terminal import ScriptedInput
@@ -53,7 +54,16 @@ def solo(agent: Agent) -> Sessions:
 async def run(fake: FakeModelClient, *lines: str) -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
     code = await converse(
-        solo(Agent(fake, ToolRegistry(), gate=FakeApproval(), model="glm-5.3-flash")),
+        solo(
+            Agent(
+                fake,
+                ToolRegistry(),
+                gate=FakeApproval(),
+                model="glm-5.3-flash",
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
+            )
+        ),
         provider="opencode-go",
         read_line=ScriptedInput(*lines),
         out=out,
@@ -125,7 +135,14 @@ async def test_ctrl_c_ends_with_130() -> None:
     out = io.StringIO()
     code = await converse(
         solo(
-            Agent(FakeModelClient([]), ToolRegistry(), gate=FakeApproval(), model="m")
+            Agent(
+                FakeModelClient([]),
+                ToolRegistry(),
+                gate=FakeApproval(),
+                model="m",
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
+            )
         ),
         provider="p",
         read_line=interrupt,
@@ -152,7 +169,14 @@ async def test_closing_signals_end_with_128_plus_the_signal(
 
     result = await converse(
         solo(
-            Agent(FakeModelClient([]), ToolRegistry(), gate=FakeApproval(), model="m")
+            Agent(
+                FakeModelClient([]),
+                ToolRegistry(),
+                gate=FakeApproval(),
+                model="m",
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
+            )
         ),
         provider="p",
         read_line=close,
@@ -177,6 +201,8 @@ async def test_sigterm_during_a_command_kills_it(tmp_path: Path) -> None:
         tools,
         gate=FakeApproval(["once"]),
         model="m",
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
     )
 
     async def close_when_it_runs() -> int:
@@ -210,7 +236,12 @@ async def test_other_cancellations_propagate() -> None:
         converse(
             solo(
                 Agent(
-                    FakeModelClient([]), ToolRegistry(), gate=FakeApproval(), model="m"
+                    FakeModelClient([]),
+                    ToolRegistry(),
+                    gate=FakeApproval(),
+                    model="m",
+                    catalog=MemoryCatalog(),
+                    provider="opencode-go",
                 )
             ),
             provider="p",
@@ -316,7 +347,16 @@ async def test_text_is_shown_before_the_stream_ends() -> None:
     out = io.StringIO()
     task = asyncio.ensure_future(
         converse(
-            solo(Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m")),
+            solo(
+                Agent(
+                    fake,
+                    ToolRegistry(),
+                    gate=FakeApproval(),
+                    model="m",
+                    catalog=MemoryCatalog(),
+                    provider="opencode-go",
+                )
+            ),
             provider="p",
             read_line=ScriptedInput("Hola"),
             out=out,
@@ -368,7 +408,16 @@ async def converse_until_spinning(
 ) -> int:
     task = asyncio.ensure_future(
         converse(
-            solo(Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m")),
+            solo(
+                Agent(
+                    fake,
+                    ToolRegistry(),
+                    gate=FakeApproval(),
+                    model="m",
+                    catalog=MemoryCatalog(),
+                    provider="opencode-go",
+                )
+            ),
             provider="p",
             read_line=ScriptedInput("Hola"),
             out=out,
@@ -446,7 +495,16 @@ async def test_ctrl_c_during_an_answer_goes_back_to_the_prompt() -> None:
     pressing = asyncio.ensure_future(interrupt_when(out, "Esperando"))
 
     code = await converse(
-        solo(Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m")),
+        solo(
+            Agent(
+                fake,
+                ToolRegistry(),
+                gate=FakeApproval(),
+                model="m",
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
+            )
+        ),
         provider="p",
         read_line=ScriptedInput("Cuéntame algo", "Hola", "/exit"),
         out=out,
@@ -471,7 +529,16 @@ async def test_ctrl_c_while_the_spinner_spins() -> None:
     pressing = asyncio.ensure_future(interrupt_when(out, "⠋"))
 
     code = await converse(
-        solo(Agent(fake, ToolRegistry(), gate=FakeApproval(), model="m")),
+        solo(
+            Agent(
+                fake,
+                ToolRegistry(),
+                gate=FakeApproval(),
+                model="m",
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
+            )
+        ),
         provider="p",
         read_line=ScriptedInput("Hola"),
         out=out,
@@ -496,7 +563,17 @@ async def run_with_tools(
     out, err = io.StringIO(), io.StringIO()
     registry = ToolRegistry([tool or FakeTool()])
     code = await converse(
-        solo(Agent(fake, registry, gate=FakeApproval(), model="m", max_steps=steps)),
+        solo(
+            Agent(
+                fake,
+                registry,
+                gate=FakeApproval(),
+                model="m",
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
+                max_steps=steps,
+            )
+        ),
         provider="p",
         read_line=ScriptedInput(*lines),
         out=out,
@@ -619,7 +696,16 @@ async def test_an_unexpected_error_ends_only_the_answer() -> None:
     out, err = io.StringIO(), io.StringIO()
 
     code = await converse(
-        solo(Agent(fake, ToolRegistry([tool]), gate=BrokenGate(), model="m")),
+        solo(
+            Agent(
+                fake,
+                ToolRegistry([tool]),
+                gate=BrokenGate(),
+                model="m",
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
+            )
+        ),
         provider="p",
         read_line=ScriptedInput("Hola", "Otra", "/exit"),
         out=out,
@@ -637,7 +723,12 @@ async def test_ctrl_c_during_a_tool_goes_back_to_the_prompt() -> None:
     out = io.StringIO()
     pressing = asyncio.ensure_future(interrupt_when(out, "→ echo"))
     agent = Agent(
-        fake, ToolRegistry([FakeTool(gate=gate)]), gate=FakeApproval(), model="m"
+        fake,
+        ToolRegistry([FakeTool(gate=gate)]),
+        gate=FakeApproval(),
+        model="m",
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
     )
 
     code = await converse(
@@ -670,7 +761,12 @@ async def test_ctrl_c_during_the_question_starts_a_new_line() -> None:
     out = io.StringIO()
     pressing = asyncio.ensure_future(interrupt_when(out, "Allow?"))
     agent = Agent(
-        fake, ToolRegistry([tool]), gate=TerminalApproval(no_answer, out), model="m"
+        fake,
+        ToolRegistry([tool]),
+        gate=TerminalApproval(no_answer, out),
+        model="m",
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
     )
 
     await converse(
@@ -722,7 +818,16 @@ async def converse_asking(
     read = ScriptedInput(*lines)
     gate = TerminalApproval(read, out)
     code = await converse(
-        solo(Agent(fake, ToolRegistry([tool]), gate=gate, model="m")),
+        solo(
+            Agent(
+                fake,
+                ToolRegistry([tool]),
+                gate=gate,
+                model="m",
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
+            )
+        ),
         provider="p",
         read_line=read,
         out=out,

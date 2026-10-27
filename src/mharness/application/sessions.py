@@ -12,9 +12,10 @@ from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from mharness.application.agent import Agent
-from mharness.domain.agent_events import AgentEvent, TurnFinished
+from mharness.domain.agent_events import AgentEvent, ModelCallFinished
 from mharness.domain.messages import Message
 from mharness.domain.model import Usage
 from mharness.domain.session import (
@@ -57,6 +58,9 @@ class Conversation:
     whole for the next try (the store undoes a half write), and `unsaved`
     says why. The file is created with the first turn: opening maha and
     leaving does not leave an empty session.
+
+    The tokens and the cost of a turn are those of its finished calls to
+    the model: a turn cut after one call still paid for it.
     """
 
     def __init__(
@@ -67,6 +71,8 @@ class Conversation:
         *,
         log: SessionLog | None = None,
         session: str | None = None,
+        cost: Decimal = Decimal(0),
+        uncosted_turns: int = 0,
     ) -> None:
         self._store = store
         self._agent = agent
@@ -81,6 +87,9 @@ class Conversation:
         self._pending: list[SessionEntry] = []
         # Why the last save failed; None once it works.
         self.unsaved: str | None = None
+        # The session's cost so far, in USD, and the turns without one.
+        self.cost = cost
+        self.uncosted_turns = uncosted_turns
 
     @property
     def model(self) -> str:
@@ -92,19 +101,29 @@ class Conversation:
 
     async def run(self, text: str) -> AsyncGenerator[AgentEvent]:
         """`Agent.run()`, and then the turn saved, however it ends."""
-        usage: Usage | None = None
+        usage = Usage()
+        calls = 0
+        # None once a call has no price.
+        cost: Decimal | None = Decimal(0)
         try:
             async with aclosing(self._agent.run(text)) as events:
                 async for event in events:
-                    if isinstance(event, TurnFinished):
-                        usage = event.usage
+                    if isinstance(event, ModelCallFinished):
+                        calls += 1
+                        usage += event.usage
+                        if cost is not None:
+                            cost = None if event.cost is None else cost + event.cost
                     yield event
         finally:
             fresh = self._agent.messages[self._queued :]
             self._queued += len(fresh)
             self._pending += [MessageEntry(message=m) for m in fresh]
-            if usage is not None:
-                self._pending.append(UsageEntry(usage=usage))
+            if calls:
+                self._pending.append(UsageEntry(usage=usage, cost=cost))
+                if cost is None:
+                    self.uncosted_turns += 1
+                else:
+                    self.cost += cost
             await self._save()
 
     async def switch_model(self, model: str) -> None:
@@ -223,7 +242,13 @@ class Sessions:
             await log.close()
             raise
         conversation = Conversation(
-            self._store, agent, self._origin, log=log, session=header.id
+            self._store,
+            agent,
+            self._origin,
+            log=log,
+            session=header.id,
+            cost=loaded.cost,
+            uncosted_turns=loaded.uncosted_turns,
         )
         # The new one is ready: only now is the current one let go.
         await current.close()

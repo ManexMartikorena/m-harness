@@ -1,6 +1,7 @@
 """The types of a session (spec hito 6, §1.2 and §4.1), without the disk."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -227,3 +228,47 @@ def test_the_summary_has_the_first_line_of_the_first_user_message() -> None:
     cut = summarize(HEADER, [MessageEntry(message=user("x" * 100))], updated)
     assert cut.title == "x" * (TITLE_MAX - 1) + "…"
     assert summarize(HEADER, [], updated).title == ""
+
+
+# The cost of each turn (spec hito 7, §1.5 and §4.1.3).
+
+
+def test_a_usage_line_of_hito_6_has_no_cost() -> None:
+    line = {"type": "usage", "usage": {"input_tokens": 742, "output_tokens": 31}}
+
+    entry = ENTRY.validate_python(line)
+
+    assert entry == UsageEntry(usage=Usage(input_tokens=742, output_tokens=31))
+    assert isinstance(entry, UsageEntry)
+    assert entry.cost is None
+
+
+def test_the_cost_goes_through_json_exactly() -> None:
+    entry = UsageEntry(usage=Usage(input_tokens=41), cost=Decimal("0.000000123"))
+
+    assert ENTRY.validate_json(ENTRY.dump_json(entry)) == entry
+
+
+def test_replay_sums_the_cost_and_counts_the_turns_without_it() -> None:
+    entries: list[SessionEntry] = [
+        MessageEntry(message=user()),
+        MessageEntry(message=answer()),
+        UsageEntry(usage=Usage(input_tokens=700), cost=Decimal("0.0008")),
+        MessageEntry(message=user("Otra")),
+        MessageEntry(message=answer("Vale.")),
+        UsageEntry(usage=Usage(input_tokens=800)),
+        MessageEntry(message=user("Y otra")),
+        MessageEntry(message=answer("Hecho.")),
+        UsageEntry(usage=Usage(input_tokens=900), cost=Decimal("0.0023")),
+    ]
+
+    session = replay(HEADER, entries)
+
+    assert session.cost == Decimal("0.0031")
+    assert session.uncosted_turns == 1
+
+
+def test_replay_without_turns_costs_nothing() -> None:
+    session = replay(HEADER, [])
+
+    assert (session.cost, session.uncosted_turns) == (Decimal(0), 0)

@@ -8,12 +8,24 @@ Prices are in USD per million tokens, as providers publish them, and in
 from datetime import date
 from decimal import Decimal
 from itertools import pairwise
+from typing import Annotated
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PlainSerializer, model_validator
 
 from mharness.domain.model import Usage
 
 _MILLION = 1_000_000
+
+# An amount in USD. In JSON, a string in plain notation: exact, unlike a
+# float, and readable, unlike "1.23E-7".
+type Usd = Annotated[
+    Decimal,
+    PlainSerializer(
+        lambda amount: format(amount.normalize(), "f"),
+        return_type=str,
+        when_used="json",
+    ),
+]
 
 
 class _Rates(BaseModel, frozen=True):

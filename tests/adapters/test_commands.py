@@ -23,6 +23,7 @@ from mharness.domain.session import (
     SessionSummary,
 )
 from tests.fakes.approval import FakeApproval
+from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FakeModelClient, reply
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
 from tests.fakes.terminal import ScriptedInput
@@ -97,6 +98,8 @@ class Maha:
                 ToolRegistry(),
                 gate=FakeApproval(),
                 model=model,
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
                 history=history,
             ),
             cwd=cwd,

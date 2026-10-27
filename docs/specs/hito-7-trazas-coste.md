@@ -635,3 +635,27 @@ Dudas que se plantearon al mantenedor (registro):
 12. **`models.toml` entra en el paquete** (`uv build`, comprobado a mano):
     `uv_build` incluye los ficheros que no son Python de la carpeta del
     módulo.
+
+### PR 3 (`feature/hito-7-eventos`, 2026-10-27)
+
+13. **El catálogo se carga ya en este PR**, no en el 5: el `Agent` lo
+    necesita para calcular el coste. `config.user_catalog_path()`,
+    `bootstrap` lo carga al arrancar y un `models.toml` del usuario roto no
+    deja arrancar (como un `config.toml` roto). `conftest.py` aísla también
+    `XDG_CONFIG_HOME`. Enseñarlo en la terminal sigue en el PR 5.
+14. **El precio, por el modelo que contestó, y si el catálogo no conoce
+    ese nombre, por el pedido.** Un proveedor puede devolver el modelo con
+    otro nombre (una fecha, una versión); sin la vuelta atrás, ese turno se
+    quedaría sin coste.
+15. **Fallo encontrado y arreglado:** `Conversation` solo guardaba los
+    tokens de un turno si acababa con `TurnFinished`. Un turno que llamaba
+    al modelo y después fallaba (o se cortaba con Ctrl+C) no dejaba
+    constancia de lo que ya se había pagado. Ahora el uso y el coste del
+    turno salen de sus `ModelCallFinished`, y se guardan acabe como acabe.
+16. **El coste de la sesión cuenta aparte los turnos sin precio**
+    (`uncosted_turns`): una sesión del hito 6, o con un modelo fuera del
+    catálogo, no hace que todo el coste desaparezca, pero tampoco lo deja
+    pasar por completo. La terminal (PR 5) decide cómo decirlo.
+17. **`Usd`:** el coste va en JSON como texto en notación normal
+    (`"0.000000123"`), no como `float` (se redondea) ni como lo escribe
+    `Decimal` por defecto (`"1.23E-7"`, difícil de leer con `jq`).

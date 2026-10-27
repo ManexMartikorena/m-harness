@@ -5,6 +5,7 @@ import json
 import os
 import stat
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -102,6 +103,25 @@ async def test_the_file_is_a_header_and_one_entry_per_line(folder: Path) -> None
     assert json.loads(lines[1])["type"] == "message"
     assert json.loads(lines[2]) == {"type": "model", "model": "kimi-k3"}
     assert len(lines) == 3
+
+
+async def test_the_cost_goes_to_disk_exact_and_comes_back(folder: Path) -> None:
+    # A string, not a float, so it does not come back rounded; and plain, not
+    # "1.23E-7", so a person or jq can read it.
+    store = JsonlSessionStore(folder)
+    log = await store.create(HEADER)
+    await log.append([MessageEntry(message=HOLA), MessageEntry(message=ANSWER)])
+    await log.append(
+        [UsageEntry(usage=Usage(input_tokens=41), cost=Decimal("0.000000123"))]
+    )
+    await log.close()
+
+    lines = file_of(folder).read_text(encoding="utf-8").splitlines()
+    session, again = await store.open(HEADER.id)
+    await again.close()
+
+    assert json.loads(lines[-1])["cost"] == "0.000000123"
+    assert session.cost == Decimal("0.000000123")
 
 
 async def test_only_the_user_can_read_them(folder: Path) -> None:

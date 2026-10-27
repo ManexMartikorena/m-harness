@@ -255,6 +255,21 @@ def test_project_with_providers_refuses_to_start(
     assert "a project cannot declare [providers]" in capsys.readouterr().err
 
 
+def test_a_broken_user_catalog_refuses_to_start(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    catalog = workspace / "xdg" / "maha" / "models.toml"
+    catalog.write_text('[models."ollama/x"]\ninput = 0.1\n', encoding="utf-8")
+
+    code = main([])
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert f"invalid model catalog in {catalog}" in err
+    assert "input and output go together" in err
+
+
 def test_version_needs_no_configuration(
     workspace: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

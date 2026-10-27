@@ -12,3 +12,12 @@ def data_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home = tmp_path / "data-home"
     monkeypatch.setenv("XDG_DATA_HOME", str(home))
     return home
+
+
+@pytest.fixture(autouse=True)
+def config_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Each test gets its own `XDG_CONFIG_HOME`: the real `config.toml` and
+    `models.toml` of the machine never change a test (spec hito 7, §4)."""
+    home = tmp_path / "config-home"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home))
+    return home

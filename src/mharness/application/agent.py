@@ -11,6 +11,7 @@ import time
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
@@ -25,13 +26,16 @@ from mharness.domain.agent_events import (
     ToolCallProposed,
     ToolFinished,
     TurnFinished,
+    TurnStarted,
 )
 from mharness.domain.approval import ApprovalRequest, Decision
+from mharness.domain.catalog import cost
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
-from mharness.domain.model import ModelRequest, Usage
+from mharness.domain.model import ModelRequest, ModelResponse, Usage
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
+from mharness.ports.catalog import ModelCatalog
 from mharness.ports.model import ModelClient
 from mharness.ports.tools import Tool
 
@@ -53,7 +57,8 @@ class Agent:
     Every step sends the whole history, the turn so far and the tools. The
     `gate` decides on the calls that need approval; what the user approves
     for the whole session lives as long as the agent. `model` can change
-    between turns (`/model`, spec hito 6, §1.8).
+    between turns (`/model`, spec hito 6, §1.8). The `catalog` prices each
+    call for `provider` (spec hito 7, §1.6).
     """
 
     def __init__(
@@ -63,6 +68,8 @@ class Agent:
         *,
         gate: ApprovalGate,
         model: str,
+        catalog: ModelCatalog,
+        provider: str,
         max_steps: int = MAX_STEPS,
         history: Sequence[Message] = (),
     ) -> None:
@@ -71,6 +78,8 @@ class Agent:
         self._gate = gate
         self._approvals = SessionApprovals()
         self.model = model
+        self._catalog = catalog
+        self._provider = provider
         self._max_steps = max_steps
         # A resumed session starts with its history (spec hito 6, §1.6); its
         # approvals do not come back (§1.9).
@@ -92,8 +101,11 @@ class Agent:
         cut an answer that had begun: its text is kept, marked as
         interrupted (spec hito 6, §1.7).
         """
+        yield TurnStarted(text=text)
         turn = [Message(role="user", blocks=[TextBlock(text=text)])]
         usage = Usage()
+        # None once a call has no price: the turn's cost is then unknown.
+        turn_cost: Decimal | None = Decimal(0)
         calls_run = 0
         # Whether some tool's `run()` was called in this turn.
         executed = False
@@ -120,7 +132,12 @@ class Agent:
                 streaming = False
                 response = accumulator.response()
                 usage += response.usage
-                yield ModelCallFinished(usage=response.usage, model=response.model)
+                call_cost = self._cost(response)
+                if turn_cost is not None:
+                    turn_cost = None if call_cost is None else turn_cost + call_cost
+                yield ModelCallFinished(
+                    usage=response.usage, model=response.model, cost=call_cost
+                )
                 turn.append(response.message)
                 calls = [
                     b for b in response.message.blocks if isinstance(b, ToolCallBlock)
@@ -133,6 +150,7 @@ class Agent:
                         usage=usage,
                         tool_calls=calls_run,
                         steps=step,
+                        cost=turn_cost,
                     )
                     return
                 results = []
@@ -201,7 +219,11 @@ class Agent:
                     self._messages.extend(turn)
                     kept = True
                     yield TurnFinished(
-                        reason="denied", usage=usage, tool_calls=calls_run, steps=step
+                        reason="denied",
+                        usage=usage,
+                        tool_calls=calls_run,
+                        steps=step,
+                        cost=turn_cost,
                     )
                     return
             # The turn ends on tool results; the user can still go on.
@@ -212,6 +234,7 @@ class Agent:
                 usage=usage,
                 tool_calls=calls_run,
                 steps=self._max_steps,
+                cost=turn_cost,
             )
         except BaseException as exc:
             # A failed call to the model, Ctrl+C or any error nobody expected
@@ -240,6 +263,17 @@ class Agent:
                     )
                 self._messages.extend(turn)
             raise
+
+    def _cost(self, response: ModelResponse) -> Decimal | None:
+        """What one call cost: by the model that answered, or, if the
+        catalog does not know that name, by the one asked (a provider may
+        name it its own way)."""
+        info = self._catalog.get(self._provider, response.model)
+        if info is None:
+            info = self._catalog.get(self._provider, self.model)
+        if info is None or info.prices is None:
+            return None
+        return cost(response.usage, info.prices)
 
     def _request(self, turn: list[Message]) -> ModelRequest:
         # No system prompt until hito 10 (spec hito 2, §1.5).

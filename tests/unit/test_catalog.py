@@ -4,9 +4,9 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
-from mharness.domain.catalog import ModelInfo, Prices, Tier, cost
+from mharness.domain.catalog import ModelInfo, Prices, Tier, Usd, cost
 from mharness.domain.model import Usage
 
 CHECKED = date(2026, 10, 26)
@@ -168,3 +168,19 @@ def test_model_info_is_immutable() -> None:
 
     with pytest.raises(ValidationError):
         info.trains_on_data = True  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    ("amount", "text"),
+    [
+        ("0.000000123", "0.000000123"),
+        ("1E+1", "10"),
+        ("0.0031", "0.0031"),
+        ("0", "0"),
+    ],
+)
+def test_usd_goes_to_json_plain_and_exact(amount: str, text: str) -> None:
+    usd: TypeAdapter[Decimal] = TypeAdapter(Usd)
+
+    assert usd.dump_python(Decimal(amount), mode="json") == text
+    assert usd.validate_json(usd.dump_json(Decimal(amount))) == Decimal(amount)

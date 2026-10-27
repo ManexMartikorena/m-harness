@@ -216,3 +216,18 @@ def test_without_absolute_xdg_data_uses_local_share(xdg: str) -> None:
     assert config.data_dir({"XDG_DATA_HOME": xdg}) == (
         Path.home() / ".local" / "share" / "maha"
     )
+
+
+# The user's model catalog (spec hito 7, §1.3).
+
+
+def test_the_user_catalog_lives_next_to_the_config(tmp_path: Path) -> None:
+    assert config.user_catalog_path({"XDG_CONFIG_HOME": str(tmp_path)}) == (
+        tmp_path / "maha" / "models.toml"
+    )
+
+
+def test_without_absolute_xdg_the_catalog_is_in_dot_config() -> None:
+    assert config.user_catalog_path({}) == (
+        Path.home() / ".config" / "maha" / "models.toml"
+    )
