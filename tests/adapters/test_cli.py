@@ -106,3 +106,73 @@ def test_clean_escapes_only_unsafe_characters(text: str, shown: str) -> None:
 )
 def test_usd(amount: str, shown: str) -> None:
     assert usd(Decimal(amount)) == shown
+
+
+# `maha eval` (spec hito 8, §1.8 and §1.9).
+
+
+def test_eval_has_its_defaults() -> None:
+    options = cli.parse(["eval"])
+
+    assert isinstance(options, argparse.Namespace)
+    assert options.command == "eval"
+    assert (options.tasks, options.models, options.repeat, options.jobs) == (
+        "evals",
+        None,
+        1,
+        4,
+    )
+    assert (options.split, options.only, options.save) == ("all", [], False)
+    assert (options.keep, options.retry_errors) == (False, False)
+
+
+def test_eval_takes_its_options() -> None:
+    options = cli.parse(
+        [
+            "eval",
+            "--models",
+            "glm-5.3-flash,kimi-k2.7-code",
+            "--repeat",
+            "5",
+            "--jobs",
+            "2",
+            "--split",
+            "train",
+            "--only",
+            "01-version",
+            "--only",
+            "06-arreglar-bug",
+            "--save",
+            "--keep",
+            "--retry-errors",
+        ]
+    )
+
+    assert isinstance(options, argparse.Namespace)
+    assert options.models == ["glm-5.3-flash", "kimi-k2.7-code"]
+    assert (options.repeat, options.jobs, options.split) == (5, 2, "train")
+    assert options.only == ["01-version", "06-arreglar-bug"]
+    assert (options.save, options.keep, options.retry_errors) == (True, True, True)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["eval", "--repeat", "0"],
+        ["eval", "--jobs", "0"],
+        ["eval", "--split", "test"],
+        ["eval", "--models", ""],
+    ],
+)
+def test_eval_rejects_wrong_values(
+    args: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.parse(args) == 2
+    assert "usage:" in capsys.readouterr().err
+
+
+def test_without_a_command_there_is_none() -> None:
+    options = cli.parse([])
+
+    assert isinstance(options, argparse.Namespace)
+    assert options.command is None
