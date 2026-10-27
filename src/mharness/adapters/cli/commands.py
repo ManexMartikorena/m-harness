@@ -114,7 +114,7 @@ class Commands:
         self._out.flush()
 
     async def _resume(self, session: str | None) -> None:
-        left = self.conversation.id
+        left = self.conversation.id if self.conversation.stored else None
         try:
             resumed = await self._sessions.resume(session, current=self.conversation)
         except SessionNotFound as exc:
@@ -153,7 +153,7 @@ class Commands:
         if session is None:
             self._say("usage: /delete ID")
             return
-        if session == self.conversation.id:
+        if self.conversation.exists and session == self.conversation.id:
             # Before asking: it would be refused anyway.
             raise SessionError("this is the current session")
         # A question too: a "y" pasted after the command must not answer it

@@ -659,3 +659,32 @@ Dudas que se plantearon al mantenedor (registro):
 17. **`Usd`:** el coste va en JSON como texto en notación normal
     (`"0.000000123"`), no como `float` (se redondea) ni como lo escribe
     `Decimal` por defecto (`"1.23E-7"`, difícil de leer con `jq`).
+
+### PR 4 (`feature/hito-7-trazas`, 2026-10-27)
+
+18. **El id fijo desde el principio necesitaba reservarse.** Antes, un
+    choque al crear el fichero de sesión se arreglaba solo: el siguiente
+    guardado probaba otro id. Con el id fijo, el reintento chocaría siempre.
+    Es raro con una persona, pero no con los evals en paralelo del hito 8.
+    Solución: la traza de una sesión nueva se crea en exclusiva
+    (`open(new=True)`, `TraceExists`) y, si el id está tomado, se toma otro
+    antes de escribir nada; si al guardar choca con una sesión sin traza
+    (del hito 6), `SessionExists`, otro id, y la traza, que es solo suya, se
+    mueve. `Conversation.exists` dice si el id ya es suyo; las
+    comparaciones con "la sesión actual" (`/resume`, `/delete`, retomar sin
+    id, `/trace` sin id) solo valen entonces. `Conversation.stored` dice si
+    su fichero existe.
+19. **La traza se cablea ya** en `bootstrap` (como el catálogo en el PR 3):
+    `Sessions` la necesita. Enseñar su aviso y `/trace` en la terminal es
+    del PR 5.
+20. **Un secreto igual a un valor fijo** (`PASSWORD=tool_call`, que es el
+    `type` de un bloque) deja un registro enmascarado inválido. Se pierde
+    ese registro, con aviso; nunca el turno.
+21. **gitleaks y los datos de prueba:** la clave PEM inventada de los tests
+    se construye en tiempo de ejecución (`pem()`), en vez de marcar la
+    línea para que gitleaks la ignore.
+22. **`/trace` no cuenta como herramientas** las llamadas saltadas tras
+    una denegación (`not run: a previous call was denied`): nunca se
+    trataron. Las denegadas y las fallidas van aparte.
+23. **Un turno sin `TurnFinished`** sale como `error`, `interrupted` o
+    `unfinished` (maha murió o la traza falló al final).

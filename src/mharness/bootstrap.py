@@ -26,11 +26,13 @@ from mharness.adapters.tools import (
     Workspace,
     WriteFile,
 )
+from mharness.adapters.tracing import JsonlTraceSink
 from mharness.application.agent import Agent
 from mharness.application.sessions import Sessions
 from mharness.application.tools import ToolRegistry
 from mharness.domain.environment import command_env
 from mharness.domain.messages import Message
+from mharness.domain.trace import known_secrets
 from mharness.ports.approval import ApprovalGate
 from mharness.ports.catalog import ModelCatalog
 
@@ -102,13 +104,18 @@ async def _converse(settings: config.Settings, catalog: ModelCatalog, cwd: Path)
                 history=history,
             )
 
+        data = config.data_dir(os.environ)
         sessions = Sessions(
-            JsonlSessionStore(config.data_dir(os.environ) / "sessions"),
+            JsonlSessionStore(data / "sessions"),
             new_agent,
             cwd=str(cwd),
             provider=settings.provider_name,
             model=settings.model,
             version=__version__,
+            traces=JsonlTraceSink(data / "traces"),
+            # The provider's key and every variable that looks like one never
+            # reach a trace (spec hito 7, §1.8).
+            masked=known_secrets(os.environ, also=[settings.api_key]),
         )
         return await cli.converse(
             sessions,

@@ -1,21 +1,24 @@
-"""Sessions: every turn saved, and conversations resumed (spec hito 6, §1.6,
-§1.8 and §1.9).
+"""Sessions: every turn saved and traced, and conversations resumed (spec
+hito 6, §1.6, §1.8 and §1.9; spec hito 7, §1.7).
 
-The `Agent` knows nothing of the disk: `Conversation` wraps it and, when a
-turn ends (also by Ctrl+C or an error), appends to the session what the
-agent kept. `Sessions` starts, resumes, lists and deletes them through the
-`SessionStore` port.
+The `Agent` knows nothing of the disk: `Conversation` wraps it, traces what
+happens, and when a turn ends (also by Ctrl+C or an error) appends to the
+session what the agent kept. `Sessions` starts, resumes, lists and deletes
+them through the `SessionStore` and `TraceSink` ports.
 """
 
+import asyncio
 import secrets
-from collections.abc import AsyncGenerator, Callable, Sequence
+from collections.abc import AsyncGenerator, Callable, Collection, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
 from mharness.application.agent import Agent
+from mharness.application.traces import TraceSummary, summarize
 from mharness.domain.agent_events import AgentEvent, ModelCallFinished
+from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
 from mharness.domain.model import Usage
 from mharness.domain.session import (
@@ -24,6 +27,7 @@ from mharness.domain.session import (
     Session,
     SessionEntry,
     SessionError,
+    SessionExists,
     SessionHeader,
     SessionInUse,
     SessionNotFound,
@@ -31,7 +35,20 @@ from mharness.domain.session import (
     UsageEntry,
     session_id,
 )
+from mharness.domain.trace import (
+    TraceError,
+    TraceEvent,
+    TraceExists,
+    TraceRecord,
+    TurnFailed,
+    TurnInterrupted,
+    redact,
+)
 from mharness.ports.sessions import SessionLog, SessionStore
+from mharness.ports.tracing import TraceLog, TraceSink
+
+# Ids tried for a new session before giving up: each clash takes another.
+ID_ATTEMPTS = 5
 
 # Builds the agent of a conversation: its model and the history it starts
 # with. Which client and tools it has is not this module's business.
@@ -47,6 +64,9 @@ class _Origin:
     version: str
     now: Callable[[], datetime]
     token: Callable[[], str]
+    traces: TraceSink
+    # Values masked in every trace record (spec hito 7, §1.8).
+    masked: Collection[str]
 
 
 class Conversation:
@@ -61,6 +81,12 @@ class Conversation:
 
     The tokens and the cost of a turn are those of its finished calls to
     the model: a turn cut after one call still paid for it.
+
+    Every event but the pieces of text goes to the trace, masked, as it
+    happens; how a turn ended badly too. The trace never cuts a turn: its
+    first failure is told once (`trace_warning()`). A new session has its
+    id from the start, so that its trace and its file share it; until one
+    of them exists, a clash with another session takes a new id.
     """
 
     def __init__(
@@ -78,7 +104,18 @@ class Conversation:
         self._agent = agent
         self._origin = origin
         self._log = log
-        self.id = session
+        # When a new session started; its header says so.
+        self._created = origin.now()
+        self.id = session if session is not None else self._new_id()
+        # Whether the id is ours: a resumed session, or a new one whose
+        # trace or file was created. Until then, a clash takes another id.
+        self._reserved = session is not None
+        # Whether its session file exists: resumed, or created.
+        self._stored = session is not None
+        self._trace: TraceLog | None = None
+        # The first failure of the trace, until it is told.
+        self._trace_problem: str | None = None
+        self._trace_failed = False
         # The model a new session's header names: the one it started with.
         self._first_model = agent.model
         # How many messages of the agent are already queued or saved.
@@ -94,6 +131,17 @@ class Conversation:
     @property
     def model(self) -> str:
         return self._agent.model
+
+    @property
+    def exists(self) -> bool:
+        """Whether the id is this conversation's: resumed, or its trace or
+        its file created. Before that, another session may have it."""
+        return self._reserved
+
+    @property
+    def stored(self) -> bool:
+        """Whether its session file exists, and can be resumed."""
+        return self._stored
 
     @property
     def messages(self) -> Sequence[Message]:
@@ -113,7 +161,21 @@ class Conversation:
                         usage += event.usage
                         if cost is not None:
                             cost = None if event.cost is None else cost + event.cost
+                    if not isinstance(event, TextDelta):
+                        await self._record(event)
                     yield event
+        except BaseException as exc:
+            # Ctrl+C arrives as CancelledError while waiting, or as
+            # GeneratorExit when the terminal closes the turn.
+            by_user = isinstance(
+                exc, asyncio.CancelledError | GeneratorExit | KeyboardInterrupt
+            )
+            await self._record(
+                TurnInterrupted()
+                if by_user
+                else TurnFailed(kind=type(exc).__name__, message=str(exc))
+            )
+            raise
         finally:
             fresh = self._agent.messages[self._queued :]
             self._queued += len(fresh)
@@ -125,6 +187,7 @@ class Conversation:
                 else:
                     self.cost += cost
             await self._save()
+            await self._sync_trace()
 
     async def switch_model(self, model: str) -> None:
         """Use `model` from the next turn on; the change keeps its place
@@ -140,6 +203,59 @@ class Conversation:
         if self._log is not None:
             await self._log.close()
             self._log = None
+        if self._trace is not None:
+            await self._trace.close()
+            self._trace = None
+
+    def trace_warning(self) -> str | None:
+        """Why the trace failed, the first time it did; then None, even if
+        it fails again: the person is told once."""
+        problem, self._trace_problem = self._trace_problem, None
+        return problem
+
+    async def _record(self, event: TraceEvent) -> None:
+        try:
+            if self._trace is None:
+                self._trace = await self._open_trace()
+            record = TraceRecord(at=self._origin.now(), session=self.id, event=event)
+            try:
+                masked = redact(record, self._origin.masked)
+            except ValueError as exc:
+                # A secret equal to a fixed value ("tool_call"): masked, the
+                # record is no longer one. It is lost, never the turn.
+                raise TraceError(f"cannot trace a {event.type} event: {exc}") from None
+            await self._trace.write(masked)
+        except TraceError as exc:
+            self._trace_trouble(exc)
+
+    async def _open_trace(self) -> TraceLog:
+        """The trace of this session. A new session's is created only if
+        no other has that id; if one has it, this one takes another."""
+        traces = self._origin.traces
+        if self._reserved:
+            return await traces.open(self.id)
+        for _ in range(ID_ATTEMPTS):
+            try:
+                log = await traces.open(self.id, new=True)
+            except TraceExists:
+                self.id = self._new_id()
+                continue
+            self._reserved = True
+            return log
+        raise TraceError(f"no free id for a new trace after {ID_ATTEMPTS} tries")
+
+    async def _sync_trace(self) -> None:
+        if self._trace is None:
+            return
+        try:
+            await self._trace.sync()
+        except TraceError as exc:
+            self._trace_trouble(exc)
+
+    def _trace_trouble(self, exc: TraceError) -> None:
+        if not self._trace_failed:
+            self._trace_failed = True
+            self._trace_problem = str(exc)
 
     async def _save(self) -> None:
         if not self._pending:
@@ -160,19 +276,53 @@ class Conversation:
         self.unsaved = None
 
     async def _create(self) -> SessionLog:
-        origin = self._origin
-        created = origin.now()
-        header = SessionHeader(
-            id=session_id(created, origin.token()),
-            created_at=created,
-            cwd=origin.cwd,
-            provider=origin.provider,
-            model=self._first_model,
-            maha=origin.version,
-        )
-        log = await self._store.create(header)
-        self.id = header.id
-        return log
+        """The session's file, with this conversation's id. If a session
+        that has no trace (one of hito 6) took it, another id, and the
+        trace goes with it."""
+        for _ in range(ID_ATTEMPTS):
+            header = SessionHeader(
+                id=self.id,
+                created_at=self._created,
+                cwd=self._origin.cwd,
+                provider=self._origin.provider,
+                model=self._first_model,
+                maha=self._origin.version,
+            )
+            try:
+                log = await self._store.create(header)
+            except SessionExists:
+                await self._take_another_id()
+                continue
+            self._reserved = True
+            self._stored = True
+            return log
+        raise SessionError(f"no free id for a new session after {ID_ATTEMPTS} tries")
+
+    async def _take_another_id(self) -> None:
+        """Leave an id that a session already has. The trace written so far
+        is this conversation's alone (it was created new): it moves."""
+        old = self.id
+        self.id = self._new_id()
+        if not self._reserved:
+            return
+        # The trace is reserved again under the new id when it moves.
+        self._reserved = False
+        traces = self._origin.traces
+        try:
+            if self._trace is not None:
+                await self._trace.close()
+                self._trace = None
+            records = await traces.read(old)
+            self._trace = await self._open_trace()
+            for record in records:
+                await self._trace.write(record.model_copy(update={"session": self.id}))
+            await traces.delete(old)
+        except TraceError as exc:
+            self._trace_trouble(exc)
+
+    def _new_id(self) -> str:
+        self._created = self._origin.now()
+        return session_id(self._created, self._origin.token())
 
 
 @dataclass(frozen=True)
@@ -194,8 +344,17 @@ class Resumed:
     left_unsaved: str | None = None
 
 
+@dataclass(frozen=True)
+class TraceReport:
+    """What /trace shows: the summary, and where the whole trace is."""
+
+    summary: TraceSummary
+    location: str
+
+
 class Sessions:
-    """Starts, resumes, lists and deletes the sessions of this maha."""
+    """Starts, resumes, lists and deletes the sessions of this maha, and
+    reads their traces."""
 
     def __init__(
         self,
@@ -206,13 +365,17 @@ class Sessions:
         provider: str,
         model: str,
         version: str,
+        traces: TraceSink,
+        masked: Collection[str] = (),
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         token: Callable[[], str] = lambda: secrets.token_hex(2),
     ) -> None:
         self._store = store
         self._new_agent = new_agent
         self._model = model
-        self._origin = _Origin(cwd, provider, version, now, token)
+        self._origin = _Origin(
+            cwd, provider, version, now, token, traces, frozenset(masked)
+        )
 
     @property
     def cwd(self) -> str:
@@ -230,7 +393,7 @@ class Sessions:
         if session is None:
             loaded, log = await self._open_last_here(current)
         else:
-            if session == current.id:
+            if _is_current(session, current):
                 raise SessionError("this is the current session")
             loaded, log = await self._store.open(session)
         header = loaded.header
@@ -271,9 +434,28 @@ class Sessions:
         return summary.cwd == self._origin.cwd
 
     async def delete(self, session: str, *, current: Conversation) -> None:
-        if session == current.id:
+        """The session and its trace."""
+        if _is_current(session, current):
             raise SessionError("this is the current session")
         await self._store.delete(session)
+        try:
+            await self._origin.traces.delete(session)
+        except TraceError as exc:
+            raise SessionError(
+                f"session {session} deleted, but not its trace: {exc}"
+            ) from None
+
+    async def trace(self, session: str | None, *, current: Conversation) -> TraceReport:
+        """The trace of `session`, of any directory, or of the current one.
+        It only reads: a session open in another maha has its trace too.
+        Raises `TraceError`."""
+        target = session if session is not None else current.id
+        traces = self._origin.traces
+        # Before its first turn the id is not yet the current one's: another
+        # session may have it.
+        own = session is not None or current.exists
+        records = await traces.read(target) if own else []
+        return TraceReport(summarize(target, records), traces.location(target))
 
     async def _open_last_here(
         self, current: Conversation
@@ -282,7 +464,7 @@ class Sessions:
         those open in another maha (final audit of hito 6, 3)."""
         busy = False
         for summary in await self._store.summaries():
-            if not self.here(summary) or summary.id == current.id:
+            if not self.here(summary) or _is_current(summary.id, current):
                 continue
             try:
                 return await self._store.open(summary.id)
@@ -291,3 +473,8 @@ class Sessions:
         if busy:
             raise SessionInUse("the other sessions here are open in another maha")
         raise SessionNotFound("no other session in this directory")
+
+
+def _is_current(session: str, current: Conversation) -> bool:
+    # A new conversation's id is not its own until it exists.
+    return current.exists and session == current.id

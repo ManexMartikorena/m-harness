@@ -10,6 +10,7 @@ from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
     SessionError,
+    SessionExists,
     SessionHeader,
     SessionInUse,
     SessionNotFound,
@@ -82,11 +83,11 @@ async def test_an_unknown_id_is_not_found() -> None:
 # audit of hito 6, 8).
 
 
-async def test_creating_an_existing_session_is_a_session_error() -> None:
+async def test_creating_an_existing_session_is_a_clash() -> None:
     store = MemorySessionStore()
     await (await store.create(HEADER)).close()
 
-    with pytest.raises(SessionError):
+    with pytest.raises(SessionExists):
         await store.create(HEADER)
 
 
