@@ -97,7 +97,7 @@ debe. El detalle: [`DESIGN.md`](DESIGN.md); dónde está cada fichero:
 | 5 | Permisos y herramientas con efecto | ✅ `v0.5.0` (y `v0.5.1`, `v0.5.2`) |
 | 6 | Sesiones e historial | ✅ `v0.6.0` (y `v0.6.1`) |
 | 7 | Trazas y coste | ✅ `v0.7.0` |
-| 8 | Evals y modo no interactivo | ⬜ |
+| 8 | Evals y modo no interactivo | 🚧 en curso |
 | 9 | Adaptador de Anthropic | ⬜ |
 | 10 | System prompt por capas | ⬜ |
 | 11 | Gestión del contexto | ⬜ |
