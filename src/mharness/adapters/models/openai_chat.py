@@ -339,6 +339,8 @@ class _Choice(BaseModel):
 
 class _PromptTokensDetails(BaseModel):
     cached_tokens: int | None = None
+    # OpenCode sends it (measured with kimi-k3 on 2026-10-27).
+    cache_write_tokens: int | None = None
 
 
 class _CompletionTokensDetails(BaseModel):
@@ -443,6 +445,7 @@ def _usage(usage: _Usage | None) -> Usage:
         input_tokens=_count(usage.prompt_tokens),
         output_tokens=_count(usage.completion_tokens),
         cache_read_tokens=_count(prompt.cached_tokens if prompt else None),
+        cache_write_tokens=_count(prompt.cache_write_tokens if prompt else None),
         reasoning_tokens=_count(completion.reasoning_tokens if completion else None),
     )
 

@@ -347,6 +347,29 @@ async def test_which_cost_of_the_provider_is_taken(
 
 
 @respx.mock
+async def test_usage_with_cache_writes(client: OpenAIChatClient) -> None:
+    # Measured with kimi-k3 on OpenCode Go (2026-10-27): inside prompt_tokens,
+    # as the cached ones (spec hito 7, §12.1).
+    body = fixture("completion.json")
+    body["usage"] = {
+        "prompt_tokens": 88,
+        "completion_tokens": 167,
+        "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cached_tokens": 10,
+            "cache_write_tokens": 40,
+        },
+    }
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.usage == Usage(
+        input_tokens=88, output_tokens=167, cache_read_tokens=10, cache_write_tokens=40
+    )
+
+
+@respx.mock
 async def test_usage_with_null_counters(client: OpenAIChatClient) -> None:
     body = fixture("completion.json")
     body["usage"] = {
