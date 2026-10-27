@@ -30,6 +30,7 @@ ficheros.
 |---|---|
 | `ANALISIS.md` | Fase 1: problema, alcance, requisitos, riesgos y criterios de éxito |
 | `DESIGN.md` | Fase 2: arquitectura, contrato de datos, stack y plan de hitos |
+| `COMPARATIVA.md` | Capacidades de OpenCode y Claude Code (comprobadas en su documentación) frente al plan, y qué se propone que entre y cuándo |
 | `ESTADO.md` | Tablero: fase, hecho, siguiente paso, pendientes y versiones |
 | `PUESTA_EN_MARCHA.md` | Lo que no viaja por git: entorno, `.env` y ajustes de GitHub |
 | `MAPA.md` | Este fichero |
