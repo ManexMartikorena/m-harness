@@ -18,6 +18,7 @@ from decimal import Decimal
 from mharness.application.agent import Agent
 from mharness.application.traces import TraceSummary, summarize
 from mharness.domain.agent_events import AgentEvent, ModelCallFinished
+from mharness.domain.catalog import add_cost
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
 from mharness.domain.model import Usage
@@ -160,8 +161,7 @@ class Conversation:
                     if isinstance(event, ModelCallFinished):
                         calls += 1
                         usage += event.usage
-                        if cost is not None:
-                            cost = None if event.cost is None else cost + event.cost
+                        cost = add_cost(cost, event.cost)
                     if not isinstance(event, TextDelta):
                         await self._record(event)
                     yield event

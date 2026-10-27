@@ -80,8 +80,8 @@ async def test_without_calls_the_turn_ends() -> None:
         TurnStarted(text="Hola"),
         TextDelta(text="Hola,"),
         TextDelta(text=" Ane."),
-        ModelCallFinished(usage=usage, model=FAKE_MODEL),
-        TurnFinished(reason="end_turn", usage=usage, tool_calls=0, steps=1),
+        ModelCallFinished(usage=usage, model=FAKE_MODEL, cost=None),
+        TurnFinished(reason="end_turn", usage=usage, tool_calls=0, steps=1, cost=None),
     ]
     assert subject.messages[0] == user("Hola")
     assert subject.messages[1].text == "Hola, Ane."
@@ -151,7 +151,11 @@ async def test_the_step_limit_ends_the_turn_and_keeps_it() -> None:
     events = await run(subject)
 
     assert events[-1] == TurnFinished(
-        reason="max_steps", usage=Usage(), tool_calls=3, steps=3
+        reason="max_steps",
+        usage=Usage(),
+        tool_calls=3,
+        steps=3,
+        cost=None,
     )
     assert len(fake.requests) == 3
     assert subject.messages[-1].role == "tool"
@@ -184,6 +188,7 @@ async def test_turn_usage_adds_every_step() -> None:
         usage=Usage(input_tokens=230, output_tokens=28),
         tool_calls=1,
         steps=2,
+        cost=None,
     )
 
 
@@ -693,7 +698,11 @@ async def test_deny_ends_the_turn_without_calling_the_model() -> None:
     assert echo.calls == []
     # The calls skipped after the denial do not count.
     assert events[-1] == TurnFinished(
-        reason="denied", usage=Usage(), tool_calls=1, steps=1
+        reason="denied",
+        usage=Usage(),
+        tool_calls=1,
+        steps=1,
+        cost=None,
     )
     assert len(fake.requests) == 1
     # The turn is kept: the next turn, the model knows it was denied.
@@ -769,7 +778,7 @@ async def test_an_invalid_decision_does_not_run_the_tool(answer: object) -> None
     assert echo.calls == [EchoParams(text="Hola")]
     # The turn goes on as usual.
     assert events[-1] == TurnFinished(
-        reason="end_turn", usage=Usage(), tool_calls=2, steps=3
+        reason="end_turn", usage=Usage(), tool_calls=2, steps=3, cost=None
     )
 
 
@@ -826,7 +835,7 @@ async def test_once_then_deny_in_one_answer_keeps_every_call_paired() -> None:
     )
     assert echo.calls == [EchoParams(text="Hola")]
     assert events[-1] == TurnFinished(
-        reason="denied", usage=Usage(), tool_calls=2, steps=1
+        reason="denied", usage=Usage(), tool_calls=2, steps=1, cost=None
     )
     assert subject.messages == (
         user("Hola"),
@@ -1092,3 +1101,50 @@ async def test_the_catalog_is_asked_for_this_provider() -> None:
     turn = events[-1]
     assert isinstance(turn, TurnFinished)
     assert turn.cost is None
+
+
+async def test_a_known_model_without_prices_falls_back_to_the_one_asked() -> None:
+    # The user's catalog knows the answering name, but not its price.
+    fake = FakeModelClient(
+        [reply("Hola", usage=Usage(input_tokens=1_000_000), model="glm-0926")]
+    )
+    catalog = MemoryCatalog(
+        [
+            ModelInfo(provider=PROVIDER, model="glm-0926"),
+            priced(MODEL, "0.15", "0.50"),
+        ]
+    )
+
+    events = await run(agent(fake, catalog=catalog))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert turn.cost == Decimal("0.15")
+
+
+async def test_a_denied_turn_has_its_cost() -> None:
+    fake = FakeModelClient(
+        [tool_calls(call("c1"), usage=Usage(input_tokens=1_000_000))]
+    )
+    gate = FakeApproval(["deny"])
+    echo = FakeTool(permission="effect", requests=[ask()])
+    catalog = MemoryCatalog([priced(FAKE_MODEL, "0.15", "0.50")])
+
+    events = await run(agent(fake, echo, gate=gate, catalog=catalog))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert (turn.reason, turn.cost) == ("denied", Decimal("0.15"))
+
+
+async def test_a_turn_at_the_step_limit_has_its_cost() -> None:
+    fake = FakeModelClient(
+        [tool_calls(call("c1"), usage=Usage(input_tokens=1_000_000))] * 2
+    )
+    catalog = MemoryCatalog([priced(FAKE_MODEL, "0.15", "0.50")])
+
+    events = await run(agent(fake, max_steps=2, catalog=catalog))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert (turn.reason, turn.cost) == ("max_steps", Decimal("0.3"))

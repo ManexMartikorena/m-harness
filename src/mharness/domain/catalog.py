@@ -75,6 +75,11 @@ class ModelInfo(BaseModel, frozen=True):
     trains_on_data: bool = False
 
 
+def add_cost(total: Decimal | None, more: Decimal | None) -> Decimal | None:
+    """The sum of two costs; unknown (None) once one of them is."""
+    return None if total is None or more is None else total + more
+
+
 def cost(usage: Usage, prices: Prices) -> Decimal:
     """What one call costs, in USD.
 

@@ -18,6 +18,7 @@ from mharness.domain.agent_events import (
     TurnFinished,
     TurnStarted,
 )
+from mharness.domain.catalog import add_cost
 from mharness.domain.model import Usage
 from mharness.domain.trace import TraceRecord, TurnFailed, TurnInterrupted
 
@@ -97,10 +98,7 @@ def summarize(session: str, records: Sequence[TraceRecord]) -> TraceSummary:
             case ModelCallFinished():
                 current.model_calls += 1
                 current.usage += event.usage
-                if current.cost is not None:
-                    current.cost = (
-                        None if event.cost is None else current.cost + event.cost
-                    )
+                current.cost = add_cost(current.cost, event.cost)
                 if event.model not in models:
                     models.append(event.model)
             case ToolFinished():

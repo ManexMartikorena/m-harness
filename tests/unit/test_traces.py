@@ -56,6 +56,7 @@ def finished(reason: str = "end_turn") -> TurnFinished:
         usage=Usage(),
         tool_calls=0,
         steps=1,
+        cost=None,
     )
 
 

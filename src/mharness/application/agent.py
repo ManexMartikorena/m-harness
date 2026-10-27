@@ -29,7 +29,7 @@ from mharness.domain.agent_events import (
     TurnStarted,
 )
 from mharness.domain.approval import ApprovalRequest, Decision
-from mharness.domain.catalog import cost
+from mharness.domain.catalog import add_cost, cost
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import ModelRequest, ModelResponse, Usage
@@ -133,8 +133,7 @@ class Agent:
                 response = accumulator.response()
                 usage += response.usage
                 call_cost = self._cost(response)
-                if turn_cost is not None:
-                    turn_cost = None if call_cost is None else turn_cost + call_cost
+                turn_cost = add_cost(turn_cost, call_cost)
                 yield ModelCallFinished(
                     usage=response.usage, model=response.model, cost=call_cost
                 )
@@ -265,15 +264,14 @@ class Agent:
             raise
 
     def _cost(self, response: ModelResponse) -> Decimal | None:
-        """What one call cost: by the model that answered, or, if the
-        catalog does not know that name, by the one asked (a provider may
-        name it its own way)."""
-        info = self._catalog.get(self._provider, response.model)
-        if info is None:
-            info = self._catalog.get(self._provider, self.model)
-        if info is None or info.prices is None:
-            return None
-        return cost(response.usage, info.prices)
+        """What one call cost: at the prices of the model that answered, or,
+        if the catalog has none for that name, of the one asked (a provider
+        may name it its own way)."""
+        for model in (response.model, self.model):
+            info = self._catalog.get(self._provider, model)
+            if info is not None and info.prices is not None:
+                return cost(response.usage, info.prices)
+        return None
 
     def _request(self, turn: list[Message]) -> ModelRequest:
         # No system prompt until hito 10 (spec hito 2, §1.5).
