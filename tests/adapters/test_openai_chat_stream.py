@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 from collections.abc import AsyncIterator
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -567,3 +568,25 @@ async def test_a_refusal_comes_as_text(client: OpenAIChatClient) -> None:
     texts = [e.text for e in await events(client) if isinstance(e, TextDelta)]
 
     assert texts == ["No puedo ", "ayudar."]
+
+
+@respx.mock
+async def test_the_end_carries_the_cost_the_provider_gives(
+    client: OpenAIChatClient,
+) -> None:
+    # Spec hito 7, §1.5: the usage chunk of OpenCode, as measured.
+    usage = {
+        "model": MODEL,
+        "choices": [],
+        "usage": {
+            "prompt_tokens": 15,
+            "completion_tokens": 102,
+            "opencode": {"billing_source": "go", "allowance": 5.325e-05},
+        },
+    }
+    serve(sse(chunk("OK", finish_reason="stop"), usage, "[DONE]"))
+
+    *_, end = await events(client)
+
+    assert isinstance(end, MessageEnd)
+    assert end.cost == Decimal("0.00005325")

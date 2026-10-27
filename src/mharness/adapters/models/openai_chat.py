@@ -10,6 +10,7 @@ about the agent.
 import codecs
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
+from decimal import Decimal, InvalidOperation
 from types import TracebackType
 from typing import Any, Self
 
@@ -204,6 +205,7 @@ class OpenAIChatClient:
             stop_reason=STOP_REASONS.get(finish_reason, "other"),
             usage=_usage(usage),
             model=model or request.model,
+            cost=_cost(usage),
         )
 
     def _safe(self, detail: str | None) -> str | None:
@@ -343,11 +345,22 @@ class _CompletionTokensDetails(BaseModel):
     reasoning_tokens: int | None = None
 
 
+class _OpenCodeUsage(BaseModel):
+    # What the call counts against the plan's limit, and its list price.
+    allowance: Any = None
+    list_cost: Any = None
+
+
 class _Usage(BaseModel):
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     prompt_tokens_details: _PromptTokensDetails | None = None
     completion_tokens_details: _CompletionTokensDetails | None = None
+    # The cost, as OpenRouter and others give it. Read as it comes: an odd
+    # value is ignored, never a reason to lose the answer.
+    cost: Any = None
+    # OpenCode's own (measured on Go on 2026-10-27, spec hito 7, §1.5).
+    opencode: _OpenCodeUsage | None = None
 
 
 class _Completion(BaseModel):
@@ -372,6 +385,7 @@ def _to_domain(completion: _Completion, request: ModelRequest) -> ModelResponse:
         stop_reason=STOP_REASONS.get(choice.finish_reason or "", "other"),
         usage=_usage(completion.usage),
         model=completion.model or request.model,
+        cost=_cost(completion.usage),
     )
 
 
@@ -431,6 +445,31 @@ def _usage(usage: _Usage | None) -> Usage:
         cache_read_tokens=_count(prompt.cached_tokens if prompt else None),
         reasoning_tokens=_count(completion.reasoning_tokens if completion else None),
     )
+
+
+def _cost(usage: _Usage | None) -> Decimal | None:
+    """What the provider says the call cost, in USD; None if it does not
+    say. OpenCode first: what counts against the plan's limit, then the list
+    price; then the plain `cost` of OpenRouter and others."""
+    if usage is None:
+        return None
+    opencode = usage.opencode or _OpenCodeUsage()
+    for value in (opencode.allowance, opencode.list_cost, usage.cost):
+        if (amount := _amount(value)) is not None:
+            return amount
+    return None
+
+
+def _amount(value: object) -> Decimal | None:
+    """A number of USD, or None if it is not one, or is negative."""
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        return None
+    try:
+        # str(): the float 6.225e-05 as written, not its binary value.
+        amount = Decimal(str(value))
+    except InvalidOperation:
+        return None
+    return amount if amount.is_finite() and amount >= 0 else None
 
 
 def _count(tokens: int | None) -> int:
