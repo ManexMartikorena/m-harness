@@ -140,6 +140,12 @@ Desde el hito 8 (DESIGN §9).
   contra la documentación oficial y se anotan con la fecha. Nunca de memoria.
 - Una decisión importante queda fijada con un test cuando se puede.
 - `docs/MAPA.md` se actualiza en el mismo PR que crea, mueve o borra ficheros.
+- **Reorganizar documentación no pierde información.** Al mover, resumir o
+  reescribir un documento, lo que deja de estar se lleva, tal cual, a otro
+  sitio (por ejemplo, `docs/HISTORIAL_DESARROLLO.md`), y antes del commit se
+  comprueba mecánicamente que cada línea del texto antiguo sigue en algún
+  documento. *(Añadido el 2026-10-27, tras reorganizar ESTADO sin esa
+  comprobación: se perdieron los pendientes resueltos y se recuperaron.)*
 
 ## Flujo de commits (agentes y humano)
 - El agente commitea cada cambio completo y coherente (una pieza de la spec,
