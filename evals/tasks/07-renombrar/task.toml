@@ -1,0 +1,16 @@
+# Cambiar un nombre en varios ficheros: grep y varias ediciones.
+instruction = "Renombra la función total a importe_total en todo el proyecto, tests incluidos."
+fixture = "tienda"
+split = "validation"
+allow = ["write_file", "edit_file"]
+
+[check]
+# Los tests pasan, importe_total existe y no queda ninguna llamada a total(.
+command = '''
+PYTHONPATH=src python3 -m unittest -q tests.test_pedidos && PYTHONPATH=src python3 -c "
+import pathlib, re, sys
+from tienda.pedidos import importe_total
+left = [str(p) for p in pathlib.Path('.').rglob('*.py') if re.search(r'(?<!\w)total\s*\(', p.read_text())]
+sys.exit(f'total( in {left}' if left else 0)
+"
+'''
