@@ -37,6 +37,7 @@ ficheros.
 | `guia/01-arquitectura-hexagonal.md` | Nota del hito 1: capas, raíz de composición y la base que lo vigila |
 | `guia/02-llamada-a-un-llm.md` | Nota del hito 2: la llamada HTTP, por qué el modelo no recuerda, el adaptador y lo que puede salir mal |
 | `guia/06-historial.md` | Nota del hito 6: el historial es la memoria del modelo, el JSONL que solo crece (y su bloqueo), un historial que se puede mandar, la respuesta cortada marcada, todas las sesiones desde cualquier directorio, las aprobaciones que no vuelven y el disco detrás de un puerto |
+| `guia/07-observabilidad.md` | Nota del hito 7: una traza no es una sesión, los tokens que se facturan, dos fuentes para el coste (el proveedor y el catálogo, y por qué el proveedor primero), sin credenciales en la traza, el registro de la aplicación y lo que costó dejarlo bien |
 | `guia/05-permisos.md` | Nota del hito 5 (con `v0.5.1` y `v0.5.2`): leer frente a efecto, la pregunta (lo tecleado antes se descarta, nada se corta) y sus ámbitos, lo que nunca es para la sesión, escribir sin romper nada, ejecutar comandos (y lo que no protege), lo ejecutado consta y las reglas en el dominio |
 | `guia/04-tool-calling.md` | Nota del hito 4: herramientas con JSON Schema, el viaje de una llamada, el bucle y su límite, errores devueltos al modelo, perímetro y secretos |
 | `guia/03-streaming.md` | Nota del hito 3: SSE, eventos propios, fallos a mitad, cancelar con Ctrl+C, tokens de razonamiento y el spinner |

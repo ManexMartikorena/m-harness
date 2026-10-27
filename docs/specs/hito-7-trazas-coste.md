@@ -1,6 +1,8 @@
 Estado: PROPUESTA (2026-10-26) → APROBADA (2026-10-27, por el humano, sin
 cambios; el 2026-10-27, al empezar el PR 2, el mantenedor amplía el catálogo
-a todos los modelos de cada proveedor y pide precios por tramos, §11)
+a todos los modelos de cada proveedor y pide precios por tramos, §11; y,
+tras la auditoría, el coste que da el proveedor, §1.5) → IMPLEMENTADA
+(2026-10-27, `v0.7.0`)
 
 # Spec — Hito 7: Trazas y coste
 
@@ -832,3 +834,43 @@ primero:
     rotación, cada 1 MiB de avisos. Alternativas que se descartaron: un
     fichero por proceso, o un candado al rotar. Se acepta: es diagnóstico, y
     rotar es raro.
+
+### Cierre (`feature/hito-7-cierre`, 2026-10-27)
+
+PRs del hito: #61 (spec), #64 (PR 1), #65 (PR 2), #66 (arreglo publicado en
+`v0.6.1`), #69 (PR 3), #70 (PR 4), #71 (auditoría), #72 (coste del
+proveedor), #73 (PR 5), #74 (verificación y revisión final), #75 (ids sin
+tope) y el de cierre.
+
+**Verificación a mano** (§7), 2026-10-27, por el agente con `opencode-go`,
+en directorios desechables y con `XDG_DATA_HOME` y `XDG_STATE_HOME`
+desechables. Los diez puntos, en verde:
+1. `maha --version` → `maha 0.7.0`.
+2. Un turno con `glm-5.3-flash`: `[tokens: 1249 in · 3 out · $0.0002 ·
+   session $0.0002]`. El coste cuadra con los precios de §1.1 y con el
+   `list_cost` del proveedor. El desglose `(N reasoning)` sale cuando el
+   proveedor lo manda (§12.35): con `kimi-k3`, `55 out (44 reasoning)`.
+3. `read_file` y otro turno; `/trace` enseña los dos turnos, con la
+   herramienta, la duración (5,7 s y 1,9 s) y el total.
+4. La traza en disco es `0600` (su carpeta, `0700`) y no contiene la clave
+   de `.env`. Un `sk-inventada-1234567890` en el mensaje sale `[redacted]`
+   en la traza y entero en la sesión. (Con `run_command` lo cubren los
+   tests de punta a punta; a mano, en el mensaje: sin terminal, las
+   herramientas con efecto se deniegan.)
+5. `/model kimi-k3` y un turno: `$0.0186`, el coste que da el proveedor (4×
+   el precio de lista, §12.44).
+6. `/model modelo-que-no-existe`: `[model not in the catalog: cost only if
+   the provider reports it]`; el turno da `HTTP 400 … Model is
+   unavailable`, y la traza apunta `error` con `ModelRequestError`.
+7. Ctrl+C a mitad de un poema (pseudoterminal): `[interrupted]`, y la traza
+   termina en `interrupted`.
+8. `/resume` de la sesión y un turno: `session $0.0194`, sumando desde los
+   `$0.0192` guardados.
+9. `/delete` de otra sesión: desaparecen su sesión y su traza.
+10. Con un fichero donde va la carpeta de sesiones: `warning: session not
+    saved: cannot save session …: cannot create the folder …: File exists`
+    y la misma línea en `maha.log` (`0600`), sin el texto de la
+    conversación. Este punto encontró el fallo de §12.45.
+
+Además, el coste del proveedor con `deepseek-v4.1-flash` en hora valle
+(§12.36): `0.00015896` guardado, el 75 % del precio de valle.
