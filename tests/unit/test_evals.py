@@ -100,6 +100,16 @@ def test_the_answer_is_checked_by_text_and_by_pattern() -> None:
     assert check.answer_fails("iva.py, 16") == r"the answer does not match '\\b6\\b'"
 
 
+def test_the_answer_can_be_checked_for_what_it_must_not_say() -> None:
+    check = Check(answer_contains=["calcular_iva"], answer_absent=["resumen"])
+
+    assert check.answer_fails("calcular_iva") is None
+    assert Check(answer_absent=["x"]).answer_fails("y") is None
+    assert check.answer_fails("calcular_iva, resumen") == (
+        "the answer contains 'resumen'"
+    )
+
+
 def test_the_file_is_checked_for_what_it_holds_and_lacks() -> None:
     check = Check(file="README.md", contains=["receive"], absent=["recieve"])
 

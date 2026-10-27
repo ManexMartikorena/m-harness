@@ -44,6 +44,8 @@ class Check(BaseModel, frozen=True, extra="forbid"):
     # expressions, without case).
     answer_contains: list[str] = []
     answer_matches: list[str] = []
+    # Texts the final answer must not hold.
+    answer_absent: list[str] = []
 
     @model_validator(mode="after")
     def _something(self) -> Self:
@@ -51,9 +53,8 @@ class Check(BaseModel, frozen=True, extra="forbid"):
             raise ValueError("contains and absent need a file")
         if self.file is not None and not (self.contains or self.absent):
             raise ValueError("a file needs contains or absent")
-        if not (
-            self.command or self.file or self.answer_contains or self.answer_matches
-        ):
+        answer = self.answer_contains or self.answer_matches or self.answer_absent
+        if not (self.command or self.file or answer):
             raise ValueError("a check needs a command, a file or an answer")
         for pattern in self.answer_matches:
             try:
@@ -70,6 +71,9 @@ class Check(BaseModel, frozen=True, extra="forbid"):
         for pattern in self.answer_matches:
             if not re.search(pattern, answer, re.IGNORECASE):
                 return f"the answer does not match {pattern!r}"
+        for text in self.answer_absent:
+            if text in answer:
+                return f"the answer contains {text!r}"
         return None
 
     def file_fails(self, text: str) -> str | None:
