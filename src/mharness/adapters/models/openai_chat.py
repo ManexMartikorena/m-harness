@@ -339,16 +339,12 @@ class _Choice(BaseModel):
 
 class _PromptTokensDetails(BaseModel):
     cached_tokens: int | None = None
+    # OpenCode sends it (measured with kimi-k3 on 2026-10-27).
+    cache_write_tokens: int | None = None
 
 
 class _CompletionTokensDetails(BaseModel):
     reasoning_tokens: int | None = None
-
-
-class _OpenCodeUsage(BaseModel):
-    # What the call counts against the plan's limit, and its list price.
-    allowance: Any = None
-    list_cost: Any = None
 
 
 class _Usage(BaseModel):
@@ -359,8 +355,10 @@ class _Usage(BaseModel):
     # The cost, as OpenRouter and others give it. Read as it comes: an odd
     # value is ignored, never a reason to lose the answer.
     cost: Any = None
-    # OpenCode's own (measured on Go on 2026-10-27, spec hito 7, §1.5).
-    opencode: _OpenCodeUsage | None = None
+    # OpenCode's own (measured on Go on 2026-10-27, spec hito 7, §1.5): what
+    # the call counts against the plan's limit, and its list price. Any
+    # shape: only an object is read.
+    opencode: Any = None
 
 
 class _Completion(BaseModel):
@@ -443,6 +441,7 @@ def _usage(usage: _Usage | None) -> Usage:
         input_tokens=_count(usage.prompt_tokens),
         output_tokens=_count(usage.completion_tokens),
         cache_read_tokens=_count(prompt.cached_tokens if prompt else None),
+        cache_write_tokens=_count(prompt.cache_write_tokens if prompt else None),
         reasoning_tokens=_count(completion.reasoning_tokens if completion else None),
     )
 
@@ -453,15 +452,19 @@ def _cost(usage: _Usage | None) -> Decimal | None:
     price; then the plain `cost` of OpenRouter and others."""
     if usage is None:
         return None
-    opencode = usage.opencode or _OpenCodeUsage()
-    for value in (opencode.allowance, opencode.list_cost, usage.cost):
+    opencode = usage.opencode if isinstance(usage.opencode, dict) else {}
+    for value in (opencode.get("allowance"), opencode.get("list_cost"), usage.cost):
         if (amount := _amount(value)) is not None:
             return amount
     return None
 
 
+# More than this for one call is not a cost: a provider's bug.
+_MAX_CALL_COST = Decimal(1_000_000)
+
+
 def _amount(value: object) -> Decimal | None:
-    """A number of USD, or None if it is not one, or is negative."""
+    """A number of USD, or None if it is not one, is negative or absurd."""
     if isinstance(value, bool) or not isinstance(value, int | float | str):
         return None
     try:
@@ -469,7 +472,9 @@ def _amount(value: object) -> Decimal | None:
         amount = Decimal(str(value))
     except InvalidOperation:
         return None
-    return amount if amount.is_finite() and amount >= 0 else None
+    if not amount.is_finite() or not 0 <= amount <= _MAX_CALL_COST:
+        return None
+    return amount
 
 
 def _count(tokens: int | None) -> int:

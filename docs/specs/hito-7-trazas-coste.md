@@ -751,11 +751,12 @@ primero:
     registros de ese turno anteriores a encontrar un id libre no se
     escriben y se avisa; la conversación sigue con un id nuevo y lo
     siguiente sí se traza. La alternativa es no poner tope a los intentos.
-35. **POR VERIFICAR de §10, resuelto (2026-10-27):** depende del modelo.
-    Con `glm-5.3-flash`, OpenCode ya no manda `completion_tokens_details`, ni
-    con stream ni sin él (en los hitos 3 y 4 sí llegaba), y su propio
+35. **POR VERIFICAR de §10, resuelto (2026-10-27):** depende del modelo y
+    de la llamada. Con `glm-5.3-flash`, OpenCode unas veces no manda
+    `completion_tokens_details` (con stream ni sin él, y su propio
     `usage.opencode.tokens.reasoning` vale 0 aunque "OK" cueste 102 tokens
-    de salida. Con `deepseek-v4.1-flash` sí llegan (34 de 36). A cambio manda su coste: `usage.opencode.list_cost`
+    de salida) y otras sí (9 en la verificación a mano). Con
+    `deepseek-v4.1-flash` y `kimi-k3` llegan. A cambio manda su coste: `usage.opencode.list_cost`
     coincide al dígito con el que calcula el catálogo (15 de entrada y 120 de
     salida con `glm-5.3-flash`: 0,00006225 $).
 
@@ -792,3 +793,41 @@ primero:
     lo deja como estaba tras cada test, para que `caplog` vea los avisos.
 43. **También a `maha.log`** los errores internos de una herramienta (la
     terminal ya los enseñaba).
+
+### Verificación a mano y revisión final (`fix/revision-final-hito-7`, 2026-10-27)
+
+44. **`allowance` según el modelo**, medido: GLM-5.3-Flash 1×, DeepSeek
+    V4.1 Flash en valle 0,75× y Kimi K3 **4×** el precio de lista. Con Kimi,
+    un turno mostró `$0.0186` y el catálogo habría dicho `$0.00465`: lo que
+    se enseña es lo que gasta del límite mensual (decisión 2, §11).
+45. **Fallo de la verificación a mano:** con un fichero donde va la carpeta
+    de sesiones, `maha` decía "no free id for a new session after 5 tries"
+    y no dejaba nada en `maha.log`. El `FileExistsError` del `mkdir` de la
+    carpeta se tomaba por el de `O_EXCL` (choque de ids). Separados, en las
+    sesiones y en las trazas; el error nombra la carpeta.
+46. **`prompt_tokens_details.cache_write_tokens`** (lo manda Kimi en
+    OpenCode) se lee: el coste del catálogo, cuando el proveedor no da el
+    suyo, cobra la caché escrita a su precio.
+47. **Revisión final del código posterior a la auditoría** (tercera revisión
+    independiente). Arreglado, cada uno con su test:
+    - un `usage.opencode` que no es un objeto hacía perder la respuesta; se
+      lee solo si lo es;
+    - un coste absurdo del proveedor (más de un millón de dólares por
+      llamada) no se cree, y `usd()` no falla con ninguna cantidad: antes,
+      guardado en la sesión, rompía la línea de tokens de toda la sesión;
+    - `Usd` no admite negativos;
+    - si `maha.log` no se podía escribir, Python pintaba la traza del error
+      y el mensaje en la terminal: el handler (`_PrivateLog`) calla, y crea
+      el fichero y su copia rotada en `0600`;
+    - sin `HOME` ni entrada en passwd, un error que dice qué hacer;
+    - al registro va solo el tipo de un error interno, no su mensaje, y la
+      ruta de una carpeta va escapada;
+    - la línea de tokens sale si hay coste aunque los tokens sean 0;
+    - un registro de traza sin zona horaria no vale (`AwareDatetime`).
+48. **Pendiente de decisión del mantenedor:** con varios `maha` a la vez,
+    la rotación de `maha.log` (`RotatingFileHandler`) no se coordina entre
+    procesos: al rotar puede perderse o descolocarse alguna línea. Cada
+    línea se escribe entera (`O_APPEND`); el riesgo está solo en la
+    rotación, cada 1 MiB de avisos. Alternativas: aceptarlo (recomendado:
+    es diagnóstico, y rotar es raro), un fichero por proceso, o un candado
+    al rotar.

@@ -331,6 +331,14 @@ async def test_the_cost_opencode_counts_against_the_limit(
         ({"cost": {"usd": 1}}, None),
         ({"cost": "0.5"}, "0.5"),
         ({"opencode": None, "cost": 0.25}, "0.25"),
+        # The whole opencode object of another shape: ignored, the answer
+        # kept (final review of hito 7).
+        ({"opencode": "x", "cost": 0.25}, "0.25"),
+        ({"opencode": [], "cost": 0.25}, "0.25"),
+        ({"opencode": 1}, None),
+        # An absurd amount is not believed either.
+        ({"cost": 1e30}, None),
+        ({"cost": "1e300"}, None),
     ],
 )
 @respx.mock
@@ -344,6 +352,29 @@ async def test_which_cost_of_the_provider_is_taken(
     response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
 
     assert response.cost == (None if cost is None else Decimal(cost))
+
+
+@respx.mock
+async def test_usage_with_cache_writes(client: OpenAIChatClient) -> None:
+    # Measured with kimi-k3 on OpenCode Go (2026-10-27): inside prompt_tokens,
+    # as the cached ones (spec hito 7, §12.1).
+    body = fixture("completion.json")
+    body["usage"] = {
+        "prompt_tokens": 88,
+        "completion_tokens": 167,
+        "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cached_tokens": 10,
+            "cache_write_tokens": 40,
+        },
+    }
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert response.usage == Usage(
+        input_tokens=88, output_tokens=167, cache_read_tokens=10, cache_write_tokens=40
+    )
 
 
 @respx.mock

@@ -85,7 +85,7 @@ def user_catalog_path(env: Mapping[str, str]) -> Path:
 def _config_dir(env: Mapping[str, str]) -> Path:
     xdg = env.get("XDG_CONFIG_HOME", "")
     # The XDG spec says to ignore relative paths.
-    base = Path(xdg) if Path(xdg).is_absolute() else Path.home() / ".config"
+    base = Path(xdg) if Path(xdg).is_absolute() else _home() / ".config"
     return base / "maha"
 
 
@@ -94,7 +94,7 @@ def data_dir(env: Mapping[str, str]) -> Path:
     and later traces and memory (DESIGN §7, spec hito 6, §1.1)."""
     xdg = env.get("XDG_DATA_HOME", "")
     # The XDG spec says to ignore relative paths.
-    base = Path(xdg) if Path(xdg).is_absolute() else Path.home() / ".local" / "share"
+    base = Path(xdg) if Path(xdg).is_absolute() else _home() / ".local" / "share"
     return base / "maha"
 
 
@@ -103,7 +103,7 @@ def state_dir(env: Mapping[str, str]) -> Path:
     application log (spec hito 7, §1.11)."""
     xdg = env.get("XDG_STATE_HOME", "")
     # The XDG spec says to ignore relative paths.
-    base = Path(xdg) if Path(xdg).is_absolute() else Path.home() / ".local" / "state"
+    base = Path(xdg) if Path(xdg).is_absolute() else _home() / ".local" / "state"
     return base / "maha"
 
 
@@ -145,6 +145,18 @@ def load(*, cwd: Path, env: Mapping[str, str]) -> Settings:
         model=model,
         api_key=_api_key(provider_name, provider, env),
     )
+
+
+def _home() -> Path:
+    """The user's home; without one (no HOME, no entry in passwd), a
+    `ConfigError` that says what to do, not a traceback."""
+    try:
+        return Path.home()
+    except RuntimeError:
+        raise ConfigError(
+            "cannot find your home folder: set HOME, or XDG_CONFIG_HOME, "
+            "XDG_DATA_HOME and XDG_STATE_HOME"
+        ) from None
 
 
 def _read(path: Path) -> dict[str, Any]:

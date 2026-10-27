@@ -86,6 +86,17 @@ class JsonlTraceSink:
             self._folder.mkdir(parents=True, exist_ok=True)
             # mkdir follows the umask: the modes are set after.
             self._folder.chmod(0o700)
+        except OSError as exc:
+            # Also FileExistsError, from a file where the folder goes: that
+            # is not an id that is taken. The folder is named: the error
+            # alone ("File exists") does not say which.
+            message = (
+                f"cannot write the trace of {session}: "
+                f"cannot create the folder {self._folder}: {exc.strerror}"
+            )
+            _log.warning("%s", message)
+            raise TraceError(message) from None
+        try:
             fd = os.open(path, flags, 0o600)
         except FileExistsError:
             raise TraceExists(f"the trace of {session} already exists") from None

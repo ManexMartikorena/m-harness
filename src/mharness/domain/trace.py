@@ -10,10 +10,9 @@ a trace is for auditing, and may end up shared.
 import json
 import re
 from collections.abc import Iterable, Mapping
-from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 from mharness.domain.agent_events import (
     ApprovalRequested,
@@ -96,7 +95,8 @@ type TraceEvent = Annotated[
 class TraceRecord(BaseModel, frozen=True):
     """One line of a trace."""
 
-    at: datetime
+    # With its time zone: /trace orders and subtracts them.
+    at: AwareDatetime
     session: str
     event: TraceEvent
 

@@ -1191,7 +1191,8 @@ async def test_a_failed_folder_fsync_still_counts_as_written(
     # with the folder and the error, never the content.
     [warning] = [r for r in caplog.records if r.name == "mharness.adapters.tools.files"]
     assert warning.levelname == "WARNING"
-    assert str(root) in warning.getMessage()
+    # Escaped: a folder name with a line break cannot forge log lines.
+    assert repr(str(root)) in warning.getMessage()
     assert "Invalid argument" in warning.getMessage()
     assert "dos" not in warning.getMessage()
 

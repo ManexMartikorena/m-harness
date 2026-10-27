@@ -245,3 +245,16 @@ def test_without_absolute_xdg_state_uses_local_state(xdg: str) -> None:
     assert config.state_dir({"XDG_STATE_HOME": xdg}) == (
         Path.home() / ".local" / "state" / "maha"
     )
+
+
+def test_without_a_home_the_error_says_what_to_do(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No HOME and no entry in passwd: a ConfigError, not a traceback.
+    def no_home() -> Path:
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(Path, "home", no_home)
+
+    with pytest.raises(ConfigError, match="cannot find your home folder: set HOME"):
+        config.state_dir({})

@@ -232,3 +232,11 @@ def test_redact_leaves_a_clean_record_as_it_was() -> None:
     clean = record(TurnFailed(kind="ModelUnavailableError", message="HTTP 503"))
 
     assert redact(clean, Secrets({KEY})) == clean
+
+
+def test_a_record_without_time_zone_is_not_a_record() -> None:
+    # Mixed with aware ones, /trace could not order them (final review).
+    with pytest.raises(ValidationError):
+        TraceRecord(
+            at=datetime(2026, 10, 27, 9, 15), session=SESSION, event=TurnInterrupted()
+        )

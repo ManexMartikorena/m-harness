@@ -348,3 +348,15 @@ async def test_a_disk_failure_goes_to_the_log_without_content(
     [warning] = [r for r in caplog.records if r.name.startswith("mharness")]
     assert "No space left on device" in warning.getMessage()
     assert "Ana" not in warning.getMessage()
+
+
+async def test_a_folder_blocked_by_a_file_is_not_a_taken_id(tmp_path: Path) -> None:
+    blocked = tmp_path / "traces"
+    blocked.write_text("", encoding="utf-8")
+
+    with pytest.raises(
+        TraceError, match=f"cannot create the folder {blocked}: File exists"
+    ) as caught:
+        await JsonlTraceSink(blocked).open(SESSION, new=True)
+
+    assert not isinstance(caught.value, TraceExists)

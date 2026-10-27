@@ -8,7 +8,7 @@ They are shown escaped, as `\x1b` or `\u202e`.
 """
 
 import re
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 # C0 and C1 controls but newline and tab, and the bidi embeddings,
 # overrides, isolates and marks.
@@ -42,5 +42,9 @@ def usd(amount: Decimal) -> str:
     looks free when it is not (spec hito 7, §1.5)."""
     if amount.is_zero():
         return "$0"
-    shown = amount.quantize(_SMALLEST, rounding=ROUND_HALF_UP)
+    try:
+        shown = amount.quantize(_SMALLEST, rounding=ROUND_HALF_UP)
+    except InvalidOperation:
+        # More digits than Decimal keeps: too big for four decimals.
+        return f"${amount:f}"
     return f"<${_SMALLEST}" if shown.is_zero() else f"${shown}"
