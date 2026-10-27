@@ -1,16 +1,18 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-27. **Hito 7 cerrado (`v0.7.0`, y el arreglo
-`v0.7.1`). Plan
-ampliado y ordenado para empezar el hito 8. Cero deuda conocida.**
+Última actualización: 2026-10-27, al cerrar la sesión. **Hito 8 en curso:
+spec aprobada y PRs 1 y 2 de 6 integrados (núcleo sin persona y evals, con
+la primera línea base). Siguiente: el PR 3, `maha -p`. Cero deuda
+conocida.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 ## Fase actual
 
-**Desarrollo. Hitos 1 a 7 cerrados; siguiente: hito 8 (evals y modo no
-interactivo), sin spec todavía. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
+**Desarrollo. Hitos 1 a 7 cerrados; en curso: hito 8 (evals y modo no
+interactivo), spec `docs/specs/hito-8-evals-no-interactivo.md` APROBADA,
+PRs 1 y 2 de 6 integrados. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.7.1` — Comandos sin terminal** (2026-10-27):
@@ -39,6 +41,7 @@ spec, su nota de la guía y su release.
 | 5 | Permisos y herramientas con efecto | `v0.5.0` (2026-10-23), `v0.5.1`, `v0.5.2` (cero deuda) |
 | 6 | Sesiones e historial | `v0.6.0` (2026-10-26), `v0.6.1` |
 | 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
+| 8 | *En curso.* Evals y modo no interactivo: PR 1 (#91) núcleo sin persona y PR 2 (#92) evals con la primera línea base | — |
 
 Después del hito 7 (2026-10-27, todo de documentación, decidido por el
 mantenedor):
@@ -99,11 +102,15 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.7.1`).
+   `maha 0.7.1`: el hito 8 sube a 0.8.0 al cerrarse).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
    ese PC). Probar con `uv run --env-file .env maha`: dos turnos y `/exit`.
+7. Desde el hito 8, las evals (llamadas reales, unos 0,60 $ y 12 minutos
+   la pasada completa): `PUESTA_EN_MARCHA` §4.1. La línea base viaja por
+   git (`evals/baselines/`); las sesiones y trazas de cada `maha eval` se
+   quedan en el PC donde se lanzó (`~/.local/state/maha/evals/`).
 
 Después, lanzar el agente desde el clon. Él lee `AGENTS.md` y este fichero,
 y sigue por el primer punto de "Siguiente paso" que no esté hecho. Para
