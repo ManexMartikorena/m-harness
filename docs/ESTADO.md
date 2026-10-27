@@ -531,8 +531,11 @@ subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
 mypy y lint-imports en verde; después, el primer punto sin hacer.
 
 1. **Mantenedor:** responder las cinco dudas de la spec del hito 7
-   (`docs/specs/hito-7-trazas-coste.md` §11, en el PR #61). Las
-   recomendaciones del agente:
+   (`docs/specs/hito-7-trazas-coste.md` §11). **La spec aún no está en
+   `main`:** está en el PR #61
+   (https://github.com/ManexMartikorena/m-harness/pull/61), rama
+   `docs/spec-hito-7-trazas`. Para leerla en local: `git fetch && git switch
+   docs/spec-hito-7-trazas`. Las recomendaciones del agente:
    1. catálogo: un TOML propio en el paquete, con fecha, más
       `~/.config/maha/models.toml` opcional del usuario;
    2. coste en OpenCode Go: en dólares, lo que cuenta contra el límite
@@ -541,10 +544,12 @@ mypy y lint-imports en verde; después, el primer punto sin hacer.
       `Conversation`;
    4. reintentos ante 429 y 5xx: hito 8;
    5. `/trace` dentro de `maha`.
-2. **Agente:** con las respuestas, traer `main` a la rama
-   (`git switch docs/spec-hito-7-trazas && git pull && git merge main`),
-   pasar la spec a APROBADA (anotando las decisiones en §11), integrar el
-   PR #61 y empezar por el PR 1 de la spec §6 (`feature/hito-7-coste`).
+2. **Agente:** con las respuestas, en la rama de la spec (`git fetch && git
+   switch docs/spec-hito-7-trazas && git pull`; si `main` cambió desde el
+   2026-10-26, `git merge main`), pasar la spec a APROBADA anotando las
+   decisiones en §11 (y corregir DESIGN si alguna cambia el alcance), hacer
+   push, integrar el PR #61 con el CI en verde y empezar por el PR 1 de la
+   spec §6 (`feature/hito-7-coste`, desde `main` actualizado).
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
