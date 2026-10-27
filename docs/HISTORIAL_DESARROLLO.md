@@ -557,3 +557,216 @@ Lo más reciente primero.
   - todo lo que hace el agente de código se explica al mantenedor, corto y
     directo.
 - **Análisis cerrado, 2026-10-19.**
+
+## ESTADO antes de reorganizarlo (2026-10-27), tal cual
+
+Al reorganizar `docs/ESTADO.md` (PR #84), su sección "Hecho" pasó entera a
+este fichero (arriba), y el resto se reescribió más corto. Para no perder
+nada, aquí van, sin tocar, las partes de ESTADO que se reescribieron: la
+cabecera, la fase, las notas de release, el siguiente paso y los
+pendientes (con los ya resueltos y los commits que los resolvieron).
+
+<details>
+<summary>Cabecera, fase y notas de release</summary>
+
+### Cabecera, fase y notas de release
+
+Última actualización: 2026-10-27 (cierre del hito 7). **Hito 7 cerrado
+(`v0.7.0`): trazas y coste. Cero deuda conocida: tres revisiones
+independientes y la verificación a mano, todo arreglado; las dos decisiones
+que quedaban las tomó el mantenedor. Siguiente: la spec del hito 8.**
+
+Lo primero al abrir: "Siguiente paso", más abajo.
+
+## Fase actual
+
+**Desarrollo. Hito 7 cerrado (`v0.7.0`). Siguiente: hito 8 (evals y modo
+no interactivo), sin spec todavía.**
+
+- Repositorio: https://github.com/ManexMartikorena/m-harness (público).
+- Última versión: **`v0.7.0` — Trazas y coste** (2026-10-27):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.7.0
+- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
+
+## Para la release
+
+Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
+un paso fuera de lo normal.
+
+- Nada pendiente. `v0.7.0` sale sin pasos fuera de lo normal: ninguna
+  variable nueva. Desde esta versión `maha` escribe también en
+  `~/.local/share/maha/traces/` y `~/.local/state/maha/maha.log`, y lee el
+  `~/.config/maha/models.toml` opcional (`PUESTA_EN_MARCHA` §3).
+
+</details>
+
+<details>
+<summary>Siguiente paso</summary>
+
+### Siguiente paso
+
+Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
+subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
+mypy y lint-imports en verde; después, el primer punto sin hacer.
+
+1. **Agente:** proponer la spec del hito 8 (evals y modo no interactivo,
+   DESIGN §9 y §14) en su propio PR (`docs/spec-hito-8-…`), con sus dudas y
+   recomendaciones. El hito 8 ya recoge P1 y P2 de la comparativa: `maha
+   -p`, `-c`/`-r`, `--model`, salida JSON, stdin, códigos de salida, topes
+   de pasos y coste, reintentos con modelo de respaldo, `maha models`,
+   `sessions`, `stats` y `export`, y la batería de evals con su línea base.
+2. **Mantenedor:** responder las dudas de esa spec.
+3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+   VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
+   en la spec 3 §12.
+
+</details>
+
+<details>
+<summary>Pendientes y decisiones abiertas</summary>
+
+### Pendientes / decisiones abiertas
+
+**Puestos de trabajo:**
+- Los dos listos, con clave y configuración: el WSL del PC de Windows
+  (Ubuntu 26.04.1) y el Ubuntu de casa (24.04.5, no 26.04; ver "Hecho",
+  2026-10-20).
+
+**Externas, con el hito en que bloquean:**
+- **Proveedor de modelos: OpenCode Go**, funcionando desde el 2026-10-20
+  (verificación a mano del hito 2).
+
+**Decisiones del mantenedor para hitos futuros:**
+- **Plan completado con la comparativa** (2026-10-27, `docs/COMPARATIVA.md`):
+  se amplían los hitos 8 a 17 con lo que ofrecen OpenCode y Claude Code,
+  entran dos hitos nuevos (12 deshacer, 18 hooks) y la 1.0 pasa al hito 23.
+  Después de la 1.0: LSP, plugins, API y SDK, editores, GitHub Action, más
+  APIs de modelo, worktrees, tareas programadas y voz (DESIGN §14).
+- **Segundo objetivo: producto profesional** (2026-10-27), lo más completo
+  posible en capacidades e intuitivo (ANALISIS §4). Las 17 piezas son el
+  mínimo; la comparación con OpenCode y Claude Code (`docs/COMPARATIVA.md`)
+  propone qué más entra y cuándo.
+- **Dos caras en GitHub** (2026-10-27): el producto en `README.md`
+  (inglés) y `README.es.md` (español), y el proyecto en `docs/PROYECTO.md`; las dos al día en cada cierre de hito
+  (AGENTS.md, DESIGN §13).
+- **Distribución pública en la 1.0** (2026-10-27): instalable para
+  cualquier usuario y con documentación de usuario (DESIGN §13, hito 23).
+- **Hito 21: una TUI completa** (2026-10-27), bonita y fácil para cualquier
+  persona, con navegación intuitiva: todos los comandos que vayan llegando,
+  descubribles en un menú de comandos (como la paleta `ctrl+p` de OpenCode)
+  y con `/help`, `/` y atajos. OpenCode como referencia; la interfaz de
+  línea se conserva. DESIGN §14, hito 21.
+
+**Se deciden en la spec de su hito:**
+- búsqueda en la memoria (hito 14);
+- tecnología del sandbox (hito 15);
+- cliente MCP a mano o con el SDK oficial (hito 17);
+- proveedor de búsqueda web (hito 19);
+- tratamiento de PDFs (hito 20).
+
+**Pendientes del hito 3** (anotados en su spec; cada uno con el hito que lo
+resuelve):
+- ~~**Tokens de razonamiento:** desglose y coste~~ **Resuelto** en el
+  hito 7: la línea de tokens dice `(N reasoning)` cuando el proveedor lo
+  manda, y el coste lo incluye (spec 7, §1.2 y §12.35). Ver el texto del
+  razonamiento (`reasoning_content`): hito 21, con la interfaz.
+- ~~**`refusal` del stream se ignora**~~ **Resuelto** en el hito 5
+  (`89e0fec`): llega como texto. Sigue POR VERIFICAR en OpenCode, que no la
+  ha mandado nunca (spec 5, §10).
+- ~~**Respuesta cortada con Ctrl+C**~~ **Resuelto** en el hito 6 (`d12ea22`):
+  se guarda marcada y el modelo lo sabe (spec 6, §1.7 y §12).
+- **Sin reintentos** ante 429 o 5xx: hito 8, por decisión del mantenedor
+  (spec 7, §11, duda 4).
+- **Lo que se teclea mientras gira el spinner se mezcla con él** en pantalla
+  (solo visual). Hito 21, con la TUI (spec 3, §12.10).
+- **POR VERIFICAR:** el formato de un error a mitad de stream en OpenCode
+  (no se pudo provocar; el código lo lee de forma defensiva) y cortar la red
+  a mitad de respuesta a mano (punto 9 de la verificación, no provocado en
+  WSL; lo cubren los tests). Siguen POR VERIFICAR: la verificación del
+  hito 4 se hizo también desde el PC de Windows. Se miran si aparecen, o
+  desde el Ubuntu de casa.
+
+**Pendientes del hito 4** (anotados en su spec; cada uno con el hito que lo
+resuelve):
+- ~~**Turno atómico:** un fallo o Ctrl+C no guarda nada del turno. Vale porque
+  ninguna herramienta tiene efecto; **el hito 5 lo revisa**, porque una
+  edición ya hecha sí debe constar (spec 4, §1.7).~~ **Resuelto** en el
+  hito 5, pieza 4 (`a9acbab`): lo ejecutado consta aunque falle el modelo o
+  se cancele (spec 5, §1.5 y §12).
+- **Leer fuera del directorio de trabajo y secretos con otro nombre**
+  (`credenciales.txt`): hoy se deniega, o no se detecta. Aprobación en el
+  hito 5 (spec 4, §1.6 y §10). **Leer fuera y los secretos conocidos,
+  resuelto** en el hito 5, pieza 6 (`7e39cfb`): preguntan, una a una (spec
+  5, §1.6 y §12.6). Los secretos con otro nombre siguen sin detectarse:
+  se mantiene así por decisión del mantenedor; mirar el contenido es otra
+  pieza (hito 15; mejora `2026-10-23`, E5).
+- **Tokens:** cada llamada al modelo cuesta ~700 tokens de entrada solo por
+  las cuatro herramientas; un turno de dos pasos llegó a 4111. El coste ya
+  se ve (hito 7); compactación: hito 11 (spec 4, §12.14).
+- **Límites de tokens y de tiempo por turno:** hito 8, con el modo no
+  interactivo (spec 4, §11, duda 3).
+- **Las descripciones de las herramientas son prompts:** primeras candidatas
+  a la batería de evals del hito 8 (spec 4, §5).
+- **Llamadas en paralelo:** hito 16 (spec 4, §11, duda 5).
+- ~~**`.gitignore`**~~ **Resuelto** (`eb675f1`, spec
+  `mejora-2026-10-23-deuda-hito-5`, E6): `glob` y `grep` lo leen.
+- **POR VERIFICAR:** si OpenCode llega a partir los argumentos de una
+  llamada o a mandar JSON inválido (el código y los tests cubren los dos
+  casos; spec 4, §10).
+- **Detalles visuales:** el eco de `^C` y lo que se teclea durante un turno
+  se mezclan con la salida. Hito 21 (spec 4, §12.13).
+
+**Pendientes del hito 5** (anotados en su spec; cada uno con el hito que lo
+resuelve):
+- ~~**Excepciones no previstas tras una ejecución**~~ **Resuelto**
+  (`e084fbd`, spec `mejora-2026-10-23-deuda-hito-5`, E4): el turno se
+  guarda ante cualquier excepción.
+- ~~**Una FIFO bloquea `read_file` y `grep` al recorrer**~~ **Resuelto**
+  (`85c9e26`, spec 5, §12.11).
+- ~~**Pieza 14: sanear la pregunta**~~ **Resuelto** (`ea93db2`, con `clean()`
+  de la mejora, A2).
+- ~~**`.git/config` se lee sin preguntar**~~ **Resuelto** (`c64207b`, mejora
+  E3): es secreto.
+- ~~**Límites conocidos de `write_file` y `edit_file`**~~ **Resueltos**
+  (spec `mejora-2026-10-23-deuda-hito-5`, PR 3), salvo lo que decidió el
+  mantenedor: D7 aceptado, D14 se mantiene y D5 no es un fallo (Linux). D11,
+  resuelto en el hito 7.
+- ~~**Un comando que sale de su grupo** (`setsid`) sobrevive~~ **Resuelto**
+  (`96db36c`, `v0.5.1`): subreaper.
+- ~~**El fallo del `fsync` de la carpeta no deja rastro** (D11)~~
+  **Resuelto** en el hito 7: va a `maha.log` (spec 7, §1.11).
+- **Comandos interactivos** (un editor, `git commit` sin `-m`): sin stdin,
+  terminan o llegan al tiempo límite. Es el diseño (spec 5, §10); la
+  descripción pide comandos no interactivos.
+
+**Del hito 7** (anotados en su spec §12; ningún fallo conocido):
+- **Modelos que `maha` aún no puede usar:** muchos de Go y Zen se sirven
+  por la API de Anthropic (hito 9), por la de Responses de OpenAI o por la
+  de Google, y `maha` solo habla Chat Completions. Están en el catálogo
+  igual. Las dos últimas no tienen hito: **decisión del mantenedor**, cuando
+  toque, si se añaden adaptadores.
+- **Refrescar los precios desde models.dev** a una caché, a petición:
+  mejora posible si mantener a mano 113 modelos pesa (spec §11, 1). Los
+  precios del catálogo son del 2026-10-27: cuando OpenCode da el coste
+  (Go), es el que vale.
+- **POR VERIFICAR:** qué campos de coste manda OpenCode Zen (pago por uso);
+  la cuenta es de Go (spec 7, §10).
+- **Límite aceptado por el mantenedor:** la rotación de `maha.log` no se
+  coordina entre varios `maha` a la vez (spec 7, §12.48).
+
+**Del hito 6** (anotados en su spec; ningún fallo conocido):
+- ~~**Coste por sesión**~~ **Resuelto** en el hito 7: `session $…` en la
+  línea de tokens, y cada turno guarda su coste (spec 7, §1.5).
+- **Retomar al arrancar** (`maha --continue`, `--resume ID`): hito 8, con
+  las opciones de línea de comandos (spec 6, §11, duda 5).
+- **El modelo no sabe en qué directorio trabaja** tras retomar una sesión de
+  otro: el aviso es para la persona. El directorio entra en el system prompt
+  en el hito 10 (spec 6, §1.8).
+- **La marca `[interrupted by the user]`** es texto para el modelo:
+  candidata a la batería de evals del hito 8.
+
+**Por medir:**
+- Línea base de las evals (hito 8).
+- Ahorro de tokens de la memoria (hito 14).
+
+</details>
