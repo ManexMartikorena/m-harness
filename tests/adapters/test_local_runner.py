@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 import os
 import signal
+import sys
 from pathlib import Path
 
 import pytest
@@ -210,5 +211,28 @@ async def test_an_escaped_process_that_cannot_be_killed_is_left_alone(
         if (pid := read_pid(pidfile)) is not None:
             with contextlib.suppress(ProcessLookupError):
                 os.kill(pid, signal.SIGKILL)
+
+    assert (result.exit_code, result.output) == (0, "hola\n")
+
+
+async def test_a_process_with_a_name_that_is_not_ascii(tmp_path: Path) -> None:
+    # Any process of the machine named "ñandú" made every command fail: its
+    # /proc/<pid>/stat was read as ASCII (found 2026-10-27).
+    rename = "open('/proc/self/comm', 'w').write('ñandú'); print(flush=True); input()"
+    other = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        rename,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+    )
+    try:
+        assert other.stdout is not None
+        await other.stdout.readline()
+
+        result = await run("echo hola", tmp_path)
+    finally:
+        other.kill()
+        await other.wait()
 
     assert (result.exit_code, result.output) == (0, "hola\n")
