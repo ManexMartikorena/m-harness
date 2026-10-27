@@ -11,7 +11,7 @@
 done, **asking you before every change**. It works with the provider and
 model you choose, and tells you what each turn cost.
 
-> 🚧 **In development: `v0.7.0`.** Already usable to work on a project:
+> 🚧 **In development: `v0.7.1`.** Already usable to work on a project:
 > chat, read and change files, run commands, save and resume sessions, and
 > see the cost. What comes next is in the [roadmap](#roadmap).
 
@@ -81,7 +81,7 @@ You need [uv](https://docs.astral.sh/uv/) (it also installs Python 3.14 if
 missing).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.7.0
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.7.1
 ```
 
 Then choose a provider and a model:
