@@ -168,6 +168,11 @@ Desde el hito 8 (DESIGN §9).
   se parte.
 - **Cada PR usa la plantilla** `.github/pull_request_template.md`: qué hace
   cada fichero y por qué.
+- **Cada PR va a su milestone** en GitHub: uno por hito (`Hito N — nombre`,
+  con su descripción y el enlace a DESIGN §14). Los PRs que no son de un
+  hito (arreglos entre hitos, documentación general) van sin milestone. Al
+  cerrar el hito, su milestone se cierra. *(Añadido el 2026-10-27, por
+  decisión del mantenedor: GitHub ordenado para lo que viene.)*
 - **Push y PR:** los hace el humano, o el agente (`git push`,
   `gh pr create`) cuando el humano se lo pide en esa sesión.
 - **Integración con merge commit**, desde GitHub y solo con el CI en verde.
