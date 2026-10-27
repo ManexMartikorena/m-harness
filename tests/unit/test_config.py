@@ -231,3 +231,17 @@ def test_without_absolute_xdg_the_catalog_is_in_dot_config() -> None:
     assert config.user_catalog_path({}) == (
         Path.home() / ".config" / "maha" / "models.toml"
     )
+
+
+# Where the application log lives (spec hito 7, §1.11).
+
+
+def test_state_dir_respects_xdg_state_home(tmp_path: Path) -> None:
+    assert config.state_dir({"XDG_STATE_HOME": str(tmp_path)}) == tmp_path / "maha"
+
+
+@pytest.mark.parametrize("xdg", ["", "relative/path"])
+def test_without_absolute_xdg_state_uses_local_state(xdg: str) -> None:
+    assert config.state_dir({"XDG_STATE_HOME": xdg}) == (
+        Path.home() / ".local" / "state" / "maha"
+    )

@@ -98,6 +98,15 @@ def data_dir(env: Mapping[str, str]) -> Path:
     return base / "maha"
 
 
+def state_dir(env: Mapping[str, str]) -> Path:
+    """`$XDG_STATE_HOME/maha`, by default under `~/.local/state`: the
+    application log (spec hito 7, §1.11)."""
+    xdg = env.get("XDG_STATE_HOME", "")
+    # The XDG spec says to ignore relative paths.
+    base = Path(xdg) if Path(xdg).is_absolute() else Path.home() / ".local" / "state"
+    return base / "maha"
+
+
 def load(*, cwd: Path, env: Mapping[str, str]) -> Settings:
     """Read, validate and combine the configuration; raise `ConfigError`."""
     user_path = user_config_path(env)

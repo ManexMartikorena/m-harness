@@ -2,7 +2,9 @@
 network."""
 
 import json
+import logging
 import os
+import stat
 from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
 
@@ -443,3 +445,55 @@ def test_a_second_maha_resumes_the_first_one(
         {"role": "assistant", "content": "Hola, Ane."},
         {"role": "user", "content": "¿Cómo me llamo?"},
     ]
+
+
+# The application log (spec hito 7, §1.11).
+
+
+def test_warnings_go_to_maha_log_only_for_the_user(
+    workspace: Path, state_home: Path, stdin: Callable[[str], None]
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    stdin("/exit\n")
+
+    assert main([]) == 0
+    logging.getLogger("mharness.adapters.prueba").warning("cannot flush %s", "x")
+
+    log = state_home / "maha" / "maha.log"
+    assert "WARNING mharness.adapters.prueba: cannot flush x" in log.read_text(
+        encoding="utf-8"
+    )
+    assert stat.S_IMODE(log.stat().st_mode) == 0o600
+    assert stat.S_IMODE(log.parent.stat().st_mode) == 0o700
+
+
+def test_starting_twice_does_not_write_each_line_twice(
+    workspace: Path, state_home: Path, stdin: Callable[[str], None]
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    for _ in range(2):
+        stdin("/exit\n")
+        assert main([]) == 0
+
+    logging.getLogger("mharness.prueba").warning("una vez")
+
+    text = (state_home / "maha" / "maha.log").read_text(encoding="utf-8")
+    assert text.count("una vez") == 1
+
+
+def test_without_a_place_for_the_log_maha_starts_and_stays_quiet(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    blocker = workspace / "file"
+    blocker.write_text("", encoding="utf-8")
+    monkeypatch.setenv("XDG_STATE_HOME", str(blocker))
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    stdin("/exit\n")
+
+    assert main([]) == 0
+    logging.getLogger("mharness.prueba").warning("nadie lo ve")
+
+    assert "nadie lo ve" not in capsys.readouterr().err
