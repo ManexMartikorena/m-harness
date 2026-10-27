@@ -1,21 +1,21 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-27. **Hito 6 cerrado (`v0.6.0`), cero deuda
-conocida. Hito 7 (trazas y coste): spec APROBADA (el mantenedor acepta las
-cinco recomendaciones), en el PR #61.**
+Última actualización: 2026-10-27. **Hito 6 cerrado (`v0.6.0`). Hito 7
+(trazas y coste) en curso: spec APROBADA e integrada (PR #61); PR 1 (coste
+en el dominio, #64) y PR 2 (catálogo, #65) integrados. Arreglo de lecturas
+no UTF-8 integrado (#66), sin publicar. Cero deuda conocida.**
 
 Lo primero al abrir: "Siguiente paso", más abajo.
 
 ## Fase actual
 
 **Desarrollo. Hito 6 cerrado (`v0.6.0`). En curso: hito 7 (trazas y coste),
-spec APROBADA en el PR #61.**
+PRs 1 y 2 de 5 integrados.**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.6.0` — Sesiones e historial** (2026-10-26):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.6.0
-- Ramas abiertas: `docs/spec-hito-7-trazas` (PR #61, la spec del hito 7,
-  sin integrar). Las integradas se conservan en GitHub.
+- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -29,6 +29,25 @@ un paso fuera de lo normal.
 ## Hecho
 
 Lo más reciente primero.
+
+- **Arreglo de lecturas no UTF-8, 2026-10-27** (PR #66, sin publicar): un
+  `config.toml` que no es UTF-8 tiraba `maha` con una traza; un proceso de
+  la máquina con nombre no ASCII (`ñandú`) hacía fallar todos los
+  `run_command` (`/proc/<pid>/stat` leído como ASCII). Los dos, con su test.
+- **Hito 7, PR 2: catálogo de modelos, 2026-10-27** (PR #65). El
+  mantenedor amplió el alcance al empezarlo (spec §11): **todos los modelos
+  de cada proveedor** (30 de Go y 83 de Zen) **y precios por tramos**.
+  `Tier` en el dominio; `adapters/catalog/models.toml` (precios de la
+  documentación oficial, ventanas de models.dev, cruzado con models.dev) y
+  `TomlCatalog` (el `models.toml` del usuario manda modelo a modelo). Spec
+  §12.5 a §12.12.
+- **Hito 7, PR 1: coste en el dominio, 2026-10-27** (PR #64):
+  `Usage.reasoning_tokens`, `Prices`, `ModelInfo`, `cost()` y el puerto
+  `ModelCatalog`. `input_tokens` incluye la caché leída y la escrita (spec
+  §12.1).
+- **Spec del hito 7 aprobada, 2026-10-27** (PR #61): el mantenedor acepta
+  las cinco recomendaciones; el agente las repasó con el criterio "lo más
+  pro para el producto final" (spec §11).
 
 - **Cierre de sesión, 2026-10-26, PC de Windows (WSL).** Hecho en la
   sesión: la mejora "cero deuda antes del hito 6" (`v0.5.2`), el hito 6
@@ -529,12 +548,14 @@ Al abrir en otro PC: `git switch main && git pull`, `uv sync` (hace falta:
 subieron ruff, pytest-asyncio y virtualenv, PR #58) y comprobar los tests,
 mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** integrar el PR #61 (la spec del hito 7, APROBADA el
-   2026-10-27) con el CI en verde, cuando el mantenedor dé permiso de push
-   en la sesión.
-2. **Agente:** PR 1 de la spec §6 (`feature/hito-7-coste`, desde `main`
-   actualizado): `Usage.reasoning_tokens`, `Prices`, `ModelInfo`, `cost()`
-   y el puerto `ModelCatalog`.
+1. **Mantenedor:** decidir si se publica ya `v0.6.1` con el arreglo del
+   PR #66 o si sale con `v0.7.0`. El agente recomienda publicarlo: el fallo
+   de `/proc` rompe todos los comandos en una máquina con un proceso de
+   nombre no ASCII. `main` ya lleva los PRs 1 y 2 del hito 7, pero sin
+   cablear: no cambian nada de lo que hace `maha`.
+2. **Agente:** PR 3 de la spec §6 (`feature/hito-7-eventos`): `TurnStarted`,
+   `ModelCallFinished.cost`, `TurnFinished.cost`, `UsageEntry.cost` y el
+   coste de la sesión.
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
@@ -668,6 +689,15 @@ resuelve):
 - **Comandos interactivos** (un editor, `git commit` sin `-m`): sin stdin,
   terminan o llegan al tiempo límite. Es el diseño (spec 5, §10); la
   descripción pide comandos no interactivos.
+
+**Del hito 7, en curso** (anotados en su spec §12):
+- **Modelos que `maha` aún no puede usar:** muchos de Go y Zen se sirven
+  por la API de Anthropic (hito 9), por la de Responses de OpenAI o por la
+  de Google, y `maha` solo habla Chat Completions. Están en el catálogo
+  igual. Las dos últimas no tienen hito: **decisión del mantenedor**, cuando
+  toque, si se añaden adaptadores.
+- **Refrescar los precios desde models.dev** a una caché, a petición:
+  mejora posible si mantener a mano 113 modelos pesa (spec §11, 1).
 
 **Del hito 6** (anotados en su spec; ningún fallo conocido):
 - **Coste por sesión:** cada turno guarda sus tokens (`UsageEntry`) para el
