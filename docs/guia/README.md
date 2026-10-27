@@ -21,13 +21,15 @@ Cada nota se escribe en el mismo PR que cierra su hito.
 | 09 | En qué se diferencian los formatos de API | Pendiente (hito 9) |
 | 10 | El system prompt | Pendiente (hito 10) |
 | 11 | La ventana de contexto y la compactación | Pendiente (hito 11) |
-| 12 | Skills | Pendiente (hito 12) |
-| 13 | Memoria persistente | Pendiente (hito 13) |
-| 14 | Aislamiento (sandbox) | Pendiente (hito 14) |
-| 15 | Subagentes | Pendiente (hito 15) |
-| 16 | MCP | Pendiente (hito 16) |
-| 17 | El agente y la web | Pendiente (hito 17) |
-| 18 | Entrada multimodal | Pendiente (hito 18) |
-| 19 | La interfaz de terminal | Pendiente (hito 19) |
-| 20 | OpenTelemetry | Pendiente (hito 20) |
-| 21 | Recorrido completo: de la primera llamada a la v1.0 | Pendiente (hito 21) |
+| 12 | Deshacer: puntos de control | Pendiente (hito 12) |
+| 13 | Skills y comandos personalizados | Pendiente (hito 13) |
+| 14 | Memoria persistente | Pendiente (hito 14) |
+| 15 | Aislamiento (sandbox) y modos de permiso | Pendiente (hito 15) |
+| 16 | Subagentes | Pendiente (hito 16) |
+| 17 | MCP | Pendiente (hito 17) |
+| 18 | Hooks | Pendiente (hito 18) |
+| 19 | El agente y la web | Pendiente (hito 19) |
+| 20 | Entrada multimodal | Pendiente (hito 20) |
+| 21 | La interfaz de terminal | Pendiente (hito 21) |
+| 22 | OpenTelemetry | Pendiente (hito 22) |
+| 23 | Recorrido completo: de la primera llamada a la v1.0 | Pendiente (hito 23) |
