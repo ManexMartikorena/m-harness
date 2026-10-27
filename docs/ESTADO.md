@@ -152,17 +152,23 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 - canal de distribución (hito 23).
 
 **Con hito asignado** (salieron de hitos anteriores; cada uno, de su spec):
-- **Hito 8:** reintentos ante 429 y 5xx (spec 7, §11); límites de tokens y
-  de tiempo por turno (spec 4, §11); `--continue`/`--resume` al arrancar
-  (spec 6, §11); en la batería de evals, las descripciones de las
-  herramientas (spec 4, §5) y la marca `[interrupted by the user]` (spec 6).
+- **Hito 8** (lo que queda, en sus PRs 3 a 6): `--continue`/`--resume` al
+  arrancar (spec 6, §11), en el PR 3; reintentos ante 429 y 5xx (spec 7,
+  §11), en el PR 4. Ya hechos: los límites de tokens y de tiempo por turno
+  (spec 4, §11; PR #91) y las descripciones de las herramientas medidas en
+  la línea base (spec 4, §5; PR #92).
 - **Hito 10:** el modelo no sabe en qué directorio trabaja tras retomar una
   sesión de otro (spec 6, §1.8).
 - **Hito 11:** el coste en tokens de las herramientas en cada llamada (~700
   con las cuatro del hito 4; hoy son siete, por medir) y compactar (spec 4,
-  §12.14).
+  §12.14); en la batería de evals, tareas con historial previo y la marca
+  `[interrupted by the user]` (spec 6, §5; pasa del hito 8 por decisión
+  del mantenedor, spec 8, §11.8).
+- **Hito 12:** bifurcar una sesión (spec 8, §11.8).
 - **Hito 15:** detectar secretos con otro nombre (`credenciales.txt`)
-  mirando el contenido (mejora `2026-10-23`, E5).
+  mirando el contenido (mejora `2026-10-23`, E5); con el sandbox,
+  `run_command` en las evals y tareas de "ejecuta y arregla" (spec 8,
+  §11.2).
 - **Hito 16:** llamadas a herramientas en paralelo (spec 4, §11); comandos
   que esperan entrada, con los comandos en segundo plano (spec 5, §10);
   varios comandos a la vez, hoy uno a uno por el subreaper (spec 8, §12.10).
@@ -181,7 +187,7 @@ código y los tests cubren los dos casos):
 - si OpenCode llega a partir los argumentos de una llamada o a mandar JSON
   inválido (spec 4, §10);
 - un `refusal` de OpenCode, que no ha mandado nunca (spec 5, §10);
-- qué campos de coste manda OpenCode Zen; la cuenta es de Go (spec 7, §10).
+- qué campos de coste manda OpenCode Zen; la cuenta es de Go (spec 7, §10);
 - qué mantuvo abierta casi cinco minutos una llamada de Kimi sin contenido
   (probablemente comentarios SSE); ya se corta a los 120 s sin datos (spec
   8, §12.9).
@@ -200,8 +206,11 @@ no eran una decisión del mantenedor. Arreglados el 2026-10-27: fallan al
 momento (spec 5, §10).
 
 **Por medir:**
-- Línea base de las evals (hito 8).
 - Ahorro de tokens de la memoria (hito 14).
+
+**Medido:** la primera línea base de las evals (2026-10-27, `evals/baselines/`;
+spec 8, §5). La batería tiene que crecer con tareas exigentes hasta 30 o
+más antes de la 1.0 (DESIGN §9): con 20, el éxito ronda el 94-99 %.
 
 ## Versiones
 
