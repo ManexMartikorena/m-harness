@@ -50,6 +50,11 @@ _SHAPES = re.compile(
 )
 
 
+class TraceError(Exception):
+    """A trace cannot be written, read or deleted; the message says why.
+    It never cuts a conversation (spec hito 7, §1.7)."""
+
+
 class TurnFailed(BaseModel, frozen=True):
     """The turn ended with an exception: a failed call to the model, or a
     bug. There is no `AgentError` event: the trace notes it from outside
