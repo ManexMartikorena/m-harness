@@ -150,7 +150,8 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   §12.14).
 - **Hito 15:** detectar secretos con otro nombre (`credenciales.txt`)
   mirando el contenido (mejora `2026-10-23`, E5).
-- **Hito 16:** llamadas a herramientas en paralelo (spec 4, §11).
+- **Hito 16:** llamadas a herramientas en paralelo (spec 4, §11); comandos
+  que esperan entrada, con los comandos en segundo plano (spec 5, §10).
 - **Hito 21:** lo que se teclea mientras gira el spinner y el eco de `^C`
   se mezclan con la salida (spec 3, §12.10; spec 4, §12.13); ver el texto
   del razonamiento (spec 7).
@@ -169,14 +170,17 @@ código y los tests cubren los dos casos):
 - qué campos de coste manda OpenCode Zen; la cuenta es de Go (spec 7, §10).
 
 **Límites aceptados por el mantenedor** (cada uno, con su decisión en su
-spec):
+spec; los cuatro, confirmados de nuevo el 2026-10-27):
 - los secretos con otro nombre no se detectan hasta el hito 15 (mejora
   `2026-10-23`, E5);
 - D7 y D14 de `write_file`/`edit_file` (mejora `2026-10-23`);
-- los comandos interactivos (un editor, `git commit` sin `-m`) terminan o
-  llegan al tiempo límite: es el diseño (spec 5, §10);
 - la rotación de `maha.log` no se coordina entre varios `maha` a la vez
   (spec 7, §12.48).
+
+Los comandos interactivos (un editor, `git commit` sin `-m`) figuraban aquí
+como "terminan o llegan al tiempo límite: es el diseño (spec 5, §10)", pero
+no eran una decisión del mantenedor. Arreglados el 2026-10-27: fallan al
+momento (spec 5, §10).
 
 **Por medir:**
 - Línea base de las evals (hito 8).
