@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from mharness.adapters.catalog import CatalogError, TomlCatalog
+from mharness.adapters.catalog import CatalogError, TomlCatalog, toml_catalog
 from mharness.adapters.catalog.toml_catalog import parse
 from mharness.domain.catalog import ModelInfo, Prices, Tier
 from mharness.ports.catalog import ModelCatalog
@@ -194,7 +194,8 @@ def test_an_unreadable_user_file_is_an_error(tmp_path: Path) -> None:
         ("[models", "invalid TOML"),
         (
             '[models."ollama/x"]\nimput = 0.1\n',
-            r"models\.ollama/x\.imput: unknown field",
+            # The key always quoted: it may hold dots (audit of hito 7).
+            r'models\."ollama/x"\.imput: unknown field',
         ),
         ('[models."qwen-local"]\n', 'models."qwen-local": the key must be'),
         ('[models."/x"]\n', "the key must be"),
@@ -222,8 +223,21 @@ def test_an_unreadable_user_file_is_an_error(tmp_path: Path) -> None:
         ('[models."ollama/x"]\ncontext = 0\n', "greater than 0"),
         (
             "[providers.ollama]\nsource = 'x'\n",
-            r"providers\.ollama\.checked: Field required",
+            r'providers\."ollama"\.checked: Field required',
         ),
+        (
+            # Which tier is wrong (audit of hito 7).
+            '[models."ollama/x"]\ninput = 1\noutput = 1\nchecked = 2026-10-27\n'
+            '[[models."ollama/x".tiers]]\nabove = 100\ninput = 2\noutput = 2\n'
+            '[[models."ollama/x".tiers]]\nabove = 500\ninput = -3\noutput = 3\n',
+            r'models\."ollama/x"\.tiers\.1\.input: Input should be greater',
+        ),
+        (
+            '[models."ollama/x"]\ninput = "1.5"\noutput = 1\nchecked = 2026-10-27\n',
+            r'models\."ollama/x"\.input: .*number, not text',
+        ),
+        ('[models." ollama/x"]\n', "no spaces"),
+        ('[models."ollama/qwen local"]\n', "no spaces"),
     ],
 )
 def test_a_broken_user_file_says_what_and_where(
@@ -250,3 +264,23 @@ def test_a_user_file_that_is_not_utf8_is_an_error(tmp_path: Path) -> None:
         TomlCatalog.load(path)
 
     assert str(path) in str(caught.value)
+
+
+def test_a_built_in_catalog_that_cannot_be_read_is_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A broken install: an error that says so, not a traceback (audit of
+    # hito 7).
+    monkeypatch.setattr(toml_catalog, "PACKAGED", "missing.toml")
+
+    with pytest.raises(CatalogError, match="cannot read the built-in catalog"):
+        TomlCatalog.load(tmp_path / "missing.toml")
+
+
+def test_a_user_price_needs_its_own_date(tmp_path: Path) -> None:
+    # The built-in [providers.opencode-go] date is not the day the user
+    # checked their price.
+    path = write(tmp_path, '[models."opencode-go/glm-5.3"]\ninput = 1\noutput = 2\n')
+
+    with pytest.raises(CatalogError, match="prices need a date"):
+        TomlCatalog.load(path)
