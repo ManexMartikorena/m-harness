@@ -8,6 +8,7 @@ Disk calls are synchronous inside `async def`, as in the file tools: small
 writes, and no threads (spec hito 2, §12).
 """
 
+import contextlib
 import fcntl
 import json
 import os
@@ -74,8 +75,10 @@ class JsonlLog:
 
     async def close(self) -> None:
         if self._fd is not None:
-            os.close(self._fd)
-            self._fd = None
+            fd, self._fd = self._fd, None
+            # Every append was synced: a failing close loses nothing.
+            with contextlib.suppress(OSError):
+                os.close(fd)
 
     def _descriptor(self) -> int:
         if self._fd is None:

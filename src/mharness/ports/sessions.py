@@ -15,7 +15,9 @@ class SessionLog(Protocol):
         """Add the entries at the end, all of them or none."""
         ...
 
-    async def close(self) -> None: ...
+    async def close(self) -> None:
+        """Never fails: every append was already synced."""
+        ...
 
 
 class SessionStore(Protocol):

@@ -573,3 +573,23 @@ async def test_a_file_whose_header_names_another_id_is_corrupt(folder: Path) -> 
 
     with pytest.raises(SessionCorrupt, match="its header says 20261026-091502-3fa2"):
         await JsonlSessionStore(folder).open("20261026-091502-0000")
+
+
+async def test_closing_never_fails(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Every append was synced: a failing close loses nothing (audit of
+    # hito 7).
+    log = await JsonlSessionStore(folder).create(HEADER)
+    real_close = os.close
+
+    def failing(fd: int) -> None:
+        real_close(fd)
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(os, "close", failing)
+    await log.close()
+    monkeypatch.undo()
+
+    with pytest.raises(SessionError, match="closed"):
+        await log.append([MessageEntry(message=HOLA)])
