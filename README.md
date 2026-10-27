@@ -21,7 +21,7 @@ Lo que lo diferencia es cómo se construye:
 > en [`docs/ESTADO.md`](docs/ESTADO.md).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.6.1
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.7.0
 ```
 
 Necesita un proveedor con formato OpenAI (de serie, OpenCode Go o Zen) y su
@@ -36,7 +36,7 @@ model = "glm-5.3-flash"
 ```
 $ export OPENCODE_API_KEY=...
 $ maha
-maha 0.6.1 · opencode-go · glm-5.3-flash · /help for commands
+maha 0.7.0 · opencode-go · glm-5.3-flash · /help for commands
 > Cambia la segunda línea de notas.txt por 'tres' con edit_file.
   → edit_file(new_string="tres", old_string="dos", path="notas.txt")
   ┌ edit notas.txt
@@ -65,6 +65,25 @@ turno, también la respuesta que cortas (el modelo sabe que la cortaste).
 `/sessions` lista las de todos los directorios, `/resume [ID]` retoma una,
 `/delete ID` la borra y `/model [ID]` cambia de modelo; `/help` los
 enseña. Al retomar, las aprobaciones empiezan de cero.
+
+Cada turno dice lo que costó, y la sesión lo que lleva: el coste que da el
+proveedor (con OpenCode Go, lo que cuenta contra tu límite mensual) o, si no
+lo da, el de un catálogo con los precios de todos los modelos de OpenCode
+Go y Zen. `/trace [ID]` resume lo que hizo una sesión, turno a turno; el
+detalle queda en `~/.local/share/maha/traces/`, sin tus credenciales.
+
+```
+> Lee notas.txt con read_file y dime qué pone, en una frase.
+  → read_file(path="notas.txt")
+  ✓ 1 line
+En notas.txt pone: "comprar pan".
+  [tokens: 2542 in · 26 out · 1 call · $0.0004 · session $0.0004]
+> /trace
+  20261027-101620-1163 · glm-5.3-flash · 1 turn · 2 model calls · 1 tool
+  1  11:16:20  2 calls · 1 tool · 2542 in · 26 out · $0.0004 · 5.7 s
+  total: 2542 in · 26 out · $0.0004
+  [trace: ~/.local/share/maha/traces/20261027-101620-1163.jsonl]
+```
 
 ## Cómo funciona un agente
 
@@ -117,7 +136,7 @@ detalle está en [`docs/DESIGN.md`](docs/DESIGN.md).
 | 4 | Tool calling y bucle agéntico | ✅ `v0.4.0` |
 | 5 | Permisos y herramientas con efecto | ✅ `v0.5.0` (y `v0.5.1`, `v0.5.2`) |
 | 6 | Sesiones e historial | ✅ `v0.6.0` |
-| 7 | Trazas y coste | ⬜ |
+| 7 | Trazas y coste | ✅ `v0.7.0` |
 | 8 | Evals y modo no interactivo | ⬜ |
 | 9 | Adaptador de Anthropic | ⬜ |
 | 10 | System prompt por capas | ⬜ |
