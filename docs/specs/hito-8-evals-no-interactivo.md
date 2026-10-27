@@ -210,7 +210,7 @@ La comprobación la ejecuta el arnés de evals, no el modelo: con
 `python3` de la biblioteca estándar en los fixtures: sin dependencias que
 instalar.
 
-### 1.6 Las 10 tareas
+### 1.6 Las 10 tareas *(20 desde el PR 2, §12.8)*
 
 Datos inventados; ocho en español y dos en inglés (el producto es
 multilingüe). Cubren las siete herramientas salvo `run_command` (duda 2) y
@@ -228,6 +228,22 @@ los pendientes de specs anteriores.
 | 8 | Implementa `slugify` para que pasen sus tests | `write_file`/`edit_file` | `unittest` en verde | train |
 | 9 | *Fix the typo "recieve" in README.md* | `edit_file` (exactitud de `old_string`) | fichero sin `recieve` | train |
 | 10 | *Add `is_even(n)` to utils.py* | `edit_file` | `python3 -c` la prueba | train |
+
+*(Añadidas al implementar, por decisión del mantenedor, §12.8: diez tareas
+más exigentes.)*
+
+| # | Tarea | Qué la hace difícil | Conjunto |
+|---|---|---|---|
+| 11 | Puerto desde `TIENDA_PORT`, 8000 si falta o no es un número | Casos límite | train |
+| 12 | IVA del 10 % para `alimentacion`, con líneas de dos o tres elementos | Cambiar dos funciones sin romper nada | train |
+| 13 | ¿Qué funciones de `src/tienda` no aparecen en `tests/`? | Cruzar ficheros; decir de más falla (`answer_absent`) | train |
+| 14 | Descuento por volumen en `total()` | Una regla que se nota también en el IVA | **validation** |
+| 15 | Los tests de la agenda fallan (años bisiestos) | La causa real: 1900 no es bisiesto | train |
+| 16 | `notas lista --ordenar` | Programa de línea de comandos, salida comprobada | train |
+| 17 | Notas en JSON, migrando el `notas.txt` antiguo | Cambio de formato con migración | train |
+| 18 | *`parse_duration("1h30m")`*, rechazando lo que no vale | Analizar texto | **validation** |
+| 19 | *The inventory tests fail* | Un fallo con dos causas | train |
+| 20 | *`total_value()` and its test* | Escribir código y su test | train |
 
 - Las tareas 5 a 10 miden de paso lo que la spec 5 (§1.8) dejó para aquí:
   si hace falta "leer antes de editar". La métrica `tool_errors` cuenta las
