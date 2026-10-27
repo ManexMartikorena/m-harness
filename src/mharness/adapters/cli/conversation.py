@@ -273,6 +273,8 @@ def _show_turn(turn: TurnFinished, conversation: Conversation, out: TextIO) -> N
     elif turn.reason == "max_tokens":
         tokens = turn.usage.input_tokens + turn.usage.output_tokens
         print(f"  [token limit reached: {tokens} tokens]", file=out)
+    elif turn.reason == "timeout":
+        print("  [time limit reached]", file=out)
     elif turn.reason == "max_cost":
         if turn.cost is None:
             print("  [cost limit: the cost of a call is not known]", file=out)

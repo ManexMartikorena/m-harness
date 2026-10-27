@@ -287,6 +287,7 @@ _ENDINGS = {
     "max_steps": "step limit",
     "max_cost": "cost limit",
     "max_tokens": "token limit",
+    "timeout": "time limit",
     "denied": "denied",
     "error": "error",
     "interrupted": "interrupted",

@@ -533,7 +533,7 @@ async def test_trace_says_how_a_turn_ended_badly() -> None:
 async def test_trace_names_the_limits_of_the_turn() -> None:
     maha = Maha(MemorySessionStore(), [])
     log = await maha.traces.open(OTHER, new=True)
-    for reason in ("max_cost", "max_tokens"):
+    for reason in ("max_cost", "max_tokens", "timeout"):
         for event in (
             TurnStarted(text="A"),
             TurnFinished(
@@ -550,6 +550,7 @@ async def test_trace_names_the_limits_of_the_turn() -> None:
 
     assert "· cost limit\n" in out
     assert "· token limit\n" in out
+    assert "· time limit\n" in out
 
 
 async def test_what_the_trace_brings_from_the_disk_is_escaped() -> None:

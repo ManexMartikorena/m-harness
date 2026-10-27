@@ -28,6 +28,7 @@ type Ending = Literal[
     "max_steps",
     "max_cost",
     "max_tokens",
+    "timeout",
     "denied",
     "error",
     "interrupted",

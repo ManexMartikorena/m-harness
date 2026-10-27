@@ -29,6 +29,7 @@ from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from mharness.domain.tools import ToolError
+from mharness.ports.approval import ApprovalGate
 from tests.fakes.approval import FakeApproval, HangingApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FAKE_MODEL, HANG, FakeModelClient, reply, tool_calls
@@ -50,7 +51,7 @@ def agent(
     fake: FakeModelClient,
     *tools: FakeTool,
     max_steps: int = 25,
-    gate: FakeApproval | None = None,
+    gate: ApprovalGate | None = None,
     catalog: MemoryCatalog | None = None,
     limits: TurnLimits | None = None,
 ) -> Agent:
@@ -1227,6 +1228,103 @@ async def test_a_turn_within_its_limits_ends_as_always() -> None:
     turn = events[-1]
     assert isinstance(turn, TurnFinished)
     assert (turn.reason, turn.steps) == ("end_turn", 2)
+
+
+# The time limit of the turn (spec hito 8, §1.1): the loop stops waiting and
+# ends the turn, keeping what ran, as Ctrl+C does.
+
+LIMIT = TurnLimits(timeout=0.05)
+
+
+async def test_the_time_limit_while_the_model_answers_keeps_nothing_new() -> None:
+    subject = agent(FakeModelClient([[TextDelta(text="Ya est"), HANG]]), limits=LIMIT)
+
+    events = await run(subject)
+
+    assert events[-1] == TurnFinished(
+        reason="timeout", usage=Usage(), tool_calls=0, steps=1, cost=Decimal(0)
+    )
+    # Nothing ran: the user writes again, as after Ctrl+C. The half answer
+    # is not kept: its mark would say the user cut it.
+    assert subject.messages == ()
+
+
+async def test_the_time_limit_while_a_tool_runs_keeps_the_turn() -> None:
+    echo = FakeTool(gate=asyncio.Event())
+    subject = agent(FakeModelClient([tool_calls(call("c1"))]), echo, limits=LIMIT)
+
+    events = await run(subject)
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert (turn.reason, turn.tool_calls, turn.steps) == ("timeout", 0, 1)
+    *_, results = subject.messages
+    assert results.blocks == [
+        ToolResultBlock(
+            call_id="c1", content="error: stopped by the time limit", is_error=True
+        )
+    ]
+
+
+async def test_the_time_limit_while_asking_after_a_run_keeps_the_turn() -> None:
+    fake = FakeModelClient([tool_calls(call("c1")), tool_calls(call("c2"), call("c3"))])
+    # The first call is approved once, the second waits forever.
+    effect = FakeTool(permission="effect", requests=[ask(), ask()])
+    gate = OnceThenHang()
+
+    subject = agent(fake, effect, gate=gate, limits=LIMIT)
+    events = await run(subject)
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert (turn.reason, turn.tool_calls, turn.steps) == ("timeout", 1, 2)
+    assert len(gate.requests) == 2
+    *_, results = subject.messages
+    assert [b.content for b in results.blocks] == [  # type: ignore[union-attr]
+        "error: stopped by the time limit",
+        "error: not run",
+    ]
+
+
+class OnceThenHang(HangingApproval):
+    """Approves the first request; then never answers."""
+
+    async def decide(self, request: ApprovalRequest) -> Decision:
+        if not self.requests:
+            self.requests.append(request)
+            return "once"
+        return await super().decide(request)
+
+
+async def test_the_time_limit_is_for_the_whole_turn() -> None:
+    # Three calls of 0.03 s each: no single wait passes 0.05, the turn does.
+    class SlowTool(FakeTool):
+        async def run(self, params: EchoParams) -> str:
+            await asyncio.sleep(0.03)
+            return await super().run(params)
+
+    slow = SlowTool()
+    fake = FakeModelClient([tool_calls(call(f"c{i}")) for i in range(3)])
+
+    events = await run(agent(fake, slow, limits=LIMIT))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    # The first ran; the second was cut while it ran.
+    assert (turn.reason, turn.tool_calls) == ("timeout", 1)
+    assert len(fake.requests) == 2
+
+
+async def test_a_timeout_of_the_tool_itself_is_not_the_turns() -> None:
+    # A TimeoutError that the limit did not cause is the tool's failure.
+    echo = FakeTool(results=[TimeoutError("slow server")])
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Vaya.")])
+
+    events = await run(agent(fake, echo, limits=TurnLimits(timeout=10)))
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert turn.reason == "end_turn"
 
 
 async def test_the_cost_the_provider_gives_wins_over_the_catalog() -> None:

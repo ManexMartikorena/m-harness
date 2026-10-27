@@ -713,6 +713,12 @@ async def test_the_token_and_cost_limits_are_shown() -> None:
     )
     assert "  [cost limit: the cost of a call is not known]\n" in out
 
+    fake = FakeModelClient([[HANG]])
+    _, out, _ = await run_with_tools(
+        fake, "Hola", "/exit", limits=TurnLimits(timeout=0.05)
+    )
+    assert "  [time limit reached]\n" in out
+
 
 async def test_internal_tool_error_goes_to_stderr_and_the_log(
     caplog: pytest.LogCaptureFixture,

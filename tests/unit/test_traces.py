@@ -133,7 +133,7 @@ def test_denied_failed_and_skipped_tools() -> None:
 
 
 def test_a_turn_stopped_by_a_limit_says_which() -> None:
-    for reason in ("max_cost", "max_tokens"):
+    for reason in ("max_cost", "max_tokens", "timeout"):
         records = [at(0, TurnStarted(text="A")), at(1, finished(reason))]
 
         [turn] = summarize(SESSION, records).turns

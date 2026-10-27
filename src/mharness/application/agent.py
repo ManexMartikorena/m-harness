@@ -8,7 +8,7 @@ the tool needs it, and runs them.
 import asyncio
 import json
 import time
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass
 from decimal import Decimal
@@ -44,6 +44,7 @@ NOT_RUN_DENIED = "not run: a previous call was denied"
 # What the call in progress gets when its step is cut short.
 CANCELLED = "cancelled by the user"
 INTERRUPTED = "interrupted by an internal error"
+TIMED_OUT = "stopped by the time limit"
 
 # The only answers that run a call that asked, or deny it.
 DECISIONS: tuple[Decision, ...] = ("once", "session", "deny")
@@ -118,6 +119,12 @@ class Agent:
         accumulator = Accumulator()
         # Whether the model is writing the answer of this step.
         streaming = False
+        step = 0
+        # When the loop stops waiting (spec hito 8, §1.1).
+        timeout = self.limits.timeout
+        deadline = (
+            None if timeout is None else asyncio.get_running_loop().time() + timeout
+        )
         try:
             for step in range(1, self.limits.max_steps + 1):
                 if step > 1 and (limit := self._reached(usage, turn_cost)):
@@ -137,7 +144,11 @@ class Agent:
                 request = self._request(turn)
                 streaming = True
                 async with aclosing(self._client.stream(request)) as events:
-                    async for event in events:
+                    while True:
+                        try:
+                            event = await _within(anext(events), deadline)
+                        except StopAsyncIteration:
+                            break
                         accumulator.add(event)
                         if isinstance(event, TextDelta):
                             yield event
@@ -185,7 +196,7 @@ class Agent:
                     # None: nobody was asked, or the answer was not valid.
                     decision: Decision | None = None
                     asked = False
-                    prepared = await self._prepare(call)
+                    prepared = await _within(self._prepare(call), deadline)
                     if isinstance(prepared, _Outcome):
                         outcome = prepared
                     else:
@@ -195,7 +206,9 @@ class Agent:
                         ):
                             yield ApprovalRequested(call=call, request=question)
                             asked = True
-                            answer: object = await self._gate.decide(question)
+                            answer: object = await _within(
+                                self._gate.decide(question), deadline
+                            )
                             # The time spent deciding is not the tool's.
                             started = time.monotonic()
                             if answer in DECISIONS:
@@ -212,7 +225,7 @@ class Agent:
                         else:
                             # Nobody was asked, or "once" or "session".
                             executed = True
-                            outcome = await self._run(call, prepared)
+                            outcome = await _within(self._run(call, prepared), deadline)
                     calls_run += 1
                     results.append(outcome.result)
                     yield ToolFinished(
@@ -246,6 +259,23 @@ class Agent:
                 usage=usage,
                 tool_calls=calls_run,
                 steps=self.limits.max_steps,
+                cost=turn_cost,
+            )
+        except _TimedOut:
+            # As Ctrl+C, but the turn ends here (spec hito 8, §1.1). A half
+            # answer is not kept: its mark says the user cut it.
+            if executed and not kept:
+                if calls:
+                    blocks = _interrupted(
+                        calls, results, denied=denied, cause=TIMED_OUT
+                    )
+                    turn.append(Message(role="tool", blocks=[*blocks]))
+                self._messages.extend(turn)
+            yield TurnFinished(
+                reason="timeout",
+                usage=usage,
+                tool_calls=calls_run,
+                steps=step,
                 cost=turn_cost,
             )
         except BaseException as exc:
@@ -369,6 +399,27 @@ class Agent:
                 internal_error=f"summary: {type(exc).__name__}: {exc}",
             )
         return _Outcome(result=result, summary=summary)
+
+
+class _TimedOut(Exception):
+    """The turn's time limit passed while the loop waited."""
+
+
+async def _within[T](waiting: Awaitable[T], deadline: float | None) -> T:
+    """Wait for `waiting` until `deadline` (the loop's clock), or raise
+    `_TimedOut`. Each wait on its own, never across a `yield`: a time limit
+    around the whole generator would cancel whoever reads its events."""
+    if deadline is None:
+        return await waiting
+    scope = asyncio.timeout_at(deadline)
+    try:
+        async with scope:
+            return await waiting
+    except TimeoutError:
+        if scope.expired():
+            raise _TimedOut from None
+        # Not ours: the awaited code's own.
+        raise
 
 
 @dataclass(frozen=True)
