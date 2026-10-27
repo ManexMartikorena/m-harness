@@ -731,9 +731,11 @@ primero:
     recurre al modelo pedido también si el que contestó está sin precio;
     `ToolFinished.skipped` en vez de reconocer las llamadas saltadas por su
     texto; el fake de trazas falla y lee como el adaptador real.
-34. **Límite aceptado por diseño:** si cinco ids seguidos chocan (mismo
-    segundo y mismo token aleatorio cinco veces), la traza de ese turno no
-    se escribe y se avisa; la conversación sigue con un id nuevo.
+34. **Pendiente de decisión del mantenedor:** si cinco ids seguidos chocan
+    (mismo segundo y mismo token aleatorio de 16 bits cinco veces), los
+    registros de ese turno anteriores a encontrar un id libre no se
+    escriben y se avisa; la conversación sigue con un id nuevo y lo
+    siguiente sí se traza. La alternativa es no poner tope a los intentos.
 35. **POR VERIFICAR de §10, resuelto (2026-10-27):** OpenCode ya no manda
     `completion_tokens_details`, ni con stream ni sin él (en los hitos 3 y 4
     sí llegaba). Su propio `usage.opencode.tokens.reasoning` vale 0 aunque
