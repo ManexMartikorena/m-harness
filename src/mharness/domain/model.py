@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from mharness.domain.messages import Message
 
@@ -36,12 +36,12 @@ class Usage(BaseModel, frozen=True):
     """Tokens used by one call, as the provider reports them."""
 
     # Every prompt token, the cached ones included (as OpenAI counts them).
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cache_read_tokens: int = 0
-    cache_write_tokens: int = 0
+    input_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(default=0, ge=0)
+    cache_read_tokens: int = Field(default=0, ge=0)
+    cache_write_tokens: int = Field(default=0, ge=0)
     # Already inside output_tokens: they are billed as output.
-    reasoning_tokens: int = 0
+    reasoning_tokens: int = Field(default=0, ge=0)
 
     def __add__(self, more: Usage) -> Usage:
         """The tokens of both calls, field by field."""

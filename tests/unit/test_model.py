@@ -74,3 +74,9 @@ def test_usage_adds_field_by_field() -> None:
         cache_write_tokens=2,
         reasoning_tokens=23,
     )
+
+
+def test_usage_rejects_negative_tokens() -> None:
+    # A negative count would give a negative cost (audit of hito 7).
+    with pytest.raises(ValidationError):
+        Usage(input_tokens=-5)
