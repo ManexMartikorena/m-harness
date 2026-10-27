@@ -1,4 +1,7 @@
-Estado: PROPUESTA (2026-10-27)
+Estado: PROPUESTA (2026-10-27) → APROBADA (2026-10-27, por el humano: "la
+opción más profesional y que más valor aporte al producto final" para todas
+las dudas; con ese criterio cambian las dudas 3 y 4, y entran `--jobs` y los
+errores de infraestructura, §11)
 
 # Spec — Hito 8: Evals y modo no interactivo
 
@@ -56,8 +59,6 @@ Dentro de alcance:
 - `run_command` en las evals: hasta el sandbox (hito 15), duda 2.
 - Modos de permiso (`plan`, aceptar ediciones), reglas por patrón y `--allow`
   por prefijo de comando: hito 15 (P9).
-- Evals en paralelo (`--jobs`): con una persona mirando el coste, en serie
-  es más simple y no choca con los límites del proveedor. Mejora posible.
 - La marca `[interrupted by the user]` en la batería: necesita tareas con
   historial previo; hito 11 (contexto), duda 8.
 - Bifurcar una sesión: hito 12 (puntos de control), duda 8.
@@ -240,6 +241,7 @@ guardan para mirarlas, §1.9):
 | Métrica | Qué es |
 |---|---|
 | Éxito | Tareas cuya comprobación pasa (con repeticiones, la proporción) |
+| Errores de infraestructura | Ejecuciones que no llegaron a acabar por el proveedor (429, 5xx, red, credenciales): no cuentan como fallo ni entran en el éxito, se informan aparte y se pueden repetir con `--retry-errors` |
 | Pasos | Llamadas al modelo |
 | Errores de herramienta | Resultados con `is_error` |
 | Tokens y coste | Suma del turno |
@@ -250,7 +252,12 @@ guardan para mirarlas, §1.9):
 Un modelo no responde siempre igual: una sola pasada es ruido.
 
 - `maha eval` corre cada tarea **1 vez** por defecto (rápido, para iterar);
-  `--repeat N` la corre N veces. La línea base se toma con **3** (duda 3).
+  `--repeat N` la corre N veces. La línea base y la comparación antes de
+  cada merge, con **5** (duda 3).
+- **Dos modelos** de familias distintas (duda 4): `opencode-go/glm-5.3-flash`
+  (el de uso diario) y `opencode-go/kimi-k2.7-code` (especializado en
+  código). `--model` elige uno; `--models a,b` los dos. Cada uno tiene su
+  línea base.
 - `maha eval --save` escribe `evals/baselines/AAAA-MM-DD-<proveedor>-<modelo>.json`:
   solo métricas, versión de `maha` y commit; nunca trazas ni respuestas.
 - Cada ejecución se compara con la última línea base **del mismo modelo** y
@@ -273,9 +280,14 @@ Un modelo no responde siempre igual: una sola pasada es ruido.
 - Las tareas se buscan en `./evals/tasks` (o `--tasks DIR`): es una
   herramienta del repo de `maha`, no del usuario final; el paquete no las
   lleva.
-- Una tarea a la vez (fuera de alcance: paralelo).
-- Coste estimado de una línea base (10 tareas × 3, ~5 llamadas de ~3 000
-  tokens con `glm-5.3-flash`, a 0,15 $/M de entrada): unos céntimos.
+- **En paralelo:** `--jobs N`, 4 por defecto. Cada tarea tiene su copia y
+  su sesión (los ids ya se reservan en exclusiva, spec 7, §12.18). Un 429
+  con varias a la vez no falsea el resultado: es un error de
+  infraestructura (§1.7).
+- Coste estimado de una pasada completa (10 tareas × 5 × 2 modelos, ~5
+  llamadas de ~3 000 tokens): unos 0,15 $ con `glm-5.3-flash` (0,15 $/M de
+  entrada) y en torno a 1 $ con `kimi-k2.7-code` (0,95 $/M). Se mide en la
+  primera y se anota aquí.
 
 ### 1.10 `maha -p`: entrada
 
@@ -489,7 +501,10 @@ Todo con fakes y directorios temporales; ninguna llamada real.
     formada con error claro, copia el fixture a un temporal y escribe y lee
     una línea base.
 13. **Evals, aplicación:** con modelo falso, una tarea que edita el fichero
-    pasa la comprobación y otra no; las repeticiones se agregan; `--split`.
+    pasa la comprobación y otra no; las repeticiones se agregan; `--split`;
+    un `ModelRateLimitError` cuenta como error de infraestructura, no como
+    fallo; con `--jobs 4` el resultado es el mismo que en serie, y cada
+    tarea, en su copia.
 14. **Las 10 tareas son válidas:** se cargan todas, cada fixture existe y la
     comprobación **falla** sobre el fixture sin tocar (si no, la tarea no
     mide nada).
@@ -502,7 +517,8 @@ Todo con fakes y directorios temporales; ninguna llamada real.
 ## 5. Evals
 
 Este hito crea la batería y su **primera línea base** (§1.8), con
-`opencode-go/glm-5.3-flash` y 3 repeticiones (duda 4).
+`opencode-go/glm-5.3-flash` y `opencode-go/kimi-k2.7-code`, 5 repeticiones
+cada uno (dudas 3 y 4).
 
 - El PR de evals (PR 2, §6) toma la línea base **antes** de los PRs que
   cambian el bucle (reintentos, PR 4), y esos se comparan contra ella, como
@@ -528,10 +544,13 @@ Cada punto, un commit en verde. Seis PRs, en el milestone "Hito 8".
 1. Dominio de evals: `Task`, `Check`, `compare()`.
 2. Puerto `EvalSuite` y su fake.
 3. `TomlEvalSuite`.
-4. `application/evals.py`: ejecutar, comprobar, repetir, resumir.
-5. `maha eval` y su informe.
-6. Fixtures y las 10 tareas, una por commit o de dos en dos.
-7. Primera línea base (llamadas reales, en local) y su anotación en §5.
+4. `application/evals.py`: ejecutar, comprobar, repetir, resumir; los
+   errores de infraestructura, aparte.
+5. En paralelo (`--jobs`).
+6. `maha eval` y su informe, con `--models` y `--retry-errors`.
+7. Fixtures y las 10 tareas, una por commit o de dos en dos.
+8. Primera línea base de los dos modelos (llamadas reales, en local) y su
+   anotación en §5.
 
 **PR 3 — modo no interactivo** (`feature/hito-8-print`)
 1. Opciones y subcomandos en `cli/app.py`.
@@ -585,8 +604,9 @@ En un directorio desechable, con OpenCode Go:
 10. `maha models`, `maha sessions`, `maha trace`, `maha stats`, `maha export
     ID > s.md`, `maha export ID --format json > s.json && maha import
     s.json`; `/new` y `/export` dentro.
-11. `maha eval --split train` y `maha eval --repeat 3 --save` → informe y
-    fichero en `evals/baselines/`.
+11. `maha eval --split train` y `maha eval --models glm-5.3-flash,kimi-k2.7-code
+    --repeat 5 --save` → informe y un fichero por modelo en
+    `evals/baselines/`.
 
 ## 8. Lo que no viaja por git y lo que necesita la release
 
@@ -610,9 +630,11 @@ En un directorio desechable, con OpenCode Go:
 
 ## 10. Riesgos
 
-- **Ruido:** con 10 tareas y 3 repeticiones, una diferencia de una tarea
-  puede ser azar. Por eso la regresión es "pasaba siempre y ahora falla" o
+- **Ruido:** con 10 tareas y 5 repeticiones, una diferencia de una tarea
+  aún puede ser azar. Por eso la regresión es "pasaba siempre y ahora falla" o
   baja el total, y la decide el mantenedor.
+- **Tiempo de una pasada completa** (100 ejecuciones): se mide en la
+  primera; `--jobs` lo reparte, y al iterar se usa 1 repetición y `train`.
 - **Tareas demasiado fáciles:** si `glm-5.3-flash` las pasa todas, la
   batería no distingue cambios. Se mira en la primera línea base; si pasa,
   se endurecen antes de cerrar (sin mirar la validación).
@@ -631,7 +653,40 @@ En un directorio desechable, con OpenCode Go:
 
 ## 11. Decisiones
 
-Dudas para el mantenedor, con la recomendación del agente:
+Del humano (2026-10-27): **"lo que quiero es la opción más profesional y que
+más valor aporte al producto final para todas las dudas"**. El agente repasó
+las nueve con ese criterio:
+
+1. `--allow TOOL` con lo que pregunta "cada vez" siempre denegado: es lo
+   que hacen Claude Code (`--allowedTools`, y en `-p` se deniega lo no
+   aprobado) y OpenCode (`--auto`, salvo lo denegado); aprobarlo todo no es
+   profesional sin sandbox. **Se mantiene.**
+2. Sin `run_command` en las evals hasta el sandbox: dar comandos sin
+   aislar a un modelo sin persona en la máquina de desarrollo no es una
+   práctica profesional. **Se mantiene**, y el hito 15 añade a la batería
+   tareas de "ejecuta y arregla".
+3. **Cambia: 5 repeticiones** (no 3) para la línea base y antes de cada
+   merge: 3 dejan demasiado ruido para decidir un merge.
+4. **Cambia: dos modelos** de familias distintas, `glm-5.3-flash` y
+   `kimi-k2.7-code`: un cambio que ayuda a uno y perjudica a otro solo se
+   ve con dos.
+   Con 100 ejecuciones por pasada entran **`--jobs`** (paralelo) y los
+   **errores de infraestructura** separados de los fallos (§1.7–§1.9).
+5. Solo la respuesta final en stdout: es lo que necesita un script, y la
+   convención de `claude -p`. **Se mantiene.**
+6. Nombres de Claude Code donde significan lo mismo y propios donde `maha`
+   cuenta distinto: `--max-turns` diría lo contrario de lo que hace en
+   `maha`. **Se mantiene.**
+7. `max_cost` falla cerrado: un tope de dinero que no se puede comprobar no
+   es un tope. **Se mantiene.**
+8. `[interrupted]` en el hito 11 y bifurcar en el 12: encajan con el
+   contexto y los puntos de control, y aquí serían a medias. **Se
+   mantiene.**
+9. Evals antes que `-p` y los reintentos: así el cambio del bucle se mide.
+   **Se mantiene.**
+
+Dudas que se plantearon al mantenedor (registro), con la recomendación del
+agente:
 
 1. **Permisos sin persona** (§1.2). Propuesta: `--allow TOOL`, repetible,
    que aprueba solo lo que tiene ámbito; lo que con persona pregunta "cada

@@ -204,7 +204,7 @@ ModelRequest(model, system, messages, tools: list[ToolSpec], max_tokens)
 # (Anotado el 26/10/2026, spec mejora-2026-10-26-deuda-pre-hito-6, C1:
 #  `max_tokens` no existe todavía; la spec del hito 2, §1.6, lo aplazó. Se
 #  decide con los límites de tokens: por turno, hito 8; contexto, hito 11.)
-# (Propuesto el 27/10/2026, spec del hito 8, §1.1: el tope de tokens por
+# (Decidido el 27/10/2026, spec del hito 8, §1.1: el tope de tokens por
 #  turno lo aplica el bucle con el uso sumado, sin `max_tokens`; el de cada
 #  llamada sigue para el hito 11.)
 ToolSpec(name, description, input_schema)       # JSON Schema generado por Pydantic
@@ -367,9 +367,9 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   contenido se carga bajo demanda (hito 13).
 - **Supervisión:** toda herramienta con efecto pide aprobación. "Aprobar para
   toda la sesión" es la única forma de autonomía; no hay modo sin aprobaciones
-  en v1. *(Propuesto el 27/10/2026, spec del hito 8, §1.2, duda 1: sin
-  persona (`maha -p`, evals), `--allow TOOL` aprueba solo lo que tiene
-  ámbito; lo que con persona pregunta "cada vez" (fuera del directorio,
+  en v1. *(Cambiado el 27/10/2026 por decisión del mantenedor, spec del
+  hito 8, §1.2: sin persona (`maha -p`, evals), `--allow TOOL` aprueba
+  solo lo que tiene ámbito; lo que con persona pregunta "cada vez" (fuera del directorio,
   secretos, ficheros que ejecutan código) se deniega siempre. Solo por la
   línea de comandos, nunca por configuración. Los modos de permiso, en el
   hito 15.)*
@@ -395,12 +395,15 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   cada push.
 - **Línea base:** cada ejecución de referencia se guarda en `evals/baselines/`
   con fecha y modelo.
-- *(Concretado el 27/10/2026, spec del hito 8, §1.5–§1.9, propuesta: la
-  comprobación también puede mirar la respuesta final; cada tarea corre en
-  una copia temporal de su fixture, con `AllowList` y sin `run_command`
-  hasta el sandbox del hito 15 (duda 2); 1 repetición al iterar y 3 para la
-  línea base, que guarda solo métricas; regresión: una tarea que pasaba
-  siempre y falla, menos éxito total, o coste o pasos +20 %.)*
+- *(Concretado el 27/10/2026, spec del hito 8, §1.5–§1.9, decisión del
+  mantenedor: la comprobación también puede mirar la respuesta final; cada
+  tarea corre en una copia temporal de su fixture, con `AllowList` y sin
+  `run_command` hasta el sandbox del hito 15; en paralelo (`--jobs`); 1
+  repetición al iterar y 5 para la línea base y antes de cada merge, con
+  dos modelos (`glm-5.3-flash` y `kimi-k2.7-code`); la línea base guarda
+  solo métricas; los errores del proveedor no cuentan como fallo;
+  regresión: una tarea que pasaba siempre y falla, menos éxito total, o
+  coste o pasos +20 %.)*
 - **Puerta:** todo cambio en prompts, bucle, herramientas, contexto o memoria
   se evalúa contra la última línea base antes del merge, y el resultado se
   anota en la spec.
