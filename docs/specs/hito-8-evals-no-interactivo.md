@@ -548,6 +548,19 @@ cada uno (dudas 3 y 4).
 - El resultado (fecha, modelo, métricas y comparación) se anota aquí al
   implementar.
 
+**Primera línea base** (2026-10-27, `maha` 0.7.1, commit `d214e0a`, OpenCode
+Go; 20 tareas, 5 repeticiones, 4 a la vez; 12 minutos y 0,60 $ en total;
+ningún error del proveedor). Ficheros: `evals/baselines/2026-10-27-opencode-go-*.json`.
+
+| Modelo | Éxito | train | validation | Pasos/ejecución | Coste de 100 |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 94/100 | 77/80 | 17/20 | 4,5 | 0,08 $ |
+| `kimi-k2.7-code` | 99/100 | 79/80 | 20/20 | 5,3 | 0,52 $ |
+
+Fallos: `glm-5.3-flash` en 12 (1/5), 13 (2/5: nombra funciones que sí
+tienen test) y 18 (3/5); `kimi-k2.7-code` en 12 (1/5). Las diez básicas
+pasan siempre con los dos. No hay comparación: es la primera.
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit en verde. Seis PRs, en el milestone "Hito 8".
@@ -744,6 +757,50 @@ agente:
    línea base. Alternativa: el orden de DESIGN (`-p` primero).
 
 ## 12. Aprendido al implementar
+
+### PR 2 (`feature/hito-8-evals`, 2026-10-27)
+
+7. **Comprobar las tareas, no solo el agente.** Un test pasa cada
+   comprobación sobre el repo sin tocar (tiene que fallar: si no, la tarea
+   no mide nada) y sobre una solución de referencia (tiene que pasar: si
+   no, es imposible). Las comprobaciones van en el `task.toml`, nunca en
+   un script dentro del repo: el agente podría cambiarlo.
+8. **La batería era demasiado fácil** (decisión del mantenedor). Con las
+   diez tareas de §1.6, `glm-5.3-flash` pasó 50 de 50 y `kimi-k2.7-code`
+   49 de 50: se detectaban regresiones, no mejoras. Entran diez tareas
+   difíciles (§1.6), dos más de validación, y `answer_absent` para las que
+   piden una lista. DESIGN §9 anotado.
+9. **Un stream que no avanza.** En esa medición, una llamada de Kimi siguió
+   abierta casi cinco minutos sin contenido y la ejecución llegó al tiempo
+   límite de la tarea (300 s) con el fichero ya escrito: contó como
+   aprobada. El límite de lectura del cliente (120 s entre bytes) no saltó;
+   lo más probable es que llegaran comentarios SSE, que lo reinician
+   (**POR VERIFICAR**). Arreglo: cada evento con datos se espera 120 s como
+   mucho (`STALL_SECONDS`); si no llega, `ModelUnavailableError`, que en
+   las evals es un error del proveedor y no un aprobado.
+10. **Comandos en paralelo que se mataban.** Con las comprobaciones a la vez
+    (`--jobs`), la limpieza de un comando mataba a los que empezaron
+    después ("the check exited with None"): `maha` es subreaper y tomaba
+    por escapados a todos los hijos que no conocía. Ahora corre un comando
+    a la vez en todo el proceso (un cerrojo por bucle de eventos). En la
+    conversación ya era así; las herramientas en paralelo del hito 16
+    necesitarán otra forma de distinguirlos. Encontrado porque dos fallos
+    de la primera línea base eran falsos: se descartó y se tomó otra.
+11. **Una ejecución que llega a un límite se juzga por su comprobación**,
+    como en SWE-bench: lo que cuenta es cómo queda el repo. Todo
+    `ModelError` (también un 4xx) es un error del proveedor y no cuenta.
+12. **Detalles de `maha eval`:** un cliente por ejecución (cada una es una
+    sesión para el proveedor, como un `maha -p`); sesiones y trazas en
+    `~/.local/state/maha/evals/<fecha-hora>-<sufijo>/`, con `runs.json`
+    (cada ejecución entera: el informe da una línea de cada fallo); el
+    sufijo aleatorio separa dos `maha eval` del mismo segundo; `--save` solo
+    de la batería entera; sale con 1 si hay una regresión; el commit de la
+    línea base sale de `git describe --dirty`. Los repos de prueba, fuera de
+    ruff (`force-exclude`: pre-commit le pasa los ficheros uno a uno).
+13. **Un fallo de proceso del agente:** un commit entró con un test
+    intermitente en rojo, porque `| tail -1` ocultaba el código de pytest.
+    El test (dos carpetas del mismo segundo ordenadas por nombre) se
+    arregló, y el agente encadena los comandos con `pipefail`.
 
 ### PR 1 (`feature/hito-8-nucleo`, 2026-10-27)
 

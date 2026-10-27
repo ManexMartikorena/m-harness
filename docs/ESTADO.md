@@ -64,12 +64,14 @@ tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
    APROBADA, PR #90; las dudas, respondidas con "la opción más profesional
    y que más valor aporte", §11) y su PR 1, núcleo sin persona (#91:
    límites del turno, `AllowList`, `run_once`).
-2. **Agente:** PR 2 del hito 8, las evals (`feature/hito-8-evals`, spec §6):
-   formato de tarea, `TomlEvalSuite`, ejecución en paralelo con errores de
-   infraestructura aparte, `maha eval`, las 10 tareas y la primera línea
-   base de los dos modelos (llamadas reales: unos 1,15 $ por pasada, a
-   medir).
-3. **Agente:** PRs 3 a 6 del hito 8, en el orden de la spec.
+2. Hecho el 2026-10-27: el PR 2, las evals (`maha eval`, 20 tareas tras
+   la decisión del mantenedor de añadir diez difíciles, y la primera línea
+   base: `glm-5.3-flash` 94/100, `kimi-k2.7-code` 99/100, 0,60 $ y 12
+   minutos por pasada completa; spec §5 y §12).
+3. **Agente:** PR 3 del hito 8, el modo no interactivo (`maha -p`,
+   `feature/hito-8-print`); después los PRs 4 a 6. Desde ahora, cada
+   cambio del bucle, las herramientas o los prompts se compara con la línea
+   base (`PUESTA_EN_MARCHA` §4.1).
 4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
@@ -155,7 +157,8 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 - **Hito 15:** detectar secretos con otro nombre (`credenciales.txt`)
   mirando el contenido (mejora `2026-10-23`, E5).
 - **Hito 16:** llamadas a herramientas en paralelo (spec 4, §11); comandos
-  que esperan entrada, con los comandos en segundo plano (spec 5, §10).
+  que esperan entrada, con los comandos en segundo plano (spec 5, §10);
+  varios comandos a la vez, hoy uno a uno por el subreaper (spec 8, §12.10).
 - **Hito 21:** lo que se teclea mientras gira el spinner y el eco de `^C`
   se mezclan con la salida (spec 3, §12.10; spec 4, §12.13); ver el texto
   del razonamiento (spec 7).
@@ -172,6 +175,9 @@ código y los tests cubren los dos casos):
   inválido (spec 4, §10);
 - un `refusal` de OpenCode, que no ha mandado nunca (spec 5, §10);
 - qué campos de coste manda OpenCode Zen; la cuenta es de Go (spec 7, §10).
+- qué mantuvo abierta casi cinco minutos una llamada de Kimi sin contenido
+  (probablemente comentarios SSE); ya se corta a los 120 s sin datos (spec
+  8, §12.9).
 
 **Límites aceptados por el mantenedor** (cada uno, con su decisión en su
 spec; los cuatro, confirmados de nuevo el 2026-10-27):
