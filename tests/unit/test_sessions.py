@@ -1112,3 +1112,59 @@ async def test_without_a_free_id_for_the_trace_the_turn_goes_on() -> None:
     assert [type(e).__name__ for e in entries(store, conversation.id)][-1] == (
         "UsageEntry"
     )
+
+
+async def test_delete_removes_a_trace_left_without_its_session() -> None:
+    # The first turn failed to save: a trace with no session (audit of
+    # hito 7, 9). It keeps the first prompt: it must be deletable.
+    traces = MemoryTraceSink()
+    log = await traces.open(FIRST, new=True)
+    await log.write(TraceRecord(at=NOW, session=FIRST, event=TurnStarted(text="A")))
+    world = World(
+        MemorySessionStore(), FakeModelClient([]), traces=traces, tokens=["b01c"]
+    )
+    current = await world.sessions.start()
+
+    await world.sessions.delete(FIRST, current=current)
+
+    assert FIRST not in traces.traces
+
+
+async def test_delete_of_an_id_with_nothing_is_not_found() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]), tokens=["b01c"])
+    current = await world.sessions.start()
+
+    with pytest.raises(SessionNotFound):
+        await world.sessions.delete(FIRST, current=current)
+
+
+async def test_trace_of_an_id_with_nothing_is_not_found() -> None:
+    # Not an empty summary (audit of hito 7, 10).
+    world = World(MemorySessionStore(), FakeModelClient([]), tokens=["b01c"])
+    current = await world.sessions.start()
+
+    with pytest.raises(TraceError, match=f"no session {FIRST}"):
+        await world.sessions.trace(FIRST, current=current)
+
+
+async def test_trace_of_a_session_of_hito_6_has_no_turns() -> None:
+    store = MemorySessionStore()
+    old = World(store, FakeModelClient([reply("Viejo")]), traces=MemoryTraceSink())
+    first = await old.sessions.start()
+    await turn(first, "A")
+    await first.close()
+    # Another maha, whose traces folder never had it.
+    world = World(store, FakeModelClient([]), tokens=["b01c"])
+    current = await world.sessions.start()
+
+    report = await world.sessions.trace(FIRST, current=current)
+
+    assert report.summary.turns == []
+
+
+async def test_delete_of_an_id_of_another_form_is_not_found() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]))
+    current = await world.sessions.start()
+
+    with pytest.raises(SessionNotFound):
+        await world.sessions.delete("../../etc/passwd", current=current)

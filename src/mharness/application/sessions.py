@@ -39,6 +39,7 @@ from mharness.domain.session import (
     SessionNotFound,
     SessionSummary,
     UsageEntry,
+    is_session_id,
     session_id,
 )
 from mharness.domain.trace import (
@@ -472,12 +473,18 @@ class Sessions:
         return summary.cwd == self._origin.cwd
 
     async def delete(self, session: str, *, current: Conversation) -> None:
-        """The session and its trace."""
+        """The session and its trace; also a trace left without its session
+        (its first turn could not be saved), which keeps that prompt."""
         if _is_current(session, current):
             raise SessionError("this is the current session")
-        await self._store.delete(session)
+        traces = self._origin.traces
         try:
-            await self._origin.traces.delete(session)
+            await self._store.delete(session)
+        except SessionNotFound:
+            if not await self._has_trace(session):
+                raise
+        try:
+            await traces.delete(session)
         except TraceError as exc:
             raise SessionError(
                 f"session {session} deleted, but not its trace: {exc}"
@@ -493,7 +500,21 @@ class Sessions:
         # session may have it.
         own = session is not None or current.exists
         records = await traces.read(target) if own else []
+        if (
+            session is not None
+            and not records
+            and not await self._store.exists(session)
+        ):
+            raise TraceError(f"no session {session}")
         return TraceReport(summarize(target, records), traces.location(target))
+
+    async def _has_trace(self, session: str) -> bool:
+        try:
+            return bool(await self._origin.traces.read(session))
+        except TraceError:
+            # Unreadable is still there, and delete says if it cannot; an id
+            # of another form has nothing.
+            return is_session_id(session)
 
     async def _open_last_here(
         self, current: Conversation
