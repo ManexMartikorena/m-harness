@@ -1,5 +1,6 @@
 Estado: PROPUESTA (2026-10-26) → APROBADA (2026-10-27, por el humano, sin
-cambios)
+cambios; el 2026-10-27, al empezar el PR 2, el mantenedor amplía el catálogo
+a todos los modelos de cada proveedor y pide precios por tramos, §11)
 
 # Spec — Hito 7: Trazas y coste
 
@@ -140,9 +141,24 @@ trains_on_data = true        # "collected data may be used to improve the model"
   sin esperar a una versión. Solo en la configuración del usuario, nunca en
   la del proyecto: un repositorio ajeno no cambia lo que `maha` te dice que
   cuesta (como los proveedores, spec 2, §1.10).
-- **Lo que entra al principio:** los cuatro modelos de Go de §1.1 y los
+- **Lo que entra al principio:** ~~los cuatro modelos de Go de §1.1 y los
   mismos en Zen si están en su tabla, más los gratis de Zen que entrenan con
-  los datos. Lo que no está, no tiene coste (§1.5).
+  los datos~~. *(Cambiado por el mantenedor el 2026-10-27, §11:)* **todos
+  los modelos de cada proveedor**, tal como los publica su tabla de precios:
+  los 30 de Go y los 83 de Zen (comprobados el 2026-10-27). Cada proveedor
+  nuevo (Anthropic, hito 9) trae los suyos. Lo que no está, no tiene coste
+  (§1.5).
+- **Precios por tramos** *(añadido el 2026-10-27, §11)*: varios modelos
+  cobran más cuando el prompt pasa de un tamaño (GPT 6 Luna: 0,10 $ hasta
+  272 000 tokens de entrada, 0,20 $ por encima). Cada modelo puede llevar
+  tramos; el coste de una llamada usa el tramo que corresponde a sus
+  `input_tokens` (§1.4 y §1.5).
+- **Descuentos temporales** (Gemini 4 Argon hasta el 2026-11-30, Mistral
+  Large 4): el precio con descuento, que es lo que se cobra hoy, con la
+  fecha de fin en un comentario.
+- **La ventana de contexto**, de models.dev, por proveedor; los precios,
+  siempre de la documentación del proveedor (models.dev no siempre coincide:
+  da a DeepSeek en Go el precio de valle).
 - **Precio por hora:** DeepSeek V4.1 Flash, el de hora punta (el mayor): el
   coste nunca se queda corto.
 - Descartado: descargar models.dev al arrancar (red en cada arranque, un
@@ -168,6 +184,15 @@ class Prices(BaseModel, frozen=True):
     cache_read: Decimal | None = None  # None: billed as input
     cache_write: Decimal | None = None
     checked: date
+    tiers: tuple[Tier, ...] = ()  # added 2026-10-27: prices above a size
+
+
+class Tier(BaseModel, frozen=True):
+    above: int  # input tokens of the call; from above + 1 on
+    input: Decimal
+    output: Decimal
+    cache_read: Decimal | None = None
+    cache_write: Decimal | None = None
 
 
 class ModelCatalog(Protocol):
@@ -176,6 +201,24 @@ class ModelCatalog(Protocol):
 
 - **Síncrono:** se lee una vez al arrancar (en `bootstrap`); `get` no toca
   el disco. Fake: `MemoryCatalog`.
+- **Tramos en el TOML** *(añadido el 2026-10-27)*: cada tramo es una tabla
+  del modelo.
+
+  ```toml
+  [models."opencode-go/gpt-6-luna"]
+  context = 1_050_000
+  input = 0.10
+  output = 0.50
+  cache_read = 0.01
+  cache_write = 0.125
+
+  [[models."opencode-go/gpt-6-luna".tiers]]
+  above = 272_000              # "> 272K tokens"
+  input = 0.20
+  output = 0.75
+  cache_read = 0.02
+  cache_write = 0.25
+  ```
 - **`Decimal`, no `float`:** 0,003 $ por millón por 41 tokens no debe
   redondearse por el camino.
 
@@ -193,6 +236,9 @@ se resta igual que `cache_read`.)*
 
 - La caché leída, a su precio (o al de entrada si no tiene); el
   razonamiento ya va dentro de `output`.
+- **Con tramos** *(añadido el 2026-10-27)*: si `input_tokens` pasa del
+  `above` de un tramo, toda la llamada va a los precios de ese tramo (el de
+  `above` mayor que se pase), como lo publica el proveedor.
 - **Sin precio, sin coste:** `None`, y la terminal no enseña `$`. Nunca un
   `$0.0000` que parezca gratis.
 - **Por turno:** la suma de sus llamadas. **Por sesión:** la suma de los
@@ -363,7 +409,7 @@ también `XDG_STATE_HOME` y `XDG_CONFIG_HOME` del catálogo del usuario.
 
 **4.2 Catálogo** (`tests/adapters/test_toml_catalog.py`)
 1. El `models.toml` del paquete se lee y tiene los modelos de §1.3, con
-   `checked`.
+   `checked`; sus tramos, ordenados y por encima del precio base.
 2. El del usuario gana y añade; uno roto da un error claro al arrancar.
 3. Un modelo que no está → `None`.
 
@@ -498,6 +544,14 @@ costó":
 
 ## 11. Decisiones
 
+Del humano (2026-10-27, al empezar el PR 2), tras ver que la documentación
+lista muchos más modelos que los cuatro de §1.3 y que varios tienen precios
+por tramos: **el catálogo lleva todos los modelos de cada proveedor** ("si
+eliges opencode go pues todas de ahí, si eliges zen pues todas de ahí, si
+eliges anthropic pues todas de ahí") **y soporta tramos** (recomendación del
+agente; las alternativas eran el precio del tramo alto o dejar fuera esos
+modelos).
+
 Del humano (2026-10-27): **acepta las cinco recomendaciones**, "si son las
 decisiones más pro para el producto final". El agente las repasó con ese
 criterio antes de aprobar:
@@ -549,3 +603,35 @@ Dudas que se plantearon al mantenedor (registro):
    con stream y sin él (los trozos medidos en los hitos 3 y 4 ya los
    traían: 25 y 40). Sigue POR VERIFICAR que OpenCode los mande sin stream
    (§10).
+
+### PR 2 (`feature/hito-7-catalogo`, 2026-10-27)
+
+5. **Alcance ampliado por el mantenedor** al empezar el PR (§11): todos los
+   modelos de cada proveedor y precios por tramos. Spec y DESIGN corregidos
+   en su propio commit (`2f53ed7`).
+6. **Las tablas, del HTML de la documentación**, no de un resumen: un
+   resumen automático contó 37 modelos en Go porque tomaba cada tramo como
+   un modelo. Son 30 en Go y 83 en Zen.
+7. **models.dev, segunda fuente.** Cruzado modelo a modelo, solo difiere en
+   dos sitios: DeepSeek V4.1 Flash y V4 Pro en Go (models.dev da el precio
+   de valle; aquí va el de punta, §1.3) y MiniMax M3 en Go (models.dev le
+   pone un tramo por encima de 512 000 tokens que la documentación no
+   publica; manda la documentación). Jev 1.13 y Jev 1.13 Free no están en
+   models.dev: van sin ventana de contexto.
+8. **Los que entrenan con los datos**, de las secciones de privacidad: en
+   Go, Muse Spark 1.3 y 1.2 Contributor e Iceman Contributor Free ("Model
+   training: Yes"); en Zen, Big Pickle, Flint 40B Free y MiMo-V2.6-Flash
+   Free ("collected data may be used to improve the model") y los tres
+   Nemotron gratis ("logged … to improve NVIDIA products and services"),
+   que se marcan por prudencia.
+9. **Muchos modelos usan otra API** (Anthropic Messages, OpenAI Responses,
+   Google): `maha` aún solo habla Chat Completions. Están en el catálogo
+   igual; poder usarlos es otra pieza (el adaptador de Anthropic, hito 9).
+10. **La fecha, por proveedor:** `[providers.<nombre>].checked`, y un modelo
+    la puede cambiar con su propio `checked`. Un precio sin fecha es un
+    error.
+11. **El usuario sustituye modelos enteros**, no campos sueltos: su entrada
+    es la que vale, sin heredar la ventana ni la caché del paquete.
+12. **`models.toml` entra en el paquete** (`uv build`, comprobado a mano):
+    `uv_build` incluye los ficheros que no son Python de la carpeta del
+    módulo.
