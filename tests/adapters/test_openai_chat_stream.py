@@ -165,7 +165,12 @@ async def test_translates_a_measured_stream(
         TextDelta(text="Ane."),
         MessageEnd(
             stop_reason="end_turn",
-            usage=Usage(input_tokens=18, output_tokens=31, cache_read_tokens=4),
+            usage=Usage(
+                input_tokens=18,
+                output_tokens=31,
+                cache_read_tokens=4,
+                reasoning_tokens=25,
+            ),
             model=MODEL,
         ),
     ]
@@ -500,7 +505,7 @@ async def test_translates_measured_tool_calls(client: OpenAIChatClient) -> None:
         ),
         MessageEnd(
             stop_reason="tool_use",
-            usage=Usage(input_tokens=231, output_tokens=62),
+            usage=Usage(input_tokens=231, output_tokens=62, reasoning_tokens=40),
             model=MODEL,
         ),
     ]
