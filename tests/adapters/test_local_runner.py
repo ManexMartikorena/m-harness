@@ -16,6 +16,7 @@ import pytest
 
 from mharness.adapters.commands import LocalCommandRunner
 from mharness.domain.commands import OUTPUT_MAX_CHARS, CommandResult
+from mharness.domain.environment import command_env
 from mharness.ports.commands import CommandRunner
 
 ENV = {"PATH": os.environ["PATH"]}
@@ -110,6 +111,26 @@ def test_a_command_cannot_wait_on_the_terminal(tmp_path: Path) -> None:
     assert exit_code not in (0, None)
     assert not timed_out
     assert took < 4
+
+
+async def test_git_commit_without_a_message_fails_at_once_and_clean(
+    tmp_path: Path,
+) -> None:
+    # With the variables `maha` gives: no editor opens, and the model reads
+    # a clear error instead of terminal codes (found 2026-10-27).
+    git = "git -c user.name=Ane -c user.email=ane@example.com"
+    result = await LocalCommandRunner().run(
+        f"git init -q && touch a && git add a && {git} commit",
+        cwd=tmp_path,
+        time_limit=10,
+        env=command_env(
+            {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "TERM": "xterm"}
+        ),
+    )
+
+    assert (result.exit_code, result.timed_out) == (1, False)
+    assert "empty commit message" in result.output
+    assert "\x1b" not in result.output
 
 
 async def test_a_long_output_is_cut_without_blocking(tmp_path: Path) -> None:
