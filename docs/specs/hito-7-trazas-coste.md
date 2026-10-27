@@ -226,6 +226,15 @@ class ModelCatalog(Protocol):
 
 **Dónde:** `domain/catalog.py`, `cost(usage, prices) -> Decimal`.
 
+*(Añadido el 2026-10-27 por decisión del mantenedor, §11:)* **Primero, el
+coste que da el proveedor.** OpenCode manda en cada respuesta lo que la
+llamada cuenta contra el límite (`usage.opencode.allowance`; medido en Go,
+y coincide al dígito con el del catálogo, §12.35). Cuando el proveedor lo
+da, se usa ese: es exacto también con precios por hora (DeepSeek en Go) y
+por tramos. El catálogo queda para cuando no lo da. El adaptador lo lee en
+este orden: `usage.opencode.allowance`, `usage.opencode.list_cost` y
+`usage.cost` (OpenRouter); va en `MessageEnd.cost` y `ModelResponse.cost`.
+
 ```
 coste = (input − cache_read) × input  +  cache_read × cache_read
       + cache_write × cache_write  +  output × output        (cada uno / 1M)
@@ -529,8 +538,10 @@ costó":
 ## 10. Riesgos
 
 **POR VERIFICAR:**
-- Si OpenCode manda `reasoning_tokens` también sin stream (en la sonda de la
-  spec 3 llegó con stream).
+- ~~Si OpenCode manda `reasoning_tokens` también sin stream~~ Resuelto
+  (§12.35): ya no los manda ni con stream.
+- Qué campos de coste manda OpenCode Zen (pago por uso): no se pudo medir
+  (la cuenta es de Go). Se leen en el orden de §1.5.
 
 **Riesgos y contingencias:**
 - **Precios desfasados:** cambian sin aviso. Van con fecha; el usuario los
@@ -543,6 +554,10 @@ costó":
   contra el límite. La guía y la nota de la terminal lo explican.
 
 ## 11. Decisiones
+
+Del humano (2026-10-27, tras la auditoría): **el coste, primero el que da
+el proveedor, y el del catálogo cuando no lo da** (opción A, recomendada por
+el agente; la B era solo el catálogo). §1.5.
 
 Del humano (2026-10-27, al empezar el PR 2), tras ver que la documentación
 lista muchos más modelos que los cuatro de §1.3 y que varios tienen precios
