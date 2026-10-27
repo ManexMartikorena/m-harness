@@ -642,8 +642,10 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 
 **Decisiones del mantenedor para hitos futuros:**
 - **Hito 19: una TUI completa** (2026-10-27), bonita y fácil para cualquier
-  persona, con OpenCode como referencia; la interfaz de línea se conserva.
-  DESIGN §14, hito 19.
+  persona, con navegación intuitiva: todos los comandos que vayan llegando,
+  descubribles en un menú de comandos (como la paleta `ctrl+p` de OpenCode)
+  y con `/help`, `/` y atajos. OpenCode como referencia; la interfaz de
+  línea se conserva. DESIGN §14, hito 19.
 
 **Se deciden en la spec de su hito:**
 - búsqueda en la memoria (hito 13);
