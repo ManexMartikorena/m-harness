@@ -1,7 +1,7 @@
 # Cómo se ha hecho M-Harness
 
 `maha` es el producto: un agente de IA para la terminal (el
-[README](../README.md) explica qué hace y cómo se usa). **M-Harness es el
+[README](../README.es.md) explica qué hace y cómo se usa). **M-Harness es el
 proyecto que lo construye**, y este documento cuenta cómo: por qué existe,
 cómo se trabaja y cómo puedes construir tú un agente desde cero siguiendo
 el mismo camino.

@@ -9,7 +9,7 @@ ficheros.
 
 | Fichero | Qué es |
 |---|---|
-| `README.md` | La cara del producto: qué es `maha`, qué hace, cómo se instala, se configura y se usa, dónde guarda cada cosa y lo que viene; enlaza a `docs/PROYECTO.md` |
+| `README.md`, `README.es.md` | La cara del producto, en inglés y en español (mismo contenido): qué es `maha`, qué hace, cómo se instala, se configura y se usa, dónde guarda cada cosa y lo que viene; enlaza a `docs/PROYECTO.md` |
 | `LICENSE` | Licencia MIT |
 | `AGENTS.md` | Reglas para cualquier agente de código: la única fuente de reglas |
 | `CLAUDE.md` | Importa `AGENTS.md` para Claude Code |

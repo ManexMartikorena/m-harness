@@ -107,7 +107,9 @@ Desde el hito 8 (DESIGN §9).
 ## Convenciones
 - Python ≥ 3.14 y uv. Tipos en todo el código, mypy estricto en verde.
 - Código en inglés (nombres, comentarios, docstrings). Documentación, commits y
-  PRs en español.
+  PRs en español. Excepción: la cara de producto va en los dos idiomas,
+  `README.md` en inglés y `README.es.md` en español, siempre con el mismo
+  contenido *(decisión del mantenedor, 2026-10-27)*.
 - Cada fallo encontrado se convierte en test antes de arreglarse.
 - Ningún fallo conocido se deja sin arreglar por decisión del agente: o se
   arregla, o se para y se pregunta al mantenedor, con opciones y
@@ -197,9 +199,9 @@ Desde el hito 8 (DESIGN §9).
 7. **Cierre.**
    1. La spec pasa a IMPLEMENTADA, con su sección "Aprendido al implementar".
    2. Se escribe la nota del hito en docs/guia/, y se ponen al día las dos
-      caras del proyecto: el `README.md` (el producto: qué hace, cómo se
-      instala y se usa) y `docs/PROYECTO.md` (cómo se hace y su hoja de
-      ruta). *(Añadido el 2026-10-27, por decisión del mantenedor.)*
+      caras del proyecto: el `README.md` y el `README.es.md` (el producto:
+      qué hace, cómo se instala y se usa) y `docs/PROYECTO.md` (cómo se
+      hace y su hoja de ruta). *(Añadido el 2026-10-27, por decisión del mantenedor.)*
    3. Los PRs se integran con merge commit. La rama se borra en local y se
       conserva en GitHub.
    4. Se crea el tag y el humano hace push del tag.
