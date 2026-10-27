@@ -156,6 +156,11 @@ class JsonlSessionStore:
             raise
         return session, log
 
+    async def exists(self, session_id: str) -> bool:
+        if not is_session_id(session_id):
+            return False
+        return _taken(self._path(session_id))
+
     async def summaries(self) -> list[SessionSummary]:
         """Every session that can be read, newest first, without locking
         them: an open one is listed too."""
@@ -328,6 +333,11 @@ def _first(exc: ValidationError) -> str:
     error = exc.errors(include_url=False, include_input=False)[0]
     location = ".".join(str(part) for part in error["loc"])
     return f"{location}: {error['msg']}" if location else error["msg"]
+
+
+def _taken(path: Path) -> bool:
+    # lexists: a link named so takes the name too.
+    return os.path.lexists(path)
 
 
 def _sync_folder(folder: Path) -> None:

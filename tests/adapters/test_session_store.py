@@ -593,3 +593,15 @@ async def test_closing_never_fails(
 
     with pytest.raises(SessionError, match="closed"):
         await log.append([MessageEntry(message=HOLA)])
+
+
+async def test_exists_says_whether_an_id_is_taken(folder: Path) -> None:
+    # Checked when a new conversation reserves its id (audit of hito 7, 2).
+    store = JsonlSessionStore(folder)
+    assert not await store.exists(HEADER.id)
+    log = await store.create(HEADER)
+
+    # Also while open: taken is taken.
+    assert await store.exists(HEADER.id)
+    await log.close()
+    assert not await store.exists("../../etc/passwd")

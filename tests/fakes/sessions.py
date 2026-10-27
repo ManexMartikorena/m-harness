@@ -87,6 +87,9 @@ class MemorySessionStore:
         ]
         return sorted(found, key=lambda summary: summary.updated_at, reverse=True)
 
+    async def exists(self, session_id: str) -> bool:
+        return is_session_id(session_id) and session_id in self.sessions
+
     async def delete(self, session_id: str) -> None:
         self._get(session_id)
         del self.sessions[session_id]

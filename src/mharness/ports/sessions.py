@@ -36,6 +36,11 @@ class SessionStore(Protocol):
         `SessionNotFound`, `SessionInUse` or `SessionCorrupt`."""
         ...
 
+    async def exists(self, session_id: str) -> bool:
+        """Whether a session has that id, open or not. An id of another
+        form has none."""
+        ...
+
     async def summaries(self) -> list[SessionSummary]:
         """Every session, newest first. One that cannot be read is left
         out."""

@@ -121,3 +121,13 @@ async def test_entries_go_through_json() -> None:
     await log.append([MessageEntry(message=odd)])
 
     assert store.sessions[HEADER.id].entries == [MessageEntry(message=odd)]
+
+
+async def test_exists_follows_the_sessions() -> None:
+    store = MemorySessionStore()
+    assert not await store.exists(HEADER.id)
+
+    await (await store.create(HEADER)).close()
+
+    assert await store.exists(HEADER.id)
+    assert not await store.exists("../x")
