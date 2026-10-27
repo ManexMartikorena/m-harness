@@ -5,12 +5,12 @@ Hito 4 implements these, hito 5 adds `ApprovalRequested`, and hito 7
 errors are exceptions, and the trace records them from outside the loop.
 """
 
-from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel
 
 from mharness.domain.approval import ApprovalRequest, Decision
+from mharness.domain.catalog import Usd
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
@@ -60,8 +60,8 @@ class ModelCallFinished(BaseModel, frozen=True):
     type: Literal["model_call_finished"] = "model_call_finished"
     usage: Usage
     model: str
-    # USD; None if the catalog has no prices for the model.
-    cost: Decimal | None = None
+    # None if the catalog has no prices for the model.
+    cost: Usd | None = None
 
 
 class TurnFinished(BaseModel, frozen=True):
@@ -77,8 +77,8 @@ class TurnFinished(BaseModel, frozen=True):
     tool_calls: int
     # Calls to the model in the turn.
     steps: int
-    # USD, summed over its calls; None if one of them has no price.
-    cost: Decimal | None = None
+    # Summed over its calls; None if one of them has no price.
+    cost: Usd | None = None
 
 
 type AgentEvent = (

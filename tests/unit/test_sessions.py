@@ -4,7 +4,8 @@
 import asyncio
 from collections.abc import Sequence
 from contextlib import aclosing
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -13,6 +14,8 @@ from mharness.application.sessions import Conversation, Sessions
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import AgentEvent
 from mharness.domain.approval import ApprovalRequest
+from mharness.domain.catalog import ModelInfo, Prices
+from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock
 from mharness.domain.model import Usage
@@ -60,6 +63,7 @@ class World:
         tools: Sequence[FakeTool] = (),
         gate: FakeApproval | None = None,
         tokens: Sequence[str] = ("3fa2", "b01c", "c0de"),
+        catalog: MemoryCatalog | None = None,
     ) -> None:
         self.gate = gate or FakeApproval()
         self.built: list[tuple[str, tuple[Message, ...]]] = []
@@ -73,7 +77,7 @@ class World:
                 registry,
                 gate=self.gate,
                 model=model,
-                catalog=MemoryCatalog(),
+                catalog=catalog or MemoryCatalog(),
                 provider="opencode-go",
                 history=history,
             )
@@ -598,3 +602,91 @@ async def test_a_failure_after_opening_lets_the_session_go() -> None:
         await sessions.resume(session_id, current=current)
 
     assert session_id not in store.locked
+
+
+# The cost of the session (spec hito 7, §1.5 and §4.5.6).
+
+# Every answer of the fake comes from FAKE_MODEL: 1 USD per million tokens.
+PRICED = MemoryCatalog(
+    [
+        ModelInfo(
+            provider="opencode-go",
+            model="fake-model",
+            prices=Prices(
+                input=Decimal(1), output=Decimal(1), checked=date(2026, 10, 27)
+            ),
+        )
+    ]
+)
+MILLION = Usage(input_tokens=1_000_000)
+
+
+async def test_each_turn_saves_its_cost() -> None:
+    store = MemorySessionStore()
+    fake = FakeModelClient([reply("Hola", usage=MILLION)])
+    conversation = await World(store, fake, catalog=PRICED).sessions.start()
+
+    await turn(conversation, "Hola")
+
+    assert entries(store)[-1] == UsageEntry(usage=MILLION, cost=Decimal(1))
+
+
+async def test_a_turn_without_price_saves_its_tokens_without_cost() -> None:
+    store = MemorySessionStore()
+    fake = FakeModelClient([reply("Hola", usage=MILLION)])
+    conversation = await World(store, fake).sessions.start()
+
+    await turn(conversation, "Hola")
+
+    assert entries(store)[-1] == UsageEntry(usage=MILLION)
+    assert conversation.uncosted_turns == 1
+
+
+async def test_a_turn_that_fails_keeps_the_tokens_already_spent() -> None:
+    # The first call was billed even if the second one fails (found
+    # 2026-10-27: before, only a finished turn saved its tokens).
+    store = MemorySessionStore()
+    fake = FakeModelClient(
+        [
+            tool_calls(
+                ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}'),
+                usage=MILLION,
+            ),
+            ModelUnavailableError("down"),
+        ]
+    )
+    conversation = await World(store, fake, catalog=PRICED).sessions.start()
+
+    with pytest.raises(ModelUnavailableError):
+        await turn(conversation, "Hola")
+
+    assert entries(store)[-1] == UsageEntry(usage=MILLION, cost=Decimal(1))
+    assert conversation.cost == Decimal(1)
+
+
+async def test_the_conversation_adds_up_the_cost_of_its_turns() -> None:
+    store = MemorySessionStore()
+    fake = FakeModelClient([reply("Uno", usage=MILLION), reply("Dos", usage=MILLION)])
+    conversation = await World(store, fake, catalog=PRICED).sessions.start()
+
+    await turn(conversation, "A")
+    await turn(conversation, "B")
+
+    assert conversation.cost == Decimal(2)
+    assert conversation.uncosted_turns == 0
+
+
+async def test_a_resumed_session_goes_on_from_its_saved_cost() -> None:
+    store = MemorySessionStore()
+    fake = FakeModelClient([reply("Uno", usage=MILLION), reply("Dos", usage=MILLION)])
+    world = World(store, fake, catalog=PRICED)
+    first = await world.sessions.start()
+    await turn(first, "A")
+    await first.close()
+    other = await world.sessions.start()
+
+    resumed = await world.sessions.resume(FIRST, current=other)
+    assert resumed.conversation.cost == Decimal(1)
+    await turn(resumed.conversation, "B")
+
+    assert resumed.conversation.cost == Decimal(2)

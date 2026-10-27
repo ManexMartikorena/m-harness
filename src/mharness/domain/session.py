@@ -8,10 +8,12 @@ changes. Reading it back gives a `Session`.
 
 import re
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
+from mharness.domain.catalog import Usd
 from mharness.domain.messages import Message, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 
@@ -56,10 +58,13 @@ class MessageEntry(BaseModel, frozen=True):
 
 
 class UsageEntry(BaseModel, frozen=True):
-    """The tokens of one finished turn, for the cost of hito 7."""
+    """The tokens of one turn that called the model, however it ended, and
+    what they cost (spec hito 7, §1.5)."""
 
     type: Literal["usage"] = "usage"
     usage: Usage
+    # None without prices, and in the sessions of hito 6.
+    cost: Usd | None = None
 
 
 class ModelEntry(BaseModel, frozen=True):
@@ -84,6 +89,9 @@ class Session(BaseModel, frozen=True):
     model: str
     # The sum of every `UsageEntry`.
     usage: Usage
+    # The sum of the turns with a cost, in USD, and how many had none.
+    cost: Usd = Decimal(0)
+    uncosted_turns: int = 0
 
 
 class SessionSummary(BaseModel, frozen=True):
@@ -150,16 +158,29 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
     messages: list[Message] = []
     model = header.model
     usage = Usage()
+    cost = Decimal(0)
+    uncosted = 0
     for entry in entries:
         match entry:
             case MessageEntry(message=message):
                 messages.append(message)
             case ModelEntry(model=changed):
                 model = changed
-            case UsageEntry(usage=more):
+            case UsageEntry(usage=more, cost=spent):
                 usage += more
+                if spent is None:
+                    uncosted += 1
+                else:
+                    cost += spent
     check_history(messages)
-    return Session(header=header, messages=messages, model=model, usage=usage)
+    return Session(
+        header=header,
+        messages=messages,
+        model=model,
+        usage=usage,
+        cost=cost,
+        uncosted_turns=uncosted,
+    )
 
 
 def summarize(
