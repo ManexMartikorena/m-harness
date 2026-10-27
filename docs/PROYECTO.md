@@ -46,7 +46,10 @@ este bucle.
 - **Librerías estándar para la fontanería:** HTTP (httpx), validación
   (Pydantic) e interfaz de terminal.
 - **La industria siempre al lado:** cada pieza documenta qué se usa
-  normalmente para resolverla y cuándo se elegiría.
+  normalmente para resolverla (LiteLLM, LangGraph, Mem0, OpenTelemetry…) y
+  cuándo se elegiría.
+- **El historial del repositorio es la guía:** cada pieza llega en su
+  propio PR, con su spec, sus tests y una nota que explica el concepto.
 
 ## La arquitectura
 

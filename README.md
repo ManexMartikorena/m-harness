@@ -43,19 +43,31 @@ En notas.txt pone: "comprar pan".
   (`write_file`, `edit_file`, showing the diff) and runs commands
   (`run_command`).
 - **Nothing changes without your permission.** Every write and every command
-  asks first: once, always in this session, or no. Reading outside the
-  working directory or a secret file (`.env`, keys, `.ssh`…) asks too.
-  Commands never get your provider key.
+  asks first, showing the diff or the command: once, always in this session,
+  or no. Reading outside the working directory or a secret file (`.env`,
+  keys, `.ssh`…) asks too, every time. Commands run with a time limit and
+  without your provider key in their environment, but **with your
+  permissions: read the command before approving it**.
 - **The model and provider you want.** OpenAI format out of the box, with
   OpenCode Go and Zen already configured, and any compatible server you
   declare. Switch models with `/model` or in the configuration.
 - **Sessions that are never lost.** Every conversation saves itself, turn by
-  turn, and can be resumed from any directory.
+  turn (also the answer you cut), and can be resumed from any directory.
+  When you resume, approvals start from scratch.
 - **You know what you spend.** Every turn shows its tokens and cost, and the
-  session its total. With OpenCode Go, what counts against your monthly
-  limit.
+  session its total: the cost the provider reports (with OpenCode Go, what
+  counts against your monthly limit) or, if it reports none, the one from a
+  catalog with the prices of every OpenCode Go and Zen model.
 - **Everything is recorded, without your secrets.** Each session leaves a
-  trace of what the agent did; `/trace` summarizes it.
+  trace of what the agent did; `/trace` summarizes it:
+
+  ```
+  > /trace
+    20261027-101620-1163 · glm-5.3-flash · 1 turn · 2 model calls · 1 tool
+    1  11:16:20  2 calls · 1 tool · 2542 in · 26 out · $0.0004 · 5.7 s
+    total: 2542 in · 26 out · $0.0004
+    [trace: ~/.local/share/maha/traces/20261027-101620-1163.jsonl]
+  ```
 
 ## Installation
 
@@ -113,6 +125,7 @@ another server.
 | `/trace [ID]` | What a session did and cost, turn by turn |
 | `/exit` | Quits (also Ctrl+D) |
 
+- While it waits for the answer, a spinner with "maha" turns.
 - **Ctrl+C** in the middle of an answer cuts it and returns to the prompt;
   the model knows you cut it. At the prompt, it quits.
 - **Without a terminal** (`maha < instructions.txt`), everything with an
