@@ -112,9 +112,10 @@ class Conversation:
         self._agent = agent
         self._origin = origin
         self._log = log
-        # When a new session started; its header says so.
+        # When a new session started; its header says so. `_new_id()` sets
+        # it again with each id it takes.
         self._created = origin.now()
-        self.id = session if session is not None else self._new_id()
+        self.id = session if session is not None else self._id_at(self._created)
         # Whether the id is ours: a resumed session, or a new one whose
         # trace or file was created. Until then, a clash takes another id.
         self._reserved = session is not None
@@ -361,7 +362,10 @@ class Conversation:
 
     def _new_id(self) -> str:
         self._created = self._origin.now()
-        return session_id(self._created, self._origin.token())
+        return self._id_at(self._created)
+
+    def _id_at(self, created: datetime) -> str:
+        return session_id(created, self._origin.token())
 
 
 @dataclass(frozen=True)
