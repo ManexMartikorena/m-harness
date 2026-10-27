@@ -285,6 +285,8 @@ def _turn_line(turn: TurnSummary) -> str:
 # How a turn that did not just answer ended.
 _ENDINGS = {
     "max_steps": "step limit",
+    "max_cost": "cost limit",
+    "max_tokens": "token limit",
     "denied": "denied",
     "error": "error",
     "interrupted": "interrupted",

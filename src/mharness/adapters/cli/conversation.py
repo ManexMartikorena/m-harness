@@ -270,6 +270,14 @@ def _call(call: ToolCallBlock) -> str:
 def _show_turn(turn: TurnFinished, conversation: Conversation, out: TextIO) -> None:
     if turn.reason == "max_steps":
         print(f"  [step limit reached: {turn.steps}]", file=out)
+    elif turn.reason == "max_tokens":
+        tokens = turn.usage.input_tokens + turn.usage.output_tokens
+        print(f"  [token limit reached: {tokens} tokens]", file=out)
+    elif turn.reason == "max_cost":
+        if turn.cost is None:
+            print("  [cost limit: the cost of a call is not known]", file=out)
+        else:
+            print(f"  [cost limit reached: {usd(turn.cost)}]", file=out)
     elif turn.reason == "denied":
         # The model is not called again: the person writes next (spec hito
         # 5, §1.4).

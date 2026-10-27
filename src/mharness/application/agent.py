@@ -12,7 +12,7 @@ from collections.abc import AsyncGenerator, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ValidationError
 
@@ -31,6 +31,7 @@ from mharness.domain.agent_events import (
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import add_cost, cost
 from mharness.domain.events import TextDelta
+from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import ModelRequest, ModelResponse, Usage
 from mharness.domain.tools import ToolError
@@ -38,9 +39,6 @@ from mharness.ports.approval import ApprovalGate
 from mharness.ports.catalog import ModelCatalog
 from mharness.ports.model import ModelClient
 from mharness.ports.tools import Tool
-
-# Calls to the model in one turn. A limit in code, not in the prompt.
-MAX_STEPS = 25
 
 NOT_RUN_DENIED = "not run: a previous call was denied"
 # What the call in progress gets when its step is cut short.
@@ -58,7 +56,8 @@ class Agent:
     `gate` decides on the calls that need approval; what the user approves
     for the whole session lives as long as the agent. `model` can change
     between turns (`/model`, spec hito 6, §1.8). The `catalog` prices each
-    call for `provider` (spec hito 7, §1.6).
+    call for `provider` (spec hito 7, §1.6). Each turn stops at its
+    `limits` (spec hito 8, §1.1).
     """
 
     def __init__(
@@ -70,7 +69,7 @@ class Agent:
         model: str,
         catalog: ModelCatalog,
         provider: str,
-        max_steps: int = MAX_STEPS,
+        limits: TurnLimits | None = None,
         history: Sequence[Message] = (),
     ) -> None:
         self._client = client
@@ -80,7 +79,7 @@ class Agent:
         self.model = model
         self._catalog = catalog
         self._provider = provider
-        self._max_steps = max_steps
+        self.limits = limits or TurnLimits()
         # A resumed session starts with its history (spec hito 6, §1.6); its
         # approvals do not come back (§1.9).
         self._messages: list[Message] = list(history)
@@ -120,7 +119,20 @@ class Agent:
         # Whether the model is writing the answer of this step.
         streaming = False
         try:
-            for step in range(1, self._max_steps + 1):
+            for step in range(1, self.limits.max_steps + 1):
+                if step > 1 and (limit := self._reached(usage, turn_cost)):
+                    # Before the call that would pass it; what ran is in the
+                    # turn, which the user can go on.
+                    self._messages.extend(turn)
+                    kept = True
+                    yield TurnFinished(
+                        reason=limit,
+                        usage=usage,
+                        tool_calls=calls_run,
+                        steps=step - 1,
+                        cost=turn_cost,
+                    )
+                    return
                 accumulator = Accumulator()
                 request = self._request(turn)
                 streaming = True
@@ -233,7 +245,7 @@ class Agent:
                 reason="max_steps",
                 usage=usage,
                 tool_calls=calls_run,
-                steps=self._max_steps,
+                steps=self.limits.max_steps,
                 cost=turn_cost,
             )
         except BaseException as exc:
@@ -263,6 +275,19 @@ class Agent:
                     )
                 self._messages.extend(turn)
             raise
+
+    def _reached(
+        self, usage: Usage, cost: Decimal | None
+    ) -> Literal["max_tokens", "max_cost"] | None:
+        """The limit the turn reached with what it spent, if any. A cost
+        that is not known reaches the cost limit."""
+        limits = self.limits
+        tokens = usage.input_tokens + usage.output_tokens
+        if limits.max_tokens is not None and tokens >= limits.max_tokens:
+            return "max_tokens"
+        if limits.max_cost is not None and (cost is None or cost >= limits.max_cost):
+            return "max_cost"
+        return None
 
     def _cost(self, response: ModelResponse) -> Decimal | None:
         """What one call cost: as the provider says, if it does (exact also

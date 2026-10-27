@@ -24,7 +24,14 @@ from mharness.domain.trace import TraceRecord, TurnFailed, TurnInterrupted
 # How a turn ended: as `TurnFinished` says, by an exception, or not at all
 # (maha died, or the trace failed).
 type Ending = Literal[
-    "end_turn", "max_steps", "denied", "error", "interrupted", "unfinished"
+    "end_turn",
+    "max_steps",
+    "max_cost",
+    "max_tokens",
+    "denied",
+    "error",
+    "interrupted",
+    "unfinished",
 ]
 
 
