@@ -1,0 +1,7 @@
+# Recorrer y cruzar ficheros; decir de más también es fallar.
+instruction = "¿Qué funciones definidas en src/tienda no aparecen por su nombre en ningún fichero de tests/? Responde solo con sus nombres, uno por línea."
+fixture = "tienda"
+
+[check]
+answer_contains = ["calcular_iva"]
+answer_absent = ["aplicar_descuento", "total_con_iva", "resumen"]

@@ -1,0 +1,16 @@
+# In English: write a method and its own test.
+instruction = "Add a total_value() method to Inventory in inventory.py that returns the value of the whole stock (quantity times unit price, summed over every item). Add a test for it to test_inventory.py, named test_total_value."
+fixture = "inventario"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = '''python3 -m unittest -q test_inventory.TestInventory.test_total_value && python3 -c "
+from inventory import Inventory
+stock = Inventory()
+assert stock.total_value() == 0
+stock.add('pen', 3, 1.5)
+stock.add('book', 2, 10.0)
+assert stock.total_value() == 24.5
+"'''
+file = "test_inventory.py"
+contains = ["def test_total_value"]

@@ -1,0 +1,16 @@
+# Una regla nueva que se nota también en el IVA.
+instruction = "Añade un descuento por volumen a los pedidos: en total(), una línea de 10 unidades o más lleva un 5 % de descuento en esa línea."
+fixture = "tienda"
+split = "validation"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = '''
+PYTHONPATH=src python3 -m unittest -q tests.test_pedidos && PYTHONPATH=src python3 -c "
+from tienda.pedidos import total, total_con_iva
+assert total([(10, 1.0)]) == 9.5
+assert total([(9, 1.0)]) == 9.0
+assert total([(10, 1.0), (1, 5.0)]) == 14.5
+assert total_con_iva([(10, 10.0)]) == 114.95
+"
+'''

@@ -1,0 +1,11 @@
+# Leer el entorno con casos límite: falta, número, basura.
+instruction = "Haz que el puerto de la tienda se pueda cambiar con la variable de entorno TIENDA_PORT. Si no está, o no es un número entero, el puerto sigue siendo 8000."
+fixture = "tienda"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = '''
+PYTHONPATH=src TIENDA_PORT=9090 python3 -c "from tienda import config; assert config.PORT == 9090, config.PORT" &&
+PYTHONPATH=src python3 -c "from tienda import config; assert config.PORT == 8000, config.PORT" &&
+PYTHONPATH=src TIENDA_PORT=abc python3 -c "from tienda import config; assert config.PORT == 8000, config.PORT"
+'''
