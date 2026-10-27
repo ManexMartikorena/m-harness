@@ -287,7 +287,7 @@ Session(id, created_at, cwd, model, messages, usage)
 | Validación y esquemas | Pydantic v2 | Herramientas, JSON Schema para el modelo, configuración, tipos del dominio |
 | Configuración | TOML (`tomllib`) validado con Pydantic. Usuario: `~/.config/maha/config.toml`; proyecto: `.maha/config.toml` | Biblioteca estándar. La configuración del proyecto prevalece sobre la del usuario, pero solo puede elegir proveedor y modelo: los proveedores (URL y variable de la clave) solo se declaran en la del usuario. *(Corregido el 20/10/2026, spec del hito 2, §1.10: un repositorio ajeno podría desviar la clave del usuario a otro servidor.)* |
 | Credenciales | Variables de entorno (por ejemplo, `OPENCODE_API_KEY`). En desarrollo, `.env` cargado con `uv run --env-file .env` | `maha` nunca lee un `.env` por su cuenta, para no cargar secretos de los proyectos donde trabaja |
-| Interfaz de terminal | Rich (pintar) + prompt_toolkit (entrada) | Fontanería estándar. Textual queda como opción si algún día se quiere una TUI completa |
+| Interfaz de terminal | Rich (pintar) + prompt_toolkit (entrada) | Fontanería estándar. Textual queda como opción si algún día se quiere una TUI completa. *(Cambiado el 27/10/2026 por decisión del mantenedor: el hito 19 es una TUI completa, con Textual salvo que su spec justifique otra cosa; la interfaz de línea se conserva para el modo no interactivo, `maha < fichero` y los evals.)* |
 | Argumentos de línea de comandos | `argparse` | Biblioteca estándar; bastan unas pocas opciones |
 | Persistencia | JSONL (sesiones, trazas) y SQLite (memoria) en `~/.local/share/maha/` | Sin servidor: es un producto local (XDG) |
 | Calidad | ruff (lint y formato), mypy estricto, pytest + pytest-asyncio, respx (simular httpx), import-linter | Stack por defecto + lo propio del proyecto |
@@ -330,7 +330,7 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
 | 14 | Web | Se decide en su hito | Brave Search, Tavily, Exa; búsqueda nativa de algunos proveedores; trafilatura, markdownify; Jina Reader |
 | 15 | Trazas | Eventos propios en local | OpenTelemetry (convenciones GenAI); Langfuse, LangSmith, Arize Phoenix, Helicone; OpenLLMetry, OpenLIT |
 | 16 | Evals | Runner propio | Inspect AI, promptfoo, DeepEval, Braintrust; benchmarks SWE-bench, Terminal-Bench |
-| 17 | Interfaz | Rich + prompt_toolkit | Rich, prompt_toolkit, Textual; Typer, Click |
+| 17 | Interfaz | Rich + prompt_toolkit *(27/10/2026: TUI completa, previsiblemente Textual; se decide en la spec del hito 19)* | Rich, prompt_toolkit, Textual; Typer, Click; las TUI de OpenCode y Claude Code como referencia de uso |
 | — | Tests de adaptadores HTTP | respx | VCR.py y pytest-recording (graban y reproducen respuestas reales) |
 
 *Nombres y referencias comprobados el 19/10/2026.*
@@ -552,6 +552,21 @@ Cada hito es pequeño, deja `maha` funcionando, tiene su spec en
 18. **Multimodal.** Imágenes y PDFs. Guía: entrada multimodal.
 19. **Interfaz completa.** Markdown renderizado, barra de estado (modelo,
     tokens, coste), historial de entrada y atajos. Guía: la interfaz.
+    *(Ampliado el 27/10/2026 por decisión del mantenedor:)* **una TUI
+    completa, bonita y fácil de usar para cualquier persona**, con
+    comandos sencillos y navegación clara. Referencia principal, la de
+    OpenCode; secundaria, la de Claude Code. A pantalla completa, con la
+    conversación (Markdown, llamadas a herramientas plegables), una barra o
+    panel con modelo, contexto, coste y sesión, el selector de modelo
+    navegable (precio, avisos y si `maha` puede usarlo), las aprobaciones
+    como diálogo con el diff a la vista, y sesiones y `/trace` como
+    pantallas que se recorren. Es otro adaptador sobre los mismos eventos y
+    puertos: el núcleo no cambia, y la interfaz de línea se conserva para el
+    modo no interactivo (hito 8), `maha < fichero` y los evals. Se hace en
+    el hito 19, y no antes, porque lo que tiene que enseñar llega en los
+    hitos 10 a 18 (contexto y compactación, skills, memoria, subagentes,
+    MCP). La librería (previsiblemente Textual) y el diseño de pantallas se
+    deciden en su spec.
 20. **Exportador OpenTelemetry.** Opcional; probado con Langfuse. Guía:
     OpenTelemetry.
 21. **Versión 1.0.** README de uso, índice de la guía, batería de evals completa
