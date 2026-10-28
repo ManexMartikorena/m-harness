@@ -72,7 +72,11 @@ def _conversation_options(
         "-r",
         "--resume",
         dest="session",
-        type=_text,
+        nargs="?",
+        # Without the id, or with an empty one, the error says where to
+        # find one (spec §1.12).
+        const="",
+        type=str.strip,
         metavar="ID",
         help="resume a session",
     )
@@ -219,6 +223,8 @@ def _check(parser: argparse.ArgumentParser, options: argparse.Namespace) -> None
         for name, flag in _CONVERSATION.items()
         if getattr(options, name) not in (None, False, [])
     ]
+    if options.session == "":
+        parser.error("-r needs the id of a session: /sessions lists them")
     if options.command is not None and given:
         parser.error(f"{options.command} does not take {', '.join(given)}")
     if options.prompt is None:

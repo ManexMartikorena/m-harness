@@ -300,7 +300,7 @@ def test_continue_and_the_limits_go_with_the_conversation() -> None:
         (["--timeout", "nan"], "must be more than 0"),
         (["--timeout", "inf"], "must be more than 0"),
         (["-m", " "], "empty"),
-        (["-r", ""], "empty"),
+        (["-r", " "], "-r needs the id of a session"),
         (["-c", "eval"], "eval does not take -c"),
         (["-m", "x", "--timeout", "5", "eval"], "eval does not take -m, --timeout"),
     ],
@@ -318,3 +318,12 @@ def test_help_names_the_tools_allow_takes(capsys: pytest.CaptureFixture[str]) ->
     out = " ".join(capsys.readouterr().out.split())
     assert "Tools: read_file, list_dir, glob, grep, write_file, edit_file, " in out
     assert "run_command" in out
+
+
+def test_resume_without_an_id_says_where_to_find_one(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert parse(["-r"]) == 2
+    assert "-r needs the id of a session: /sessions lists them" in (
+        capsys.readouterr().err
+    )
