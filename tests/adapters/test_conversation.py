@@ -14,7 +14,7 @@ import pytest
 
 from mharness.adapters.cli.approval import TerminalApproval
 from mharness.adapters.cli.conversation import EXIT_INTERRUPTED, converse
-from mharness.adapters.cli.input import StdinLines
+from mharness.adapters.cli.input import InputTooLarge, StdinLines
 from mharness.adapters.cli.spinner import CLEAR_LINE
 from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.tools import RunCommand
@@ -1084,3 +1084,31 @@ async def test_a_turn_with_cost_but_no_tokens_still_shows_it() -> None:
     _, out, _ = await run_priced(fake, "A", "/exit")
 
     assert "  [tokens: 0 in · 0 out · $0.0012 · session $0.0012]\n" in out
+
+
+async def test_stdin_lines_reads_everything_to_the_end(pipe: tuple[int, int]) -> None:
+    read_fd, write_fd = pipe
+    lines = StdinLines(read_fd)
+    os.write(write_fd, b"primera\n")
+    # A line read first is not lost.
+    assert await lines.readline() == "primera"
+    os.write(write_fd, "segunda\nterc\xc3".encode("latin-1") + b"\xa9ra \xff\n")
+    os.close(write_fd)
+
+    assert await lines.read_all(1024) == "segunda\ntercéra �\n"
+
+
+async def test_stdin_lines_stops_reading_past_the_limit(pipe: tuple[int, int]) -> None:
+    read_fd, write_fd = pipe
+    lines = StdinLines(read_fd)
+    os.write(write_fd, b"x" * 2048)
+
+    with pytest.raises(InputTooLarge, match="larger than 1024 bytes"):
+        await lines.read_all(1024)
+
+
+async def test_stdin_lines_reads_a_file_whole(tmp_path: Path) -> None:
+    path = tmp_path / "instrucciones.txt"
+    path.write_bytes(b"a" * 100_000)
+    with path.open("rb") as file:
+        assert await StdinLines(file.fileno()).read_all(200_000) == "a" * 100_000

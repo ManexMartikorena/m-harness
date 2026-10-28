@@ -679,3 +679,101 @@ def test_allow_takes_the_names_of_the_tools_maha_has(tmp_path: Path) -> None:
     names = bootstrap._tools(tmp_path, {}).names()
 
     assert tuple(names) == bootstrap.TOOL_NAMES
+
+
+# `maha -p` (spec hito 8, §1.10 and §1.11).
+
+
+@respx.mock
+def test_print_answers_on_stdout_and_saves_the_session(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    data_home: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Dos palabras.", 12, 3))
+    )
+    stdin("uno dos\n")
+
+    code = main(["-p", "cuenta las palabras"])
+
+    captured = capsys.readouterr()
+    assert (code, captured.out) == (0, "Dos palabras.\n")
+    assert captured.err == "  [tokens: 12 in · 3 out · <$0.0001 · session <$0.0001]\n"
+    messages = json.loads(route.calls.last.request.content)["messages"]
+    assert messages == [
+        {
+            "role": "user",
+            "content": "cuenta las palabras\n\n<stdin>\nuno dos\n</stdin>",
+        }
+    ]
+    assert len(list((data_home / "maha" / "sessions").glob("*.jsonl"))) == 1
+
+
+@respx.mock
+def test_print_denies_a_write_without_allow(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    arguments = '{"path": "hola.txt", "content": "hola"}'
+    respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(tool_call_stream("write_file", arguments))
+    )
+    stdin("")
+
+    main(["-p", "crea hola.txt"])
+
+    err = capsys.readouterr().err
+    assert "  ✗ error: the user denied this call\n" in err
+    assert not (Path.cwd() / "hola.txt").exists()
+
+
+@respx.mock
+def test_print_writes_with_allow_but_never_what_runs_code(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            sse_response(
+                tool_call_stream(
+                    "write_file", '{"path": "hola.txt", "content": "hola\\n"}'
+                )
+            ),
+            sse_response(streamed("Creado.", 1, 1)),
+            sse_response(
+                tool_call_stream(
+                    "write_file",
+                    '{"path": ".github/workflows/ci.yml", "content": "on: push\\n"}',
+                )
+            ),
+        ]
+    )
+    stdin("")
+
+    assert main(["-p", "crea hola.txt", "--allow", "write_file"]) == 0
+    main(["-p", "crea el CI", "--allow", "write_file"])
+
+    assert (Path.cwd() / "hola.txt").read_text(encoding="utf-8") == "hola\n"
+    assert not (Path.cwd() / ".github").exists()
+    assert capsys.readouterr().out == "Creado.\n"
+
+
+def test_print_from_a_terminal_without_text_says_how(
+    workspace: Path,
+    terminal: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+
+    code = main(["-p"])
+
+    captured = capsys.readouterr()
+    assert (code, captured.out) == (2, "")
+    assert "-p needs an instruction" in captured.err

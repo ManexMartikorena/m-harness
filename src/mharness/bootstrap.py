@@ -75,7 +75,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if options.command == "eval":
         return asyncio.run(_eval(settings, catalog, options))
     # Resolved once: the tools and the sessions name it the same way.
-    return asyncio.run(_converse(settings, catalog, data, Path.cwd().resolve()))
+    cwd = Path.cwd().resolve()
+    if options.prompt is not None:
+        return asyncio.run(_print(settings, catalog, data, cwd, options))
+    return asyncio.run(_converse(settings, catalog, data, cwd))
 
 
 # The application log: diagnosis for whoever maintains maha, never what was
@@ -189,11 +192,7 @@ async def _eval(
     ) -> AsyncIterator[Conversation]:
         # A client per run: each one is a session of its own for the
         # provider, as a `maha -p` would be.
-        async with OpenAIChatClient(
-            base_url=provider.base_url,
-            api_key=settings.api_key,
-            session_header=provider.session_header,
-        ) as client:
+        async with _client(settings) as client:
             tools = _eval_tools(cwd)
 
             def new_agent(model: str, history: Sequence[Message]) -> Agent:
@@ -295,48 +294,87 @@ def _gate(lines: cli.StdinLines) -> ApprovalGate:
     return cli.DenyAll(sys.stdout)
 
 
-async def _converse(
-    settings: config.Settings, catalog: ModelCatalog, data: Path, cwd: Path
-) -> int:
+def _sessions(
+    settings: config.Settings,
+    catalog: ModelCatalog,
+    data: Path,
+    cwd: Path,
+    client: OpenAIChatClient,
+    gate: ApprovalGate,
+) -> Sessions:
+    """The user's sessions, whose agents have the seven tools and `gate`."""
     provider = settings.provider
     # The variables a command gets; never the provider's key (spec
     # mejora-2026-10-23-deuda-hito-5, E1).
     drop = [provider.api_key_env] if provider.api_key_env else []
-    env = command_env(os.environ, drop=drop)
-    # One reader for the conversation and the questions (B3).
-    lines = cli.StdinLines()
-    tools = _tools(cwd, env)
-    gate = _gate(lines)
-    async with OpenAIChatClient(
+    tools = _tools(cwd, command_env(os.environ, drop=drop))
+
+    def new_agent(model: str, history: Sequence[Message]) -> Agent:
+        return Agent(
+            client,
+            tools,
+            gate=gate,
+            model=model,
+            catalog=catalog,
+            provider=settings.provider_name,
+            limits=settings.limits,
+            history=history,
+        )
+
+    return Sessions(
+        JsonlSessionStore(data / "sessions"),
+        new_agent,
+        cwd=str(cwd),
+        provider=settings.provider_name,
+        model=settings.model,
+        version=__version__,
+        traces=JsonlTraceSink(data / "traces"),
+        # The provider's key and every variable that looks like one never
+        # reach a trace (spec hito 7, §1.8).
+        masked=known_secrets(os.environ, also=[settings.api_key]),
+    )
+
+
+def _client(settings: config.Settings) -> OpenAIChatClient:
+    provider = settings.provider
+    return OpenAIChatClient(
         base_url=provider.base_url,
         api_key=settings.api_key,
         session_header=provider.session_header,
-    ) as client:
+    )
 
-        def new_agent(model: str, history: Sequence[Message]) -> Agent:
-            return Agent(
-                client,
-                tools,
-                gate=gate,
-                model=model,
-                catalog=catalog,
-                provider=settings.provider_name,
-                limits=settings.limits,
-                history=history,
-            )
 
-        sessions = Sessions(
-            JsonlSessionStore(data / "sessions"),
-            new_agent,
-            cwd=str(cwd),
-            provider=settings.provider_name,
-            model=settings.model,
-            version=__version__,
-            traces=JsonlTraceSink(data / "traces"),
-            # The provider's key and every variable that looks like one never
-            # reach a trace (spec hito 7, §1.8).
-            masked=known_secrets(os.environ, also=[settings.api_key]),
+async def _print(
+    settings: config.Settings,
+    catalog: ModelCatalog,
+    data: Path,
+    cwd: Path,
+    options: argparse.Namespace,
+) -> int:
+    """`maha -p` (spec hito 8, §1.10 and §1.11). Nobody to ask: only the
+    tools of `--allow` run, and only with a scope (§1.2)."""
+    # From a terminal nothing is piped: -p does not wait for Ctrl+D.
+    read_all = None if os.isatty(0) else cli.StdinLines().read_all
+    async with _client(settings) as client:
+        sessions = _sessions(
+            settings, catalog, data, cwd, client, AllowList(options.allow)
         )
+        return await cli.print_mode(
+            sessions,
+            options.prompt,
+            read_all=read_all,
+            catalog=catalog,
+            provider=settings.provider_name,
+        )
+
+
+async def _converse(
+    settings: config.Settings, catalog: ModelCatalog, data: Path, cwd: Path
+) -> int:
+    # One reader for the conversation and the questions (B3).
+    lines = cli.StdinLines()
+    async with _client(settings) as client:
+        sessions = _sessions(settings, catalog, data, cwd, client, _gate(lines))
         return await cli.converse(
             sessions,
             provider=settings.provider_name,

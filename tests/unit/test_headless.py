@@ -3,7 +3,9 @@
 from datetime import date
 from decimal import Decimal
 
-from mharness.application.headless import RunResult, run_once
+import pytest
+
+from mharness.application.headless import RunResult, instruction, run_once
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.catalog import ModelInfo, Prices
 from mharness.domain.errors import ModelUnavailableError
@@ -106,3 +108,43 @@ async def test_the_calls_that_ran_count_even_if_the_model_fails_later() -> None:
     result = await run_once(await world.sessions.start(), "Hola")
 
     assert (result.reason, result.steps, result.tool_calls) == ("error", 1, 1)
+
+
+async def test_on_event_sees_every_event_in_order() -> None:
+    fake = FakeModelClient([reply("Hola.")])
+    world = World(MemorySessionStore(), fake)
+    seen: list[str] = []
+
+    await run_once(
+        await world.sessions.start(), "Hola", lambda event: seen.append(event.type)
+    )
+
+    assert seen == [
+        "turn_started",
+        "text_delta",
+        "text_delta",
+        "model_call_finished",
+        "turn_finished",
+    ]
+
+
+# instruction(): what `maha -p` asks (spec hito 8, §1.10).
+
+
+def test_the_text_alone_is_the_instruction() -> None:
+    assert instruction("resume este proyecto", None) == "resume este proyecto"
+
+
+def test_what_is_piped_goes_below_between_delimiters() -> None:
+    assert instruction("revisa este diff", "+ hola\n- adiós\n") == (
+        "revisa este diff\n\n<stdin>\n+ hola\n- adiós\n</stdin>"
+    )
+
+
+def test_without_text_what_is_piped_is_the_instruction() -> None:
+    assert instruction("", "arregla el test\n") == "arregla el test\n"
+
+
+@pytest.mark.parametrize("piped", ["", " \n\n"])
+def test_nothing_piped_adds_nothing(piped: str) -> None:
+    assert instruction("hola", piped) == "hola"
