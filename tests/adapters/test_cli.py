@@ -7,12 +7,17 @@ import pytest
 
 from mharness.adapters import cli
 from mharness.adapters.cli.text import clean, usd
+from mharness.bootstrap import TOOL_NAMES
 
 PYPROJECT = Path(__file__).parents[2] / "pyproject.toml"
 
 
+def parse(argv: list[str]) -> argparse.Namespace | int:
+    return cli.parse(argv, tools=TOOL_NAMES)
+
+
 def test_version_prints_name_and_version(capsys: pytest.CaptureFixture[str]) -> None:
-    code = cli.parse(["--version"])
+    code = parse(["--version"])
 
     out = capsys.readouterr().out
     assert code == 0
@@ -24,13 +29,13 @@ def test_version_matches_pyproject(capsys: pytest.CaptureFixture[str]) -> None:
         "version"
     ]
 
-    cli.parse(["--version"])
+    parse(["--version"])
 
     assert capsys.readouterr().out == f"maha {expected}\n"
 
 
 def test_help_prints_usage(capsys: pytest.CaptureFixture[str]) -> None:
-    code = cli.parse(["--help"])
+    code = parse(["--help"])
 
     out = capsys.readouterr().out
     assert code == 0
@@ -40,7 +45,7 @@ def test_help_prints_usage(capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_no_arguments_returns_the_options(capsys: pytest.CaptureFixture[str]) -> None:
     # Changes decision 3.3 of hito 1: `maha` alone opens the conversation.
-    options = cli.parse([])
+    options = parse([])
 
     assert isinstance(options, argparse.Namespace)
     assert capsys.readouterr().out == ""
@@ -49,7 +54,7 @@ def test_no_arguments_returns_the_options(capsys: pytest.CaptureFixture[str]) ->
 def test_unknown_option_exits_with_usage_error(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    code = cli.parse(["--nope"])
+    code = parse(["--nope"])
 
     captured = capsys.readouterr()
     assert code == 2
@@ -112,7 +117,7 @@ def test_usd(amount: str, shown: str) -> None:
 
 
 def test_eval_has_its_defaults() -> None:
-    options = cli.parse(["eval"])
+    options = parse(["eval"])
 
     assert isinstance(options, argparse.Namespace)
     assert options.command == "eval"
@@ -127,7 +132,7 @@ def test_eval_has_its_defaults() -> None:
 
 
 def test_eval_takes_its_options() -> None:
-    options = cli.parse(
+    options = parse(
         [
             "eval",
             "--models",
@@ -167,12 +172,149 @@ def test_eval_takes_its_options() -> None:
 def test_eval_rejects_wrong_values(
     args: list[str], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert cli.parse(args) == 2
+    assert parse(args) == 2
     assert "usage:" in capsys.readouterr().err
 
 
 def test_without_a_command_there_is_none() -> None:
-    options = cli.parse([])
+    options = parse([])
 
     assert isinstance(options, argparse.Namespace)
     assert options.command is None
+
+
+# `maha -p` and the options of a conversation (spec hito 8, §1.13).
+
+
+def test_without_options_the_conversation_has_its_defaults() -> None:
+    options = parse([])
+
+    assert isinstance(options, argparse.Namespace)
+    assert (options.prompt, options.last, options.session, options.model) == (
+        None,
+        False,
+        None,
+        None,
+    )
+    assert (options.output_format, options.allow) == ("text", [])
+    assert (options.max_steps, options.max_cost, options.max_tokens) == (
+        None,
+        None,
+        None,
+    )
+    assert options.timeout is None
+
+
+@pytest.mark.parametrize(
+    ("args", "prompt"),
+    [
+        (["-p", "resume este proyecto"], "resume este proyecto"),
+        (["--print", "hola"], "hola"),
+        # Without text: the instruction comes from stdin.
+        (["-p"], ""),
+        (["-p", "-c"], ""),
+        # A command's name after -p is its text, not the command.
+        (["-p", "eval"], "eval"),
+    ],
+)
+def test_print_takes_its_text_or_none(args: list[str], prompt: str) -> None:
+    options = parse(args)
+
+    assert isinstance(options, argparse.Namespace)
+    assert options.prompt == prompt
+    assert options.command is None
+
+
+def test_print_takes_every_option() -> None:
+    options = parse(
+        [
+            "-p",
+            "arregla el test",
+            "-r",
+            "20261027-101500-3fa2",
+            "-m",
+            "kimi-k2.7-code",
+            "--output-format",
+            "json",
+            "--allow",
+            "edit_file",
+            "--allow",
+            "write_file",
+            "--max-steps",
+            "10",
+            "--max-cost",
+            "0.25",
+            "--max-tokens",
+            "50000",
+            "--timeout",
+            "90.5",
+        ]
+    )
+
+    assert isinstance(options, argparse.Namespace)
+    assert (options.session, options.model) == (
+        "20261027-101500-3fa2",
+        "kimi-k2.7-code",
+    )
+    assert (options.output_format, options.allow) == (
+        "json",
+        ["edit_file", "write_file"],
+    )
+    assert (options.max_steps, options.max_cost, options.max_tokens) == (
+        10,
+        Decimal("0.25"),
+        50000,
+    )
+    assert options.timeout == 90.5
+
+
+def test_continue_and_the_limits_go_with_the_conversation() -> None:
+    options = parse(["-c", "--max-cost", "0", "--model", "glm-5.3"])
+
+    assert isinstance(options, argparse.Namespace)
+    assert (options.last, options.max_cost, options.model) == (
+        True,
+        Decimal(0),
+        "glm-5.3",
+    )
+
+
+@pytest.mark.parametrize(
+    ("args", "says"),
+    [
+        (["--allow", "write_file"], "--allow only goes with -p"),
+        (["--output-format", "json"], "--output-format only goes with -p"),
+        (
+            ["--output-format", "json", "--allow", "read_file"],
+            "--output-format and --allow only go with -p",
+        ),
+        (["-c", "-r", "20261027-101500-3fa2"], "not allowed with argument"),
+        (["-p", "x", "--allow", "rm_rf"], "invalid choice: 'rm_rf'"),
+        (["-p", "x", "--output-format", "yaml"], "invalid choice: 'yaml'"),
+        (["--max-steps", "0"], "must be 1 or more"),
+        (["--max-tokens", "x"], "not a number"),
+        (["--max-cost", "-1"], "must be 0 or more"),
+        (["--max-cost", "NaN"], "must be 0 or more"),
+        (["--max-cost", "mucho"], "not an amount"),
+        (["--timeout", "0"], "must be more than 0"),
+        (["--timeout", "nan"], "must be more than 0"),
+        (["--timeout", "inf"], "must be more than 0"),
+        (["-m", " "], "empty"),
+        (["-r", ""], "empty"),
+        (["-c", "eval"], "eval does not take -c"),
+        (["-m", "x", "--timeout", "5", "eval"], "eval does not take -m, --timeout"),
+    ],
+)
+def test_options_that_do_not_go_together_are_a_usage_error(
+    args: list[str], says: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert parse(args) == 2
+    assert says in capsys.readouterr().err
+
+
+def test_help_names_the_tools_allow_takes(capsys: pytest.CaptureFixture[str]) -> None:
+    parse(["--help"])
+
+    out = " ".join(capsys.readouterr().out.split())
+    assert "Tools: read_file, list_dir, glob, grep, write_file, edit_file, " in out
+    assert "run_command" in out

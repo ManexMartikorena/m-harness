@@ -49,10 +49,16 @@ from mharness.domain.trace import known_secrets
 from mharness.ports.approval import ApprovalGate
 from mharness.ports.catalog import ModelCatalog
 
+# The tools of maha, by name: what `--allow` takes.
+TOOL_NAMES = tuple(
+    tool.name
+    for tool in (ReadFile, ListDir, Glob, Grep, WriteFile, EditFile, RunCommand)
+)
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point of the `maha` command."""
-    options = cli.parse(argv)
+    options = cli.parse(argv, tools=TOOL_NAMES)
     if isinstance(options, int):
         return options
     try:

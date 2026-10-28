@@ -673,3 +673,9 @@ def test_eval_names_a_task_that_does_not_exist(
     assert main(["eval", "--tasks", str(evals), "--only", "99-nope"]) == 1
 
     assert "error: no task '99-nope'" in capsys.readouterr().err
+
+
+def test_allow_takes_the_names_of_the_tools_maha_has(tmp_path: Path) -> None:
+    names = bootstrap._tools(tmp_path, {}).names()
+
+    assert tuple(names) == bootstrap.TOOL_NAMES
