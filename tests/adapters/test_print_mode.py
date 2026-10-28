@@ -220,7 +220,7 @@ async def test_a_denial_says_what_allows_it() -> None:
     effect = FakeTool(
         permission="effect",
         requests=[
-            ApprovalRequest(tool="echo", title="echo Hola", detail="", scope=None)
+            ApprovalRequest(tool="echo", title="echo Hola", detail="", scope="echo")
         ],
     )
     fake = FakeModelClient([tool_calls(ECHO, text="Lo escribo.")])
@@ -534,3 +534,24 @@ async def test_a_reader_that_goes_away_ends_quietly_with_1(
 
     assert (code, err) == (1, "")
     assert store.locked == set()
+
+
+async def test_a_denial_without_scope_says_it_needs_a_person() -> None:
+    # A secret, outside the directory or a file that runs code: --allow
+    # does not change it (spec hito 8, §1.2), and the note must not say so.
+    secret = FakeTool(
+        requests=[
+            ApprovalRequest(tool="echo", title="read .env", detail="", scope=None)
+        ]
+    )
+    fake = FakeModelClient([tool_calls(ECHO)])
+
+    _, _, err = await run(
+        sessions(fake, tools=[secret], gate=FakeApproval(["deny"])), "Lee .env"
+    )
+
+    assert (
+        "  [denied: never without a person: outside this directory, a secret "
+        "or a file that runs code]\n"
+    ) in err
+    assert "--allow" not in err

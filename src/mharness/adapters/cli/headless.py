@@ -45,6 +45,7 @@ from mharness.application.headless import RunResult, instruction, run_once
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.domain.agent_events import (
     AgentEvent,
+    ApprovalRequested,
     ToolCallProposed,
     ToolFinished,
     TurnFinished,
@@ -236,11 +237,10 @@ def _watch(
 ) -> Callable[[AgentEvent], None]:
     """What is written of each event as it comes. A tool that crashed is
     told on stderr in every format: it is a bug of maha."""
+    if output_format == "text":
+        return _Progress(conversation, err).show
 
     def watch(event: AgentEvent) -> None:
-        if output_format == "text":
-            _show(event, conversation, err)
-            return
         if output_format == "stream-json":
             _json_line(event.model_dump(mode="json"), out)
         if isinstance(event, ToolFinished):
@@ -254,24 +254,46 @@ def _json_line(data: dict[str, Any], out: TextIO) -> None:
     out.flush()
 
 
-def _show(event: AgentEvent, conversation: Conversation, err: TextIO) -> None:
-    """What the conversation shows of a turn but its text, on stderr."""
-    match event:
-        case ToolCallProposed(call=call):
-            print(f"  → {call_line(call)}", file=err, flush=True)
-        case ToolFinished():
-            mark = "✗" if event.result.is_error else "✓"
-            print(f"  {mark} {clean(event.summary)}", file=err, flush=True)
-            warn_crash(event, err)
-        case TurnFinished():
-            note = turn_note(event)
-            if event.reason == "denied":
-                # Nobody can be asked: what is not allowed is denied.
-                note = "[denied: --allow TOOL lets a tool run in this directory]"
-            for line in (note, usage_line(event, conversation)):
-                if line is not None:
-                    print(f"  {line}", file=err)
-            err.flush()
+# Why a call was denied, said once the turn ends.
+_NOT_ALLOWED = "[denied: --allow TOOL lets a tool run in this directory]"
+_NEEDS_A_PERSON = (
+    "[denied: never without a person: outside this directory, a secret or a "
+    "file that runs code]"
+)
+
+
+class _Progress:
+    """In `text`, what the conversation shows of a turn but its text, on
+    stderr. A denial says what would let the call run: `--allow`, or
+    nothing, when the request has no scope (spec hito 8, §1.2)."""
+
+    def __init__(self, conversation: Conversation, err: TextIO) -> None:
+        self._conversation = conversation
+        self._err = err
+        # The calls asked without a scope.
+        self._scopeless: set[str] = set()
+        self._why = _NOT_ALLOWED
+
+    def show(self, event: AgentEvent) -> None:
+        err = self._err
+        match event:
+            case ToolCallProposed(call=call):
+                print(f"  → {call_line(call)}", file=err, flush=True)
+            case ApprovalRequested(call=call, request=request):
+                if request.scope is None:
+                    self._scopeless.add(call.id)
+            case ToolFinished():
+                mark = "✗" if event.result.is_error else "✓"
+                print(f"  {mark} {clean(event.summary)}", file=err, flush=True)
+                warn_crash(event, err)
+                if event.decision == "deny" and event.call.id in self._scopeless:
+                    self._why = _NEEDS_A_PERSON
+            case TurnFinished():
+                note = self._why if event.reason == "denied" else turn_note(event)
+                for line in (note, usage_line(event, self._conversation)):
+                    if line is not None:
+                        print(f"  {line}", file=err)
+                err.flush()
 
 
 def _drop(out: TextIO) -> None:
