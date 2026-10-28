@@ -561,6 +561,12 @@ Fallos: `glm-5.3-flash` en 12 (1/5), 13 (2/5: nombra funciones que sí
 tienen test) y 18 (3/5); `kimi-k2.7-code` en 12 (1/5). Las diez básicas
 pasan siempre con los dos. No hay comparación: es la primera.
 
+**PR 3** (`maha -p`, 2026-10-28): sin evals, porque no cambia nada de lo que
+la batería ejecuta. Las evals llaman a `run_once` sin `on_event`, no usan
+`Sessions.open` ni `instruction()`, y el bucle, las herramientas y los
+prompts del turno son los mismos. Sí cambia el bucle el PR 4 (reintentos),
+que se compara con la línea base.
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit en verde. Seis PRs, en el milestone "Hito 8".
@@ -757,6 +763,68 @@ agente:
    línea base. Alternativa: el orden de DESIGN (`-p` primero).
 
 ## 12. Aprendido al implementar
+
+### PR 3 (`feature/hito-8-print`, 2026-10-28)
+
+14. **Lo que sale por stdout.** En `text`, la respuesta va limpia
+    (`clean()`) solo si stdout es una terminal. A un fichero o a una
+    tubería va tal cual: es un dato para otro programa, como con `cat`. En
+    `json` y `stream-json`, `json.dumps` escapa todo carácter de control y
+    todo lo que no es ASCII, así que también es seguro en una terminal.
+15. **`is_error`** del `result` es `true` cuando el turno no acabó bien
+    (`reason` distinto de `end_turn`), es decir, cuando el código de salida
+    no es 0.
+16. **Las notas** (sesión retomada, catálogo, la línea de llamadas y la de
+    tokens) van a stderr solo en `text`. En `json` y `stream-json`, stderr
+    solo tiene avisos de `maha` (sesión o traza sin guardar, una
+    herramienta que falló) y los errores de uso.
+17. **Una señal no escribe `result`:** con Ctrl+C, SIGTERM o SIGHUP, `-p`
+    guarda lo ejecutado, dice `[interrupted]` en stderr y sale con
+    `128 + señal`, como un proceso cortado. El código de salida es lo que
+    cuenta.
+18. **stdin se espera hasta el final,** como `cat` o `grep`. Si stdin no es
+    una terminal y nadie lo cierra (algunos CI lo dejan abierto), `-p`
+    espera: allí se lanza con `< /dev/null`. Lo que no es UTF-8 se
+    reemplaza, como en `read_file`. El texto de stdin va entre `<stdin>` y
+    `</stdin>` debajo de la instrucción. Como dice DESIGN §10, la defensa
+    real es el permiso en código.
+19. **`-p` sin instrucción** (sin texto y desde una terminal, o con stdin
+    vacío) sale con 2 sin abrir sesión.
+20. **Los límites de la línea de comandos mandan** sobre los de la
+    configuración, también para aflojarlos: es lo que pide quien lanza el
+    comando. Un `.maha/config.toml` sigue sin poder aflojar los del
+    usuario (§12.4).
+21. **`-m` con `-c` o `-r`** cambia el modelo de la sesión retomada y lo
+    apunta en ella, como `/model`. Sin `-m`, se sigue con el de la sesión.
+22. **`--allow` solo acepta nombres de herramientas** (`choices`, con la
+    lista en la ayuda). Las opciones de conversación junto a un subcomando
+    (`maha -c eval`) son un error de uso, y `-r` sin id dice dónde ver los
+    ids (`/sessions`; el PR 5 añade `maha sessions`).
+23. **Al arrancar no hay "otra" sesión:** `-c` sin sesiones aquí dice "no
+    session in this directory"; `/resume` en una conversación nueva dice lo
+    mismo.
+24. **Encontrado en la verificación a mano, y arreglado con su test:**
+    - Con `--allow read_file`, leer `.env` se deniega, como debe, pero la
+      nota sugería `--allow`. Ahora una negativa sin ámbito dice "never
+      without a person: outside this directory, a secret or a file that
+      runs code".
+    - Revisando el diff: `maha -p … | head -1` acababa con una traza de
+      Python. Ahora sale con 1 y en silencio.
+    - `-r` sin id daba el error genérico de argparse.
+25. **Verificación a mano** (OpenCode Go, `glm-5.3-flash`, en un directorio
+    desechable; spec §7, puntos 2 a 8):
+    - respuesta solo en stdout, código 0;
+    - stdin unido a `-p`;
+    - sin `--allow`, código 4 y sin fichero; con `--allow write_file`,
+      fichero creado;
+    - `.env` denegado con `--allow read_file`;
+    - `json` (`cost_usd` como texto) y `stream-json` (`result` al final);
+    - `-c -p` recuerda el turno anterior, y `-r ID` funciona desde otro
+      directorio;
+    - `--max-steps 1` y `--timeout 1` salen con 3, y la traza dice
+      `timeout`;
+    - SIGTERM sale con 143, una tubería rota con 1, y `-r` con `-m` en la
+      conversación funciona.
 
 ### PR 2 (`feature/hito-8-evals`, 2026-10-27)
 
