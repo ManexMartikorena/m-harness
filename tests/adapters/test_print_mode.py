@@ -3,12 +3,15 @@ code (spec hito 8, §1.10, §1.11 and §1.4)."""
 
 import asyncio
 import io
+import json
 import signal
 from collections.abc import AsyncGenerator
+from typing import get_args
 
 import pytest
 
-from mharness.adapters.cli.headless import MAX_INPUT, print_mode
+from mharness.adapters.cli.app import OUTPUT_FORMATS
+from mharness.adapters.cli.headless import MAX_INPUT, OutputFormat, print_mode
 from mharness.adapters.cli.input import InputTooLarge, ReadAll
 from mharness.application.agent import Agent
 from mharness.application.sessions import Sessions
@@ -18,10 +21,11 @@ from mharness.domain.errors import ModelAuthError
 from mharness.domain.events import ModelEvent
 from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import ModelRequest, Usage
+from mharness.domain.session import is_session_id
 from tests.adapters.test_conversation import KNOWN
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
-from tests.fakes.model import FakeModelClient, reply, tool_calls
+from tests.fakes.model import FAKE_MODEL, FakeModelClient, reply, tool_calls
 from tests.fakes.sessions import MemorySessionStore
 from tests.fakes.tools import FakeTool
 from tests.fakes.tracing import MemoryTraceSink
@@ -81,6 +85,7 @@ async def run(
     read_all: ReadAll | None = None,
     out: io.StringIO | None = None,
     catalog: MemoryCatalog = KNOWN,
+    output_format: OutputFormat = "text",
 ) -> tuple[int, str, str]:
     out = io.StringIO() if out is None else out
     err = io.StringIO()
@@ -90,6 +95,7 @@ async def run(
         read_all=read_all,
         catalog=catalog,
         provider="opencode-go",
+        output_format=output_format,
         out=out,
         err=err,
     )
@@ -290,3 +296,116 @@ async def test_a_signal_while_reading_the_input_ends_too() -> None:
 
     assert (code, out, err) == (130, "", "")
     assert fake.requests == []
+
+
+# --output-format json and stream-json (spec hito 8, §1.11).
+
+
+async def test_json_is_one_object_with_stable_names() -> None:
+    fake = FakeModelClient(
+        [
+            tool_calls(ECHO, text="Voy a mirar."),
+            reply("Hay dos.", usage=Usage(input_tokens=12, output_tokens=9)),
+        ]
+    )
+
+    code, out, err = await run(
+        sessions(fake, tools=[FakeTool()]),
+        "¿Qué hay?",
+        output_format="json",
+        catalog=MemoryCatalog(),
+    )
+
+    assert (code, err) == (0, "")
+    assert out.count("\n") == 1
+    result = json.loads(out)
+    assert result.pop("duration_s") >= 0
+    assert result == {
+        "type": "result",
+        "session_id": result["session_id"],
+        "result": "Hay dos.",
+        "reason": "end_turn",
+        "is_error": False,
+        "steps": 2,
+        "tool_calls": 1,
+        "tool_errors": 0,
+        "denials": [],
+        "usage": {
+            "input_tokens": 12,
+            "output_tokens": 9,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "reasoning_tokens": 0,
+        },
+        "cost_usd": None,
+        # The one that answered, as the provider names it.
+        "model": FAKE_MODEL,
+        "error": None,
+    }
+    assert is_session_id(result["session_id"])
+
+
+async def test_json_tells_the_error_and_its_cost_as_a_string() -> None:
+    fake = FakeModelClient([ModelAuthError("HTTP 401: Invalid key")])
+
+    code, out, err = await run(sessions(fake), "Hola", output_format="json")
+
+    result = json.loads(out)
+    assert (code, err) == (1, "")
+    assert (result["reason"], result["is_error"]) == ("error", True)
+    assert (result["error"], result["cost_usd"]) == ("HTTP 401: Invalid key", "0")
+
+
+async def test_json_escapes_what_a_terminal_would_run() -> None:
+    answer = "rojo: \x1b[31mX \u202e"
+
+    _, out, _ = await run(
+        sessions(FakeModelClient([reply(answer)])), "Hola", output_format="json"
+    )
+
+    assert "\x1b" not in out
+    assert "\u202e" not in out
+    assert json.loads(out)["result"] == answer
+
+
+async def test_stream_json_is_one_event_per_line_and_the_result_last() -> None:
+    fake = FakeModelClient([tool_calls(ECHO), reply("Hola.")])
+
+    code, out, err = await run(
+        sessions(fake, tools=[FakeTool()]), "Hola", output_format="stream-json"
+    )
+
+    lines = [json.loads(line) for line in out.splitlines()]
+    assert (code, err) == (0, "")
+    assert [line["type"] for line in lines] == [
+        "turn_started",
+        "model_call_finished",
+        "tool_call_proposed",
+        "tool_finished",
+        "text_delta",
+        "text_delta",
+        "model_call_finished",
+        "turn_finished",
+        "result",
+    ]
+    assert lines[0]["text"] == "Hola"
+    assert lines[-1]["result"] == "Hola."
+
+
+async def test_a_tool_that_crashes_is_told_on_stderr_in_json_too() -> None:
+    class Broken(FakeTool):
+        def summary(self, result: str) -> str:
+            raise RuntimeError("boom")
+
+    fake = FakeModelClient([tool_calls(ECHO), reply("Vaya.")])
+
+    code, out, err = await run(
+        sessions(fake, tools=[Broken()]), "Hola", output_format="json"
+    )
+
+    assert (code, json.loads(out)["result"]) == (0, "Vaya.")
+    assert err.startswith('warning: tool "echo" failed: summary: RuntimeError: boom\n')
+
+
+def test_the_formats_of_the_command_line_are_those_of_the_output() -> None:
+    assert get_args(OutputFormat.__value__) == OUTPUT_FORMATS

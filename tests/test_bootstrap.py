@@ -777,3 +777,21 @@ def test_print_from_a_terminal_without_text_says_how(
     captured = capsys.readouterr()
     assert (code, captured.out) == (2, "")
     assert "-p needs an instruction" in captured.err
+
+
+@respx.mock
+def test_print_writes_json(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    respx.post(GO_ENDPOINT).mock(return_value=sse_response(streamed("Hola.", 1, 1)))
+    stdin("")
+
+    code = main(["-p", "hola", "--output-format", "json"])
+
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert (code, captured.err) == (0, "")
+    assert (result["result"], result["model"]) == ("Hola.", "glm-5.3-flash")

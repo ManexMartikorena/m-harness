@@ -365,6 +365,7 @@ async def _print(
             read_all=read_all,
             catalog=catalog,
             provider=settings.provider_name,
+            output_format=options.output_format,
         )
 
 

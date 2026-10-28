@@ -8,15 +8,20 @@ $ git diff | maha -p "revisa este diff" > revision.md
   [tokens: 5236 in · 410 out · 1 call]    (stderr)
 ```
 
-stdout gets only the final answer, so that `x=$(maha -p …)` holds just
-that; the calls, the notes and the tokens go to stderr, as in the
-conversation but without a spinner.
+In `text`, stdout gets only the final answer, so that `x=$(maha -p …)`
+holds just that; the calls, the notes and the tokens go to stderr, as in
+the conversation but without a spinner. In `json`, stdout gets one object
+at the end, the result; in `stream-json`, one line per event and the
+result last. JSON escapes every control character: it is safe in a
+terminal as it is.
 """
 
 import asyncio
+import json
 import signal
 import sys
-from typing import TextIO
+from collections.abc import Callable
+from typing import Any, Literal, TextIO
 
 from mharness.adapters.cli.commands import model_note, warn_trace, warn_unsaved
 from mharness.adapters.cli.conversation import (
@@ -41,6 +46,8 @@ from mharness.ports.catalog import ModelCatalog
 # What may be piped to -p, at most: the same as Claude Code (spec §1.10).
 MAX_INPUT = 10 * 1024 * 1024
 
+type OutputFormat = Literal["text", "json", "stream-json"]
+
 EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
@@ -53,11 +60,13 @@ async def print_mode(
     read_all: ReadAll | None,
     catalog: ModelCatalog,
     provider: str,
+    output_format: OutputFormat = "text",
     out: TextIO | None = None,
     err: TextIO | None = None,
 ) -> int:
-    """Run `prompt`, with what `read_all` gives below it, in a new session;
-    return the exit code. `read_all` is None when the input is a terminal.
+    """Run `prompt`, with what `read_all` gives below it, in a new session,
+    and write the result in `output_format`; return the exit code.
+    `read_all` is None when the input is a terminal.
 
     Ctrl+C and the closing signals end it as they end the conversation:
     what ran is saved, and the code is 128 + the signal.
@@ -76,7 +85,9 @@ async def print_mode(
     for number in (signal.SIGINT, *CLOSING):
         loop.add_signal_handler(number, on_signal, number)
     try:
-        return await _print(sessions, prompt, read_all, catalog, provider, out, err)
+        return await _print(
+            sessions, prompt, read_all, catalog, provider, output_format, out, err
+        )
     except asyncio.CancelledError:
         if not received:
             raise
@@ -93,6 +104,7 @@ async def _print(
     read_all: ReadAll | None,
     catalog: ModelCatalog,
     provider: str,
+    output_format: OutputFormat,
     out: TextIO,
     err: TextIO,
 ) -> int:
@@ -112,10 +124,10 @@ async def _print(
     conversation = await sessions.start()
     try:
         note = model_note(catalog, provider, conversation.model)
-        if note is not None:
+        if note is not None and output_format == "text":
             print(f"  {note}", file=err, flush=True)
         result = await run_once(
-            conversation, text, lambda event: _show(event, conversation, err)
+            conversation, text, _watch(output_format, conversation, out, err)
         )
     except asyncio.CancelledError:
         print("  [interrupted]", file=err, flush=True)
@@ -129,15 +141,63 @@ async def _print(
         await conversation.close()
         warn_unsaved(conversation, err)
         warn_trace(conversation, err)
-    _answer(result.text, out)
-    if result.error is not None:
-        print(f"error: {clean(result.error)}", file=err, flush=True)
+    if output_format == "text":
+        _answer(result.text, out)
+        if result.error is not None:
+            print(f"error: {clean(result.error)}", file=err, flush=True)
+    else:
+        _json_line(result_object(result), out)
     return exit_code(result)
 
 
 def exit_code(result: RunResult) -> int:
     """0 if the turn ended well, 1 if the model failed."""
     return EXIT_ERROR if result.reason == "error" else EXIT_OK
+
+
+def result_object(result: RunResult) -> dict[str, Any]:
+    """The result in JSON, with stable names (spec hito 8, §1.11).
+    `is_error`: the turn did not end well, and the exit code is not 0."""
+    data = result.model_dump(mode="json")
+    return {
+        "type": "result",
+        "session_id": data["session"],
+        "result": data["text"],
+        "reason": data["reason"],
+        "is_error": result.reason != "end_turn",
+        "steps": data["steps"],
+        "tool_calls": data["tool_calls"],
+        "tool_errors": data["tool_errors"],
+        "denials": data["denials"],
+        "usage": data["usage"],
+        "cost_usd": data["cost"],
+        "duration_s": round(result.duration, 3),
+        "model": data["model"],
+        "error": data["error"],
+    }
+
+
+def _watch(
+    output_format: OutputFormat, conversation: Conversation, out: TextIO, err: TextIO
+) -> Callable[[AgentEvent], None]:
+    """What is written of each event as it comes. A tool that crashed is
+    told on stderr in every format: it is a bug of maha."""
+
+    def watch(event: AgentEvent) -> None:
+        if output_format == "text":
+            _show(event, conversation, err)
+            return
+        if output_format == "stream-json":
+            _json_line(event.model_dump(mode="json"), out)
+        if isinstance(event, ToolFinished):
+            warn_crash(event, err)
+
+    return watch
+
+
+def _json_line(data: dict[str, Any], out: TextIO) -> None:
+    out.write(json.dumps(data) + "\n")
+    out.flush()
 
 
 def _show(event: AgentEvent, conversation: Conversation, err: TextIO) -> None:
