@@ -509,3 +509,28 @@ def test_each_way_a_turn_ends_has_its_code(reason: Reason, code: int) -> None:
 
 def test_every_way_a_turn_ends_is_in_the_table_above() -> None:
     assert len(get_args(Reason.__value__)) == 7
+
+
+class ClosedPipe(io.StringIO):
+    """A stdout whose reader went away (`maha -p … | head -1`)."""
+
+    def write(self, text: str) -> int:
+        raise BrokenPipeError(32, "Broken pipe")
+
+
+@pytest.mark.parametrize("output_format", ["text", "json", "stream-json"])
+async def test_a_reader_that_goes_away_ends_quietly_with_1(
+    output_format: OutputFormat,
+) -> None:
+    store = MemorySessionStore()
+    fake = FakeModelClient([reply("Hola.")])
+
+    code, _, err = await run(
+        sessions(fake, store=store),
+        "Hola",
+        out=ClosedPipe(),
+        output_format=output_format,
+    )
+
+    assert (code, err) == (1, "")
+    assert store.locked == set()

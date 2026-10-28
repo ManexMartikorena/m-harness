@@ -18,6 +18,7 @@ terminal as it is.
 
 import asyncio
 import json
+import os
 import signal
 import sys
 from collections.abc import Callable
@@ -108,6 +109,11 @@ async def print_mode(
             raise
         task.uncancel()
         return 128 + received[0]
+    except BrokenPipeError:
+        # Nobody reads stdout any more (`maha -p … | head -1`): what is left
+        # is dropped, as is Python's last flush, which would print a trace.
+        _drop(out)
+        return EXIT_ERROR
     finally:
         for number in (signal.SIGINT, *CLOSING):
             loop.remove_signal_handler(number)
@@ -168,6 +174,8 @@ async def _print(
         )
     except asyncio.CancelledError:
         print("  [interrupted]", file=err, flush=True)
+        raise
+    except BrokenPipeError:
         raise
     except Exception as exc:
         # A bug, or the disk failing: the turn kept what ran.
@@ -264,6 +272,17 @@ def _show(event: AgentEvent, conversation: Conversation, err: TextIO) -> None:
                 if line is not None:
                     print(f"  {line}", file=err)
             err.flush()
+
+
+def _drop(out: TextIO) -> None:
+    """Point `out` at /dev/null, if it has a descriptor."""
+    try:
+        fd = out.fileno()
+        devnull = os.open(os.devnull, os.O_WRONLY)
+    except OSError, ValueError:
+        return
+    os.dup2(devnull, fd)
+    os.close(devnull)
 
 
 def _answer(text: str, out: TextIO) -> None:
