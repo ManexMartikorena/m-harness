@@ -11,9 +11,15 @@ from typing import get_args
 import pytest
 
 from mharness.adapters.cli.app import OUTPUT_FORMATS
-from mharness.adapters.cli.headless import MAX_INPUT, OutputFormat, print_mode
+from mharness.adapters.cli.headless import (
+    MAX_INPUT,
+    OutputFormat,
+    exit_code,
+    print_mode,
+)
 from mharness.adapters.cli.input import InputTooLarge, ReadAll
 from mharness.application.agent import Agent
+from mharness.application.headless import Reason, RunResult
 from mharness.application.sessions import Sessions, Start
 from mharness.application.tools import ToolRegistry
 from mharness.domain.approval import ApprovalRequest
@@ -463,3 +469,43 @@ async def test_a_session_that_cannot_be_resumed_is_an_error() -> None:
 
     assert (code, err.getvalue()) == (1, "error: no session in this directory\n")
     assert fake.requests == []
+
+
+# Exit codes (spec hito 8, §1.4).
+
+
+def ended(reason: Reason) -> RunResult:
+    return RunResult(
+        session="20261027-101500-3fa2",
+        text="",
+        reason=reason,
+        steps=1,
+        tool_calls=0,
+        tool_errors=0,
+        denials=[],
+        usage=Usage(),
+        cost=None,
+        duration=0,
+        model="m",
+        error=None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("reason", "code"),
+    [
+        ("end_turn", 0),
+        ("error", 1),
+        ("max_steps", 3),
+        ("max_cost", 3),
+        ("max_tokens", 3),
+        ("timeout", 3),
+        ("denied", 4),
+    ],
+)
+def test_each_way_a_turn_ends_has_its_code(reason: Reason, code: int) -> None:
+    assert exit_code(ended(reason)) == code
+
+
+def test_every_way_a_turn_ends_is_in_the_table_above() -> None:
+    assert len(get_args(Reason.__value__)) == 7

@@ -59,6 +59,10 @@ type OutputFormat = Literal["text", "json", "stream-json"]
 EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
+# A limit of the turn stopped it.
+EXIT_LIMIT = 3
+# A call was denied: the turn ended there.
+EXIT_DENIED = 4
 
 
 async def print_mode(
@@ -184,8 +188,17 @@ async def _print(
 
 
 def exit_code(result: RunResult) -> int:
-    """0 if the turn ended well, 1 if the model failed."""
-    return EXIT_ERROR if result.reason == "error" else EXIT_OK
+    """How the turn ended, for a script (spec hito 8, §1.4): 3 and 4 tell
+    it whether to try again with a higher limit or with more permissions."""
+    match result.reason:
+        case "end_turn":
+            return EXIT_OK
+        case "error":
+            return EXIT_ERROR
+        case "denied":
+            return EXIT_DENIED
+        case "max_steps" | "max_cost" | "max_tokens" | "timeout":
+            return EXIT_LIMIT
 
 
 def result_object(result: RunResult) -> dict[str, Any]:

@@ -726,7 +726,7 @@ def test_print_denies_a_write_without_allow(
     )
     stdin("")
 
-    main(["-p", "crea hola.txt"])
+    assert main(["-p", "crea hola.txt"]) == 4
 
     err = capsys.readouterr().err
     assert "  ✗ error: the user denied this call\n" in err
@@ -759,7 +759,7 @@ def test_print_writes_with_allow_but_never_what_runs_code(
     stdin("")
 
     assert main(["-p", "crea hola.txt", "--allow", "write_file"]) == 0
-    main(["-p", "crea el CI", "--allow", "write_file"])
+    assert main(["-p", "crea el CI", "--allow", "write_file"]) == 4
 
     assert (Path.cwd() / "hola.txt").read_text(encoding="utf-8") == "hola\n"
     assert not (Path.cwd() / ".github").exists()
@@ -928,7 +928,7 @@ def test_the_limits_of_the_command_line_win(
     )
     stdin("")
 
-    main(["-p", "mira", "--max-steps", "1"])
+    assert main(["-p", "mira", "--max-steps", "1"]) == 3
 
     assert len(route.calls) == 1
     assert "  [step limit reached: 1]\n" in capsys.readouterr().err
