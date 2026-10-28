@@ -189,27 +189,14 @@ async def _answer(
                         if wrote:
                             print(file=out)
                             wrote = False
-                        print(f"  → {_call(call)}", file=out, flush=True)
+                        print(f"  → {call_line(call)}", file=out, flush=True)
                     case ApprovalRequested():
                         asking = True
                     case ToolFinished():
                         asking = False
                         mark = "✗" if event.result.is_error else "✓"
                         print(f"  {mark} {clean(event.summary)}", file=out, flush=True)
-                        if event.internal_error:
-                            # Only its kind: the message may carry what the
-                            # tool read, and the log never holds content.
-                            _log.warning(
-                                "tool %s failed: %s",
-                                event.call.name,
-                                event.internal_error.split(":", 1)[0],
-                            )
-                            print(
-                                f'warning: tool "{clean(event.call.name)}" failed: '
-                                f"{clean(event.internal_error)}",
-                                file=err,
-                                flush=True,
-                            )
+                        warn_crash(event, err)
                         # The model is called again.
                         spinner.start()
                     case TurnFinished():
@@ -217,7 +204,17 @@ async def _answer(
                         if wrote:
                             print(file=out)
                             wrote = False
-                        _show_turn(event, conversation, out)
+                        note = turn_note(event)
+                        if event.reason == "denied":
+                            # The model is not called again: the person
+                            # writes next (spec hito 5, §1.4).
+                            note = "[denied: tell maha how to continue]"
+                        if note is not None:
+                            print(f"  {note}", file=out)
+                        tokens = usage_line(event, conversation)
+                        if tokens is not None:
+                            print(f"  {tokens}", file=out)
+                        out.flush()
     except ModelError as exc:
         await spinner.stop()
         # The text already shown stays; the error starts on a new line.
@@ -249,7 +246,7 @@ async def _answer(
         await spinner.stop()
 
 
-def _call(call: ToolCallBlock) -> str:
+def call_line(call: ToolCallBlock) -> str:
     """`name(arg="value", …)` in one line, at most 100 characters."""
     try:
         arguments = json.loads(call.arguments or "{}")
@@ -267,29 +264,47 @@ def _call(call: ToolCallBlock) -> str:
     return text if len(text) <= MAX_CALL else text[: MAX_CALL - 1] + "…"
 
 
-def _show_turn(turn: TurnFinished, conversation: Conversation, out: TextIO) -> None:
+def warn_crash(event: ToolFinished, err: TextIO) -> None:
+    """A tool that crashed is a bug of ours: said, and logged."""
+    if not event.internal_error:
+        return
+    # Only its kind: the message may carry what the tool read, and the log
+    # never holds content.
+    _log.warning(
+        "tool %s failed: %s", event.call.name, event.internal_error.split(":", 1)[0]
+    )
+    print(
+        f'warning: tool "{clean(event.call.name)}" failed: '
+        f"{clean(event.internal_error)}",
+        file=err,
+        flush=True,
+    )
+
+
+def turn_note(turn: TurnFinished) -> str | None:
+    """Which limit stopped the turn, if one did. A denial is told by each
+    caller: what to do next is not the same with and without a person."""
     if turn.reason == "max_steps":
-        print(f"  [step limit reached: {turn.steps}]", file=out)
-    elif turn.reason == "max_tokens":
+        return f"[step limit reached: {turn.steps}]"
+    if turn.reason == "max_tokens":
         tokens = turn.usage.input_tokens + turn.usage.output_tokens
-        print(f"  [token limit reached: {tokens} tokens]", file=out)
-    elif turn.reason == "timeout":
-        print("  [time limit reached]", file=out)
-    elif turn.reason == "max_cost":
+        return f"[token limit reached: {tokens} tokens]"
+    if turn.reason == "timeout":
+        return "[time limit reached]"
+    if turn.reason == "max_cost":
         if turn.cost is None:
-            print("  [cost limit: the cost of a call is not known]", file=out)
-        else:
-            print(f"  [cost limit reached: {usd(turn.cost)}]", file=out)
-    elif turn.reason == "denied":
-        # The model is not called again: the person writes next (spec hito
-        # 5, §1.4).
-        print("  [denied: tell maha how to continue]", file=out)
+            return "[cost limit: the cost of a call is not known]"
+        return f"[cost limit reached: {usd(turn.cost)}]"
+    return None
+
+
+def usage_line(turn: TurnFinished, conversation: Conversation) -> str | None:
+    """`[tokens: … · calls · cost · session cost]`; None if nothing is known."""
     usage = turn.usage
     # All zeros and no cost: the provider reported nothing, or no call
     # ended (a time limit while the model answered).
     if usage == Usage() and not turn.cost:
-        out.flush()
-        return
+        return None
     parts = [f"tokens: {usage.input_tokens} in · {usage.output_tokens} out"]
     if usage.reasoning_tokens:
         # Already inside "out": what the model thought, billed as output.
@@ -302,4 +317,4 @@ def _show_turn(turn: TurnFinished, conversation: Conversation, out: TextIO) -> N
     if conversation.cost or (turn.cost is not None and not conversation.uncosted_turns):
         at_least = "≥" if conversation.uncosted_turns else ""
         parts.append(f"session {at_least}{usd(conversation.cost)}")
-    print(f"  [{' · '.join(parts)}]", file=out, flush=True)
+    return f"[{' · '.join(parts)}]"

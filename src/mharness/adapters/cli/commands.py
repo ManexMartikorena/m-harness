@@ -25,6 +25,9 @@ COMMANDS = {
     "help": "/help — this list",
     "exit": "/exit — quit",
 }
+# What the catalog says of a model (spec hito 7, §1.10).
+NOT_IN_CATALOG = "[model not in the catalog: cost only if the provider reports it]"
+TRAINS_ON_DATA = "[warning: this model may use your data for training]"
 # /sessions shows the most recent ones.
 SESSIONS_SHOWN = 20
 # "/" and lowercase letters, as the first word: "/etc/hosts …" is text.
@@ -102,34 +105,19 @@ class Commands:
         self.warn_unsaved()
 
     def note_model(self) -> None:
-        """What the catalog says of the model in use (spec hito 7, §1.10):
-        not in it, or it may train on the data (ANALISIS §9). The model is
-        used anyway: a new one may not be in the catalog yet."""
-        info = self._catalog.get(self._provider, self.conversation.model)
-        if info is None:
-            self._say(
-                "[model not in the catalog: cost only if the provider reports it]"
-            )
-        elif info.trains_on_data:
-            warning = "[warning: this model may use your data for training]"
-            if use_color() and self._out.isatty():
-                warning = f"\x1b[33m{warning}\x1b[0m"
-            self._say(warning)
+        """What the catalog says of the model in use (spec hito 7, §1.10)."""
+        note = model_note(self._catalog, self._provider, self.conversation.model)
+        if note is None:
+            return
+        if note == TRAINS_ON_DATA and use_color() and self._out.isatty():
+            note = f"\x1b[33m{note}\x1b[0m"
+        self._say(note)
 
     def warn_trace(self) -> None:
-        """A trace that fails does not stop maha: it is said, once (spec
-        hito 7, §1.7)."""
-        reason = self.conversation.trace_warning()
-        if reason is not None:
-            print(
-                f"warning: trace not saved: {clean(reason)}", file=self._err, flush=True
-            )
+        warn_trace(self.conversation, self._err)
 
     def warn_unsaved(self) -> None:
-        """A failed save does not stop maha: it is said (spec hito 6, §1.6)."""
-        if self.conversation.unsaved is not None:
-            reason = clean(self.conversation.unsaved)
-            print(f"warning: session not saved: {reason}", file=self._err, flush=True)
+        warn_unsaved(self.conversation, self._err)
 
     async def _list(self) -> None:
         found = (await self._sessions.summaries())[:SESSIONS_SHOWN]
@@ -242,6 +230,31 @@ class Commands:
 
     def _say(self, text: str) -> None:
         print(f"  {text}", file=self._out, flush=True)
+
+
+def model_note(catalog: ModelCatalog, provider: str, model: str) -> str | None:
+    """What the catalog says of `model`: not in it, or it may train on the
+    data (ANALISIS §9). The model is used anyway: a new one may not be in
+    the catalog yet."""
+    info = catalog.get(provider, model)
+    if info is None:
+        return NOT_IN_CATALOG
+    return TRAINS_ON_DATA if info.trains_on_data else None
+
+
+def warn_trace(conversation: Conversation, err: TextIO) -> None:
+    """A trace that fails does not stop maha: it is said, once (spec hito
+    7, §1.7)."""
+    reason = conversation.trace_warning()
+    if reason is not None:
+        print(f"warning: trace not saved: {clean(reason)}", file=err, flush=True)
+
+
+def warn_unsaved(conversation: Conversation, err: TextIO) -> None:
+    """A failed save does not stop maha: it is said (spec hito 6, §1.6)."""
+    if conversation.unsaved is not None:
+        reason = clean(conversation.unsaved)
+        print(f"warning: session not saved: {reason}", file=err, flush=True)
 
 
 def _summary_lines(summary: TraceSummary) -> list[str]:
