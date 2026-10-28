@@ -21,9 +21,16 @@ import json
 import signal
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal, TextIO
 
-from mharness.adapters.cli.commands import model_note, warn_trace, warn_unsaved
+from mharness.adapters.cli.commands import (
+    model_note,
+    resumed_notes,
+    warn_trace,
+    warn_unsaved,
+)
 from mharness.adapters.cli.conversation import (
     CLOSING,
     call_line,
@@ -34,13 +41,14 @@ from mharness.adapters.cli.conversation import (
 from mharness.adapters.cli.input import InputTooLarge, ReadAll
 from mharness.adapters.cli.text import clean
 from mharness.application.headless import RunResult, instruction, run_once
-from mharness.application.sessions import Conversation, Sessions
+from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.domain.agent_events import (
     AgentEvent,
     ToolCallProposed,
     ToolFinished,
     TurnFinished,
 )
+from mharness.domain.session import SessionError
 from mharness.ports.catalog import ModelCatalog
 
 # What may be piped to -p, at most: the same as Claude Code (spec §1.10).
@@ -61,18 +69,21 @@ async def print_mode(
     catalog: ModelCatalog,
     provider: str,
     output_format: OutputFormat = "text",
+    start: Start | None = None,
     out: TextIO | None = None,
     err: TextIO | None = None,
+    home: Path | None = None,
 ) -> int:
-    """Run `prompt`, with what `read_all` gives below it, in a new session,
-    and write the result in `output_format`; return the exit code.
-    `read_all` is None when the input is a terminal.
+    """Run `prompt`, with what `read_all` gives below it, in a new session
+    or the one `start` resumes, and write the result in `output_format`;
+    return the exit code. `read_all` is None when the input is a terminal.
 
     Ctrl+C and the closing signals end it as they end the conversation:
     what ran is saved, and the code is 128 + the signal.
     """
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
+    shown = _Shown(output_format, err, Path.home() if home is None else home)
     loop = asyncio.get_running_loop()
     task = asyncio.current_task()
     assert task is not None
@@ -86,7 +97,7 @@ async def print_mode(
         loop.add_signal_handler(number, on_signal, number)
     try:
         return await _print(
-            sessions, prompt, read_all, catalog, provider, output_format, out, err
+            sessions, prompt, read_all, catalog, provider, start, out, shown
         )
     except asyncio.CancelledError:
         if not received:
@@ -98,16 +109,30 @@ async def print_mode(
             loop.remove_signal_handler(number)
 
 
+@dataclass(frozen=True)
+class _Shown:
+    """Where the notes go, and whether they go: only in `text`."""
+
+    output_format: OutputFormat
+    err: TextIO
+    home: Path
+
+    def note(self, text: str) -> None:
+        if self.output_format == "text":
+            print(f"  {text}", file=self.err, flush=True)
+
+
 async def _print(
     sessions: Sessions,
     prompt: str,
     read_all: ReadAll | None,
     catalog: ModelCatalog,
     provider: str,
-    output_format: OutputFormat,
+    start: Start | None,
     out: TextIO,
-    err: TextIO,
+    shown: _Shown,
 ) -> int:
+    err = shown.err
     try:
         piped = None if read_all is None else await read_all(MAX_INPUT)
     except InputTooLarge as exc:
@@ -121,13 +146,21 @@ async def _print(
             flush=True,
         )
         return EXIT_USAGE
-    conversation = await sessions.start()
     try:
+        opened = await sessions.open(start)
+    except SessionError as exc:
+        print(f"error: {clean(str(exc))}", file=err, flush=True)
+        return EXIT_ERROR
+    conversation = opened.conversation
+    try:
+        if opened.resumed is not None:
+            for line in resumed_notes(opened.resumed, sessions.cwd, shown.home):
+                shown.note(line)
         note = model_note(catalog, provider, conversation.model)
-        if note is not None and output_format == "text":
-            print(f"  {note}", file=err, flush=True)
+        if note is not None:
+            shown.note(note)
         result = await run_once(
-            conversation, text, _watch(output_format, conversation, out, err)
+            conversation, text, _watch(shown.output_format, conversation, out, err)
         )
     except asyncio.CancelledError:
         print("  [interrupted]", file=err, flush=True)
@@ -141,7 +174,7 @@ async def _print(
         await conversation.close()
         warn_unsaved(conversation, err)
         warn_trace(conversation, err)
-    if output_format == "text":
+    if shown.output_format == "text":
         _answer(result.text, out)
         if result.error is not None:
             print(f"error: {clean(result.error)}", file=err, flush=True)

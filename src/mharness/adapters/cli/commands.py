@@ -9,7 +9,7 @@ from typing import TextIO
 from mharness.adapters.cli.input import Discard, ReadLine
 from mharness.adapters.cli.spinner import use_color
 from mharness.adapters.cli.text import clean, clean_line, usd
-from mharness.application.sessions import Conversation, Sessions
+from mharness.application.sessions import Conversation, Resumed, Sessions
 from mharness.application.traces import TraceSummary, TurnSummary
 from mharness.domain.session import SessionError, SessionNotFound
 from mharness.domain.trace import TraceError
@@ -154,23 +154,12 @@ class Commands:
                 file=self._err,
                 flush=True,
             )
-        self._say(
-            f"[resumed {clean_line(resumed.conversation.id or '')} · "
-            f"{resumed.messages} messages · {clean_line(resumed.conversation.model)}]"
-        )
-        if resumed.other_cwd is not None:
-            here = self._shown(self._sessions.cwd)
-            self._say(
-                f"[this session was in {self._shown(resumed.other_cwd)}; "
-                f"tools work in {here}]"
-            )
-        if resumed.fallback_from is not None:
-            self._say(
-                f"[model {clean_line(resumed.fallback_from)} is of another provider; "
-                f"using {clean_line(resumed.conversation.model)}]"
-            )
-        if resumed.interrupted:
-            self._say("[the last answer was interrupted]")
+        self.tell_resumed(resumed)
+
+    def tell_resumed(self, resumed: Resumed) -> None:
+        """What the person should know of the session just resumed."""
+        for note in resumed_notes(resumed, self._sessions.cwd, self._home):
+            self._say(note)
         self.note_model()
 
     async def _delete(self, session: str | None) -> None:
@@ -221,15 +210,42 @@ class Commands:
         self._say(f"[trace: {self._shown(report.location)}]")
 
     def _shown(self, cwd: str) -> str:
-        """A directory, with `~` for the home, clean."""
-        path = PurePath(cwd)
-        if path.is_relative_to(self._home):
-            relative = path.relative_to(self._home)
-            return clean_line("~" if relative == PurePath() else f"~/{relative}")
-        return clean_line(cwd)
+        return shown_dir(cwd, self._home)
 
     def _say(self, text: str) -> None:
         print(f"  {text}", file=self._out, flush=True)
+
+
+def resumed_notes(resumed: Resumed, cwd: str, home: Path) -> list[str]:
+    """`[resumed …]`, and where the session was and which model it had if
+    that is not what is used now. `cwd` is where the tools work."""
+    conversation = resumed.conversation
+    notes = [
+        f"[resumed {clean_line(conversation.id)} · "
+        f"{resumed.messages} messages · {clean_line(conversation.model)}]"
+    ]
+    if resumed.other_cwd is not None:
+        notes.append(
+            f"[this session was in {shown_dir(resumed.other_cwd, home)}; "
+            f"tools work in {shown_dir(cwd, home)}]"
+        )
+    if resumed.fallback_from is not None:
+        notes.append(
+            f"[model {clean_line(resumed.fallback_from)} is of another provider; "
+            f"using {clean_line(conversation.model)}]"
+        )
+    if resumed.interrupted:
+        notes.append("[the last answer was interrupted]")
+    return notes
+
+
+def shown_dir(cwd: str, home: Path) -> str:
+    """A directory, with `~` for the home, clean."""
+    path = PurePath(cwd)
+    if path.is_relative_to(home):
+        relative = path.relative_to(home)
+        return clean_line("~" if relative == PurePath() else f"~/{relative}")
+    return clean_line(cwd)
 
 
 def model_note(catalog: ModelCatalog, provider: str, model: str) -> str | None:

@@ -14,7 +14,7 @@ from mharness.adapters.cli.app import OUTPUT_FORMATS
 from mharness.adapters.cli.headless import MAX_INPUT, OutputFormat, print_mode
 from mharness.adapters.cli.input import InputTooLarge, ReadAll
 from mharness.application.agent import Agent
-from mharness.application.sessions import Sessions
+from mharness.application.sessions import Sessions, Start
 from mharness.application.tools import ToolRegistry
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.errors import ModelAuthError
@@ -409,3 +409,57 @@ async def test_a_tool_that_crashes_is_told_on_stderr_in_json_too() -> None:
 
 def test_the_formats_of_the_command_line_are_those_of_the_output() -> None:
     assert get_args(OutputFormat.__value__) == OUTPUT_FORMATS
+
+
+# Resuming at the start (spec hito 8, §1.12).
+
+
+async def test_a_resumed_session_is_told_on_stderr_only_in_text() -> None:
+    store = MemorySessionStore()
+    await run(sessions(FakeModelClient([reply("Apuntado.")]), store=store), "apunta")
+    (first,) = store.sessions
+
+    code, out, err = await print_mode_resuming(store, first, "text")
+    assert (code, out) == (0, "Hecho.\n")
+    assert err.startswith(f"  [resumed {first} · 2 messages · glm-5.3-flash]\n")
+
+    code, out, err = await print_mode_resuming(store, first, "json")
+    assert (code, err) == (0, "")
+    assert json.loads(out)["session_id"] == first
+
+
+async def print_mode_resuming(
+    store: MemorySessionStore, session: str, output_format: OutputFormat
+) -> tuple[int, str, str]:
+    out, err = io.StringIO(), io.StringIO()
+    code = await print_mode(
+        sessions(FakeModelClient([reply("Hecho.")]), store=store),
+        "sigue",
+        read_all=None,
+        catalog=KNOWN,
+        provider="opencode-go",
+        output_format=output_format,
+        start=Start(session=session),
+        out=out,
+        err=err,
+    )
+    return code, out.getvalue(), err.getvalue()
+
+
+async def test_a_session_that_cannot_be_resumed_is_an_error() -> None:
+    fake = FakeModelClient([])
+    err = io.StringIO()
+
+    code = await print_mode(
+        sessions(fake),
+        "sigue",
+        read_all=None,
+        catalog=KNOWN,
+        provider="opencode-go",
+        start=Start(last=True),
+        out=io.StringIO(),
+        err=err,
+    )
+
+    assert (code, err.getvalue()) == (1, "error: no session in this directory\n")
+    assert fake.requests == []

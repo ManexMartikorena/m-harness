@@ -40,7 +40,7 @@ from mharness.adapters.tracing import JsonlTraceSink
 from mharness.application.agent import Agent
 from mharness.application.approvals import AllowList
 from mharness.application.evals import Evaluator, choose
-from mharness.application.sessions import Conversation, Sessions
+from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.tools import ToolRegistry
 from mharness.domain.environment import command_env
 from mharness.domain.evals import Baseline, EvalError, Task, TaskRun, by_task, stats
@@ -74,11 +74,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cli.fail(str(exc))
     if options.command == "eval":
         return asyncio.run(_eval(settings, catalog, options))
+    start = Start(last=options.last, session=options.session, model=options.model)
     # Resolved once: the tools and the sessions name it the same way.
     cwd = Path.cwd().resolve()
     if options.prompt is not None:
-        return asyncio.run(_print(settings, catalog, data, cwd, options))
-    return asyncio.run(_converse(settings, catalog, data, cwd))
+        return asyncio.run(_print(settings, catalog, data, cwd, start, options))
+    return asyncio.run(_converse(settings, catalog, data, cwd, start))
 
 
 # The application log: diagnosis for whoever maintains maha, never what was
@@ -349,6 +350,7 @@ async def _print(
     catalog: ModelCatalog,
     data: Path,
     cwd: Path,
+    start: Start,
     options: argparse.Namespace,
 ) -> int:
     """`maha -p` (spec hito 8, §1.10 and §1.11). Nobody to ask: only the
@@ -366,11 +368,16 @@ async def _print(
             catalog=catalog,
             provider=settings.provider_name,
             output_format=options.output_format,
+            start=start,
         )
 
 
 async def _converse(
-    settings: config.Settings, catalog: ModelCatalog, data: Path, cwd: Path
+    settings: config.Settings,
+    catalog: ModelCatalog,
+    data: Path,
+    cwd: Path,
+    start: Start,
 ) -> int:
     # One reader for the conversation and the questions (B3).
     lines = cli.StdinLines()
@@ -383,4 +390,5 @@ async def _converse(
             read_line=lines.readline,
             # Only a terminal has typed-ahead input to drop.
             discard=lines.discard if os.isatty(0) else None,
+            start=start,
         )

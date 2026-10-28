@@ -795,3 +795,121 @@ def test_print_writes_json(
     result = json.loads(captured.out)
     assert (code, captured.err) == (0, "")
     assert (result["result"], result["model"]) == ("Hola.", "glm-5.3-flash")
+
+
+# -c, -r, -m and the limits on the command line (spec hito 8, §1.12, §1.13).
+
+
+@respx.mock
+def test_continue_with_print_follows_a_print_session(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            sse_response(streamed("Apuntado.", 1, 1)),
+            sse_response(streamed("Que apuntara 42.", 1, 1)),
+        ]
+    )
+    stdin("")
+    assert main(["-p", "apunta 42"]) == 0
+    capsys.readouterr()
+
+    stdin("")
+    assert main(["-c", "-p", "¿qué te pedí antes?"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out == "Que apuntara 42.\n"
+    assert " · 2 messages · glm-5.3-flash]\n" in captured.err
+    assert [
+        m["content"] for m in json.loads(route.calls.last.request.content)["messages"]
+    ] == [
+        "apunta 42",
+        "Apuntado.",
+        "¿qué te pedí antes?",
+    ]
+
+
+@respx.mock
+def test_resume_a_session_of_another_directory_with_another_model(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    data_home: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            sse_response(streamed("Hola.", 1, 1)),
+            sse_response(streamed("Sigo.", 1, 1)),
+        ]
+    )
+    stdin("")
+    assert main(["-p", "hola"]) == 0
+    (saved,) = (data_home / "maha" / "sessions").glob("*.jsonl")
+    elsewhere = workspace / "otro"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    capsys.readouterr()
+
+    stdin("")
+    code = main(["-r", saved.stem, "-m", "kimi-k2.7-code", "-p", "sigue"])
+
+    err = capsys.readouterr().err
+    assert code == 0
+    assert (
+        f"[this session was in {workspace / 'project'}; tools work in {elsewhere}]"
+        in err
+    )
+    assert json.loads(route.calls.last.request.content)["model"] == "kimi-k2.7-code"
+
+
+def test_continue_without_a_session_here_fails(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    stdin("")
+
+    code = main(["-c", "-p", "sigue"])
+
+    captured = capsys.readouterr()
+    assert (code, captured.out) == (1, "")
+    assert captured.err == "error: no session in this directory\n"
+
+
+def test_resume_a_session_that_does_not_exist_fails_before_the_conversation(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    stdin("hola\n")
+
+    code = main(["-r", "20261027-101500-ffff"])
+
+    captured = capsys.readouterr()
+    assert (code, captured.out) == (1, "")
+    assert captured.err == "error: no session 20261027-101500-ffff\n"
+
+
+@respx.mock
+def test_model_on_the_command_line_names_a_new_session(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Hola.", 1, 1))
+    )
+    stdin("Hola\n/exit\n")
+
+    assert main(["-m", "kimi-k2.7-code"]) == 0
+
+    assert "· opencode-go · kimi-k2.7-code ·" in capsys.readouterr().out
+    assert json.loads(route.calls.last.request.content)["model"] == "kimi-k2.7-code"

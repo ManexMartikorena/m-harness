@@ -18,7 +18,7 @@ from mharness.adapters.cli.commands import Commands, parse_command
 from mharness.adapters.cli.input import Discard, ReadLine, StdinLines
 from mharness.adapters.cli.spinner import Spinner, use_color
 from mharness.adapters.cli.text import clean, usd
-from mharness.application.sessions import Conversation, Sessions
+from mharness.application.sessions import Conversation, Resumed, Sessions, Start
 from mharness.domain.agent_events import (
     ApprovalRequested,
     ToolCallProposed,
@@ -29,6 +29,7 @@ from mharness.domain.errors import ModelError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import Usage
+from mharness.domain.session import SessionError
 from mharness.ports.catalog import ModelCatalog
 
 # Bugs of ours, for whoever maintains maha (spec hito 7, §1.11).
@@ -66,20 +67,26 @@ async def converse(
     out: TextIO | None = None,
     err: TextIO | None = None,
     home: Path | None = None,
+    start: Start | None = None,
 ) -> int:
     """Run the conversation until /exit, Ctrl+D or Ctrl+C; return the exit code.
 
-    A new session, saved turn by turn; the commands of maha can resume
-    another (spec hito 6, §1.8). `discard` drops what was typed ahead of a
-    question.
+    A new session, or the one `start` resumes (spec hito 8, §1.12), saved
+    turn by turn; the commands of maha can resume another (spec hito 6,
+    §1.8). `discard` drops what was typed ahead of a question.
     """
     read = read_line or StdinLines().readline
     # Looked up now, not at import time, in case they were replaced.
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
+    try:
+        opened = await sessions.open(start)
+    except SessionError as exc:
+        print(f"error: {clean(str(exc))}", file=err, flush=True)
+        return 1
     commands = Commands(
         sessions,
-        await sessions.start(),
+        opened.conversation,
         catalog=catalog,
         provider=provider,
         read=read,
@@ -105,7 +112,7 @@ async def converse(
     for number in CLOSING:
         loop.add_signal_handler(number, on_closing, number)
     try:
-        return await _turns(commands, provider, read, out, err, sigint)
+        return await _turns(commands, provider, read, out, err, sigint, opened.resumed)
     except asyncio.CancelledError:
         if sigint.closing is not None:
             task.uncancel()
@@ -132,13 +139,17 @@ async def _turns(
     out: TextIO,
     err: TextIO,
     sigint: _Sigint,
+    resumed: Resumed | None,
 ) -> int:
     model = commands.conversation.model
     print(
         f"maha {__version__} · {provider} · {model} · /help for commands",
         file=out,
     )
-    commands.note_model()
+    if resumed is not None:
+        commands.tell_resumed(resumed)
+    else:
+        commands.note_model()
     while True:
         print("> ", end="", file=out, flush=True)
         try:
