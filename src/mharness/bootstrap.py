@@ -44,6 +44,7 @@ from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.tools import ToolRegistry
 from mharness.domain.environment import command_env
 from mharness.domain.evals import Baseline, EvalError, Task, TaskRun, by_task, stats
+from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message
 from mharness.domain.trace import known_secrets
 from mharness.ports.approval import ApprovalGate
@@ -74,12 +75,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cli.fail(str(exc))
     if options.command == "eval":
         return asyncio.run(_eval(settings, catalog, options))
+    settings = _limited(settings, options)
     start = Start(last=options.last, session=options.session, model=options.model)
     # Resolved once: the tools and the sessions name it the same way.
     cwd = Path.cwd().resolve()
     if options.prompt is not None:
         return asyncio.run(_print(settings, catalog, data, cwd, start, options))
     return asyncio.run(_converse(settings, catalog, data, cwd, start))
+
+
+# The limits of the turn the command line can set (spec hito 8, §1.13).
+_LIMITS = ("max_steps", "max_cost", "max_tokens", "timeout")
+
+
+def _limited(settings: config.Settings, options: argparse.Namespace) -> config.Settings:
+    """The limits of the command line win over the configuration's: they
+    are what the user asked for this run."""
+    given = {
+        name: getattr(options, name)
+        for name in _LIMITS
+        if getattr(options, name) is not None
+    }
+    limits = TurnLimits.model_validate(settings.limits.model_dump() | given)
+    return settings.model_copy(update={"limits": limits})
 
 
 # The application log: diagnosis for whoever maintains maha, never what was

@@ -16,6 +16,7 @@ import respx
 from mharness import bootstrap
 from mharness.adapters.cli import StdinLines
 from mharness.bootstrap import main
+from mharness.domain.limits import TurnLimits
 
 KEY = "sk-test-0000000000000000"
 GO_ENDPOINT = "https://opencode.ai/inference/go/openai/v1/chat/completions"
@@ -913,3 +914,46 @@ def test_model_on_the_command_line_names_a_new_session(
 
     assert "· opencode-go · kimi-k2.7-code ·" in capsys.readouterr().out
     assert json.loads(route.calls.last.request.content)["model"] == "kimi-k2.7-code"
+
+
+@respx.mock
+def test_the_limits_of_the_command_line_win(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n[limits]\nmax_steps = 25\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(tool_call_stream("list_dir", "{}"))
+    )
+    stdin("")
+
+    main(["-p", "mira", "--max-steps", "1"])
+
+    assert len(route.calls) == 1
+    assert "  [step limit reached: 1]\n" in capsys.readouterr().err
+
+
+@respx.mock
+def test_the_command_line_can_loosen_a_limit_of_the_configuration(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n[limits]\nmax_steps = 1\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            sse_response(tool_call_stream("list_dir", "{}")),
+            sse_response(streamed("Vacío.", 1, 1)),
+        ]
+    )
+    stdin("")
+
+    main(["-p", "mira", "--max-steps", "2"])
+
+    assert len(route.calls) == 2
+    assert capsys.readouterr().out == "Vacío.\n"
+
+
+def test_every_limit_of_the_turn_has_its_option() -> None:
+    assert tuple(TurnLimits.model_fields) == bootstrap._LIMITS
