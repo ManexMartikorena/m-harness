@@ -397,6 +397,27 @@ class Resumed:
 
 
 @dataclass(frozen=True)
+class Start:
+    """Which conversation maha starts with (spec hito 8, §1.12)."""
+
+    # The last session of this directory (-c), also one of `maha -p`.
+    last: bool = False
+    # A session by id, of any directory (-r).
+    session: str | None = None
+    # This model instead of the configured one, or the session's (-m).
+    model: str | None = None
+
+
+@dataclass(frozen=True)
+class Opened:
+    """The conversation maha starts with, and what to tell about the
+    session it resumed, if it resumed one."""
+
+    conversation: Conversation
+    resumed: Resumed | None = None
+
+
+@dataclass(frozen=True)
 class TraceReport:
     """What /trace shows: the summary, and where the whole trace is."""
 
@@ -437,6 +458,21 @@ class Sessions:
     async def start(self) -> Conversation:
         """A new conversation; its session is created with the first turn."""
         return Conversation(self._store, self._new_agent(self._model, ()), self._origin)
+
+    async def open(self, start: Start | None = None) -> Opened:
+        """The first conversation of this maha: a new one, or a session
+        resumed as /resume does. Raises `SessionError` if it cannot be
+        resumed."""
+        start = start or Start()
+        if not start.last and start.session is None:
+            model = start.model or self._model
+            agent = self._new_agent(model, ())
+            return Opened(Conversation(self._store, agent, self._origin))
+        resumed = await self.resume(start.session, current=await self.start())
+        conversation = resumed.conversation
+        if start.model is not None and start.model != conversation.model:
+            await conversation.switch_model(start.model)
+        return Opened(conversation, resumed)
 
     async def resume(self, session: str | None, *, current: Conversation) -> Resumed:
         """Open `session` and close `current`. Without id, the newest other
@@ -542,9 +578,11 @@ class Sessions:
                 return await self._store.open(summary.id)
             except SessionInUse:
                 busy = True
+        # At the start, the current one is new: there is no "other".
+        other = "other " if current.stored else ""
         if busy:
-            raise SessionInUse("the other sessions here are open in another maha")
-        raise SessionNotFound("no other session in this directory")
+            raise SessionInUse(f"the {other}sessions here are open in another maha")
+        raise SessionNotFound(f"no {other}session in this directory")
 
 
 def _is_current(session: str, current: Conversation) -> bool:

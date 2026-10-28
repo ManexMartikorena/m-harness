@@ -10,7 +10,7 @@ from decimal import Decimal
 import pytest
 
 from mharness.application.agent import Agent
-from mharness.application.sessions import Conversation, Sessions
+from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import AgentEvent, TurnFinished, TurnStarted
 from mharness.domain.approval import ApprovalRequest
@@ -418,7 +418,8 @@ async def test_resume_without_an_id_and_nothing_here_is_not_found() -> None:
     await saved(store, cwd="/home/ana/web")
     world = World(store, FakeModelClient([]))
 
-    with pytest.raises(SessionNotFound, match=r"^no other session in this directory$"):
+    # The current one is new: there is no "other" (spec hito 8, §1.12).
+    with pytest.raises(SessionNotFound, match=r"^no session in this directory$"):
         await world.sessions.resume(None, current=await world.sessions.start())
 
 
@@ -458,6 +459,119 @@ async def test_resume_without_an_id_and_only_the_current_is_not_found() -> None:
 
     with pytest.raises(SessionNotFound, match=r"^no other session in this directory$"):
         await world.sessions.resume(None, current=current)
+
+
+async def test_resume_without_an_id_and_every_one_here_busy_says_so() -> None:
+    store = MemorySessionStore()
+    other = await World(
+        store, FakeModelClient([reply("Uno.")]), tokens=["8888"]
+    ).sessions.start()
+    await turn(other, "en otro maha")
+    world = World(store, FakeModelClient([]), tokens=["9999"])
+
+    with pytest.raises(
+        SessionInUse, match=r"^the sessions here are open in another maha$"
+    ):
+        await world.sessions.resume(None, current=await world.sessions.start())
+
+
+# Sessions.open(): the conversation maha starts with (spec hito 8, §1.12).
+
+
+async def test_open_without_more_is_a_new_conversation() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]))
+
+    opened = await world.sessions.open()
+
+    assert opened.resumed is None
+    assert (opened.conversation.model, opened.conversation.exists) == (
+        "glm-5.3-flash",
+        False,
+    )
+
+
+async def test_open_a_new_one_with_another_model() -> None:
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Hola.")]))
+
+    opened = await world.sessions.open(Start(model="kimi-k2.7-code"))
+    await turn(opened.conversation, "Hola")
+    await opened.conversation.close()
+
+    assert opened.conversation.model == "kimi-k2.7-code"
+    # Its header names it, and no model change is queued.
+    assert store.sessions[FIRST].header.model == "kimi-k2.7-code"
+    assert not any(isinstance(e, ModelEntry) for e in entries(store))
+
+
+async def test_open_the_last_one_here() -> None:
+    store = MemorySessionStore()
+    await saved(store, text="antes")
+    last = await saved(store, text="después")
+    await saved(store, cwd="/home/ana/web", text="en web")
+    world = World(store, FakeModelClient([]), tokens=["9999"])
+
+    opened = await world.sessions.open(Start(last=True))
+
+    assert opened.resumed is not None
+    assert opened.conversation.id == last
+    assert opened.resumed.conversation is opened.conversation
+
+
+async def test_open_one_of_another_directory_by_id() -> None:
+    store = MemorySessionStore()
+    there = await saved(store, cwd="/home/ana/web")
+    world = World(store, FakeModelClient([]), tokens=["9999"])
+
+    opened = await world.sessions.open(Start(session=there))
+
+    assert opened.resumed is not None
+    assert (opened.conversation.id, opened.resumed.other_cwd) == (
+        there,
+        "/home/ana/web",
+    )
+
+
+async def test_open_a_session_with_another_model_records_the_change() -> None:
+    store = MemorySessionStore()
+    session = await saved(store)
+    world = World(store, FakeModelClient([]), tokens=["9999"])
+
+    opened = await world.sessions.open(Start(session=session, model="kimi-k2.7-code"))
+    await opened.conversation.close()
+
+    assert opened.conversation.model == "kimi-k2.7-code"
+    assert entries(store, session)[-1] == ModelEntry(model="kimi-k2.7-code")
+
+
+async def test_open_a_session_with_its_own_model_changes_nothing() -> None:
+    store = MemorySessionStore()
+    session = await saved(store)
+    before = list(entries(store, session))
+    world = World(store, FakeModelClient([]), tokens=["9999"])
+
+    opened = await world.sessions.open(Start(session=session, model="glm-5.3-flash"))
+    await opened.conversation.close()
+
+    assert entries(store, session) == before
+
+
+@pytest.mark.parametrize(
+    ("start", "error"),
+    [
+        (Start(last=True), SessionNotFound),
+        (Start(session="20261026-091502-ffff"), SessionNotFound),
+    ],
+)
+async def test_open_what_is_not_there_fails(
+    start: Start, error: type[SessionError]
+) -> None:
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([]))
+
+    with pytest.raises(error):
+        await world.sessions.open(start)
+    assert store.locked == set()
 
 
 async def test_resume_tells_what_the_session_it_leaves_could_not_save(
