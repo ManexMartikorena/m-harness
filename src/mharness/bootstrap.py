@@ -68,7 +68,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         # No home: the error comes, with what to do, from load() below.
         _log_to(None)
     try:
-        settings = config.load(cwd=Path.cwd(), env=os.environ)
+        # Only what calls the model needs the key.
+        settings = config.load(
+            cwd=Path.cwd(),
+            env=os.environ,
+            need_key=options.command in _CALL_THE_MODEL,
+        )
         catalog = TomlCatalog.load(config.user_catalog_path(os.environ))
         data = config.data_dir(os.environ)
     except (config.ConfigError, CatalogError) as exc:
@@ -103,6 +108,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return asyncio.run(_print(settings, catalog, data, cwd, start, options))
     return asyncio.run(_converse(settings, catalog, data, cwd, start))
 
+
+# The conversation, `-p` (both without a command) and the evals.
+_CALL_THE_MODEL = (None, "eval")
 
 # The limits of the turn the command line can set (spec hito 8, §1.13).
 _LIMITS = ("max_steps", "max_cost", "max_tokens", "timeout")

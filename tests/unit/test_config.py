@@ -329,3 +329,15 @@ def test_without_a_home_the_error_says_what_to_do(
 
     with pytest.raises(ConfigError, match="cannot find your home folder: set HOME"):
         config.state_dir({})
+
+
+def test_without_need_of_a_key_its_absence_is_no_error(
+    home: Path, project: Path
+) -> None:
+    write_user(home, 'model = "glm-5.3-flash"\n')
+
+    settings = config.load(
+        cwd=project, env={"XDG_CONFIG_HOME": str(home)}, need_key=False
+    )
+
+    assert settings.api_key is None

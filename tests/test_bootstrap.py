@@ -1155,3 +1155,39 @@ def test_an_exported_session_is_imported_and_resumed(
         {"role": "user", "content": "Hola"},
         {"role": "assistant", "content": "Hola, Ane."},
     ]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["models"], ["sessions"], ["trace"], ["stats"], ["export", "x"]],
+)
+def test_commands_that_do_not_call_the_model_need_no_key(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    args: list[str],
+) -> None:
+    # Found in the manual check of hito 8: `maha trace` asked for the key.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.delenv("OPENCODE_API_KEY")
+
+    main(args)
+
+    assert "OPENCODE_API_KEY" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("args", [["-p", "Hola"], ["eval", "--only", "01"]])
+def test_what_calls_the_model_still_needs_the_key(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+    args: list[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.delenv("OPENCODE_API_KEY")
+    stdin("")
+
+    assert main(args) == 1
+
+    assert "OPENCODE_API_KEY is not set" in capsys.readouterr().err
