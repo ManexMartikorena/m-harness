@@ -120,6 +120,30 @@ def test_without_model_says_what_to_write(home: Path, project: Path) -> None:
 # The limits of each turn (spec hito 8, §1.1 and §3.2).
 
 
+def test_without_a_fallback_model_there_is_none(home: Path, project: Path) -> None:
+    write_user(home, 'model = "glm-5.3-flash"\n')
+
+    assert load(home, project).fallback_model is None
+
+
+def test_the_user_and_the_project_set_the_fallback_model(
+    home: Path, project: Path
+) -> None:
+    write_user(home, 'model = "glm-5.3-flash"\nfallback_model = "glm-5.3"\n')
+    assert load(home, project).fallback_model == "glm-5.3"
+
+    # As with the model, the project wins.
+    write_project(project, 'fallback_model = "kimi-k2.7-code"\n')
+    assert load(home, project).fallback_model == "kimi-k2.7-code"
+
+
+def test_an_empty_fallback_model_is_an_error(home: Path, project: Path) -> None:
+    write_user(home, 'model = "glm-5.3-flash"\nfallback_model = ""\n')
+
+    with pytest.raises(ConfigError, match="fallback_model"):
+        load(home, project)
+
+
 def test_without_limits_the_turn_has_the_default_ones(
     home: Path, project: Path
 ) -> None:

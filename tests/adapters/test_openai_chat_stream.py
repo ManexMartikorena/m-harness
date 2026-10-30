@@ -293,6 +293,18 @@ async def test_http_errors_before_the_stream(
 
 
 @respx.mock
+async def test_retry_after_reaches_the_error_of_a_stream(
+    client: OpenAIChatClient,
+) -> None:
+    respx.post(ENDPOINT).respond(429, headers={"Retry-After": "7"})
+
+    with pytest.raises(ModelRateLimitError) as raised:
+        await events(client)
+
+    assert raised.value.retry_after == 7.0
+
+
+@respx.mock
 async def test_measured_unknown_model_is_a_request_error(
     client: OpenAIChatClient,
 ) -> None:

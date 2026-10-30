@@ -957,3 +957,64 @@ def test_the_command_line_can_loosen_a_limit_of_the_configuration(
 
 def test_every_limit_of_the_turn_has_its_option() -> None:
     assert tuple(TurnLimits.model_fields) == bootstrap._LIMITS
+
+
+def busy() -> respx.MockResponse:
+    # Retry-After: 0, so that the retries do not wait.
+    return respx.MockResponse(429, headers={"Retry-After": "0"})
+
+
+@respx.mock
+def test_a_busy_provider_is_retried_and_then_the_fallback_answers(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(
+        workspace, 'model = "glm-5.3-flash"\nfallback_model = "glm-5.3"\n'
+    )
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[busy()] * 4 + [sse_response(streamed("Hola.", 1, 1))]
+    )
+    stdin("")
+
+    assert main(["-p", "Hola"]) == 0
+
+    models = [json.loads(call.request.content)["model"] for call in route.calls]
+    assert models == ["glm-5.3-flash"] * 4 + ["glm-5.3"]
+    assert capsys.readouterr().out == "Hola.\n"
+
+
+@respx.mock
+def test_the_fallback_model_of_the_command_line_wins(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(
+        workspace, 'model = "glm-5.3-flash"\nfallback_model = "glm-5.3"\n'
+    )
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[busy()] * 4 + [sse_response(streamed("Hola.", 1, 1))]
+    )
+    stdin("")
+
+    main(["-p", "Hola", "--fallback-model", "kimi-k2.7-code"])
+
+    assert json.loads(route.calls.last.request.content)["model"] == "kimi-k2.7-code"
+
+
+@respx.mock
+def test_without_a_fallback_the_last_error_ends_the_run(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(side_effect=[busy()] * 4)
+    stdin("")
+
+    assert main(["-p", "Hola"]) == 1
+
+    assert len(route.calls) == 4
+    assert "error: HTTP 429" in capsys.readouterr().err

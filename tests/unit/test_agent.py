@@ -2,7 +2,7 @@
 §4.2), with fakes."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import aclosing
 from datetime import date
 from decimal import Decimal
@@ -16,6 +16,8 @@ from mharness.domain.agent_events import (
     AgentEvent,
     ApprovalRequested,
     ModelCallFinished,
+    ModelFallback,
+    ModelRetry,
     ToolCallProposed,
     ToolFinished,
     TurnFinished,
@@ -23,11 +25,19 @@ from mharness.domain.agent_events import (
 )
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import ModelInfo, Prices
-from mharness.domain.errors import ModelUnavailableError
+from mharness.domain.errors import (
+    ModelAuthError,
+    ModelError,
+    ModelRateLimitError,
+    ModelRequestError,
+    ModelResponseError,
+    ModelUnavailableError,
+)
 from mharness.domain.events import TextDelta, ToolCallDelta
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
+from mharness.domain.retry import NO_RETRIES, RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
 from tests.fakes.approval import FakeApproval, HangingApproval
@@ -54,6 +64,9 @@ def agent(
     gate: ApprovalGate | None = None,
     catalog: MemoryCatalog | None = None,
     limits: TurnLimits | None = None,
+    retry: RetryPolicy = NO_RETRIES,
+    sleep: Callable[[float], Awaitable[None]] | None = None,
+    fallback: str | None = None,
 ) -> Agent:
     registry = ToolRegistry(tools or [FakeTool()])
     # With no script, being asked fails the test.
@@ -65,6 +78,10 @@ def agent(
         catalog=catalog or MemoryCatalog(),
         provider=PROVIDER,
         limits=limits or TurnLimits(max_steps=max_steps),
+        # A failure in a script is one failure, unless a test says.
+        retry=retry,
+        sleep=sleep or asyncio.sleep,
+        fallback=fallback,
     )
 
 
@@ -1348,3 +1365,263 @@ async def test_the_cost_the_provider_gives_needs_no_catalog() -> None:
     turn = events[-1]
     assert isinstance(turn, TurnFinished)
     assert turn.cost == Decimal("0.001")
+
+
+# Retries (spec hito 8, §1.14). The waits are recorded, never slept.
+RETRY = RetryPolicy(random=lambda: 0.0)
+
+
+class Waits:
+    """A `sleep` that records how long the loop asked to wait."""
+
+    def __init__(self) -> None:
+        self.asked: list[float] = []
+
+    async def __call__(self, seconds: float) -> None:
+        self.asked.append(seconds)
+
+
+def retries(events: list[AgentEvent]) -> list[ModelRetry]:
+    return [event for event in events if isinstance(event, ModelRetry)]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [ModelRateLimitError("HTTP 429"), ModelUnavailableError("HTTP 503")],
+)
+async def test_a_call_that_may_pass_is_made_again(error: ModelError) -> None:
+    fake = FakeModelClient([error, error, reply("Hola.")])
+    waits = Waits()
+
+    events = await run(agent(fake, retry=RETRY, sleep=waits))
+
+    assert retries(events) == [
+        ModelRetry(model=MODEL, attempt=1, max_retries=3, delay=1.0, error=str(error)),
+        ModelRetry(model=MODEL, attempt=2, max_retries=3, delay=2.0, error=str(error)),
+    ]
+    assert waits.asked == [1.0, 2.0]
+    assert len(fake.requests) == 3
+    finished = events[-1]
+    assert isinstance(finished, TurnFinished)
+    assert (finished.reason, finished.steps) == ("end_turn", 1)
+
+
+async def test_the_retry_is_told_before_its_wait() -> None:
+    seen: list[str] = []
+
+    async def sleep(seconds: float) -> None:
+        seen.append("wait")
+
+    subject = agent(
+        FakeModelClient([ModelUnavailableError("down"), reply("Hola.")]),
+        retry=RETRY,
+        sleep=sleep,
+    )
+    async for event in subject.run("Hola"):
+        seen.append(event.type)
+
+    assert seen[:3] == ["turn_started", "model_retry", "wait"]
+
+
+async def test_the_provider_says_how_long_to_wait() -> None:
+    fake = FakeModelClient(
+        [ModelRateLimitError("HTTP 429", retry_after=7.0), reply("Hola.")]
+    )
+    waits = Waits()
+
+    await run(agent(fake, retry=RETRY, sleep=waits))
+
+    assert waits.asked == [7.0]
+
+
+async def test_when_the_retries_run_out_the_error_goes_up() -> None:
+    error = ModelUnavailableError("down")
+    fake = FakeModelClient([error] * 4)
+    seen: list[AgentEvent] = []
+    subject = agent(fake, retry=RETRY, sleep=Waits())
+
+    async def consume() -> None:
+        async for event in subject.run("Hola"):
+            seen.append(event)
+
+    with pytest.raises(ModelUnavailableError):
+        await consume()
+
+    assert [event.attempt for event in retries(seen)] == [1, 2, 3]
+    assert len(fake.requests) == 4
+    assert subject.messages == ()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ModelAuthError("HTTP 401"),
+        ModelRequestError("HTTP 400"),
+        ModelResponseError("bad chunk"),
+    ],
+)
+async def test_what_repeating_does_not_fix_is_not_retried(error: ModelError) -> None:
+    fake = FakeModelClient([error])
+    waits = Waits()
+
+    with pytest.raises(type(error)):
+        await run(agent(fake, retry=RETRY, sleep=waits))
+
+    assert (len(fake.requests), waits.asked) == (1, [])
+
+
+async def test_an_answer_that_began_is_not_made_again() -> None:
+    # Its text was already shown (spec hito 3, §1.9).
+    fake = FakeModelClient([[TextDelta(text="Ho"), ModelUnavailableError("cut")]])
+
+    with pytest.raises(ModelUnavailableError):
+        await run(agent(fake, retry=RETRY, sleep=Waits()))
+
+    assert len(fake.requests) == 1
+
+
+async def test_a_retry_in_a_later_step_keeps_the_turn_so_far() -> None:
+    echo = FakeTool()
+    fake = FakeModelClient(
+        [tool_calls(call("c1")), ModelUnavailableError("down"), reply("Hecho.")]
+    )
+    subject = agent(fake, echo, retry=RETRY, sleep=Waits())
+
+    events = await run(subject)
+
+    finished = events[-1]
+    assert isinstance(finished, TurnFinished)
+    assert (finished.reason, finished.steps, finished.tool_calls) == ("end_turn", 2, 1)
+    # The repeated call sends the same history.
+    assert fake.requests[1] == fake.requests[2]
+
+
+async def test_the_time_limit_cuts_the_wait() -> None:
+    subject = agent(
+        FakeModelClient([ModelUnavailableError("down")]),
+        limits=TurnLimits(timeout=0.05),
+        retry=RetryPolicy(base_delay=60.0),
+    )
+
+    events = await run(subject)
+
+    finished = events[-1]
+    assert isinstance(finished, TurnFinished)
+    assert finished.reason == "timeout"
+    assert subject.messages == ()
+
+
+async def test_ctrl_c_cuts_the_wait() -> None:
+    subject = agent(
+        FakeModelClient([ModelUnavailableError("down")]),
+        retry=RetryPolicy(base_delay=60.0),
+    )
+    seen: list[AgentEvent] = []
+
+    async def consume() -> None:
+        async for event in subject.run("Hola"):
+            seen.append(event)
+
+    task = asyncio.ensure_future(consume())
+    await until(lambda: bool(retries(seen)))
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert subject.messages == ()
+
+
+# The fallback model (spec hito 8, §1.14).
+FALLBACK = "glm-5.3"
+
+
+async def test_when_the_retries_run_out_the_fallback_answers() -> None:
+    down = ModelUnavailableError("HTTP 503")
+    fake = FakeModelClient([down] * 4 + [reply("Hola.", model=FALLBACK)])
+
+    events = await run(agent(fake, retry=RETRY, sleep=Waits(), fallback=FALLBACK))
+
+    switches = [event for event in events if isinstance(event, ModelFallback)]
+    assert switches == [ModelFallback(model=MODEL, fallback=FALLBACK, error="HTTP 503")]
+    assert [request.model for request in fake.requests] == [MODEL] * 4 + [FALLBACK]
+    finished = events[-1]
+    assert isinstance(finished, TurnFinished)
+    assert finished.reason == "end_turn"
+
+
+async def test_the_fallback_answers_the_rest_of_the_turn_and_not_the_next() -> None:
+    echo = FakeTool()
+    down = ModelRateLimitError("HTTP 429")
+    fake = FakeModelClient(
+        [down, tool_calls(call("c1")), reply("Hecho."), reply("Otra.")]
+    )
+    subject = agent(fake, echo, retry=NO_RETRIES, fallback=FALLBACK)
+
+    await run(subject)
+    await run(subject, "Otra vez")
+
+    assert [request.model for request in fake.requests] == [
+        MODEL,
+        FALLBACK,
+        FALLBACK,
+        MODEL,
+    ]
+    assert subject.model == MODEL
+
+
+async def test_the_fallback_has_its_own_retries() -> None:
+    down = ModelUnavailableError("down")
+    fake = FakeModelClient([down] * 8)
+    seen: list[AgentEvent] = []
+    subject = agent(fake, retry=RETRY, sleep=Waits(), fallback=FALLBACK)
+
+    async def consume() -> None:
+        async for event in subject.run("Hola"):
+            seen.append(event)
+
+    with pytest.raises(ModelUnavailableError):
+        await consume()
+
+    assert [(e.model, e.attempt) for e in retries(seen)] == [
+        (MODEL, 1),
+        (MODEL, 2),
+        (MODEL, 3),
+        (FALLBACK, 1),
+        (FALLBACK, 2),
+        (FALLBACK, 3),
+    ]
+    assert len(fake.requests) == 8
+
+
+async def test_what_repeating_does_not_fix_does_not_fall_back() -> None:
+    fake = FakeModelClient([ModelAuthError("HTTP 401")])
+
+    with pytest.raises(ModelAuthError):
+        await run(agent(fake, retry=NO_RETRIES, fallback=FALLBACK))
+
+    assert len(fake.requests) == 1
+
+
+async def test_a_fallback_that_is_the_model_in_use_is_not_one() -> None:
+    fake = FakeModelClient([ModelUnavailableError("down")])
+
+    with pytest.raises(ModelUnavailableError):
+        await run(agent(fake, retry=NO_RETRIES, fallback=MODEL))
+
+    assert len(fake.requests) == 1
+
+
+async def test_the_fallback_is_priced_as_itself() -> None:
+    usage = Usage(input_tokens=1_000_000, output_tokens=0)
+    # The provider names the model its own way: the price is the fallback's.
+    fake = FakeModelClient(
+        [ModelUnavailableError("down"), reply("Hola.", usage=usage, model="other")]
+    )
+    catalog = MemoryCatalog([priced(MODEL, "1", "1"), priced(FALLBACK, "2", "8")])
+    subject = agent(fake, retry=NO_RETRIES, fallback=FALLBACK, catalog=catalog)
+
+    events = await run(subject)
+
+    finished = events[-1]
+    assert isinstance(finished, TurnFinished)
+    assert finished.cost == Decimal("2")

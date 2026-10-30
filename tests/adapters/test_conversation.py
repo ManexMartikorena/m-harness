@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from mharness.adapters.cli.approval import TerminalApproval
-from mharness.adapters.cli.conversation import EXIT_INTERRUPTED, converse
+from mharness.adapters.cli.conversation import EXIT_INTERRUPTED, converse, retry_note
 from mharness.adapters.cli.input import InputTooLarge, StdinLines
 from mharness.adapters.cli.spinner import CLEAR_LINE
 from mharness.adapters.commands import LocalCommandRunner
@@ -21,6 +21,7 @@ from mharness.adapters.tools import RunCommand
 from mharness.application.agent import Agent
 from mharness.application.sessions import Sessions, Start
 from mharness.application.tools import ToolRegistry
+from mharness.domain.agent_events import ModelRetry
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import ModelInfo
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
@@ -28,6 +29,7 @@ from mharness.domain.events import TextDelta
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import ModelResponse, Usage
+from mharness.domain.retry import NO_RETRIES, RetryPolicy
 from mharness.domain.tools import ToolError
 from tests.adapters.test_local_runner import gone, written_pid
 from tests.fakes.approval import FakeApproval
@@ -437,6 +439,7 @@ async def converse_until_spinning(
                     model="m",
                     catalog=MemoryCatalog(),
                     provider="opencode-go",
+                    retry=NO_RETRIES,
                 )
             ),
             provider="p",
@@ -1196,3 +1199,50 @@ async def test_a_session_that_cannot_be_resumed_ends_before_the_header() -> None
 
     assert (code, out.getvalue()) == (1, "")
     assert err.getvalue() == "error: no session 20261027-101500-ffff\n"
+
+
+async def no_wait(seconds: float) -> None:
+    """A `sleep` that does not sleep."""
+
+
+async def test_a_retry_and_a_fallback_are_told() -> None:
+    down = ModelUnavailableError("HTTP 503")
+    fake = FakeModelClient([down, down, reply("Hola.")])
+    agent = Agent(
+        fake,
+        ToolRegistry(),
+        gate=FakeApproval(),
+        model="glm-5.3-flash",
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
+        retry=RetryPolicy(max_retries=1, random=lambda: 0.0),
+        sleep=no_wait,
+        fallback="glm-5.3",
+    )
+    out, err = io.StringIO(), io.StringIO()
+
+    await converse(
+        solo(agent),
+        provider="opencode-go",
+        catalog=KNOWN,
+        read_line=ScriptedInput("Hola", "/exit"),
+        out=out,
+        err=err,
+    )
+
+    assert out.getvalue() == (
+        f"{HEADER}\n"
+        ">   [glm-5.3-flash: HTTP 503; retrying in 1 s (1/1)]\n"
+        "  [glm-5.3-flash keeps failing (HTTP 503); glm-5.3 goes on]\n"
+        "Hola.\n"
+        "> "
+    )
+    assert err.getvalue() == ""
+
+
+def test_a_retry_note_is_clean_and_rounded() -> None:
+    event = ModelRetry(
+        model="m\x1b[2J", attempt=2, max_retries=3, delay=2.4567, error="HTTP 429\n"
+    )
+
+    assert retry_note(event) == ("[m\\x1b[2J: HTTP 429\\n; retrying in 2.5 s (2/3)]")

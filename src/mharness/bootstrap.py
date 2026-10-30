@@ -75,7 +75,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cli.fail(str(exc))
     if options.command == "eval":
         return asyncio.run(_eval(settings, catalog, options))
-    settings = _limited(settings, options)
+    settings = _with_options(settings, options)
     start = Start(last=options.last, session=options.session, model=options.model)
     # Resolved once: the tools and the sessions name it the same way.
     cwd = Path.cwd().resolve()
@@ -88,16 +88,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 _LIMITS = ("max_steps", "max_cost", "max_tokens", "timeout")
 
 
-def _limited(settings: config.Settings, options: argparse.Namespace) -> config.Settings:
-    """The limits of the command line win over the configuration's: they
-    are what the user asked for this run."""
+def _with_options(
+    settings: config.Settings, options: argparse.Namespace
+) -> config.Settings:
+    """The limits and the fallback model of the command line win over the
+    configuration's: they are what the user asked for this run."""
     given = {
         name: getattr(options, name)
         for name in _LIMITS
         if getattr(options, name) is not None
     }
     limits = TurnLimits.model_validate(settings.limits.model_dump() | given)
-    return settings.model_copy(update={"limits": limits})
+    fallback = options.fallback_model or settings.fallback_model
+    return settings.model_copy(update={"limits": limits, "fallback_model": fallback})
 
 
 # The application log: diagnosis for whoever maintains maha, never what was
@@ -224,6 +227,8 @@ async def _eval(
                     provider=settings.provider_name,
                     limits=task.limits,
                     history=history,
+                    # Retries, but no fallback: an eval measures the model
+                    # it names.
                 )
 
             sessions = Sessions(
@@ -338,6 +343,8 @@ def _sessions(
             provider=settings.provider_name,
             limits=settings.limits,
             history=history,
+            # Retries with the default policy (spec hito 8, §1.14).
+            fallback=settings.fallback_model,
         )
 
     return Sessions(

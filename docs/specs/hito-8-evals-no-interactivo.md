@@ -567,6 +567,29 @@ la batería ejecuta. Las evals llaman a `run_once` sin `on_event`, no usan
 prompts del turno son los mismos. Sí cambia el bucle el PR 4 (reintentos),
 que se compara con la línea base.
 
+**PR 4** (reintentos y respaldo, 2026-10-30, commit `fb5144f`, OpenCode Go;
+20 tareas, 5 repeticiones, 4 a la vez; comparado con la línea base del
+2026-10-27):
+
+| Modelo | Éxito | Base | train | validation | Coste total |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 95/100 | 94/100 | 76/80 | 19/20 | 0,07 $ |
+| `kimi-k2.7-code` | 99/100 | 99/100 | 79/80 | 20/20 | 0,54 $ |
+
+- **El código nuevo no actuó:** en las 200 ejecuciones hubo 0
+  `model_retry`, 0 `model_fallback` y 0 errores del proveedor (contado en
+  las trazas). Sin un fallo, la petición al modelo es la misma de antes.
+- **Tres ⚠ en `glm-5.3-flash`**, tareas que en la base pasaban siempre:
+  14 (4/5), 16 (4/5) y 20 (3/5). Fallan en la comprobación (tests del
+  fixture), no por el proveedor. A la vez suben la 13 (de 3/5 a 5/5) y la
+  18 (de 2/5 a 5/5), y el total pasa de 94 a 95. Lectura del agente: ruido
+  del modelo, porque el bucle hizo lo mismo que antes.
+- **Decisión del mantenedor** (2026-10-30): se aceptan las tres ⚠ y el
+  PR 4 se integra. Motivo: el código nuevo no actuó en ninguna de las 200
+  ejecuciones, así que el modelo recibió las mismas peticiones que antes;
+  las diferencias son ruido del modelo. La línea base sigue siendo la del
+  2026-10-27.
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit en verde. Seis PRs, en el milestone "Hito 8".
@@ -763,6 +786,47 @@ agente:
    línea base. Alternativa: el orden de DESIGN (`-p` primero).
 
 ## 12. Aprendido al implementar
+
+### PR 4 (`feature/hito-8-reintentos`, 2026-10-30)
+
+26. **`RetryableModelError`, la base de lo que se reintenta.** 429 y "no
+    disponible" heredan de ella, y el bucle reintenta esa clase. Las dos
+    llevan `retry_after`, no solo el 429 que decía §1.14: RFC 9110 usa
+    `Retry-After` también con 503.
+27. **`Retry-After` gana a la espera calculada, sin azar:** el proveedor
+    sabe cuándo puede responder. Una fecha pasada es 0. Un valor que no
+    son segundos enteros ni una fecha HTTP se ignora (RFC 9110, §10.2.3).
+    Más de 60 s se recorta a 60, como pide §4, punto 3.
+28. **El respaldo tiene sus propios reintentos.** Si también se agotan,
+    el error sale como siempre. Un respaldo igual al modelo en uso (tras
+    `/model`) no es un respaldo. `ModelRetry` lleva el modelo, para saber
+    de cuál es cada reintento después del cambio.
+29. **El modelo del turno es una variable del turno,** no `Agent.model`:
+    así el turno siguiente vuelve solo al principal, y el coste se busca
+    en el catálogo por el modelo que contestó o, si no, por el de respaldo.
+30. **`Agent` reintenta por defecto** (`RetryPolicy()`, con
+    `asyncio.sleep`): un agente bien cableado no puede olvidarlo. Los
+    tests que simulan un solo fallo lo dicen con `NO_RETRIES`, y los de
+    reintentos inyectan un `sleep` que no duerme.
+31. **El aviso y la espera, fuera del `except`:** un Ctrl+C durante la
+    espera no llega "mientras se trataba" el error, y la traza de la
+    excepción no arrastra la anterior.
+32. **Las evals reintentan, pero sin respaldo:** miden el modelo que
+    nombran. Con los reintentos, `--retry-errors` queda para lo que
+    tampoco pasa tras tres intentos.
+33. **`--fallback-model`** va con las opciones de conversación: vale con
+    `-p` y sin él, y con un subcomando es un error de uso, como `-m`.
+34. **gitleaks paró un commit:** una clave inventada de mucha entropía en
+    un test parecía real. Se usa el `SECRET` de siempre, de baja entropía.
+35. **Verificación a mano** (2026-10-30, un servidor local que responde
+    503 con `Retry-After: 1` al modelo `principal`, en un directorio
+    desechable; spec §7, punto 9):
+    - sin respaldo, tres reintentos de 1 s en stderr y código 1 a los
+      3,5 s;
+    - con `--fallback-model respaldo`, los tres reintentos, el paso al
+      respaldo y su respuesta en stdout, con código 0;
+    - en `stream-json`, tres `model_retry` y un `model_fallback` antes
+      del texto; en la traza, los mismos registros.
 
 ### PR 3 (`feature/hito-8-print`, 2026-10-28)
 

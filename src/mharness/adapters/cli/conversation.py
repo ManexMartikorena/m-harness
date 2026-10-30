@@ -17,10 +17,12 @@ from mharness import __version__
 from mharness.adapters.cli.commands import Commands, parse_command
 from mharness.adapters.cli.input import Discard, ReadLine, StdinLines
 from mharness.adapters.cli.spinner import Spinner, use_color
-from mharness.adapters.cli.text import clean, usd
+from mharness.adapters.cli.text import clean, clean_line, usd
 from mharness.application.sessions import Conversation, Resumed, Sessions, Start
 from mharness.domain.agent_events import (
     ApprovalRequested,
+    ModelFallback,
+    ModelRetry,
     ToolCallProposed,
     ToolFinished,
     TurnFinished,
@@ -203,6 +205,14 @@ async def _answer(
                         print(f"  → {call_line(call)}", file=out, flush=True)
                     case ApprovalRequested():
                         asking = True
+                    case ModelRetry() | ModelFallback():
+                        await spinner.stop()
+                        if wrote:
+                            print(file=out)
+                            wrote = False
+                        print(f"  {retry_note(event)}", file=out, flush=True)
+                        # The model is called again.
+                        spinner.start()
                     case ToolFinished():
                         asking = False
                         mark = "✗" if event.result.is_error else "✓"
@@ -273,6 +283,20 @@ def call_line(call: ToolCallBlock) -> str:
         shown = call.arguments
     text = clean(" ".join(f"{call.name}({shown})".split()))
     return text if len(text) <= MAX_CALL else text[: MAX_CALL - 1] + "…"
+
+
+def retry_note(event: ModelRetry | ModelFallback) -> str:
+    """What the person should know of a retry or a fallback (spec hito 8,
+    §1.14): the fallback always, so that it does not hide a failing model."""
+    model = clean_line(event.model)
+    error = clean_line(event.error)
+    if isinstance(event, ModelRetry):
+        wait = f"{round(event.delay, 1):g} s"
+        return (
+            f"[{model}: {error}; retrying in {wait} "
+            f"({event.attempt}/{event.max_retries})]"
+        )
+    return f"[{model} keeps failing ({error}); {clean_line(event.fallback)} goes on]"
 
 
 def warn_crash(event: ToolFinished, err: TextIO) -> None:
