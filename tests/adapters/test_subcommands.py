@@ -239,3 +239,16 @@ async def test_import_of_a_file_that_does_not_exist(tmp_path: Path) -> None:
     assert err.getvalue() == (
         f"error: cannot read {tmp_path / 'no.json'}: No such file or directory\n"
     )
+
+
+async def test_stats_with_more_days_than_the_calendar_has_is_every_day() -> None:
+    # Audit of hito 8: --days 1000000 crashed with an OverflowError.
+    world = await with_a_session("Hola.")
+    out, err = io.StringIO(), io.StringIO()
+
+    code = await show_stats(
+        world.traces, days=10**9, today=NOW.astimezone().date(), out=out, err=err
+    )
+
+    assert (code, err.getvalue()) == (0, "")
+    assert "fake-model" in out.getvalue()

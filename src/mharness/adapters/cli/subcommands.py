@@ -75,7 +75,9 @@ async def show_stats(
 ) -> int:
     """`maha stats [--days N]`: cost and tokens by day and model; with
     `days`, only the last ones, today included."""
-    since = None if days is None else today - timedelta(days=days - 1)
+    # More days than the calendar holds is every day (audit of hito 8).
+    back = None if days is None else min(days - 1, (today - date.min).days)
+    since = None if back is None else today - timedelta(days=back)
     try:
         rows = await daily(traces, since=since)
     except TraceError as exc:
