@@ -219,9 +219,7 @@ def _check(parser: argparse.ArgumentParser, options: argparse.Namespace) -> None
     """What argparse cannot say: which options need -p, and that a command
     takes none of the conversation's."""
     given = [
-        flag
-        for name, flag in _CONVERSATION.items()
-        if getattr(options, name) not in (None, False, [])
+        flag for name, flag in _CONVERSATION.items() if _given(getattr(options, name))
     ]
     if options.session == "":
         parser.error("-r needs the id of a session: /sessions lists them")
@@ -235,6 +233,12 @@ def _check(parser: argparse.ArgumentParser, options: argparse.Namespace) -> None
             parser.error(f"{' and '.join(alone)} only {verb} with -p")
     if options.output_format is None:
         options.output_format = "text"
+
+
+def _given(value: object) -> bool:
+    """Whether an option was given: not its default. By identity, because
+    `Decimal("0") == False` and `--max-cost 0` is given."""
+    return value is not None and value is not False and value != []
 
 
 def fail(message: str) -> int:

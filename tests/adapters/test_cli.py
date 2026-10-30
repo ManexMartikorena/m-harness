@@ -303,6 +303,8 @@ def test_continue_and_the_limits_go_with_the_conversation() -> None:
         (["-r", " "], "-r needs the id of a session"),
         (["-c", "eval"], "eval does not take -c"),
         (["-m", "x", "--timeout", "5", "eval"], "eval does not take -m, --timeout"),
+        # Decimal("0") == False: 0 is given all the same.
+        (["--max-cost", "0", "eval"], "eval does not take --max-cost"),
     ],
 )
 def test_options_that_do_not_go_together_are_a_usage_error(
