@@ -1496,9 +1496,42 @@ async def test_a_retry_in_a_later_step_keeps_the_turn_so_far() -> None:
     assert fake.requests[1] == fake.requests[2]
 
 
-async def test_the_time_limit_cuts_the_wait() -> None:
+async def test_the_time_limit_in_a_retry_ends_with_the_provider_error() -> None:
+    # The provider kept failing until the limit: that is the error, not the
+    # limit; an eval counts it as the provider's (audit of hito 8; spec
+    # §12.9).
     subject = agent(
         FakeModelClient([ModelUnavailableError("down")]),
+        limits=TurnLimits(timeout=0.05),
+        retry=RetryPolicy(base_delay=60.0),
+    )
+
+    with pytest.raises(ModelUnavailableError, match="down"):
+        await run(subject)
+
+    assert subject.messages == ()
+
+
+async def test_the_time_limit_in_a_retry_keeps_what_ran() -> None:
+    echo = FakeTool()
+    subject = agent(
+        FakeModelClient([tool_calls(call("c1")), ModelUnavailableError("down")]),
+        echo,
+        limits=TurnLimits(timeout=0.05),
+        retry=RetryPolicy(base_delay=60.0),
+    )
+
+    with pytest.raises(ModelUnavailableError):
+        await run(subject)
+
+    # The call that ran is in the history, with its result.
+    assert [m.role for m in subject.messages] == ["user", "assistant", "tool"]
+
+
+async def test_the_time_limit_on_a_slow_answer_is_still_a_time_limit() -> None:
+    # No failure before: the model was just slow.
+    subject = agent(
+        FakeModelClient([[HANG]]),
         limits=TurnLimits(timeout=0.05),
         retry=RetryPolicy(base_delay=60.0),
     )
@@ -1508,7 +1541,6 @@ async def test_the_time_limit_cuts_the_wait() -> None:
     finished = events[-1]
     assert isinstance(finished, TurnFinished)
     assert finished.reason == "timeout"
-    assert subject.messages == ()
 
 
 async def test_ctrl_c_cuts_the_wait() -> None:

@@ -135,6 +135,9 @@ class Agent:
         step = 0
         # The model of this turn: the fallback, once it takes over.
         model = self.model
+        # The provider's last failure while a call is being retried; empty
+        # once an answer begins.
+        failing: list[RetryableModelError] = []
         # When the loop stops waiting (spec hito 8, §1.1).
         timeout = self.limits.timeout
         deadline = (
@@ -157,7 +160,7 @@ class Agent:
                     return
                 accumulator = Accumulator()
                 streaming = True
-                async with aclosing(self._call(turn, model)) as events:
+                async with aclosing(self._call(turn, model, failing)) as events:
                     while True:
                         try:
                             event = await _within(anext(events), deadline)
@@ -281,6 +284,14 @@ class Agent:
                 cost=turn_cost,
             )
         except _TimedOut:
+            if failing:
+                # The provider kept failing until the limit: that is what
+                # happened, not the limit; an eval counts it as the
+                # provider's (audit of hito 8; spec hito 8, §12.9). What ran
+                # is kept, as after any failed call to the model.
+                if executed and not kept:
+                    self._messages.extend(turn)
+                raise failing[0] from None
             # As Ctrl+C, but the turn ends here (spec hito 8, §1.1). A half
             # answer is not kept: its mark says the user cut it.
             if executed and not kept:
@@ -326,12 +337,13 @@ class Agent:
             raise
 
     async def _call(
-        self, turn: list[Message], model: str
+        self, turn: list[Message], model: str, failing: list[RetryableModelError]
     ) -> AsyncGenerator[ModelEvent | ModelRetry | ModelFallback]:
         """One call to `model`, made again while it fails before its first
         event with an error that may pass, and then once more with the
         fallback, with retries of its own (spec hito 8, §1.14). Once an
-        event came, a failure goes up: that answer was already shown."""
+        event came, a failure goes up: that answer was already shown.
+        `failing` holds the last failure while the call is retried."""
         attempt = 0
         while True:
             began = False
@@ -340,11 +352,13 @@ class Agent:
                 async with aclosing(self._client.stream(request)) as events:
                     async for event in events:
                         began = True
+                        failing.clear()
                         yield event
                 return
             except RetryableModelError as exc:
                 if began:
                     raise
+                failing[:] = [exc]
                 attempt += 1
                 delay = self._retry.delay(attempt, exc.retry_after)
                 then: ModelRetry | ModelFallback
