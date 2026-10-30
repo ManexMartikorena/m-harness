@@ -1191,3 +1191,43 @@ def test_what_calls_the_model_still_needs_the_key(
     assert main(args) == 1
 
     assert "OPENCODE_API_KEY is not set" in capsys.readouterr().err
+
+
+@respx.mock
+@pytest.mark.parametrize("args", [["sessions"], ["stats"], ["models", "--all"]])
+def test_commands_that_do_not_call_the_model_need_no_model(
+    workspace: Path, capsys: pytest.CaptureFixture[str], args: list[str]
+) -> None:
+    # Found in the audit of hito 8: without `model`, `maha sessions` did not
+    # start. Without a configuration file at all, too.
+    assert main(args) == 0
+
+    assert "no model configured" not in capsys.readouterr().err
+
+
+@respx.mock
+def test_trace_and_export_without_a_model_still_work(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    session = a_print_session(stdin)
+    (workspace / "xdg" / "maha" / "config.toml").write_text("", encoding="utf-8")
+
+    assert main(["trace", session]) == 0
+    assert main(["export", session]) == 0
+    assert main(["sessions", "delete", session]) == 0
+    assert "no model configured" not in capsys.readouterr().err
+
+
+def test_what_calls_the_model_still_needs_a_model(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    stdin("")
+
+    assert main(["-p", "Hola"]) == 1
+
+    assert "no model configured" in capsys.readouterr().err

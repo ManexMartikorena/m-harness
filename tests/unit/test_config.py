@@ -331,13 +331,23 @@ def test_without_a_home_the_error_says_what_to_do(
         config.state_dir({})
 
 
-def test_without_need_of_a_key_its_absence_is_no_error(
+def test_without_calling_the_model_its_key_is_not_needed(
     home: Path, project: Path
 ) -> None:
     write_user(home, 'model = "glm-5.3-flash"\n')
 
     settings = config.load(
-        cwd=project, env={"XDG_CONFIG_HOME": str(home)}, need_key=False
+        cwd=project, env={"XDG_CONFIG_HOME": str(home)}, calls_model=False
     )
 
     assert settings.api_key is None
+
+
+def test_without_calling_the_model_no_model_is_needed(
+    home: Path, project: Path
+) -> None:
+    settings = config.load(
+        cwd=project, env={"XDG_CONFIG_HOME": str(home)}, calls_model=False
+    )
+
+    assert (settings.model, settings.provider_name) == (None, "opencode-go")

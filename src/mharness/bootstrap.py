@@ -68,11 +68,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         # No home: the error comes, with what to do, from load() below.
         _log_to(None)
     try:
-        # Only what calls the model needs the key.
+        # Only what calls the model needs a model and the key.
         settings = config.load(
             cwd=Path.cwd(),
             env=os.environ,
-            need_key=options.command in _CALL_THE_MODEL,
+            calls_model=options.command in _CALL_THE_MODEL,
         )
         catalog = TomlCatalog.load(config.user_catalog_path(os.environ))
         data = config.data_dir(os.environ)
@@ -217,6 +217,8 @@ async def _eval(
         return cli.fail(
             "--save keeps a baseline of the whole battery: drop --split and --only"
         )
+    # load() requires a model for the evals.
+    assert settings.model is not None
     suite = TomlEvalSuite(Path(options.tasks), keep=options.keep)
     try:
         tasks = choose(await suite.tasks(), options.split, options.only)

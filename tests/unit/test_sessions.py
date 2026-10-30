@@ -79,7 +79,7 @@ class World:
         *,
         cwd: str = CWD,
         provider: str = "opencode-go",
-        model: str = "glm-5.3-flash",
+        model: str | None = "glm-5.3-flash",
         tools: Sequence[FakeTool] = (),
         gate: FakeApproval | None = None,
         tokens: Sequence[str] = ("3fa2", "b01c", "c0de"),
@@ -1466,3 +1466,36 @@ async def test_an_import_that_cannot_be_saved_leaves_nothing(
         await World(store, FakeModelClient([])).sessions.import_session(session)
 
     assert store.sessions == {}
+
+
+# Without a model: the commands that never call it (audit of hito 8).
+
+
+async def test_without_a_model_a_conversation_cannot_start() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]), model=None)
+
+    with pytest.raises(SessionError, match="no model configured"):
+        await world.sessions.start()
+    # A model of its own is enough.
+    assert (await world.sessions.start("kimi-k3")).model == "kimi-k3"
+
+
+async def test_without_a_model_sessions_are_listed_traced_and_deleted() -> None:
+    store = MemorySessionStore()
+    first = World(store, FakeModelClient([reply("Hola.")]))
+    conversation = await first.sessions.start()
+    await turn(conversation, "Hola")
+    await conversation.close()
+    world = World(store, FakeModelClient([]), model=None, traces=first.traces)
+
+    assert [s.id for s in await world.sessions.summaries()] == [FIRST]
+    assert (await world.sessions.trace(FIRST)).summary.turns
+    await world.sessions.delete(FIRST)
+    assert store.sessions == {}
+
+
+async def test_a_trace_without_a_session_nor_a_conversation_is_an_error() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]))
+
+    with pytest.raises(TraceError, match="which session"):
+        await world.sessions.trace(None)
