@@ -11,9 +11,10 @@
 done, **asking you before every change**. It works with the provider and
 model you choose, and tells you what each turn cost.
 
-> 🚧 **In development: `v0.7.1`.** Already usable to work on a project:
-> chat, read and change files, run commands, save and resume sessions, and
-> see the cost. What comes next is in the [roadmap](#roadmap).
+> 🚧 **In development: `v0.8.0`.** Already usable to work on a project:
+> chat, read and change files, run commands, save and resume sessions and
+> see the cost; and in scripts, with `maha -p`. What comes next is in the
+> [roadmap](#roadmap).
 
 ```
 $ maha
@@ -64,14 +65,26 @@ totals are exact; each turn is rounded to four decimals.)*
 - **The model and provider you want.** OpenAI format out of the box, with
   OpenCode Go and Zen already configured, and any compatible server you
   declare. Switch models with `/model` or in the configuration.
+- **In scripts too.** `maha -p "…"` does one instruction and exits: only
+  the answer on stdout, or JSON; what comes on stdin goes below it
+  (`git diff | maha -p "review this diff"`). With nobody to ask, only the
+  tools you allow with `--allow` run, and never what would ask every time.
+  With limits per turn (steps, dollars, tokens and time) and an exit code
+  that says how it ended.
+- **It survives a provider that fails.** A 429 or a server failure before
+  the answer starts is retried, up to three times; if it keeps failing and
+  you have a fallback model, it answers the rest of the turn. It always
+  tells you.
 - **Sessions that are never lost.** Every conversation is saved
   automatically, turn by turn (including an answer you interrupt), and can
-  be resumed from any directory.
-  When you resume, approvals start from scratch.
+  be resumed from any directory, also at start (`maha -c`, `maha -r ID`).
+  They export to Markdown or JSON and import on another computer. When you
+  resume, approvals start from scratch.
 - **You know what you spend.** Every turn shows its tokens and cost, and the
   session its total: the cost the provider reports (with OpenCode Go, what
   counts against your monthly limit) or, if it reports none, the one from a
-  catalog with the prices of every OpenCode Go and Zen model.
+  catalog with the prices of every OpenCode Go and Zen model. `maha stats`
+  adds it up by day and model.
 - **Everything is recorded, without your secrets.** Each session leaves a
   trace of what the agent did; `/trace` summarizes it.
 
@@ -81,7 +94,7 @@ You need [uv](https://docs.astral.sh/uv/) (it also installs Python 3.14 if
 missing).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.7.1
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.8.0
 ```
 
 Then choose a provider and a model:
@@ -102,6 +115,18 @@ maha
 
 `maha` works on the directory where you open it.
 
+Optional, in the same file: a fallback model and limits for each turn.
+
+```toml
+fallback_model = "glm-5.3"
+
+[limits]
+max_steps = 25       # calls to the model
+max_cost = 0.50      # dollars
+max_tokens = 400000  # input + output
+timeout = 600        # seconds
+```
+
 **Which models work today:** those served with the OpenAI Chat Completions
 format. In OpenCode Go and Zen that is GLM, Kimi, DeepSeek, MiMo, MiniMax M3.1
 Flash and several more; Claude, GPT, Gemini and Grok use other APIs that
@@ -121,9 +146,9 @@ base_url = "http://localhost:11434/v1"
 # api_key_env = "MY_KEY"   # without it, no key is sent
 ```
 
-A project can choose its provider and model in `.maha/config.toml`, but never
-declare providers: that way a foreign repository cannot send your key to
-another server.
+A project can choose its provider, model and fallback in `.maha/config.toml`,
+and tighten the limits (never loosen them), but never declare providers:
+that way a foreign repository cannot send your key to another server.
 
 ## Usage
 
@@ -135,6 +160,8 @@ another server.
 | `/resume [ID]` | Resumes a session; without ID, the last one here |
 | `/delete ID` | Deletes a session and its trace |
 | `/trace [ID]` | What a session did and cost, turn by turn |
+| `/new` | A new session without quitting, with the same model |
+| `/export [FILE]` | This conversation in Markdown; by default, `ID.md` |
 | `/exit` | Quits (also Ctrl+D) |
 
 - After each answer, the tokens line shows: input and output tokens (and,
@@ -144,7 +171,36 @@ another server.
 - **Ctrl+C** in the middle of an answer interrupts it and returns to the
   prompt; the model knows you interrupted it. At the prompt, it quits.
 - **Without a terminal** (`maha < instructions.txt`), everything with an
-  effect is denied.
+  effect is denied. For scripts, use `maha -p`.
+
+### From the shell
+
+| Command | What it does |
+|---|---|
+| `maha -p "…"` | One instruction and exit; stdin goes below it |
+| `maha -c`, `maha -r ID` | Continue the last session here, or one by its id |
+| `maha models [--all]` | The models of the catalog, with their window and prices |
+| `maha sessions` | Recent sessions; `sessions delete ID` deletes one |
+| `maha trace [ID]` | What a session did and cost; without id, the last one here |
+| `maha stats [--days N]` | Cost and tokens by day and model |
+| `maha export ID [--format md\|json]` | A session in Markdown or JSON, to stdout |
+| `maha import FILE` | A session exported in JSON, as a new one |
+
+With `-p`:
+- `--output-format text|json|stream-json`: only the answer (default; calls
+  and tokens go to stderr), one JSON object at the end, or one JSON event
+  per line.
+- `--allow TOOL` (repeatable): that tool runs without asking inside the
+  directory. Outside it, a secret or a file that runs code are always
+  denied.
+- With `-p` or without it: `-m ID` (model), `--fallback-model ID`,
+  `--max-steps N`, `--max-cost USD`, `--max-tokens N` and `--timeout S`.
+- Exit code: 0 fine, 1 error, 2 wrong usage, 3 a limit stopped the turn, 4
+  a call was denied; with Ctrl+C or a signal, 128 + the signal.
+
+```
+$ git diff | maha -p "review this diff" --output-format json | jq -r .result
+```
 
 ### Where it keeps things
 
@@ -163,8 +219,6 @@ user. It honors the `XDG_*` variables.
 
 `maha` grows milestone by milestone up to version 1.0. Next:
 
-- **Non-interactive mode and evals:** `maha -p "…"` for scripts, resuming at
-  start, JSON output, cost limits, `maha stats`.
 - **More providers:** the Anthropic format, reasoning effort.
 - **Project instructions** (`AGENTS.md`, `/init`), context compaction and
   **undo**.
