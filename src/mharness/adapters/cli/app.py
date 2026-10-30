@@ -262,7 +262,7 @@ def _check(parser: argparse.ArgumentParser, options: argparse.Namespace) -> None
         flag for name, flag in _CONVERSATION.items() if _given(getattr(options, name))
     ]
     if options.session == "":
-        parser.error("-r needs the id of a session: /sessions lists them")
+        parser.error("-r needs the id of a session: maha sessions lists them")
     if options.command is not None and given:
         parser.error(f"{options.command} does not take {', '.join(given)}")
     if options.prompt is None:

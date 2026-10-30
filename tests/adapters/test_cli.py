@@ -328,7 +328,7 @@ def test_resume_without_an_id_says_where_to_find_one(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert parse(["-r"]) == 2
-    assert "-r needs the id of a session: /sessions lists them" in (
+    assert "-r needs the id of a session: maha sessions lists them" in (
         capsys.readouterr().err
     )
 
