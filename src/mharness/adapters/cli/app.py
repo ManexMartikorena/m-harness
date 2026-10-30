@@ -45,6 +45,7 @@ def build_parser(tools: Sequence[str]) -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", metavar="COMMAND")
     _eval_parser(commands)
     _models_parser(commands)
+    _sessions_parser(commands)
     return parser
 
 
@@ -174,6 +175,23 @@ def _models_parser(commands: Any) -> None:
     models.add_argument(
         "--all", action="store_true", dest="every", help="of every provider"
     )
+
+
+def _sessions_parser(commands: Any) -> None:
+    """`maha sessions` and `maha sessions delete ID` (spec hito 8, §1.15)."""
+    sessions = commands.add_parser(
+        "sessions",
+        help="the recent sessions, of every directory",
+        description="The recent sessions, of every directory; those of this "
+        "one are marked with *. maha -r ID resumes one.",
+    )
+    actions = sessions.add_subparsers(dest="action", metavar="ACTION")
+    delete = actions.add_parser(
+        "delete",
+        help="delete a session and its trace",
+        description="Delete a session and its trace, without asking.",
+    )
+    delete.add_argument("id", metavar="ID")
 
 
 def _positive(text: str) -> int:

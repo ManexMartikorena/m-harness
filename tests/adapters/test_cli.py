@@ -348,3 +348,18 @@ def test_models_takes_no_conversation_option(
 ) -> None:
     assert parse(["-m", "x", "models"]) == 2
     assert "models does not take -m" in capsys.readouterr().err
+
+
+def test_sessions_lists_or_deletes() -> None:
+    options = parse(["sessions"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.command, options.action) == ("sessions", None)
+
+    options = parse(["sessions", "delete", "20261030-101500-3fa2"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.action, options.id) == ("delete", "20261030-101500-3fa2")
+
+
+def test_sessions_delete_needs_the_id(capsys: pytest.CaptureFixture[str]) -> None:
+    assert parse(["sessions", "delete"]) == 2
+    assert "the following arguments are required: ID" in capsys.readouterr().err

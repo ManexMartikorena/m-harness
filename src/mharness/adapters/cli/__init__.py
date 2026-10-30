@@ -8,14 +8,17 @@ from mharness.adapters.cli.headless import print_mode
 from mharness.adapters.cli.input import StdinLines
 from mharness.adapters.cli.reports import eval_report, models_report, run_line
 from mharness.adapters.cli.spinner import use_color
+from mharness.adapters.cli.subcommands import delete_session, list_sessions
 
 __all__ = [
     "DenyAll",
     "StdinLines",
     "TerminalApproval",
     "converse",
+    "delete_session",
     "eval_report",
     "fail",
+    "list_sessions",
     "models_report",
     "parse",
     "print_mode",

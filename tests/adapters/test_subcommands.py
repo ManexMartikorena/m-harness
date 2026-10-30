@@ -1,0 +1,65 @@
+"""The `maha` subcommands over sessions and traces (spec hito 8, §1.15)."""
+
+import io
+from pathlib import Path
+
+from mharness.adapters.cli.subcommands import delete_session, list_sessions
+from tests.fakes.model import FakeModelClient, reply
+from tests.fakes.sessions import MemorySessionStore
+from tests.unit.test_sessions import FIRST, World, turn
+
+HOME = Path("/home/ana")
+
+
+async def with_a_session(*answers: str) -> World:
+    """A maha whose first session has one turn per answer."""
+    world = World(MemorySessionStore(), FakeModelClient([reply(a) for a in answers]))
+    conversation = await world.sessions.start()
+    for answer in answers:
+        await turn(conversation, f"Pregunta para {answer}")
+    await conversation.close()
+    return world
+
+
+async def test_sessions_lists_them_without_indent() -> None:
+    world = await with_a_session("Hola.")
+    out = io.StringIO()
+
+    assert await list_sessions(world.sessions, out=out, home=HOME) == 0
+
+    # When it was saved, as the person's clock shows it, in the middle.
+    line = out.getvalue()
+    assert line.startswith(f"* {FIRST}  ")
+    assert line.endswith("  2 messages  ~/proyecto  Pregunta para Hola.\n")
+
+
+async def test_sessions_without_any_says_so() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]))
+    out = io.StringIO()
+
+    assert await list_sessions(world.sessions, out=out, home=HOME) == 0
+
+    assert out.getvalue() == "(no sessions)\n"
+
+
+async def test_delete_removes_the_session_and_its_trace() -> None:
+    world = await with_a_session("Hola.")
+    out, err = io.StringIO(), io.StringIO()
+
+    code = await delete_session(world.sessions, FIRST, out=out, err=err)
+
+    assert (code, out.getvalue(), err.getvalue()) == (0, f"deleted {FIRST}\n", "")
+    assert await world.sessions.summaries() == []
+    assert await world.traces.read(FIRST) == []
+
+
+async def test_delete_of_a_session_that_does_not_exist_fails() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]))
+    out, err = io.StringIO(), io.StringIO()
+
+    code = await delete_session(
+        world.sessions, "20261026-091502-ffff", out=out, err=err
+    )
+
+    assert (code, out.getvalue()) == (1, "")
+    assert err.getvalue().startswith("error: ")

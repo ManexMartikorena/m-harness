@@ -1,6 +1,7 @@
 """`maha` end to end: configuration, adapter, `Agent` and terminal, no
 network."""
 
+import contextlib
 import io
 import json
 import logging
@@ -1031,3 +1032,34 @@ def test_models_lists_the_catalog_of_the_configured_provider(
     assert out.startswith("model ")
     assert "\nglm-5.3-flash " in out
     assert "of opencode-go · prices per million tokens" in out
+
+
+def a_print_session(stdin: Callable[[str], None], answer: str = "Hola.") -> str:
+    """Run one `maha -p` and return the id of its session."""
+    respx.post(GO_ENDPOINT).mock(return_value=sse_response(streamed(answer, 1, 1)))
+    stdin("")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert main(["-p", "Hola", "--output-format", "json"]) == 0
+    session: str = json.loads(out.getvalue())["session_id"]
+    return session
+
+
+@respx.mock
+def test_sessions_lists_and_deletes_from_the_shell(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    session = a_print_session(stdin)
+
+    assert main(["sessions"]) == 0
+    assert capsys.readouterr().out.startswith(f"* {session}  ")
+
+    assert main(["sessions", "delete", session]) == 0
+    assert capsys.readouterr().out == f"deleted {session}\n"
+
+    assert main(["sessions"]) == 0
+    assert capsys.readouterr().out == "(no sessions)\n"
+    assert main(["sessions", "delete", session]) == 1
