@@ -120,20 +120,8 @@ class Commands:
         warn_unsaved(self.conversation, self._err)
 
     async def _list(self) -> None:
-        found = (await self._sessions.summaries())[:SESSIONS_SHOWN]
-        if not found:
-            self._say("(no sessions)")
-        for summary in found:
-            mark = "*" if self._sessions.here(summary) else " "
-            when = f"{summary.updated_at.astimezone():%Y-%m-%d %H:%M}"
-            count = f"{summary.messages} message" + (
-                "" if summary.messages == 1 else "s"
-            )
-            print(
-                f"  {mark} {clean_line(summary.id)}  {when}  {count}  "
-                f"{self._shown(summary.cwd)}  {clean_line(summary.title)}",
-                file=self._out,
-            )
+        for line in await session_lines(self._sessions, self._home):
+            print(f"  {line}", file=self._out)
         self._out.flush()
 
     async def _resume(self, session: str | None) -> None:
@@ -214,6 +202,24 @@ class Commands:
 
     def _say(self, text: str) -> None:
         print(f"  {text}", file=self._out, flush=True)
+
+
+async def session_lines(sessions: Sessions, home: Path) -> list[str]:
+    """The recent sessions of every directory, one per line, those of this
+    one marked with `*`; or `(no sessions)`."""
+    found = (await sessions.summaries())[:SESSIONS_SHOWN]
+    if not found:
+        return ["(no sessions)"]
+    lines = []
+    for summary in found:
+        mark = "*" if sessions.here(summary) else " "
+        when = f"{summary.updated_at.astimezone():%Y-%m-%d %H:%M}"
+        count = f"{summary.messages} message" + ("" if summary.messages == 1 else "s")
+        lines.append(
+            f"{mark} {clean_line(summary.id)}  {when}  {count}  "
+            f"{shown_dir(summary.cwd, home)}  {clean_line(summary.title)}"
+        )
+    return lines
 
 
 def resumed_notes(resumed: Resumed, cwd: str, home: Path) -> list[str]:
