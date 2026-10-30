@@ -1,6 +1,8 @@
 import json
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from email.utils import format_datetime
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +11,7 @@ import pytest
 import respx
 
 from mharness.adapters.models import OpenAIChatClient
-from mharness.adapters.models.openai_chat import TIMEOUT
+from mharness.adapters.models.openai_chat import TIMEOUT, retry_after
 from mharness.domain.errors import (
     ModelAuthError,
     ModelError,
@@ -17,6 +19,7 @@ from mharness.domain.errors import (
     ModelRequestError,
     ModelResponseError,
     ModelUnavailableError,
+    RetryableModelError,
 )
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import ModelRequest, StopReason, ToolSpec, Usage
@@ -471,6 +474,64 @@ async def test_http_errors_become_model_errors(
         await client.complete(ModelRequest(model="m", messages=CONVERSATION))
 
     assert str(raised.value) == f"HTTP {status}: Something failed"
+
+
+@pytest.mark.parametrize(
+    ("status", "header", "seconds"),
+    [
+        (429, "30", 30.0),
+        (503, "5", 5.0),
+        (429, None, None),
+        (429, "soon", None),
+        (429, "-3", None),
+    ],
+)
+@respx.mock
+async def test_retry_after_in_seconds_reaches_the_error(
+    client: OpenAIChatClient, status: int, header: str | None, seconds: float | None
+) -> None:
+    headers = {} if header is None else {"Retry-After": header}
+    respx.post(ENDPOINT).respond(status, headers=headers)
+
+    with pytest.raises(RetryableModelError) as raised:
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert raised.value.retry_after == seconds
+
+
+@respx.mock
+async def test_retry_after_as_a_date_is_the_seconds_until_it(
+    client: OpenAIChatClient,
+) -> None:
+    later = datetime.now(UTC) + timedelta(seconds=40)
+    respx.post(ENDPOINT).respond(
+        429, headers={"Retry-After": format_datetime(later, usegmt=True)}
+    )
+
+    with pytest.raises(ModelRateLimitError) as raised:
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert raised.value.retry_after is not None
+    # The header has whole seconds, and the test takes some time.
+    assert 35 < raised.value.retry_after <= 40
+
+
+@pytest.mark.parametrize(
+    ("header", "seconds"),
+    [
+        ("Wed, 30 Oct 2026 10:00:30 GMT", 30.0),
+        # Already past: no wait.
+        ("Wed, 30 Oct 2026 09:59:00 GMT", 0.0),
+        ("Wed, 30 Oct 2026 10:00:30", 30.0),
+        ("  12 ", 12.0),
+        ("1.5", None),
+        ("", None),
+    ],
+)
+def test_retry_after_is_read_against_now(header: str, seconds: float | None) -> None:
+    now = datetime(2026, 10, 30, 10, 0, 0, tzinfo=UTC)
+
+    assert retry_after(header, now) == seconds
 
 
 @respx.mock

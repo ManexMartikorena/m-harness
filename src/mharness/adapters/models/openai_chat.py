@@ -11,7 +11,9 @@ import asyncio
 import codecs
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from email.utils import parsedate_to_datetime
 from types import TracebackType
 from typing import Any, Self
 
@@ -239,11 +241,32 @@ class OpenAIChatClient:
         message = f"HTTP {status}: {detail}" if detail else f"HTTP {status}"
         if status in (401, 403):
             return ModelAuthError(message)
+        # When the provider can answer again; 429 and 503 often say it.
+        wait = retry_after(response.headers.get("retry-after"), datetime.now(UTC))
         if status == 429:
-            return ModelRateLimitError(message)
+            return ModelRateLimitError(message, retry_after=wait)
         if status >= 500:
-            return ModelUnavailableError(message)
+            return ModelUnavailableError(message, retry_after=wait)
         return ModelRequestError(message)
+
+
+def retry_after(value: str | None, now: datetime) -> float | None:
+    """The seconds a `Retry-After` header asks to wait: a whole number of
+    seconds, or an HTTP date (RFC 9110, §10.2.3); 0 if the date is past,
+    None if it says neither."""
+    if value is None:
+        return None
+    value = value.strip()
+    if value.isascii() and value.isdigit():
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except TypeError, ValueError:
+        return None
+    if when.tzinfo is None:
+        # An HTTP date is always in GMT, even if it does not say so.
+        when = when.replace(tzinfo=UTC)
+    return max((when - now).total_seconds(), 0.0)
 
 
 def _provider_message(response: httpx.Response) -> str | None:
