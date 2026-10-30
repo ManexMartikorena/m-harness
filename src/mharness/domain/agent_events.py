@@ -1,9 +1,9 @@
 """What the loop tells the terminal and the traces (DESIGN §5).
 
 Hito 4 implements these, hito 5 adds `ApprovalRequested`, hito 7
-`TurnStarted` and the cost (spec hito 7, §1.6), and hito 8 `ModelRetry`
-(spec hito 8, §1.14). There is no `AgentError`: errors are exceptions, and
-the trace records them from outside the loop.
+`TurnStarted` and the cost (spec hito 7, §1.6), and hito 8 `ModelRetry` and
+`ModelFallback` (spec hito 8, §1.14). There is no `AgentError`: errors are
+exceptions, and the trace records them from outside the loop.
 """
 
 from typing import Literal
@@ -84,6 +84,19 @@ class ModelRetry(BaseModel, frozen=True):
     error: str
 
 
+class ModelFallback(BaseModel, frozen=True):
+    """The retries of `model` ran out: the call is made with `fallback`,
+    and so is the rest of the turn; the next turn goes back to `model`
+    (spec hito 8, §1.14). Always told: a fallback must not hide a model
+    that keeps failing."""
+
+    type: Literal["model_fallback"] = "model_fallback"
+    model: str
+    fallback: str
+    # The last failure of `model`.
+    error: str
+
+
 class TurnFinished(BaseModel, frozen=True):
     """The turn ended and was kept in the history (after a timeout, only if
     a tool ran, as after Ctrl+C)."""
@@ -114,5 +127,6 @@ type AgentEvent = (
     | ToolFinished
     | ModelCallFinished
     | ModelRetry
+    | ModelFallback
     | TurnFinished
 )

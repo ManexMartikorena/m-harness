@@ -16,6 +16,7 @@ from mharness.domain.agent_events import (
     AgentEvent,
     ApprovalRequested,
     ModelCallFinished,
+    ModelFallback,
     ModelRetry,
     ToolCallProposed,
     ToolFinished,
@@ -65,6 +66,7 @@ def agent(
     limits: TurnLimits | None = None,
     retry: RetryPolicy = NO_RETRIES,
     sleep: Callable[[float], Awaitable[None]] | None = None,
+    fallback: str | None = None,
 ) -> Agent:
     registry = ToolRegistry(tools or [FakeTool()])
     # With no script, being asked fails the test.
@@ -79,6 +81,7 @@ def agent(
         # A failure in a script is one failure, unless a test says.
         retry=retry,
         sleep=sleep or asyncio.sleep,
+        fallback=fallback,
     )
 
 
@@ -1526,3 +1529,99 @@ async def test_ctrl_c_cuts_the_wait() -> None:
     with pytest.raises(asyncio.CancelledError):
         await task
     assert subject.messages == ()
+
+
+# The fallback model (spec hito 8, §1.14).
+FALLBACK = "glm-5.3"
+
+
+async def test_when_the_retries_run_out_the_fallback_answers() -> None:
+    down = ModelUnavailableError("HTTP 503")
+    fake = FakeModelClient([down] * 4 + [reply("Hola.", model=FALLBACK)])
+
+    events = await run(agent(fake, retry=RETRY, sleep=Waits(), fallback=FALLBACK))
+
+    switches = [event for event in events if isinstance(event, ModelFallback)]
+    assert switches == [ModelFallback(model=MODEL, fallback=FALLBACK, error="HTTP 503")]
+    assert [request.model for request in fake.requests] == [MODEL] * 4 + [FALLBACK]
+    finished = events[-1]
+    assert isinstance(finished, TurnFinished)
+    assert finished.reason == "end_turn"
+
+
+async def test_the_fallback_answers_the_rest_of_the_turn_and_not_the_next() -> None:
+    echo = FakeTool()
+    down = ModelRateLimitError("HTTP 429")
+    fake = FakeModelClient(
+        [down, tool_calls(call("c1")), reply("Hecho."), reply("Otra.")]
+    )
+    subject = agent(fake, echo, retry=NO_RETRIES, fallback=FALLBACK)
+
+    await run(subject)
+    await run(subject, "Otra vez")
+
+    assert [request.model for request in fake.requests] == [
+        MODEL,
+        FALLBACK,
+        FALLBACK,
+        MODEL,
+    ]
+    assert subject.model == MODEL
+
+
+async def test_the_fallback_has_its_own_retries() -> None:
+    down = ModelUnavailableError("down")
+    fake = FakeModelClient([down] * 8)
+    seen: list[AgentEvent] = []
+    subject = agent(fake, retry=RETRY, sleep=Waits(), fallback=FALLBACK)
+
+    async def consume() -> None:
+        async for event in subject.run("Hola"):
+            seen.append(event)
+
+    with pytest.raises(ModelUnavailableError):
+        await consume()
+
+    assert [(e.model, e.attempt) for e in retries(seen)] == [
+        (MODEL, 1),
+        (MODEL, 2),
+        (MODEL, 3),
+        (FALLBACK, 1),
+        (FALLBACK, 2),
+        (FALLBACK, 3),
+    ]
+    assert len(fake.requests) == 8
+
+
+async def test_what_repeating_does_not_fix_does_not_fall_back() -> None:
+    fake = FakeModelClient([ModelAuthError("HTTP 401")])
+
+    with pytest.raises(ModelAuthError):
+        await run(agent(fake, retry=NO_RETRIES, fallback=FALLBACK))
+
+    assert len(fake.requests) == 1
+
+
+async def test_a_fallback_that_is_the_model_in_use_is_not_one() -> None:
+    fake = FakeModelClient([ModelUnavailableError("down")])
+
+    with pytest.raises(ModelUnavailableError):
+        await run(agent(fake, retry=NO_RETRIES, fallback=MODEL))
+
+    assert len(fake.requests) == 1
+
+
+async def test_the_fallback_is_priced_as_itself() -> None:
+    usage = Usage(input_tokens=1_000_000, output_tokens=0)
+    # The provider names the model its own way: the price is the fallback's.
+    fake = FakeModelClient(
+        [ModelUnavailableError("down"), reply("Hola.", usage=usage, model="other")]
+    )
+    catalog = MemoryCatalog([priced(MODEL, "1", "1"), priced(FALLBACK, "2", "8")])
+    subject = agent(fake, retry=NO_RETRIES, fallback=FALLBACK, catalog=catalog)
+
+    events = await run(subject)
+
+    finished = events[-1]
+    assert isinstance(finished, TurnFinished)
+    assert finished.cost == Decimal("2")

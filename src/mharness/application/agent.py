@@ -23,6 +23,7 @@ from mharness.domain.agent_events import (
     AgentEvent,
     ApprovalRequested,
     ModelCallFinished,
+    ModelFallback,
     ModelRetry,
     ToolCallProposed,
     ToolFinished,
@@ -63,7 +64,8 @@ class Agent:
     call for `provider` (spec hito 7, §1.6). Each turn stops at its
     `limits` (spec hito 8, §1.1). A call that fails before its first event
     with an error that may pass is made again, as `retry` says, after
-    `sleep` (spec hito 8, §1.14).
+    `sleep`; when the retries run out, with the `fallback` model, which
+    then answers the rest of the turn (spec hito 8, §1.14).
     """
 
     def __init__(
@@ -79,6 +81,7 @@ class Agent:
         history: Sequence[Message] = (),
         retry: RetryPolicy | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        fallback: str | None = None,
     ) -> None:
         self._client = client
         self._tools = tools
@@ -90,6 +93,7 @@ class Agent:
         self.limits = limits or TurnLimits()
         self._retry = retry or RetryPolicy()
         self._sleep = sleep
+        self.fallback = fallback
         # A resumed session starts with its history (spec hito 6, §1.6); its
         # approvals do not come back (§1.9).
         self._messages: list[Message] = list(history)
@@ -129,6 +133,8 @@ class Agent:
         # Whether the model is writing the answer of this step.
         streaming = False
         step = 0
+        # The model of this turn: the fallback, once it takes over.
+        model = self.model
         # When the loop stops waiting (spec hito 8, §1.1).
         timeout = self.limits.timeout
         deadline = (
@@ -151,13 +157,15 @@ class Agent:
                     return
                 accumulator = Accumulator()
                 streaming = True
-                async with aclosing(self._call(turn)) as events:
+                async with aclosing(self._call(turn, model)) as events:
                     while True:
                         try:
                             event = await _within(anext(events), deadline)
                         except StopAsyncIteration:
                             break
-                        if isinstance(event, ModelRetry):
+                        if isinstance(event, ModelRetry | ModelFallback):
+                            if isinstance(event, ModelFallback):
+                                model = event.fallback
                             yield event
                             continue
                         accumulator.add(event)
@@ -166,7 +174,7 @@ class Agent:
                 streaming = False
                 response = accumulator.response()
                 usage += response.usage
-                call_cost = self._cost(response)
+                call_cost = self._cost(response, model)
                 turn_cost = add_cost(turn_cost, call_cost)
                 yield ModelCallFinished(
                     usage=response.usage, model=response.model, cost=call_cost
@@ -318,16 +326,18 @@ class Agent:
             raise
 
     async def _call(
-        self, turn: list[Message]
-    ) -> AsyncGenerator[ModelEvent | ModelRetry]:
-        """One call to the model, made again while it fails before its first
-        event with an error that may pass (spec hito 8, §1.14). Once an
+        self, turn: list[Message], model: str
+    ) -> AsyncGenerator[ModelEvent | ModelRetry | ModelFallback]:
+        """One call to `model`, made again while it fails before its first
+        event with an error that may pass, and then once more with the
+        fallback, with retries of its own (spec hito 8, §1.14). Once an
         event came, a failure goes up: that answer was already shown."""
         attempt = 0
         while True:
             began = False
             try:
-                async with aclosing(self._client.stream(self._request(turn))) as events:
+                request = self._request(turn, model)
+                async with aclosing(self._client.stream(request)) as events:
                     async for event in events:
                         began = True
                         yield event
@@ -337,18 +347,27 @@ class Agent:
                     raise
                 attempt += 1
                 delay = self._retry.delay(attempt, exc.retry_after)
-                if delay is None:
+                then: ModelRetry | ModelFallback
+                if delay is not None:
+                    then = ModelRetry(
+                        model=model,
+                        attempt=attempt,
+                        max_retries=self._retry.max_retries,
+                        delay=delay,
+                        error=str(exc),
+                    )
+                elif self.fallback is not None and self.fallback != model:
+                    then = ModelFallback(
+                        model=model, fallback=self.fallback, error=str(exc)
+                    )
+                else:
                     raise
-                retry = ModelRetry(
-                    model=self.model,
-                    attempt=attempt,
-                    max_retries=self._retry.max_retries,
-                    delay=delay,
-                    error=str(exc),
-                )
             # Out of the `except`: a Ctrl+C here is not "during" the error.
-            yield retry
-            await self._sleep(delay)
+            yield then
+            if isinstance(then, ModelFallback):
+                model, attempt = then.fallback, 0
+            else:
+                await self._sleep(then.delay)
 
     def _reached(
         self, usage: Usage, cost: Decimal | None
@@ -363,23 +382,23 @@ class Agent:
             return "max_cost"
         return None
 
-    def _cost(self, response: ModelResponse) -> Decimal | None:
+    def _cost(self, response: ModelResponse, model: str) -> Decimal | None:
         """What one call cost: as the provider says, if it does (exact also
         with prices by the hour or by tier); if not, at the catalog's prices
         of the model that answered, or, if it has none for that name, of the
         one asked (a provider may name it its own way)."""
         if response.cost is not None:
             return response.cost
-        for model in (response.model, self.model):
-            info = self._catalog.get(self._provider, model)
+        for name in (response.model, model):
+            info = self._catalog.get(self._provider, name)
             if info is not None and info.prices is not None:
                 return cost(response.usage, info.prices)
         return None
 
-    def _request(self, turn: list[Message]) -> ModelRequest:
+    def _request(self, turn: list[Message], model: str) -> ModelRequest:
         # No system prompt until hito 10 (spec hito 2, §1.5).
         return ModelRequest(
-            model=self.model,
+            model=model,
             messages=[*self._messages, *turn],
             tools=self._tools.specs(),
         )
