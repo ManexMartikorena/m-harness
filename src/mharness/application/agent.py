@@ -450,6 +450,12 @@ class Agent:
         if tool.permission == "effect" and request is None:
             # An effect always asks: without a request, it does not run.
             return _crash(call, "effect tool without an approval request")
+        if request is not None and request.tool != tool.name:
+            # The gate decides by the tool the request names: it has to be
+            # the one that runs (audit of hito 8).
+            return _crash(
+                call, f'approval request names "{request.tool}", not "{tool.name}"'
+            )
         return _Ready(tool=tool, params=params, request=request)
 
     async def _run(self, call: ToolCallBlock, ready: _Ready) -> _Outcome:
