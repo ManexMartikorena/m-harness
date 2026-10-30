@@ -174,12 +174,16 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
 
 def _stricter(user: _Limits, project: _Limits) -> TurnLimits:
     """Of each limit, the lower of the two files: a project can tighten the
-    user's limits, never loosen them."""
+    user's limits, never loosen them. What the user does not set is the
+    default, also for the project: 25 steps stay 25 (audit of hito 8)."""
+    defaults = TurnLimits()
     values: dict[str, Any] = {}
     for name in _Limits.model_fields:
-        set_to = [
-            v for v in (getattr(user, name), getattr(project, name)) if v is not None
-        ]
+        mine = getattr(user, name)
+        if mine is None:
+            mine = getattr(defaults, name)
+        theirs = getattr(project, name)
+        set_to = [value for value in (mine, theirs) if value is not None]
         if set_to:
             values[name] = min(set_to)
     return TurnLimits(**values)
