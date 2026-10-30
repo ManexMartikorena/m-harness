@@ -59,7 +59,7 @@ Monolito modular con arquitectura hexagonal (puertos y adaptadores):
 - **`ports`:** interfaces con el exterior (modelo, herramientas, comandos,
   aprobaciones, sesiones, trazas, catálogo).
 - **`application`:** casos de uso (el bucle, las sesiones, el resumen de
-  trazas).
+  trazas, las evals).
 - **`adapters`:** implementaciones reales (proveedores de modelos, ficheros,
   comandos, terminal).
 
@@ -83,6 +83,11 @@ debe. El detalle: [`DESIGN.md`](DESIGN.md); dónde está cada fichero:
   Ninguno se deja sin arreglar por decisión del agente.
 - **CI en cada PR:** lint, tipos estrictos, reglas de arquitectura, tests y
   escaneo de secretos. Sin el CI en verde, nada entra en `main`.
+- **Evals antes de cada merge** que toque el comportamiento del agente:
+  `maha eval` corre 20 tareas reales con dos modelos, 5 veces cada una, y
+  las compara con la última línea base (en [`evals/`](../evals/)). Una
+  regresión solo entra si el mantenedor lo decide, y queda anotado en la
+  spec. Las evals hacen llamadas reales: se lanzan en local, nunca en el CI.
 - **Un tag y una release por hito**, y auditorías independientes del código
   antes de cerrar.
 
@@ -97,7 +102,7 @@ debe. El detalle: [`DESIGN.md`](DESIGN.md); dónde está cada fichero:
 | 5 | Permisos y herramientas con efecto | ✅ `v0.5.0` (y `v0.5.1`, `v0.5.2`) |
 | 6 | Sesiones e historial | ✅ `v0.6.0` (y `v0.6.1`) |
 | 7 | Trazas y coste | ✅ `v0.7.0` |
-| 8 | Evals y modo no interactivo | 🚧 en curso |
+| 8 | Evals y modo no interactivo | ✅ `v0.8.0` |
 | 9 | Adaptador de Anthropic | ⬜ |
 | 10 | System prompt por capas | ⬜ |
 | 11 | Gestión del contexto | ⬜ |

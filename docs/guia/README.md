@@ -17,7 +17,7 @@ Cada nota se escribe en el mismo PR que cierra su hito.
 | 05 | [Permisos: el modelo propone, el código decide](05-permisos.md) | Escrita (hito 5, `v0.5.0`) |
 | 06 | [Historial y sesiones: el modelo no recuerda, el disco sí](06-historial.md) | Escrita (hito 6, `v0.6.0`) |
 | 07 | [Trazas y coste: lo que pasó y lo que costó](07-observabilidad.md) | Escrita (hito 7, `v0.7.0`) |
-| 08 | Cómo se evalúa un agente | Pendiente (hito 8) |
+| 08 | [Cómo se evalúa un agente](08-evals.md) | Escrita (hito 8, `v0.8.0`) |
 | 09 | En qué se diferencian los formatos de API | Pendiente (hito 9) |
 | 10 | El system prompt | Pendiente (hito 10) |
 | 11 | La ventana de contexto y la compactación | Pendiente (hito 11) |

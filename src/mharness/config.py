@@ -126,8 +126,10 @@ def state_dir(env: Mapping[str, str]) -> Path:
     return base / "maha"
 
 
-def load(*, cwd: Path, env: Mapping[str, str]) -> Settings:
-    """Read, validate and combine the configuration; raise `ConfigError`."""
+def load(*, cwd: Path, env: Mapping[str, str], need_key: bool = True) -> Settings:
+    """Read, validate and combine the configuration; raise `ConfigError`.
+    Without `need_key`, a missing key is no error: the commands that never
+    call the model do not need it (`maha sessions`, `stats`…)."""
     user_path = user_config_path(env)
     project_path = cwd / PROJECT_FILE
 
@@ -164,7 +166,7 @@ def load(*, cwd: Path, env: Mapping[str, str]) -> Settings:
         model=model,
         fallback_model=project.fallback_model or user.fallback_model,
         limits=_stricter(user.limits, project.limits),
-        api_key=_api_key(provider_name, provider, env),
+        api_key=_api_key(provider_name, provider, env, need=need_key),
     )
 
 
@@ -222,12 +224,14 @@ def _validate[T: BaseModel](model: type[T], data: dict[str, Any], path: Path) ->
 
 
 def _api_key(
-    name: str, provider: ProviderSettings, env: Mapping[str, str]
+    name: str, provider: ProviderSettings, env: Mapping[str, str], *, need: bool
 ) -> str | None:
     """The key, from the environment. `maha` never reads a `.env` file."""
     if provider.api_key_env is None:
         return None
     key = env.get(provider.api_key_env, "").strip()
+    if not key and not need:
+        return None
     if not key:
         raise ConfigError(
             f"{provider.api_key_env} is not set: it holds the key for provider "

@@ -1,7 +1,7 @@
 Estado: PROPUESTA (2026-10-27) → APROBADA (2026-10-27, por el humano: "la
 opción más profesional y que más valor aporte al producto final" para todas
 las dudas; con ese criterio cambian las dudas 3 y 4, y entran `--jobs` y los
-errores de infraestructura, §11)
+errores de infraestructura, §11) → IMPLEMENTADA (2026-10-30, `v0.8.0`)
 
 # Spec — Hito 8: Evals y modo no interactivo
 
@@ -791,6 +791,35 @@ agente:
    línea base. Alternativa: el orden de DESIGN (`-p` primero).
 
 ## 12. Aprendido al implementar
+
+### Cierre (`feature/hito-8-cierre`, 2026-10-30)
+
+PRs del hito: #90 (spec), #91 (PR 1), #92 (PR 2), #93 y #94 (estado), #95
+(PR 3), #96 (PR 4), #97 (PR 5) y el de cierre.
+
+47. **`/trace` decía `≥$0` sin ningún precio.** Era cierto y no decía nada;
+    ahora dice `cost unknown`, como `maha stats` dice `?` (decisión del
+    mantenedor, 2026-10-30, con su test).
+48. **Los subcomandos pedían la clave del proveedor.** `maha trace`, sin
+    `OPENCODE_API_KEY`, no arrancaba: la configuración la exigía siempre.
+    Ahora solo la piden la conversación, `-p` y `maha eval`, que llaman al
+    modelo (`config.load(need_key=)`). Encontrado en la verificación a
+    mano, y arreglado con su test.
+49. **Verificación a mano** (§7), 2026-10-30, por el agente. Los once
+    puntos, en verde:
+    - punto 1: `maha --version` → `maha 0.8.0`, y `maha --help` lista las
+      opciones y los siete subcomandos;
+    - puntos 2 a 8: en el PR 3 (§12.25), con OpenCode Go;
+    - punto 9: en el PR 4 (§12.35), con un servidor local que responde 503;
+    - punto 10: en el PR 5 (§12.46);
+    - punto 11: la primera línea base, en el PR 2 (§5).
+
+    Y de nuevo con OpenCode Go (`glm-5.3-flash`), en un directorio
+    desechable: `maha -p "¿Cuántas palabras tiene notas.txt?" --allow
+    read_file` → el modelo pidió `run_command`, se denegó y salió con 4;
+    `maha -c -p "Usa read_file…"` retomó la sesión, leyó el fichero y
+    respondió `3` con código 0; `maha trace` y `maha stats --days 1`
+    cuadran (`$0.0003`).
 
 ### PR 5 (`feature/hito-8-comandos`, 2026-10-30)
 

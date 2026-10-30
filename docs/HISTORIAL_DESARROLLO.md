@@ -9,6 +9,72 @@ Para cada hito, además: su spec en `docs/specs/` (decisiones, verificación
 a mano y "Aprendido al implementar"), su nota en `docs/guia/` y su release
 en GitHub.
 
+## Hito 8 (2026-10-27 a 2026-10-30)
+
+Lo más reciente primero.
+
+- **Hito 8 cerrado, 2026-10-30: `v0.8.0` — Evals y modo no interactivo.**
+  Spec IMPLEMENTADA con la verificación a mano (los once puntos de §7, en
+  verde) y la nota 08 de la guía. PRs: #90 (spec), #91, #92, #93 y #94
+  (estado), #95, #96, #97 y el de cierre. En el cierre, dos arreglos con
+  su test: `/trace` dice `cost unknown` en vez de `≥$0` cuando ningún turno
+  tiene precio (decisión del mantenedor), y los subcomandos que no llaman
+  al modelo ya no piden la clave del proveedor (encontrado en la
+  verificación a mano). 1690 tests, mypy, ruff e import-linter en verde.
+- **Hito 8, PR 5: comandos de línea, 2026-10-30** (PR #97): `maha models`,
+  `sessions` (y `delete`), `trace`, `stats`, `export` e `import`, y `/new` y
+  `/export` en la conversación; el error de `-r` sin id nombra `maha
+  sessions`. Verificado a mano. Sin evals: no cambia lo que mide la
+  batería (spec §5). Lo aprendido, en la spec §12.36–46.
+- **Decisión del mantenedor, 2026-10-30:** se aceptan las tres ⚠ de las
+  evals del PR 4 (el código nuevo no actuó; spec §5), y el PR se integra.
+- **Hito 8, PR 4: reintentos y respaldo, 2026-10-30** (PR #96): reintentos
+  ante 429 y 5xx (`RetryPolicy`, `Retry-After`) y modelo de respaldo
+  (`fallback_model`, `--fallback-model`), en la terminal, en `-p` y en la
+  traza. Verificado a mano con un servidor que responde 503. Evals:
+  `glm-5.3-flash` 95/100 (base 94), `kimi-k2.7-code` 99/100 (igual), con 0
+  reintentos en las 200 ejecuciones; tres ⚠ de glm (tareas 14, 16 y 20).
+  Spec §5 y §12.26–35.
+- **Revisión del PR #95, 2026-10-30:** un fallo, `--max-cost 0` junto a un
+  subcomando, arreglado con su test; e integrado.
+- **Hito 8, PR 3: modo no interactivo, 2026-10-28** (PR #95): `maha -p`
+  con `text`, `json` y `stream-json`, stdin, `-c`, `-r`, `-m`, `--allow`,
+  límites por opción y códigos de salida 0 a 4. Verificado a mano con
+  OpenCode Go. Sin evals: no cambia lo que mide la batería (spec §5). Lo
+  aprendido, en la spec §12.14–25.
+- **Hito 8, PR 2: evals, 2026-10-27** (PR #92): `maha eval`, 20 tareas
+  tras la decisión del mantenedor de añadir diez difíciles, y la primera
+  línea base: `glm-5.3-flash` 94/100, `kimi-k2.7-code` 99/100, 0,60 $ y 12
+  minutos por pasada completa; spec §5 y §12.
+- **Spec del hito 8 y su PR 1, 2026-10-27:** la spec
+  (`docs/specs/hito-8-evals-no-interactivo.md`, APROBADA, PR #90; las
+  dudas, respondidas con "la opción más profesional y que más valor
+  aporte", §11) y su PR 1, núcleo sin persona (#91: límites del turno,
+  `AllowList`, `run_once`).
+
+Después del hito 7 (2026-10-27, todo de documentación, decidido por el
+mantenedor):
+- **Segundo objetivo:** un producto profesional, lo más completo posible e
+  intuitivo (ANALISIS §4); la distribución pública entra en la 1.0.
+- **Plan ampliado** con la comparativa de OpenCode y Claude Code
+  (`docs/COMPARATIVA.md`): hitos ampliados, dos nuevos (12 deshacer, 18
+  hooks) y la 1.0 en el hito 23.
+- **El hito 21 es una TUI completa**, con OpenCode como referencia.
+- **Dos caras en GitHub:** `README.md` (inglés) y `README.es.md` como
+  producto; `docs/PROYECTO.md` como proyecto.
+- **ESTADO ordenado:** el historial pasa a `HISTORIAL_DESARROLLO.md`.
+- **GitHub ordenado:** descripción y temas del repositorio al día; un
+  milestone por hito, los 1 a 7 cerrados con sus PRs y los 8 a 23 abiertos
+  con su descripción (AGENTS.md: cada PR, al de su hito).
+
+**Pendientes resueltos en el hito 8** (estaban en "Con hito asignado" de
+ESTADO): en el PR 5, que el error de `-r` sin id nombre también `maha
+sessions` (spec 8, §12.22); en el PR 4, los reintentos ante 429 y 5xx
+(spec 7, §11); en el PR 3, `--continue`/`--resume` al arrancar (spec 6,
+§11); en el PR 1, los límites de tokens y de tiempo por turno (spec 4,
+§11; PR #91); y en el PR 2, las descripciones de las herramientas medidas
+en la línea base (spec 4, §5; PR #92).
+
 ## Hitos 1 a 7 (2026-10-19 a 2026-10-27)
 
 Lo más reciente primero.

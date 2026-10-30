@@ -500,6 +500,15 @@ async def test_trace_shows_each_turn_and_the_total() -> None:
     ) in out
 
 
+async def test_trace_without_any_price_says_the_cost_is_unknown() -> None:
+    # "≥$0" would be true and say nothing (revision of PR 5 of hito 8).
+    maha = Maha(MemorySessionStore(), [reply("Uno", usage=Usage(input_tokens=5))])
+
+    _, out, _ = await maha.run("A", "/trace", "/exit")
+
+    assert "  total: 5 in · 0 out · cost unknown\n" in out
+
+
 async def test_trace_before_any_turn_says_so() -> None:
     _, out, _ = await Maha(MemorySessionStore(), []).run("/trace", "/exit")
 
