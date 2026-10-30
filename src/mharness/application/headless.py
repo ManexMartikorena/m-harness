@@ -4,6 +4,7 @@
 so the evals measure exactly what `-p` does.
 """
 
+import re
 import time
 from collections.abc import Callable
 from contextlib import aclosing
@@ -55,6 +56,10 @@ class RunResult(BaseModel, frozen=True):
     error: str | None
 
 
+# The closing tag of the block, in any case and with spaces.
+_CLOSING = re.compile(r"</\s*(stdin\s*>)", re.IGNORECASE)
+
+
 def instruction(text: str, piped: str | None) -> str:
     """What `maha -p` asks (spec hito 8, §1.10): `text`, and below it what
     was piped, between delimiters, because it is data and not the user's
@@ -63,7 +68,8 @@ def instruction(text: str, piped: str | None) -> str:
         return text
     if not text.strip():
         return piped
-    data = piped.removesuffix("\n")
+    # What was piped cannot close its own block (audit of hito 8).
+    data = _CLOSING.sub(lambda found: "<\\/" + found.group(1), piped.removesuffix("\n"))
     return f"{text}\n\n<stdin>\n{data}\n</stdin>"
 
 
