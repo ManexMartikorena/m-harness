@@ -79,7 +79,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (config.ConfigError, CatalogError) as exc:
         return cli.fail(str(exc))
     if options.command == "eval":
-        return asyncio.run(_eval(settings, catalog, options))
+        try:
+            return asyncio.run(_eval(settings, catalog, options))
+        except KeyboardInterrupt:
+            # What finished is already in its runs.json (`_eval`).
+            return 130
     if options.command == "models":
         cli.models_report(
             catalog.models(),
@@ -284,14 +288,27 @@ async def _eval(
         flush=True,
     )
     evaluator = Evaluator(suite, open_run, LocalCommandRunner(), env)
-    runs = await evaluator.run(
-        tasks,
-        models,
-        repeat=options.repeat,
-        jobs=options.jobs,
-        retry_errors=options.retry_errors,
-        on_run=lambda run: print(cli.run_line(run), flush=True),
-    )
+    # As they end: Ctrl+C keeps them, with their paid calls (audit of hito 8).
+    done: list[TaskRun] = []
+
+    def on_run(run: TaskRun) -> None:
+        done.append(run)
+        print(cli.run_line(run), flush=True)
+
+    try:
+        runs = await evaluator.run(
+            tasks,
+            models,
+            repeat=options.repeat,
+            jobs=options.jobs,
+            retry_errors=options.retry_errors,
+            on_run=on_run,
+        )
+    except asyncio.CancelledError:
+        await asyncio.to_thread(_write_runs, run_dir / "runs.json", done)
+        kept = f"{len(done)} run" + ("" if len(done) == 1 else "s")
+        print(f"\ninterrupted: {kept} kept in {run_dir}", file=sys.stderr, flush=True)
+        raise
     regressed = cli.eval_report(runs, baselines, sys.stdout)
     # Every run in full: the report shows one line of a failure.
     await asyncio.to_thread(_write_runs, run_dir / "runs.json", runs)

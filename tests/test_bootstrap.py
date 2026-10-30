@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import os
+import signal
 import stat
 from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
@@ -1231,3 +1232,36 @@ def test_what_calls_the_model_still_needs_a_model(
     assert main(["-p", "Hola"]) == 1
 
     assert "no model configured" in capsys.readouterr().err
+
+
+def test_ctrl_c_in_eval_keeps_the_runs_that_finished(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Audit of hito 8: Ctrl+C lost every run, paid calls included, behind a
+    # Python traceback.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    calls = 0
+
+    def answer(request: httpx.Request) -> respx.MockResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            # As a person pressing Ctrl+C during the second run.
+            os.kill(os.getpid(), signal.SIGINT)
+        return sse_response(streamed("Es la 1.4.2.", 1000, 10))
+
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(side_effect=answer)
+
+        code = main(["eval", "--tasks", str(evals), "--repeat", "2", "--jobs", "1"])
+
+    assert code == 130
+    err = capsys.readouterr().err
+    assert "interrupted: 1 run kept in " in err
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    [kept] = json.loads((folder / "runs.json").read_text())
+    assert (kept["attempt"], kept["outcome"]) == (1, "pass")
