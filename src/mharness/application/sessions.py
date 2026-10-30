@@ -456,9 +456,11 @@ class Sessions:
         """The directory where this maha runs, and its tools work."""
         return self._origin.cwd
 
-    async def start(self) -> Conversation:
-        """A new conversation; its session is created with the first turn."""
-        return Conversation(self._store, self._new_agent(self._model, ()), self._origin)
+    async def start(self, model: str | None = None) -> Conversation:
+        """A new conversation, with `model` or the configured one; its
+        session is created with the first turn."""
+        agent = self._new_agent(model or self._model, ())
+        return Conversation(self._store, agent, self._origin)
 
     async def open(self, start: Start | None = None) -> Opened:
         """The first conversation of this maha: a new one, or a session
@@ -466,9 +468,7 @@ class Sessions:
         resumed."""
         start = start or Start()
         if not start.last and start.session is None:
-            model = start.model or self._model
-            agent = self._new_agent(model, ())
-            return Opened(Conversation(self._store, agent, self._origin))
+            return Opened(await self.start(start.model))
         resumed = await self.resume(start.session, current=await self.start())
         conversation = resumed.conversation
         if start.model is not None and start.model != conversation.model:

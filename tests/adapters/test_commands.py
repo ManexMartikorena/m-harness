@@ -79,6 +79,7 @@ def test_the_known_commands() -> None:
         "delete",
         "model",
         "trace",
+        "new",
         "export",
         "help",
         "exit",
@@ -620,3 +621,32 @@ async def test_export_before_the_first_turn_has_nothing(tmp_path: Path) -> None:
 
     assert "  (nothing to export yet)\n" in out
     assert os.listdir(tmp_path) == []
+
+
+# /new (spec hito 8, §1.15).
+
+
+async def test_new_starts_another_session_with_the_same_model() -> None:
+    store = MemorySessionStore()
+    maha = Maha(store, [reply("Uno."), reply("Dos.")])
+
+    _, out, err = await maha.run("Hola", "/model kimi-k3", "/new", "Otra", "/exit")
+
+    assert err == ""
+    assert "  [new session]\n" in out
+    assert sorted(store.sessions) == [FIRST, "20261026-091502-b01c"]
+    second = await store.read("20261026-091502-b01c")
+    assert [m.text for m in second.messages] == ["Otra", "Dos."]
+    # The new session forgets the first: only its own turn goes.
+    assert [m.text for m in maha.fake.requests[-1].messages] == ["Otra"]
+    assert maha.fake.requests[-1].model == "kimi-k3"
+
+
+async def test_new_before_any_turn_leaves_nothing_behind() -> None:
+    store = MemorySessionStore()
+    maha = Maha(store, [])
+
+    _, out, _ = await maha.run("/new", "/exit")
+
+    assert "  [new session]\n" in out
+    assert store.sessions == {}

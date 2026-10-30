@@ -29,6 +29,7 @@ COMMANDS = {
     "delete": "/delete ID — delete a session",
     "model": "/model [ID] — show the model, or change it",
     "trace": "/trace [ID] — what a session did and cost; without ID, this one",
+    "new": "/new — a new session, with the same model",
     "export": "/export [FILE] — this conversation in Markdown; by default, ID.md",
     "help": "/help — this list",
     "exit": "/exit — quit",
@@ -103,6 +104,8 @@ class Commands:
                     await self._model(command.argument)
                 case "export":
                     await self._export(command.argument)
+                case "new":
+                    await self._new()
                 case _:
                     self._say(f"unknown command: /{command.name} (see /help)")
         except (SessionError, TraceError) as exc:
@@ -143,15 +146,7 @@ class Commands:
                 raise SessionNotFound(f"{exc} (see /sessions)") from None
             raise
         self.conversation = resumed.conversation
-        if resumed.left_unsaved is not None:
-            # Without id: its session could not even be created.
-            what = f"session {clean_line(left)}" if left else "the conversation"
-            print(
-                f"warning: {what} was not saved, its last turns are lost: "
-                f"{clean(resumed.left_unsaved)}",
-                file=self._err,
-                flush=True,
-            )
+        self._warn_lost(left, resumed.left_unsaved)
         self.tell_resumed(resumed)
 
     def tell_resumed(self, resumed: Resumed) -> None:
@@ -201,6 +196,30 @@ class Commands:
         report = await self._sessions.trace(session, current=self.conversation)
         for line in trace_lines(report, self._home):
             self._say(line)
+
+    async def _new(self) -> None:
+        """A new session without leaving maha (spec hito 8, §1.15). The
+        model chosen with /model stays: it is this maha's choice."""
+        old = self.conversation
+        left = old.id if old.stored else None
+        fresh = await self._sessions.start(old.model)
+        # The new one is ready: only now is the current one let go.
+        await old.close()
+        self.conversation = fresh
+        self._warn_lost(left, old.unsaved)
+        self._say("[new session]")
+
+    def _warn_lost(self, left: str | None, unsaved: str | None) -> None:
+        """The session left behind could not save its last turns."""
+        if unsaved is None:
+            return
+        # Without id: its session could not even be created.
+        what = f"session {clean_line(left)}" if left else "the conversation"
+        print(
+            f"warning: {what} was not saved, its last turns are lost: {clean(unsaved)}",
+            file=self._err,
+            flush=True,
+        )
 
     async def _export(self, file: str | None) -> None:
         """This conversation in Markdown, to `file` or to `ID.md`, next to
