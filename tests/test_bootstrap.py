@@ -1081,3 +1081,31 @@ def test_trace_shows_the_last_session_here_or_one_by_id(
 
     assert main(["trace", session]) == 0
     assert capsys.readouterr().out == out
+
+
+@respx.mock
+def test_stats_adds_up_the_calls_of_every_session(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    a_print_session(stdin)
+    a_print_session(stdin)
+
+    assert main(["stats", "--days", "1"]) == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].split() == ["day", "model", "calls", "in", "out", "cost"]
+    assert lines[1].split()[1:5] == ["glm-5.3-flash", "2", "2", "2"]
+    assert lines[-1].split()[:4] == ["total", "2", "2", "2"]
+
+
+def test_stats_without_traces_says_so(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+
+    assert main(["stats"]) == 0
+
+    assert capsys.readouterr().out == "(no calls to a model in the traces)\n"

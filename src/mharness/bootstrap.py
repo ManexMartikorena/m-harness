@@ -15,7 +15,7 @@ import subprocess
 import sys
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -83,6 +83,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             out=sys.stdout,
         )
         return 0
+    if options.command == "stats":
+        return asyncio.run(
+            cli.show_stats(
+                JsonlTraceSink(data / "traces"),
+                days=options.days,
+                today=date.today(),
+                out=sys.stdout,
+                err=sys.stderr,
+            )
+        )
     if options.command in ("sessions", "trace"):
         return asyncio.run(_sessions_command(settings, catalog, data, options))
     settings = _with_options(settings, options)

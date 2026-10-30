@@ -1,16 +1,18 @@
 """The `maha` subcommands over sessions and traces (spec hito 8, §1.15)."""
 
 import io
+from datetime import timedelta
 from pathlib import Path
 
 from mharness.adapters.cli.subcommands import (
     delete_session,
     list_sessions,
+    show_stats,
     show_trace,
 )
 from tests.fakes.model import FakeModelClient, reply
 from tests.fakes.sessions import MemorySessionStore
-from tests.unit.test_sessions import FIRST, World, turn
+from tests.unit.test_sessions import FIRST, NOW, World, turn
 
 HOME = Path("/home/ana")
 
@@ -98,3 +100,18 @@ async def test_trace_without_sessions_here_fails() -> None:
 
     assert (code, out.getvalue()) == (1, "")
     assert err.getvalue() == "error: no session in this directory\n"
+
+
+async def test_stats_counts_back_from_today() -> None:
+    world = await with_a_session("Hola.")
+    out, err = io.StringIO(), io.StringIO()
+    day = NOW.astimezone().date()
+
+    await show_stats(world.traces, days=1, today=day, out=out, err=err)
+    assert out.getvalue().splitlines()[1].startswith(f"{day:%Y-%m-%d}  fake-model")
+
+    out = io.StringIO()
+    await show_stats(
+        world.traces, days=1, today=day + timedelta(days=1), out=out, err=err
+    )
+    assert out.getvalue() == "(no calls to a model today)\n"

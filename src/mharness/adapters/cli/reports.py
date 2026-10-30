@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import TextIO
 
 from mharness.adapters.cli.text import clean_line, usd
+from mharness.application.stats import DayModel
 from mharness.domain.catalog import ModelInfo
 from mharness.domain.evals import Baseline, Stats, TaskRun, by_task, compare, stats
 
@@ -167,3 +168,53 @@ def _per_million(price: Decimal) -> str:
     text = format(price.normalize(), "f")
     whole, _, decimals = text.partition(".")
     return f"{whole}.{decimals.ljust(2, '0')}"
+
+
+def stats_report(rows: Sequence[DayModel], *, days: int | None, out: TextIO) -> None:
+    """`maha stats`: a row per day and model, and the total. A cost with
+    calls of no price is a minimum (≥); with none priced, unknown (?)."""
+    if not rows:
+        if days is None:
+            when = "in the traces"
+        else:
+            when = "today" if days == 1 else f"in the last {days} days"
+        print(f"(no calls to a model {when})", file=out)
+        return
+    table = [
+        [
+            f"{row.day:%Y-%m-%d}",
+            clean_line(row.model),
+            str(row.calls),
+            str(row.usage.input_tokens),
+            str(row.usage.output_tokens),
+            _cost(row.cost, row.calls, row.uncosted),
+        ]
+        for row in rows
+    ]
+    calls = sum(row.calls for row in rows)
+    total = [
+        "total",
+        "",
+        str(calls),
+        str(sum(row.usage.input_tokens for row in rows)),
+        str(sum(row.usage.output_tokens for row in rows)),
+        _cost(
+            sum((row.cost for row in rows), Decimal(0)),
+            calls,
+            sum(row.uncosted for row in rows),
+        ),
+    ]
+    head = ["day", "model", "calls", "in", "out", "cost"]
+    lines = [head, *table, total]
+    widths = [max(len(line[i]) for line in lines) for i in range(5)]
+    # Two spaces between the columns, three after the model.
+    widths = [widths[0] + 2, widths[1] + 3, *(width + 2 for width in widths[2:])]
+    for line in lines:
+        cells = [cell.ljust(width) for cell, width in zip(line, widths, strict=False)]
+        print("".join([*cells, line[5]]), file=out)
+
+
+def _cost(amount: Decimal, calls: int, uncosted: int) -> str:
+    if uncosted == calls:
+        return "?"
+    return ("≥" if uncosted else "") + usd(amount)

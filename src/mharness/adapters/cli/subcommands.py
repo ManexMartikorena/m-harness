@@ -1,5 +1,6 @@
 """The `maha` subcommands over the sessions and their traces (spec hito 8,
-§1.15): what /sessions, /delete and /trace do, from the shell.
+§1.15): what /sessions, /delete and /trace do, from the shell, and the
+cost of every session.
 
 ```
 $ maha sessions
@@ -11,14 +12,18 @@ deleted 20261030-101500-3fa2
 Each returns the exit code: 0, or 1 with the error on stderr.
 """
 
+from datetime import date, timedelta
 from pathlib import Path
 from typing import TextIO
 
 from mharness.adapters.cli.commands import session_lines, trace_lines
+from mharness.adapters.cli.reports import stats_report
 from mharness.adapters.cli.text import clean, clean_line
 from mharness.application.sessions import Sessions
+from mharness.application.stats import daily
 from mharness.domain.session import SessionError
 from mharness.domain.trace import TraceError
+from mharness.ports.tracing import TraceSink
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -62,6 +67,20 @@ async def show_trace(
         await current.close()
     for line in trace_lines(report, home):
         print(line, file=out)
+    return EXIT_OK
+
+
+async def show_stats(
+    traces: TraceSink, *, days: int | None, today: date, out: TextIO, err: TextIO
+) -> int:
+    """`maha stats [--days N]`: cost and tokens by day and model; with
+    `days`, only the last ones, today included."""
+    since = None if days is None else today - timedelta(days=days - 1)
+    try:
+        rows = await daily(traces, since=since)
+    except TraceError as exc:
+        return _fail(exc, err)
+    stats_report(rows, days=days, out=out)
     return EXIT_OK
 
 

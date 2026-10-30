@@ -373,3 +373,20 @@ def test_trace_takes_an_optional_id() -> None:
     options = parse(["trace", "20261030-101500-3fa2"])
     assert isinstance(options, argparse.Namespace)
     assert options.id == "20261030-101500-3fa2"
+
+
+def test_stats_takes_the_days() -> None:
+    options = parse(["stats"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.command, options.days) == ("stats", None)
+
+    options = parse(["stats", "--days", "7"])
+    assert isinstance(options, argparse.Namespace)
+    assert options.days == 7
+
+
+def test_stats_needs_a_positive_number_of_days(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert parse(["stats", "--days", "0"]) == 2
+    assert "must be 1 or more" in capsys.readouterr().err

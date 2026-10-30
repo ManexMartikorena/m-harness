@@ -47,6 +47,7 @@ def build_parser(tools: Sequence[str]) -> argparse.ArgumentParser:
     _models_parser(commands)
     _sessions_parser(commands)
     _trace_parser(commands)
+    _stats_parser(commands)
     return parser
 
 
@@ -208,6 +209,22 @@ def _trace_parser(commands: Any) -> None:
         nargs="?",
         metavar="ID",
         help="the session (default: the last one of this directory)",
+    )
+
+
+def _stats_parser(commands: Any) -> None:
+    """`maha stats [--days N]` (spec hito 8, §1.15)."""
+    stats = commands.add_parser(
+        "stats",
+        help="cost and tokens by day and model",
+        description="Cost and tokens of every call to a model, by day and "
+        "model, from the traces of every session.",
+    )
+    stats.add_argument(
+        "--days",
+        type=_positive,
+        metavar="N",
+        help="only the last N days, today included",
     )
 
 
