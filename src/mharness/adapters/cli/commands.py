@@ -347,11 +347,12 @@ def _summary_lines(summary: TraceSummary) -> list[str]:
     ]
     lines += [_turn_line(turn) for turn in summary.turns]
     usage = summary.usage
-    at_least = "≥" if summary.uncosted_turns else ""
-    lines.append(
-        f"total: {usage.input_tokens} in · {usage.output_tokens} out · "
-        f"{at_least}{usd(summary.cost)}"
-    )
+    if summary.uncosted_turns == len(summary.turns):
+        # No turn has a price: "≥$0" would be true and say nothing.
+        cost = "cost unknown"
+    else:
+        cost = ("≥" if summary.uncosted_turns else "") + usd(summary.cost)
+    lines.append(f"total: {usage.input_tokens} in · {usage.output_tokens} out · {cost}")
     return lines
 
 
