@@ -9,7 +9,12 @@ from typing import TextIO
 from mharness.adapters.cli.input import Discard, ReadLine
 from mharness.adapters.cli.spinner import use_color
 from mharness.adapters.cli.text import clean, clean_line, usd
-from mharness.application.sessions import Conversation, Resumed, Sessions
+from mharness.application.sessions import (
+    Conversation,
+    Resumed,
+    Sessions,
+    TraceReport,
+)
 from mharness.application.traces import TraceSummary, TurnSummary
 from mharness.domain.session import SessionError, SessionNotFound
 from mharness.domain.trace import TraceError
@@ -189,13 +194,8 @@ class Commands:
         """A row per turn and the total; the detail, in the file (spec hito
         7, §1.9). Everything that comes from the disk is escaped."""
         report = await self._sessions.trace(session, current=self.conversation)
-        summary = report.summary
-        if not summary.turns:
-            self._say("(no turns in the trace)")
-        else:
-            for line in _summary_lines(summary):
-                self._say(line)
-        self._say(f"[trace: {self._shown(report.location)}]")
+        for line in trace_lines(report, self._home):
+            self._say(line)
 
     def _shown(self, cwd: str) -> str:
         return shown_dir(cwd, self._home)
@@ -277,6 +277,13 @@ def warn_unsaved(conversation: Conversation, err: TextIO) -> None:
     if conversation.unsaved is not None:
         reason = clean(conversation.unsaved)
         print(f"warning: session not saved: {reason}", file=err, flush=True)
+
+
+def trace_lines(report: TraceReport, home: Path) -> list[str]:
+    """A row per turn, the total and where the whole trace is."""
+    summary = report.summary
+    lines = _summary_lines(summary) if summary.turns else ["(no turns in the trace)"]
+    return [*lines, f"[trace: {shown_dir(report.location, home)}]"]
 
 
 def _summary_lines(summary: TraceSummary) -> list[str]:
