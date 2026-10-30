@@ -360,3 +360,21 @@ async def test_a_folder_blocked_by_a_file_is_not_a_taken_id(tmp_path: Path) -> N
         await JsonlTraceSink(blocked).open(SESSION, new=True)
 
     assert not isinstance(caught.value, TraceExists)
+
+
+async def test_sessions_lists_every_trace_and_nothing_else(folder: Path) -> None:
+    sink = JsonlTraceSink(folder)
+    for session in (SESSION, "20261027-101500-b01c"):
+        log = await sink.open(session)
+        await log.close()
+    (folder / "notes.jsonl").write_text("", encoding="utf-8")
+    (folder / f"{SESSION}.txt").write_text("", encoding="utf-8")
+
+    assert sorted(await sink.sessions()) == [
+        "20261027-091502-3fa2",
+        "20261027-101500-b01c",
+    ]
+
+
+async def test_sessions_without_a_folder_is_none(folder: Path) -> None:
+    assert await JsonlTraceSink(folder).sessions() == []

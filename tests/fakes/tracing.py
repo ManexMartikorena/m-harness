@@ -92,6 +92,9 @@ class MemoryTraceSink:
         _check(session)
         self.traces.pop(session, None)
 
+    async def sessions(self) -> list[str]:
+        return list(self.traces)
+
     def location(self, session: str) -> str:
         _check(session)
         return f"/traces/{session}.jsonl"
