@@ -163,3 +163,18 @@ async def test_a_broken_baseline_is_an_error(tmp_path: Path) -> None:
 
     with pytest.raises(EvalError, match=r"2026-10-27-x\.json"):
         await TomlEvalSuite(tmp_path).baseline("opencode-go", "glm-5.3-flash")
+
+
+async def test_of_two_baselines_of_one_day_the_last_saved_wins(
+    tmp_path: Path,
+) -> None:
+    # Audit of hito 8: "…-flash.json" sorts after "…-flash-2.json", and the
+    # first of the day always won.
+    suite = TomlEvalSuite(tmp_path)
+    for commit in ("first", "second", "third"):
+        await suite.save(baseline(27).model_copy(update={"commit": commit}))
+
+    latest = await suite.baseline("opencode-go", "glm-5.3-flash")
+
+    assert latest is not None
+    assert latest.commit == "third"
