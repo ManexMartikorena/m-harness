@@ -78,6 +78,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         data = config.data_dir(os.environ)
     except (config.ConfigError, CatalogError) as exc:
         return cli.fail(str(exc))
+    try:
+        code = _dispatch(options, settings, catalog, data)
+        # Inside: Python's own last flush would print "Exception ignored".
+        sys.stdout.flush()
+    except BrokenPipeError:
+        # Nobody reads stdout any more (`maha export ID | head -1`): quiet,
+        # as `maha -p` (audit of hito 8).
+        cli.drop_output(sys.stdout)
+        return 1
+    return code
+
+
+def _dispatch(
+    options: argparse.Namespace,
+    settings: config.Settings,
+    catalog: ModelCatalog,
+    data: Path,
+) -> int:
+    """Run the command the line asks for; return its exit code."""
     if options.command == "eval":
         try:
             return asyncio.run(_eval(settings, catalog, options))

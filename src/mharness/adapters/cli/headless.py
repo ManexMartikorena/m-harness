@@ -116,7 +116,7 @@ async def print_mode(
     except BrokenPipeError:
         # Nobody reads stdout any more (`maha -p … | head -1`): what is left
         # is dropped, as is Python's last flush, which would print a trace.
-        _drop(out)
+        drop_output(out)
         return EXIT_ERROR
     finally:
         for number in (signal.SIGINT, *CLOSING):
@@ -301,8 +301,9 @@ class _Progress:
                 err.flush()
 
 
-def _drop(out: TextIO) -> None:
-    """Point `out` at /dev/null, if it has a descriptor."""
+def drop_output(out: TextIO) -> None:
+    """Point `out` at /dev/null, if it has a descriptor: what is left is
+    dropped, and so is Python's last flush, which would print a trace."""
     try:
         fd = out.fileno()
         devnull = os.open(os.devnull, os.O_WRONLY)
