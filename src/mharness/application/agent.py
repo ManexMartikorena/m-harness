@@ -305,7 +305,8 @@ class Agent:
                 reason="timeout",
                 usage=usage,
                 tool_calls=calls_run,
-                steps=step,
+                # The call cut while it answered did not end.
+                steps=step - 1 if streaming else step,
                 cost=turn_cost,
             )
         except BaseException as exc:

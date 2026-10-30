@@ -1258,8 +1258,10 @@ async def test_the_time_limit_while_the_model_answers_keeps_nothing_new() -> Non
 
     events = await run(subject)
 
+    # No call to the model ended: 0 steps, as `run_once()` and /trace count
+    # them (audit of hito 8).
     assert events[-1] == TurnFinished(
-        reason="timeout", usage=Usage(), tool_calls=0, steps=1, cost=Decimal(0)
+        reason="timeout", usage=Usage(), tool_calls=0, steps=0, cost=Decimal(0)
     )
     # Nothing ran: the user writes again, as after Ctrl+C. The half answer
     # is not kept: its mark would say the user cut it.
