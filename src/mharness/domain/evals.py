@@ -223,13 +223,20 @@ def combine(parts: Sequence[Stats]) -> Stats:
 def compare(current: dict[str, Stats], baseline: Baseline) -> list[str]:
     """The regressions of `current` against `baseline`, over the tasks both
     have (spec hito 8, §1.8): a task that passed every time and now fails,
-    a lower success rate, or 20 % more cost or steps on average. Empty if
-    none."""
+    a lower success rate, or 20 % more cost or steps on average; also a
+    task where no run finished, and a cost that can no longer be compared
+    (audit of hito 8). Empty if none."""
     common = [task for task in current if task in baseline.tasks]
     found = []
     for task in common:
         before, now = baseline.tasks[task], current[task]
         always = before.finished and before.passes == before.finished
+        if before.finished and now.runs and not now.finished:
+            # Nothing to compare: what broke may be the change itself.
+            found.append(
+                f"{task}: no run finished, every one was a provider error "
+                f"({now.errors}/{now.runs})"
+            )
         if always and now.finished and now.passes < now.finished:
             found.append(
                 f"{task}: passed every time in the baseline, "
@@ -246,6 +253,11 @@ def compare(current: dict[str, Stats], baseline: Baseline) -> list[str]:
     ):
         found.append(
             f"success rate: {before.success:.0%} in the baseline, now {now.success:.0%}"
+        )
+    if before.cost and now.cost is None and now.finished:
+        found.append(
+            f"cost per run: unknown now (a run had no price), "
+            f"${before.cost:.4f} in the baseline"
         )
     if before.cost and now.cost is not None and now.cost > before.cost * (1 + WORSE_BY):
         found.append(
