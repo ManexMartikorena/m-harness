@@ -9,7 +9,7 @@ from typing import TextIO
 from mharness.adapters.cli.input import Discard, ReadLine
 from mharness.adapters.cli.spinner import use_color
 from mharness.adapters.cli.text import clean, clean_line, usd
-from mharness.application.sessions import Conversation, Sessions
+from mharness.application.sessions import Conversation, Resumed, Sessions
 from mharness.application.traces import TraceSummary, TurnSummary
 from mharness.domain.session import SessionError, SessionNotFound
 from mharness.domain.trace import TraceError
@@ -25,6 +25,9 @@ COMMANDS = {
     "help": "/help — this list",
     "exit": "/exit — quit",
 }
+# What the catalog says of a model (spec hito 7, §1.10).
+NOT_IN_CATALOG = "[model not in the catalog: cost only if the provider reports it]"
+TRAINS_ON_DATA = "[warning: this model may use your data for training]"
 # /sessions shows the most recent ones.
 SESSIONS_SHOWN = 20
 # "/" and lowercase letters, as the first word: "/etc/hosts …" is text.
@@ -102,34 +105,19 @@ class Commands:
         self.warn_unsaved()
 
     def note_model(self) -> None:
-        """What the catalog says of the model in use (spec hito 7, §1.10):
-        not in it, or it may train on the data (ANALISIS §9). The model is
-        used anyway: a new one may not be in the catalog yet."""
-        info = self._catalog.get(self._provider, self.conversation.model)
-        if info is None:
-            self._say(
-                "[model not in the catalog: cost only if the provider reports it]"
-            )
-        elif info.trains_on_data:
-            warning = "[warning: this model may use your data for training]"
-            if use_color() and self._out.isatty():
-                warning = f"\x1b[33m{warning}\x1b[0m"
-            self._say(warning)
+        """What the catalog says of the model in use (spec hito 7, §1.10)."""
+        note = model_note(self._catalog, self._provider, self.conversation.model)
+        if note is None:
+            return
+        if note == TRAINS_ON_DATA and use_color() and self._out.isatty():
+            note = f"\x1b[33m{note}\x1b[0m"
+        self._say(note)
 
     def warn_trace(self) -> None:
-        """A trace that fails does not stop maha: it is said, once (spec
-        hito 7, §1.7)."""
-        reason = self.conversation.trace_warning()
-        if reason is not None:
-            print(
-                f"warning: trace not saved: {clean(reason)}", file=self._err, flush=True
-            )
+        warn_trace(self.conversation, self._err)
 
     def warn_unsaved(self) -> None:
-        """A failed save does not stop maha: it is said (spec hito 6, §1.6)."""
-        if self.conversation.unsaved is not None:
-            reason = clean(self.conversation.unsaved)
-            print(f"warning: session not saved: {reason}", file=self._err, flush=True)
+        warn_unsaved(self.conversation, self._err)
 
     async def _list(self) -> None:
         found = (await self._sessions.summaries())[:SESSIONS_SHOWN]
@@ -166,23 +154,12 @@ class Commands:
                 file=self._err,
                 flush=True,
             )
-        self._say(
-            f"[resumed {clean_line(resumed.conversation.id or '')} · "
-            f"{resumed.messages} messages · {clean_line(resumed.conversation.model)}]"
-        )
-        if resumed.other_cwd is not None:
-            here = self._shown(self._sessions.cwd)
-            self._say(
-                f"[this session was in {self._shown(resumed.other_cwd)}; "
-                f"tools work in {here}]"
-            )
-        if resumed.fallback_from is not None:
-            self._say(
-                f"[model {clean_line(resumed.fallback_from)} is of another provider; "
-                f"using {clean_line(resumed.conversation.model)}]"
-            )
-        if resumed.interrupted:
-            self._say("[the last answer was interrupted]")
+        self.tell_resumed(resumed)
+
+    def tell_resumed(self, resumed: Resumed) -> None:
+        """What the person should know of the session just resumed."""
+        for note in resumed_notes(resumed, self._sessions.cwd, self._home):
+            self._say(note)
         self.note_model()
 
     async def _delete(self, session: str | None) -> None:
@@ -233,15 +210,67 @@ class Commands:
         self._say(f"[trace: {self._shown(report.location)}]")
 
     def _shown(self, cwd: str) -> str:
-        """A directory, with `~` for the home, clean."""
-        path = PurePath(cwd)
-        if path.is_relative_to(self._home):
-            relative = path.relative_to(self._home)
-            return clean_line("~" if relative == PurePath() else f"~/{relative}")
-        return clean_line(cwd)
+        return shown_dir(cwd, self._home)
 
     def _say(self, text: str) -> None:
         print(f"  {text}", file=self._out, flush=True)
+
+
+def resumed_notes(resumed: Resumed, cwd: str, home: Path) -> list[str]:
+    """`[resumed …]`, and where the session was and which model it had if
+    that is not what is used now. `cwd` is where the tools work."""
+    conversation = resumed.conversation
+    notes = [
+        f"[resumed {clean_line(conversation.id)} · "
+        f"{resumed.messages} messages · {clean_line(conversation.model)}]"
+    ]
+    if resumed.other_cwd is not None:
+        notes.append(
+            f"[this session was in {shown_dir(resumed.other_cwd, home)}; "
+            f"tools work in {shown_dir(cwd, home)}]"
+        )
+    if resumed.fallback_from is not None:
+        notes.append(
+            f"[model {clean_line(resumed.fallback_from)} is of another provider; "
+            f"using {clean_line(conversation.model)}]"
+        )
+    if resumed.interrupted:
+        notes.append("[the last answer was interrupted]")
+    return notes
+
+
+def shown_dir(cwd: str, home: Path) -> str:
+    """A directory, with `~` for the home, clean."""
+    path = PurePath(cwd)
+    if path.is_relative_to(home):
+        relative = path.relative_to(home)
+        return clean_line("~" if relative == PurePath() else f"~/{relative}")
+    return clean_line(cwd)
+
+
+def model_note(catalog: ModelCatalog, provider: str, model: str) -> str | None:
+    """What the catalog says of `model`: not in it, or it may train on the
+    data (ANALISIS §9). The model is used anyway: a new one may not be in
+    the catalog yet."""
+    info = catalog.get(provider, model)
+    if info is None:
+        return NOT_IN_CATALOG
+    return TRAINS_ON_DATA if info.trains_on_data else None
+
+
+def warn_trace(conversation: Conversation, err: TextIO) -> None:
+    """A trace that fails does not stop maha: it is said, once (spec hito
+    7, §1.7)."""
+    reason = conversation.trace_warning()
+    if reason is not None:
+        print(f"warning: trace not saved: {clean(reason)}", file=err, flush=True)
+
+
+def warn_unsaved(conversation: Conversation, err: TextIO) -> None:
+    """A failed save does not stop maha: it is said (spec hito 6, §1.6)."""
+    if conversation.unsaved is not None:
+        reason = clean(conversation.unsaved)
+        print(f"warning: session not saved: {reason}", file=err, flush=True)
 
 
 def _summary_lines(summary: TraceSummary) -> list[str]:

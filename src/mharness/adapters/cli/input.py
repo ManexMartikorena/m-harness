@@ -9,6 +9,18 @@ import termios
 from collections.abc import Awaitable, Callable
 
 type ReadLine = Callable[[], Awaitable[str]]
+# Everything until the end of the input, at most so many bytes.
+type ReadAll = Callable[[int], Awaitable[str]]
+
+
+# What read_all() asks for at a time: a pipe holds 64 KiB on Linux.
+_BIG_READ = 64 * 1024
+
+
+class InputTooLarge(Exception):
+    """The input passed the limit of `read_all()`."""
+
+
 # Drops what was typed ahead; True if there was something.
 type Discard = Callable[[], bool]
 
@@ -37,6 +49,24 @@ class StdinLines:
         # Splitting bytes at b"\n" never cuts a UTF-8 character.
         return line.decode("utf-8", errors="replace").removesuffix("\r")
 
+    async def read_all(self, limit: int) -> str:
+        """Everything until the end (`git diff | maha -p …`), as text; more
+        than `limit` bytes raises `InputTooLarge`. Bytes that are not UTF-8
+        are replaced, as `read_file` does."""
+        chunks = [self._buffer]
+        size = len(self._buffer)
+        self._buffer = b""
+        while size <= limit:
+            chunk = await self._read(_BIG_READ)
+            if not chunk:
+                return b"".join(chunks).decode("utf-8", errors="replace")
+            chunks.append(chunk)
+            size += len(chunk)
+        mb, rest = divmod(limit, 1024**2)
+        raise InputTooLarge(
+            f"the input is larger than {f'{mb} MB' if not rest else f'{limit} bytes'}"
+        )
+
     def discard(self) -> bool:
         """Drop what was typed ahead: the lines kept in the buffer and what
         the terminal still holds. Before a question, so a pasted "y" cannot
@@ -52,7 +82,7 @@ class StdinLines:
             termios.tcflush(self._fd, termios.TCIFLUSH)
         return dropped
 
-    async def _read(self) -> bytes:
+    async def _read(self, size: int = 4096) -> bytes:
         loop = asyncio.get_running_loop()
         ready: asyncio.Future[None] = loop.create_future()
 
@@ -66,9 +96,9 @@ class StdinLines:
         except PermissionError:
             # A regular file (`maha < notes.txt`) cannot be watched; reading
             # it never blocks.
-            return os.read(self._fd, 4096)
+            return os.read(self._fd, size)
         try:
             await ready
         finally:
             loop.remove_reader(self._fd)
-        return os.read(self._fd, 4096)
+        return os.read(self._fd, size)

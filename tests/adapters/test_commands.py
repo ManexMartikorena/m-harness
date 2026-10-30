@@ -269,7 +269,7 @@ async def test_resume_errors_are_shown_and_the_conversation_goes_on() -> None:
     )
 
     assert err == (
-        "error: no other session in this directory (see /sessions)\n"
+        "error: no session in this directory (see /sessions)\n"
         "error: no session 20261026-091502-0000\n"
     )
     assert "Sigo." in out

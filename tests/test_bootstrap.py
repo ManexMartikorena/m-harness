@@ -16,6 +16,7 @@ import respx
 from mharness import bootstrap
 from mharness.adapters.cli import StdinLines
 from mharness.bootstrap import main
+from mharness.domain.limits import TurnLimits
 
 KEY = "sk-test-0000000000000000"
 GO_ENDPOINT = "https://opencode.ai/inference/go/openai/v1/chat/completions"
@@ -673,3 +674,286 @@ def test_eval_names_a_task_that_does_not_exist(
     assert main(["eval", "--tasks", str(evals), "--only", "99-nope"]) == 1
 
     assert "error: no task '99-nope'" in capsys.readouterr().err
+
+
+def test_allow_takes_the_names_of_the_tools_maha_has(tmp_path: Path) -> None:
+    names = bootstrap._tools(tmp_path, {}).names()
+
+    assert tuple(names) == bootstrap.TOOL_NAMES
+
+
+# `maha -p` (spec hito 8, §1.10 and §1.11).
+
+
+@respx.mock
+def test_print_answers_on_stdout_and_saves_the_session(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    data_home: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Dos palabras.", 12, 3))
+    )
+    stdin("uno dos\n")
+
+    code = main(["-p", "cuenta las palabras"])
+
+    captured = capsys.readouterr()
+    assert (code, captured.out) == (0, "Dos palabras.\n")
+    assert captured.err == "  [tokens: 12 in · 3 out · <$0.0001 · session <$0.0001]\n"
+    messages = json.loads(route.calls.last.request.content)["messages"]
+    assert messages == [
+        {
+            "role": "user",
+            "content": "cuenta las palabras\n\n<stdin>\nuno dos\n</stdin>",
+        }
+    ]
+    assert len(list((data_home / "maha" / "sessions").glob("*.jsonl"))) == 1
+
+
+@respx.mock
+def test_print_denies_a_write_without_allow(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    arguments = '{"path": "hola.txt", "content": "hola"}'
+    respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(tool_call_stream("write_file", arguments))
+    )
+    stdin("")
+
+    assert main(["-p", "crea hola.txt"]) == 4
+
+    err = capsys.readouterr().err
+    assert "  ✗ error: the user denied this call\n" in err
+    assert not (Path.cwd() / "hola.txt").exists()
+
+
+@respx.mock
+def test_print_writes_with_allow_but_never_what_runs_code(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            sse_response(
+                tool_call_stream(
+                    "write_file", '{"path": "hola.txt", "content": "hola\\n"}'
+                )
+            ),
+            sse_response(streamed("Creado.", 1, 1)),
+            sse_response(
+                tool_call_stream(
+                    "write_file",
+                    '{"path": ".github/workflows/ci.yml", "content": "on: push\\n"}',
+                )
+            ),
+        ]
+    )
+    stdin("")
+
+    assert main(["-p", "crea hola.txt", "--allow", "write_file"]) == 0
+    assert main(["-p", "crea el CI", "--allow", "write_file"]) == 4
+
+    assert (Path.cwd() / "hola.txt").read_text(encoding="utf-8") == "hola\n"
+    assert not (Path.cwd() / ".github").exists()
+    assert capsys.readouterr().out == "Creado.\n"
+
+
+def test_print_from_a_terminal_without_text_says_how(
+    workspace: Path,
+    terminal: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+
+    code = main(["-p"])
+
+    captured = capsys.readouterr()
+    assert (code, captured.out) == (2, "")
+    assert "-p needs an instruction" in captured.err
+
+
+@respx.mock
+def test_print_writes_json(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    respx.post(GO_ENDPOINT).mock(return_value=sse_response(streamed("Hola.", 1, 1)))
+    stdin("")
+
+    code = main(["-p", "hola", "--output-format", "json"])
+
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert (code, captured.err) == (0, "")
+    assert (result["result"], result["model"]) == ("Hola.", "glm-5.3-flash")
+
+
+# -c, -r, -m and the limits on the command line (spec hito 8, §1.12, §1.13).
+
+
+@respx.mock
+def test_continue_with_print_follows_a_print_session(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            sse_response(streamed("Apuntado.", 1, 1)),
+            sse_response(streamed("Que apuntara 42.", 1, 1)),
+        ]
+    )
+    stdin("")
+    assert main(["-p", "apunta 42"]) == 0
+    capsys.readouterr()
+
+    stdin("")
+    assert main(["-c", "-p", "¿qué te pedí antes?"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out == "Que apuntara 42.\n"
+    assert " · 2 messages · glm-5.3-flash]\n" in captured.err
+    assert [
+        m["content"] for m in json.loads(route.calls.last.request.content)["messages"]
+    ] == [
+        "apunta 42",
+        "Apuntado.",
+        "¿qué te pedí antes?",
+    ]
+
+
+@respx.mock
+def test_resume_a_session_of_another_directory_with_another_model(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    data_home: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            sse_response(streamed("Hola.", 1, 1)),
+            sse_response(streamed("Sigo.", 1, 1)),
+        ]
+    )
+    stdin("")
+    assert main(["-p", "hola"]) == 0
+    (saved,) = (data_home / "maha" / "sessions").glob("*.jsonl")
+    elsewhere = workspace / "otro"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    capsys.readouterr()
+
+    stdin("")
+    code = main(["-r", saved.stem, "-m", "kimi-k2.7-code", "-p", "sigue"])
+
+    err = capsys.readouterr().err
+    assert code == 0
+    assert (
+        f"[this session was in {workspace / 'project'}; tools work in {elsewhere}]"
+        in err
+    )
+    assert json.loads(route.calls.last.request.content)["model"] == "kimi-k2.7-code"
+
+
+def test_continue_without_a_session_here_fails(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    stdin("")
+
+    code = main(["-c", "-p", "sigue"])
+
+    captured = capsys.readouterr()
+    assert (code, captured.out) == (1, "")
+    assert captured.err == "error: no session in this directory\n"
+
+
+def test_resume_a_session_that_does_not_exist_fails_before_the_conversation(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    stdin("hola\n")
+
+    code = main(["-r", "20261027-101500-ffff"])
+
+    captured = capsys.readouterr()
+    assert (code, captured.out) == (1, "")
+    assert captured.err == "error: no session 20261027-101500-ffff\n"
+
+
+@respx.mock
+def test_model_on_the_command_line_names_a_new_session(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Hola.", 1, 1))
+    )
+    stdin("Hola\n/exit\n")
+
+    assert main(["-m", "kimi-k2.7-code"]) == 0
+
+    assert "· opencode-go · kimi-k2.7-code ·" in capsys.readouterr().out
+    assert json.loads(route.calls.last.request.content)["model"] == "kimi-k2.7-code"
+
+
+@respx.mock
+def test_the_limits_of_the_command_line_win(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n[limits]\nmax_steps = 25\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(tool_call_stream("list_dir", "{}"))
+    )
+    stdin("")
+
+    assert main(["-p", "mira", "--max-steps", "1"]) == 3
+
+    assert len(route.calls) == 1
+    assert "  [step limit reached: 1]\n" in capsys.readouterr().err
+
+
+@respx.mock
+def test_the_command_line_can_loosen_a_limit_of_the_configuration(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n[limits]\nmax_steps = 1\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        side_effect=[
+            sse_response(tool_call_stream("list_dir", "{}")),
+            sse_response(streamed("Vacío.", 1, 1)),
+        ]
+    )
+    stdin("")
+
+    main(["-p", "mira", "--max-steps", "2"])
+
+    assert len(route.calls) == 2
+    assert capsys.readouterr().out == "Vacío.\n"
+
+
+def test_every_limit_of_the_turn_has_its_option() -> None:
+    assert tuple(TurnLimits.model_fields) == bootstrap._LIMITS

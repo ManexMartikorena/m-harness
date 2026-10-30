@@ -1,9 +1,9 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-27, al cerrar la sesión. **Hito 8 en curso:
-spec aprobada y PRs 1 y 2 de 6 integrados (núcleo sin persona y evals, con
-la primera línea base). Siguiente: el PR 3, `maha -p`. Cero deuda
-conocida.**
+Última actualización: 2026-10-28, al cerrar la sesión. **Hito 8 en curso:
+spec aprobada, PRs 1 y 2 de 6 integrados (núcleo sin persona y evals, con
+la primera línea base) y el PR 3, `maha -p`, abierto como #95, pendiente
+de revisión y merge. Cero deuda conocida.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -12,12 +12,15 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 **Desarrollo. Hitos 1 a 7 cerrados; en curso: hito 8 (evals y modo no
 interactivo), spec `docs/specs/hito-8-evals-no-interactivo.md` APROBADA,
-PRs 1 y 2 de 6 integrados. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
+PRs 1 y 2 de 6 integrados; el 3, abierto (#95). Plan: 23 hitos hasta la 1.0
+(DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.7.1` — Comandos sin terminal** (2026-10-27):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.7.1
-- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
+- Ramas abiertas: `feature/hito-8-print`, el PR 3 del hito 8 (#95,
+  https://github.com/ManexMartikorena/m-harness/pull/95). Las integradas
+  se conservan en GitHub.
 
 ## Para la release
 
@@ -41,7 +44,7 @@ spec, su nota de la guía y su release.
 | 5 | Permisos y herramientas con efecto | `v0.5.0` (2026-10-23), `v0.5.1`, `v0.5.2` (cero deuda) |
 | 6 | Sesiones e historial | `v0.6.0` (2026-10-26), `v0.6.1` |
 | 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
-| 8 | *En curso.* Evals y modo no interactivo: PR 1 (#91) núcleo sin persona y PR 2 (#92) evals con la primera línea base | — |
+| 8 | *En curso.* Evals y modo no interactivo: PR 1 (#91) núcleo sin persona, PR 2 (#92) evals con la primera línea base y PR 3 (#95, `maha -p`, abierto) | — |
 
 Después del hito 7 (2026-10-27, todo de documentación, decidido por el
 mantenedor):
@@ -71,11 +74,18 @@ tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
    la decisión del mantenedor de añadir diez difíciles, y la primera línea
    base: `glm-5.3-flash` 94/100, `kimi-k2.7-code` 99/100, 0,60 $ y 12
    minutos por pasada completa; spec §5 y §12).
-3. **Agente:** PR 3 del hito 8, el modo no interactivo (`maha -p`,
-   `feature/hito-8-print`); después los PRs 4 a 6. Desde ahora, cada
-   cambio del bucle, las herramientas o los prompts se compara con la línea
-   base (`PUESTA_EN_MARCHA` §4.1).
-4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+3. Hecho el 2026-10-28, en `feature/hito-8-print` (PR #95, abierto): el PR 3,
+   el modo no interactivo (`maha -p` con `text`, `json` y `stream-json`,
+   stdin, `-c`, `-r`, `-m`, `--allow`, límites por opción y códigos de
+   salida 0 a 4). Verificado a mano con OpenCode Go. Sin evals: no cambia
+   lo que mide la batería (spec §5). Lo aprendido, en la spec §12.14–25.
+4. **Humano:** revisar el PR #95 (milestone "Hito 8") e integrarlo con
+   merge commit, con el CI en verde. Después, en local: `git switch main &&
+   git pull` y `git branch -d feature/hito-8-print`.
+5. **Agente:** tras el merge, el PR 4 (reintentos y respaldo,
+   `feature/hito-8-reintentos`), comparado con la línea base
+   (`PUESTA_EN_MARCHA` §4.1); después los PRs 5 y 6.
+6. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -152,9 +162,10 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 - canal de distribución (hito 23).
 
 **Con hito asignado** (salieron de hitos anteriores; cada uno, de su spec):
-- **Hito 8** (lo que queda, en sus PRs 3 a 6): `--continue`/`--resume` al
-  arrancar (spec 6, §11), en el PR 3; reintentos ante 429 y 5xx (spec 7,
-  §11), en el PR 4. Ya hechos: los límites de tokens y de tiempo por turno
+- **Hito 8** (lo que queda, en sus PRs 4 a 6): reintentos ante 429 y 5xx
+  (spec 7, §11), en el PR 4; en el PR 5, que el error de `-r` sin id
+  nombre también `maha sessions` (spec 8, §12.22). Hecho en el PR 3:
+  `--continue`/`--resume` al arrancar (spec 6, §11). Ya hechos: los límites de tokens y de tiempo por turno
   (spec 4, §11; PR #91) y las descripciones de las herramientas medidas en
   la línea base (spec 4, §5; PR #92).
 - **Hito 10:** el modelo no sabe en qué directorio trabaja tras retomar una

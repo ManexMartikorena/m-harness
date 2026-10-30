@@ -5,6 +5,7 @@ so the evals measure exactly what `-p` does.
 """
 
 import time
+from collections.abc import Callable
 from contextlib import aclosing
 from decimal import Decimal
 from typing import Literal
@@ -13,6 +14,7 @@ from pydantic import BaseModel
 
 from mharness.application.sessions import Conversation
 from mharness.domain.agent_events import (
+    AgentEvent,
     ApprovalRequested,
     ModelCallFinished,
     ToolFinished,
@@ -53,10 +55,27 @@ class RunResult(BaseModel, frozen=True):
     error: str | None
 
 
-async def run_once(conversation: Conversation, text: str) -> RunResult:
-    """Run one turn of `conversation` with `text` and sum it up. A failed
-    call to the model is an `error` result, with what the turn kept saved;
-    anything else that fails is a bug, and goes up."""
+def instruction(text: str, piped: str | None) -> str:
+    """What `maha -p` asks (spec hito 8, §1.10): `text`, and below it what
+    was piped, between delimiters, because it is data and not the user's
+    words. Without `text`, what was piped is the instruction."""
+    if piped is None or not piped.strip():
+        return text
+    if not text.strip():
+        return piped
+    data = piped.removesuffix("\n")
+    return f"{text}\n\n<stdin>\n{data}\n</stdin>"
+
+
+async def run_once(
+    conversation: Conversation,
+    text: str,
+    on_event: Callable[[AgentEvent], None] | None = None,
+) -> RunResult:
+    """Run one turn of `conversation` with `text` and sum it up; `on_event`
+    sees each event as it comes. A failed call to the model is an `error`
+    result, with what the turn kept saved; anything else that fails is a
+    bug, and goes up."""
     started = time.monotonic()
     # The text of the call in progress, and of the last one that ended.
     current: list[str] = []
@@ -74,6 +93,8 @@ async def run_once(conversation: Conversation, text: str) -> RunResult:
     try:
         async with aclosing(conversation.run(text)) as events:
             async for event in events:
+                if on_event is not None:
+                    on_event(event)
                 if isinstance(event, TextDelta):
                     current.append(event.text)
                 elif isinstance(event, ModelCallFinished):
