@@ -231,3 +231,20 @@ def test_choose_by_split_and_by_id() -> None:
     assert [t.id for t in choose(tasks, "validation")] == ["02"]
     assert [t.id for t in choose(tasks, "all")] == ["01", "02", "03"]
     assert [t.id for t in choose(tasks, "all", only=["03", "01"])] == ["01", "03"]
+
+
+async def test_a_run_that_crashes_does_not_take_the_others_with_it() -> None:
+    # Audit of hito 8: one unexpected exception threw away the whole
+    # battery, paid calls included.
+    def script(t: Task, m: str) -> list[Step]:
+        if t.id == "02":
+            raise PermissionError("cannot read the fixture")
+        return [reply("1.4.2")]
+
+    subject, _ = evaluator(script, task("01"), task("02"))
+
+    first, second = await subject.run([task("01"), task("02")], ["m"])
+
+    assert first.outcome == "pass"
+    assert (second.outcome, second.reason) == ("error", "internal")
+    assert second.detail == "PermissionError: cannot read the fixture"

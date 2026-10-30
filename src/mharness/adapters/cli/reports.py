@@ -22,7 +22,9 @@ def run_line(run: TaskRun) -> str:
         return f"{head} · {steps} · {cost} · {run.duration:.1f} s"
     detail = clean_line((run.detail or "").splitlines()[0] if run.detail else "")
     if run.outcome == "error":
-        return f"{head} · provider: {detail}"
+        # A bug of maha, or its disk, is not the provider's (audit of hito 8).
+        who = "internal" if run.reason == "internal" else "provider"
+        return f"{head} · {who}: {detail}"
     return f"{head} · {detail}"
 
 

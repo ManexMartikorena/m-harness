@@ -78,11 +78,11 @@ class Evaluator:
 
         async def one(task: Task, model: str, attempt: int) -> TaskRun:
             async with limit:
-                run = await self._one(task, model, attempt)
+                run = await self._safe(task, model, attempt)
             on_run(run)
             if run.outcome == "error" and retry_errors:
                 async with limit:
-                    run = await self._one(task, model, attempt)
+                    run = await self._safe(task, model, attempt)
                 on_run(run)
             return run
 
@@ -96,6 +96,29 @@ class Evaluator:
                 )
             )
         )
+
+    async def _safe(self, task: Task, model: str, attempt: int) -> TaskRun:
+        """`_one()`, where a bug or the disk failing is an `error` of this
+        run alone, with the reason `internal`: one run must not take the
+        battery, and its paid calls, with it (audit of hito 8)."""
+        try:
+            return await self._one(task, model, attempt)
+        except Exception as exc:
+            return TaskRun(
+                task=task.id,
+                split=task.split,
+                model=model,
+                attempt=attempt,
+                outcome="error",
+                reason="internal",
+                steps=0,
+                tool_calls=0,
+                tool_errors=0,
+                tokens=0,
+                cost=None,
+                duration=0.0,
+                detail=f"{type(exc).__name__}: {exc}",
+            )
 
     async def _one(self, task: Task, model: str, attempt: int) -> TaskRun:
         async with self._suite.workspace(task) as path:
