@@ -379,8 +379,12 @@ es lo que escribe el usuario (spec 4), así que `--max-steps`.
   texto ya se mostró (spec 3, §1.9).
 - **Cuánto:** 3 reintentos, con espera de 1, 2 y 4 s más un azar de hasta
   el 25 % (*jitter*: que varios clientes no reintenten a la vez). Si el
-  proveedor manda `Retry-After`, se respeta hasta 60 s. La espera se corta
-  con Ctrl+C y cuenta para `timeout`.
+  proveedor manda `Retry-After`, se respeta hasta 60 s. *(Corregido el
+  2026-10-30, en la auditoría del hito 8, por decisión del mantenedor: si
+  pide más de 60 s no se reintenta, se pasa al respaldo o falla; recortarlo
+  a 60 s hacía esperar unos 3 minutos para fallar igual con una cuota
+  agotada. §12.50.)* La espera se corta con Ctrl+C y cuenta para
+  `timeout`.
 - **Dónde:** en el bucle (`application/agent.py`), que puede emitir un
   evento nuevo `ModelRetry(attempt, max_retries, delay, error)`; la terminal
   lo enseña y la traza lo guarda. La política (cuántos, cuánto) es pura, en
@@ -496,7 +500,8 @@ Todo con fakes y directorios temporales; ninguna llamada real.
    sin ámbito (fuera, secreto, `.github`) aunque esté en la lista; deniega
    lo que no está.
 3. **`RetryPolicy`:** esperas 1-2-4 con el azar fijado; `Retry-After`
-   respetado y recortado a 60 s.
+   respetado y recortado a 60 s. *(Desde la auditoría, §12.50: más de 60 s,
+   sin reintento.)*
 4. **Reintentos en el bucle:** 429 y 503 antes del primer evento se
    reintentan y emiten `ModelRetry`; un error a mitad de respuesta no; 401
    no; agotados, el error sale como hoy; con respaldo, `ModelFallback` y el
@@ -872,7 +877,8 @@ PRs del hito: #90 (spec), #91 (PR 1), #92 (PR 2), #93 y #94 (estado), #95
 27. **`Retry-After` gana a la espera calculada, sin azar:** el proveedor
     sabe cuándo puede responder. Una fecha pasada es 0. Un valor que no
     son segundos enteros ni una fecha HTTP se ignora (RFC 9110, §10.2.3).
-    Más de 60 s se recorta a 60, como pide §4, punto 3.
+    Más de 60 s se recorta a 60, como pide §4, punto 3. *(Cambiado en la
+    auditoría, §12.50: más de 60 s no se reintenta.)*
 28. **El respaldo tiene sus propios reintentos.** Si también se agotan,
     el error sale como siempre. Un respaldo igual al modelo en uso (tras
     `/model`) no es un respaldo. `ModelRetry` lleva el modelo, para saber

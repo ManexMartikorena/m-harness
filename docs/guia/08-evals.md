@@ -159,7 +159,9 @@ timeout = 600       # segundos
 
 - Se reintenta un 429 o un 5xx **solo antes del primer evento**: una
   respuesta empezada ya se vio, y no se repite.
-- Si el proveedor manda `Retry-After`, se respeta (hasta 60 s).
+- Si el proveedor manda `Retry-After`, se respeta hasta 60 s. Si pide más
+  (una cuota que vuelve mañana), no se reintenta: esperar solo retrasaría
+  el error.
 - Un 401 o un 400 no se reintentan: repetirlos no los arregla.
 - Con `fallback_model`, el respaldo responde el resto del turno; el
   siguiente vuelve al principal. **Siempre se avisa:** un respaldo

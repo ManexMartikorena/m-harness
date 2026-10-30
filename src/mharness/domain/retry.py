@@ -2,7 +2,7 @@
 
 ```
 attempt 1 → 1 s, attempt 2 → 2 s, attempt 3 → 4 s   (each + up to 25 %)
-Retry-After: 30 → 30 s, Retry-After: 600 → 60 s
+Retry-After: 30 → 30 s, Retry-After: 600 → no retry
 ```
 
 Pure: the chance comes from `random`, which the tests fix. The loop does
@@ -20,7 +20,8 @@ BASE_DELAY = 1.0
 # Up to this share of the wait is added by chance, so that many clients do
 # not all come back at the same time (jitter).
 JITTER = 0.25
-# The longest `Retry-After` honoured, in seconds.
+# The longest `Retry-After` waited for, in seconds: a longer one (a quota
+# that comes back tomorrow) is not retried, it would only delay the error.
 MAX_RETRY_AFTER = 60.0
 
 
@@ -35,12 +36,14 @@ class RetryPolicy:
 
     def delay(self, attempt: int, retry_after: float | None = None) -> float | None:
         """The wait before retry number `attempt` (from 1), or None when no
-        retry is left. The provider's `Retry-After` wins, cut to
-        `max_retry_after`: it knows when it can answer."""
+        retry is left. The provider's `Retry-After` wins: it knows when it
+        can answer. If it asks for more than `max_retry_after`, None too."""
         if not 1 <= attempt <= self.max_retries:
             return None
         if retry_after is not None:
-            return min(max(retry_after, 0.0), self.max_retry_after)
+            if retry_after > self.max_retry_after:
+                return None
+            return max(retry_after, 0.0)
         wait = self.base_delay * 2.0 ** (attempt - 1)
         return wait * (1 + self.jitter * self.random())
 

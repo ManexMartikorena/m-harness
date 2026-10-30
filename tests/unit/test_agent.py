@@ -1625,3 +1625,15 @@ async def test_the_fallback_is_priced_as_itself() -> None:
     finished = events[-1]
     assert isinstance(finished, TurnFinished)
     assert finished.cost == Decimal("2")
+
+
+async def test_a_long_retry_after_goes_to_the_fallback_at_once() -> None:
+    fake = FakeModelClient(
+        [ModelRateLimitError("HTTP 429", retry_after=3600.0), reply("Hola.")]
+    )
+    waits = Waits()
+
+    events = await run(agent(fake, retry=RETRY, sleep=waits, fallback=FALLBACK))
+
+    assert (waits.asked, retries(events)) == ([], [])
+    assert [request.model for request in fake.requests] == [MODEL, FALLBACK]
