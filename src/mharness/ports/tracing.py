@@ -46,6 +46,11 @@ class TraceSink(Protocol):
         """Remove the trace; without one, nothing happens."""
         ...
 
+    async def sessions(self) -> list[str]:
+        """The ids of every trace, in no order; none without traces. For
+        `maha stats` (spec hito 8, §1.15)."""
+        ...
+
     def location(self, session: str) -> str:
         """Where the trace is, for a person to open it."""
         ...

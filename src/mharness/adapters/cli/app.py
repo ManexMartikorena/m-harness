@@ -4,6 +4,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
 from mharness import __version__
@@ -44,6 +45,12 @@ def build_parser(tools: Sequence[str]) -> argparse.ArgumentParser:
     _conversation_options(parser, tools)
     commands = parser.add_subparsers(dest="command", metavar="COMMAND")
     _eval_parser(commands)
+    _models_parser(commands)
+    _sessions_parser(commands)
+    _trace_parser(commands)
+    _stats_parser(commands)
+    _export_parser(commands)
+    _import_parser(commands)
     return parser
 
 
@@ -161,6 +168,100 @@ def _eval_parser(commands: Any) -> None:
     )
 
 
+def _models_parser(commands: Any) -> None:
+    """`maha models` (spec hito 8, §1.15)."""
+    models = commands.add_parser(
+        "models",
+        help="the models of the catalog, with their prices",
+        description="The models that maha's catalog knows for the configured "
+        "provider: context window and prices. A model that is not here may "
+        "still work; maha just cannot price it.",
+    )
+    models.add_argument(
+        "--all", action="store_true", dest="every", help="of every provider"
+    )
+
+
+def _sessions_parser(commands: Any) -> None:
+    """`maha sessions` and `maha sessions delete ID` (spec hito 8, §1.15)."""
+    sessions = commands.add_parser(
+        "sessions",
+        help="the recent sessions, of every directory",
+        description="The recent sessions, of every directory; those of this "
+        "one are marked with *. maha -r ID resumes one.",
+    )
+    actions = sessions.add_subparsers(dest="action", metavar="ACTION")
+    delete = actions.add_parser(
+        "delete",
+        help="delete a session and its trace",
+        description="Delete a session and its trace, without asking.",
+    )
+    delete.add_argument("id", metavar="ID")
+
+
+def _trace_parser(commands: Any) -> None:
+    """`maha trace [ID]` (spec hito 8, §1.15)."""
+    trace = commands.add_parser(
+        "trace",
+        help="what a session did and cost",
+        description="A row per turn of a session: calls, tools, tokens, cost "
+        "and time; and where its whole trace is.",
+    )
+    trace.add_argument(
+        "id",
+        nargs="?",
+        metavar="ID",
+        help="the session (default: the last one of this directory)",
+    )
+
+
+def _stats_parser(commands: Any) -> None:
+    """`maha stats [--days N]` (spec hito 8, §1.15)."""
+    stats = commands.add_parser(
+        "stats",
+        help="cost and tokens by day and model",
+        description="Cost and tokens of every call to a model, by day and "
+        "model, from the traces of every session.",
+    )
+    stats.add_argument(
+        "--days",
+        type=_positive,
+        metavar="N",
+        help="only the last N days, today included",
+    )
+
+
+def _export_parser(commands: Any) -> None:
+    """`maha export ID [--format md|json]` (spec hito 8, §1.15)."""
+    export = commands.add_parser(
+        "export",
+        help="a session in Markdown or JSON, to stdout",
+        description="A session to stdout: the conversation in Markdown, to "
+        "read or share, or the whole session in JSON, which maha import "
+        "takes back.",
+    )
+    export.add_argument("id", metavar="ID")
+    export.add_argument(
+        "--format",
+        dest="export_format",
+        choices=["md", "json"],
+        default="md",
+        help="md (default) or json",
+    )
+
+
+def _import_parser(commands: Any) -> None:
+    """`maha import FILE` (spec hito 8, §1.15)."""
+    imports = commands.add_parser(
+        "import",
+        help="a session of maha export --format json, as a new one",
+        description="Save a session of maha export --format json as a new "
+        "session of this directory, with an id of its own. It never "
+        "overwrites another, and brings no approvals.",
+    )
+    imports.add_argument("file", type=Path, metavar="FILE")
+
+
 def _positive(text: str) -> int:
     try:
         number = int(text)
@@ -229,7 +330,7 @@ def _check(parser: argparse.ArgumentParser, options: argparse.Namespace) -> None
         flag for name, flag in _CONVERSATION.items() if _given(getattr(options, name))
     ]
     if options.session == "":
-        parser.error("-r needs the id of a session: /sessions lists them")
+        parser.error("-r needs the id of a session: maha sessions lists them")
     if options.command is not None and given:
         parser.error(f"{options.command} does not take {', '.join(given)}")
     if options.prompt is None:

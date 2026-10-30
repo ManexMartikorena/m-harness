@@ -138,6 +138,14 @@ class JsonlTraceSink:
                 f"cannot delete the trace of {session}: {exc.strerror}"
             ) from None
 
+    async def sessions(self) -> list[str]:
+        try:
+            names = [path.stem for path in self._folder.glob("*.jsonl")]
+        except OSError as exc:
+            raise TraceError(f"cannot list the traces: {exc.strerror}") from None
+        # A file another program left there is not a trace.
+        return [name for name in names if is_session_id(name)]
+
     def location(self, session: str) -> str:
         return str(self._path(session))
 

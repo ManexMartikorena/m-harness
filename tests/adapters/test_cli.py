@@ -328,6 +328,81 @@ def test_resume_without_an_id_says_where_to_find_one(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert parse(["-r"]) == 2
-    assert "-r needs the id of a session: /sessions lists them" in (
+    assert "-r needs the id of a session: maha sessions lists them" in (
         capsys.readouterr().err
     )
+
+
+def test_models_lists_the_provider_unless_all() -> None:
+    options = parse(["models"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.command, options.every) == ("models", False)
+
+    options = parse(["models", "--all"])
+    assert isinstance(options, argparse.Namespace)
+    assert options.every is True
+
+
+def test_models_takes_no_conversation_option(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert parse(["-m", "x", "models"]) == 2
+    assert "models does not take -m" in capsys.readouterr().err
+
+
+def test_sessions_lists_or_deletes() -> None:
+    options = parse(["sessions"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.command, options.action) == ("sessions", None)
+
+    options = parse(["sessions", "delete", "20261030-101500-3fa2"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.action, options.id) == ("delete", "20261030-101500-3fa2")
+
+
+def test_sessions_delete_needs_the_id(capsys: pytest.CaptureFixture[str]) -> None:
+    assert parse(["sessions", "delete"]) == 2
+    assert "the following arguments are required: ID" in capsys.readouterr().err
+
+
+def test_trace_takes_an_optional_id() -> None:
+    options = parse(["trace"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.command, options.id) == ("trace", None)
+
+    options = parse(["trace", "20261030-101500-3fa2"])
+    assert isinstance(options, argparse.Namespace)
+    assert options.id == "20261030-101500-3fa2"
+
+
+def test_stats_takes_the_days() -> None:
+    options = parse(["stats"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.command, options.days) == ("stats", None)
+
+    options = parse(["stats", "--days", "7"])
+    assert isinstance(options, argparse.Namespace)
+    assert options.days == 7
+
+
+def test_stats_needs_a_positive_number_of_days(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert parse(["stats", "--days", "0"]) == 2
+    assert "must be 1 or more" in capsys.readouterr().err
+
+
+def test_export_takes_the_id_and_the_format() -> None:
+    options = parse(["export", "20261030-101500-3fa2"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.id, options.export_format) == ("20261030-101500-3fa2", "md")
+
+    options = parse(["export", "20261030-101500-3fa2", "--format", "json"])
+    assert isinstance(options, argparse.Namespace)
+    assert options.export_format == "json"
+
+
+def test_import_takes_the_file() -> None:
+    options = parse(["import", "s.json"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.command, options.file) == ("import", Path("s.json"))

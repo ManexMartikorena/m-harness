@@ -643,3 +643,39 @@ async def test_a_folder_blocked_by_a_file_is_not_an_id_clash(
 
     assert not isinstance(caught.value, SessionExists)
     assert [r for r in caplog.records if r.name.startswith("mharness")]
+
+
+# read(): without locking (spec hito 8, §1.15).
+
+
+async def test_read_gets_a_session_that_another_maha_has_open(folder: Path) -> None:
+    store = JsonlSessionStore(folder)
+    log = await store.create(HEADER)
+    await log.append([MessageEntry(message=m) for m in (HOLA, ANSWER)])
+
+    session = await store.read(HEADER.id)
+
+    assert session.messages == [HOLA, ANSWER]
+    # Still open in the other maha, which can go on.
+    await log.append([MessageEntry(message=HOLA)])
+    await log.close()
+
+
+async def test_read_leaves_out_a_line_being_written(folder: Path) -> None:
+    store = JsonlSessionStore(folder)
+    log = await store.create(HEADER)
+    await log.append([MessageEntry(message=m) for m in (HOLA, ANSWER)])
+    await log.close()
+    whole = file_of(folder).read_bytes()
+    file_of(folder).write_bytes(whole + b'{"type": "mess')
+
+    assert (await store.read(HEADER.id)).messages == [HOLA, ANSWER]
+    # Reading does not change the file.
+    assert file_of(folder).read_bytes() == whole + b'{"type": "mess'
+
+
+async def test_read_of_a_session_that_does_not_exist(folder: Path) -> None:
+    with pytest.raises(SessionNotFound):
+        await JsonlSessionStore(folder).read(HEADER.id)
+    with pytest.raises(SessionNotFound):
+        await JsonlSessionStore(folder).read("../etc/passwd")

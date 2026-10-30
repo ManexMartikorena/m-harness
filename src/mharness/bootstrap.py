@@ -15,7 +15,7 @@ import subprocess
 import sys
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -75,6 +75,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cli.fail(str(exc))
     if options.command == "eval":
         return asyncio.run(_eval(settings, catalog, options))
+    if options.command == "models":
+        cli.models_report(
+            catalog.models(),
+            settings.provider_name,
+            every=options.every,
+            out=sys.stdout,
+        )
+        return 0
+    if options.command == "stats":
+        return asyncio.run(
+            cli.show_stats(
+                JsonlTraceSink(data / "traces"),
+                days=options.days,
+                today=date.today(),
+                out=sys.stdout,
+                err=sys.stderr,
+            )
+        )
+    if options.command in ("sessions", "trace", "export", "import"):
+        return asyncio.run(_sessions_command(settings, catalog, data, options))
     settings = _with_options(settings, options)
     start = Start(last=options.last, session=options.session, model=options.model)
     # Resolved once: the tools and the sessions name it the same way.
@@ -359,6 +379,43 @@ def _sessions(
         # reach a trace (spec hito 7, §1.8).
         masked=known_secrets(os.environ, also=[settings.api_key]),
     )
+
+
+async def _sessions_command(
+    settings: config.Settings,
+    catalog: ModelCatalog,
+    data: Path,
+    options: argparse.Namespace,
+) -> int:
+    """`maha sessions`, `trace`, `export`, `import` and what they take
+    (spec hito 8, §1.15). No call to the model: the client is there
+    because a conversation needs one."""
+    cwd = Path.cwd().resolve()
+    async with _client(settings) as client:
+        sessions = _sessions(
+            settings, catalog, data, cwd, client, cli.DenyAll(sys.stdout)
+        )
+        if options.command == "export":
+            return await cli.export_session(
+                sessions,
+                options.id,
+                output_format=options.export_format,
+                out=sys.stdout,
+                err=sys.stderr,
+            )
+        if options.command == "import":
+            return await cli.import_session(
+                sessions, options.file, out=sys.stdout, err=sys.stderr
+            )
+        if options.command == "trace":
+            return await cli.show_trace(
+                sessions, options.id, out=sys.stdout, err=sys.stderr, home=Path.home()
+            )
+        if options.action == "delete":
+            return await cli.delete_session(
+                sessions, options.id, out=sys.stdout, err=sys.stderr
+            )
+        return await cli.list_sessions(sessions, out=sys.stdout, home=Path.home())
 
 
 def _client(settings: config.Settings) -> OpenAIChatClient:

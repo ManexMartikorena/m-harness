@@ -1,6 +1,7 @@
 """`maha` end to end: configuration, adapter, `Agent` and terminal, no
 network."""
 
+import contextlib
 import io
 import json
 import logging
@@ -1018,3 +1019,139 @@ def test_without_a_fallback_the_last_error_ends_the_run(
 
     assert len(route.calls) == 4
     assert "error: HTTP 429" in capsys.readouterr().err
+
+
+def test_models_lists_the_catalog_of_the_configured_provider(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+
+    assert main(["models"]) == 0
+
+    out = capsys.readouterr().out
+    assert out.startswith("model ")
+    assert "\nglm-5.3-flash " in out
+    assert "of opencode-go · prices per million tokens" in out
+
+
+def a_print_session(stdin: Callable[[str], None], answer: str = "Hola.") -> str:
+    """Run one `maha -p` and return the id of its session."""
+    respx.post(GO_ENDPOINT).mock(return_value=sse_response(streamed(answer, 1, 1)))
+    stdin("")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert main(["-p", "Hola", "--output-format", "json"]) == 0
+    session: str = json.loads(out.getvalue())["session_id"]
+    return session
+
+
+@respx.mock
+def test_sessions_lists_and_deletes_from_the_shell(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    session = a_print_session(stdin)
+
+    assert main(["sessions"]) == 0
+    assert capsys.readouterr().out.startswith(f"* {session}  ")
+
+    assert main(["sessions", "delete", session]) == 0
+    assert capsys.readouterr().out == f"deleted {session}\n"
+
+    assert main(["sessions"]) == 0
+    assert capsys.readouterr().out == "(no sessions)\n"
+    assert main(["sessions", "delete", session]) == 1
+
+
+@respx.mock
+def test_trace_shows_the_last_session_here_or_one_by_id(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    session = a_print_session(stdin)
+
+    assert main(["trace"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith(f"{session} · glm-5.3-flash · 1 turn · 1 model call")
+    assert f"/maha/traces/{session}.jsonl]\n" in out
+
+    assert main(["trace", session]) == 0
+    assert capsys.readouterr().out == out
+
+
+@respx.mock
+def test_stats_adds_up_the_calls_of_every_session(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    a_print_session(stdin)
+    a_print_session(stdin)
+
+    assert main(["stats", "--days", "1"]) == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].split() == ["day", "model", "calls", "in", "out", "cost"]
+    assert lines[1].split()[1:5] == ["glm-5.3-flash", "2", "2", "2"]
+    assert lines[-1].split()[:4] == ["total", "2", "2", "2"]
+
+
+def test_stats_without_traces_says_so(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+
+    assert main(["stats"]) == 0
+
+    assert capsys.readouterr().out == "(no calls to a model in the traces)\n"
+
+
+@respx.mock
+def test_export_writes_a_session_in_markdown_or_json(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    session = a_print_session(stdin, "Hola, Ane.")
+
+    assert main(["export", session]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("# Hola\n")
+    assert out.endswith("## maha\n\nHola, Ane.\n")
+
+    assert main(["export", session, "--format", "json"]) == 0
+    exported = json.loads(capsys.readouterr().out)
+    assert exported["header"]["id"] == session
+
+
+@respx.mock
+def test_an_exported_session_is_imported_and_resumed(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    session = a_print_session(stdin, "Hola, Ane.")
+    assert main(["export", session, "--format", "json"]) == 0
+    file = workspace / "s.json"
+    file.write_text(capsys.readouterr().out, encoding="utf-8")
+
+    assert main(["import", str(file)]) == 0
+
+    new = capsys.readouterr().out.split()[2]
+    assert new != session
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Sí.", 1, 1))
+    )
+    stdin("")
+    assert main(["-r", new, "-p", "¿Sigues?"]) == 0
+    assert json.loads(route.calls.last.request.content)["messages"][:2] == [
+        {"role": "user", "content": "Hola"},
+        {"role": "assistant", "content": "Hola, Ane."},
+    ]

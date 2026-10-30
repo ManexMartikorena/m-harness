@@ -168,6 +168,28 @@ class JsonlSessionStore:
             raise
         return session, log
 
+    async def read(self, session_id: str) -> Session:
+        path = self._path(session_id)
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except FileNotFoundError:
+            raise _not_found(session_id) from None
+        except OSError as exc:
+            raise SessionError(
+                f"cannot read session {session_id}: {exc.strerror}"
+            ) from None
+        try:
+            data = _read(fd)
+        except OSError as exc:
+            raise SessionError(
+                f"cannot read session {session_id}: {exc.strerror}"
+            ) from None
+        finally:
+            os.close(fd)
+        # A line being written, or cut by a crash, is left out.
+        header, entries = _parse(data[: _whole_lines(data)], session_id)
+        return replay(header, entries)
+
     async def exists(self, session_id: str) -> bool:
         if not is_session_id(session_id):
             return False

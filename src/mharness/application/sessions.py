@@ -10,7 +10,7 @@ them through the `SessionStore` and `TraceSink` ports.
 import asyncio
 import secrets
 from collections.abc import AsyncGenerator, Callable, Collection, Sequence
-from contextlib import aclosing
+from contextlib import aclosing, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -39,6 +39,7 @@ from mharness.domain.session import (
     SessionNotFound,
     SessionSummary,
     UsageEntry,
+    check_history,
     is_session_id,
     session_id,
 )
@@ -455,9 +456,11 @@ class Sessions:
         """The directory where this maha runs, and its tools work."""
         return self._origin.cwd
 
-    async def start(self) -> Conversation:
-        """A new conversation; its session is created with the first turn."""
-        return Conversation(self._store, self._new_agent(self._model, ()), self._origin)
+    async def start(self, model: str | None = None) -> Conversation:
+        """A new conversation, with `model` or the configured one; its
+        session is created with the first turn."""
+        agent = self._new_agent(model or self._model, ())
+        return Conversation(self._store, agent, self._origin)
 
     async def open(self, start: Start | None = None) -> Opened:
         """The first conversation of this maha: a new one, or a session
@@ -465,9 +468,7 @@ class Sessions:
         resumed."""
         start = start or Start()
         if not start.last and start.session is None:
-            model = start.model or self._model
-            agent = self._new_agent(model, ())
-            return Opened(Conversation(self._store, agent, self._origin))
+            return Opened(await self.start(start.model))
         resumed = await self.resume(start.session, current=await self.start())
         conversation = resumed.conversation
         if start.model is not None and start.model != conversation.model:
@@ -520,6 +521,64 @@ class Sessions:
     def here(self, summary: SessionSummary) -> bool:
         """Whether the session was in this directory."""
         return summary.cwd == self._origin.cwd
+
+    async def read(self, session: str) -> Session:
+        """A session of any directory, as it is on disk, without opening it:
+        also one open in another maha. Raises `SessionError`."""
+        return await self._store.read(session)
+
+    async def import_session(self, session: Session) -> str:
+        """Save `session`, exported by `maha export`, as a new session of
+        this directory with an id of its own; never over another. Its
+        history is untrusted input, as any: it brings no approvals (spec
+        hito 6, §1.9). Raises `SessionError`."""
+        check_history(session.messages)
+        entries: list[SessionEntry] = [
+            MessageEntry(message=message) for message in session.messages
+        ]
+        # What it cost, so that its total is the same; the turns without
+        # a price, as such.
+        entries += [UsageEntry(usage=Usage(), cost=None)] * session.uncosted_turns
+        if session.usage != Usage() or session.cost:
+            entries.append(UsageEntry(usage=session.usage, cost=session.cost))
+        origin = self._origin
+        # A trace left without its session keeps its id too, even empty.
+        traced = set(await origin.traces.sessions())
+        while True:
+            created = origin.now()
+            new = session_id(created, origin.token())
+            if new in traced:
+                continue
+            header = SessionHeader(
+                id=new,
+                created_at=created,
+                cwd=origin.cwd,
+                provider=session.header.provider,
+                model=session.model,
+                maha=origin.version,
+            )
+            try:
+                log = await self._store.create(header)
+            except SessionExists:
+                continue
+            try:
+                await log.append(entries)
+            except BaseException:
+                # Nothing half imported: the empty session goes too.
+                await log.close()
+                with suppress(SessionError):
+                    await self._store.delete(new)
+                raise
+            await log.close()
+            return new
+
+    async def last_here(self) -> str:
+        """The id of the newest session of this directory, open or not.
+        Raises `SessionNotFound`."""
+        for summary in await self._store.summaries():
+            if self.here(summary):
+                return summary.id
+        raise SessionNotFound("no session in this directory")
 
     async def delete(self, session: str, *, current: Conversation) -> None:
         """The session and its trace; also a trace left without its session

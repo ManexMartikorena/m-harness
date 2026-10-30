@@ -1,9 +1,8 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-30. **Hito 8 en curso: PRs 1 a 3 de 6
-integrados (núcleo sin persona, evals y `maha -p`); el PR 4, reintentos y
-respaldo, integrado tras aceptar el mantenedor tres ⚠ de las evals.
-Cero deuda conocida.**
+Última actualización: 2026-10-30. **Hito 8 en curso: PRs 1 a 4 de 6
+integrados (núcleo sin persona, evals, `maha -p` y reintentos con
+respaldo); el PR 5, comandos de línea, en su rama. Cero deuda conocida.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -12,14 +11,14 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 **Desarrollo. Hitos 1 a 7 cerrados; en curso: hito 8 (evals y modo no
 interactivo), spec `docs/specs/hito-8-evals-no-interactivo.md` APROBADA,
-PRs 1 a 3 de 6 integrados; el 4, abierto. Plan: 23 hitos hasta la 1.0
+PRs 1 a 4 de 6 integrados; el 5, en su rama. Plan: 23 hitos hasta la 1.0
 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.7.1` — Comandos sin terminal** (2026-10-27):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.7.1
-- Ramas abiertas: `feature/hito-8-reintentos`, el PR 4 del hito 8 (#96,
-  https://github.com/ManexMartikorena/m-harness/pull/96). Las
+- Ramas abiertas: `feature/hito-8-comandos`, el PR 5 del hito 8 (#97,
+  https://github.com/ManexMartikorena/m-harness/pull/97). Las
   integradas se conservan en GitHub.
 
 ## Para la release
@@ -44,7 +43,7 @@ spec, su nota de la guía y su release.
 | 5 | Permisos y herramientas con efecto | `v0.5.0` (2026-10-23), `v0.5.1`, `v0.5.2` (cero deuda) |
 | 6 | Sesiones e historial | `v0.6.0` (2026-10-26), `v0.6.1` |
 | 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
-| 8 | *En curso.* Evals y modo no interactivo: PR 1 (#91) núcleo sin persona, PR 2 (#92) evals con la primera línea base, PR 3 (#95) `maha -p` y PR 4 (#96, reintentos y respaldo, abierto) | — |
+| 8 | *En curso.* Evals y modo no interactivo: PR 1 (#91) núcleo sin persona, PR 2 (#92) evals con la primera línea base, PR 3 (#95) `maha -p`, PR 4 (#96) reintentos y respaldo y PR 5 (#97, comandos de línea) | — |
 
 Después del hito 7 (2026-10-27, todo de documentación, decidido por el
 mantenedor):
@@ -90,10 +89,16 @@ tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
    (tareas 14, 16 y 20). Spec §5 y §12.26–35.
 6. Hecho el 2026-10-30: el mantenedor acepta las tres ⚠ del PR 4 (el
    código nuevo no actuó; spec §5), y el PR se integra.
-7. **Agente:** después, el PR 5 (comandos de línea,
-   `feature/hito-8-comandos`), que también resuelve que el error de `-r`
-   sin id nombre `maha sessions`; luego el PR 6, de cierre.
-8. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+7. Hecho el 2026-10-30, en `feature/hito-8-comandos`: el PR 5, `maha
+   models`, `sessions` (y `delete`), `trace`, `stats`, `export` e
+   `import`, y `/new` y `/export` en la conversación; el error de `-r` sin
+   id nombra `maha sessions`. Verificado a mano. Sin evals: no cambia lo
+   que mide la batería (spec §5). Lo aprendido, en la spec §12.36–46.
+8. **Agente:** integrar el PR 5 (#97) con el CI en verde; después, el
+   PR 6, de cierre (`feature/hito-8-cierre`): versión 0.8.0, nota de la
+   guía, spec IMPLEMENTADA, los dos README, PROYECTO, HISTORIAL y MAPA.
+9. **Humano:** tras el PR 6, el tag `v0.8.0` (o pedírselo al agente).
+10. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -170,12 +175,12 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 - canal de distribución (hito 23).
 
 **Con hito asignado** (salieron de hitos anteriores; cada uno, de su spec):
-- **Hito 8** (lo que queda, en sus PRs 5 y 6; los reintentos ante 429 y
-  5xx de la spec 7, §11, hechos en el PR 4): en el PR 5, que el error de `-r` sin id
-  nombre también `maha sessions` (spec 8, §12.22). Hecho en el PR 3:
-  `--continue`/`--resume` al arrancar (spec 6, §11). Ya hechos: los límites de tokens y de tiempo por turno
-  (spec 4, §11; PR #91) y las descripciones de las herramientas medidas en
-  la línea base (spec 4, §5; PR #92).
+- **Hito 8:** todo hecho. En el PR 5, que el error de `-r` sin id nombre
+  también `maha sessions` (spec 8, §12.22); en el PR 4, los reintentos
+  ante 429 y 5xx (spec 7, §11); en el PR 3, `--continue`/`--resume` al
+  arrancar (spec 6, §11); antes, los límites de tokens y de tiempo por
+  turno (spec 4, §11; PR #91) y las descripciones de las herramientas
+  medidas en la línea base (spec 4, §5; PR #92).
 - **Hito 10:** el modelo no sabe en qué directorio trabaja tras retomar una
   sesión de otro (spec 6, §1.8).
 - **Hito 11:** el coste en tokens de las herramientas en cada llamada (~700
