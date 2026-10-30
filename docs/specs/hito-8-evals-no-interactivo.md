@@ -584,8 +584,11 @@ que se compara con la línea base.
   fixture), no por el proveedor. A la vez suben la 13 (de 3/5 a 5/5) y la
   18 (de 2/5 a 5/5), y el total pasa de 94 a 95. Lectura del agente: ruido
   del modelo, porque el bucle hizo lo mismo que antes.
-- **Pendiente: decisión del mantenedor** sobre las tres ⚠ (AGENTS.md,
-  "Evals"). Sin ella, el PR 4 no se integra.
+- **Decisión del mantenedor** (2026-10-30): se aceptan las tres ⚠ y el
+  PR 4 se integra. Motivo: el código nuevo no actuó en ninguna de las 200
+  ejecuciones, así que el modelo recibió las mismas peticiones que antes;
+  las diferencias son ruido del modelo. La línea base sigue siendo la del
+  2026-10-27.
 
 ## 6. Orden de piezas para el implementador
 

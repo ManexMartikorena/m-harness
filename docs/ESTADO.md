@@ -2,8 +2,8 @@
 
 Última actualización: 2026-10-30. **Hito 8 en curso: PRs 1 a 3 de 6
 integrados (núcleo sin persona, evals y `maha -p`); el PR 4, reintentos y
-respaldo, abierto y pendiente de una decisión del mantenedor sobre tres ⚠
-de las evals. Cero deuda conocida.**
+respaldo, integrado tras aceptar el mantenedor tres ⚠ de las evals.
+Cero deuda conocida.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -88,8 +88,8 @@ tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
    Evals: `glm-5.3-flash` 95/100 (base 94), `kimi-k2.7-code` 99/100
    (igual), con 0 reintentos en las 200 ejecuciones; tres ⚠ de glm
    (tareas 14, 16 y 20). Spec §5 y §12.26–35.
-6. **Humano:** decidir sobre las tres ⚠ del PR 4 (spec §5). Si se aceptan,
-   el agente anota la decisión en la spec y lo integra con el CI en verde.
+6. Hecho el 2026-10-30: el mantenedor acepta las tres ⚠ del PR 4 (el
+   código nuevo no actuó; spec §5), y el PR se integra.
 7. **Agente:** después, el PR 5 (comandos de línea,
    `feature/hito-8-comandos`), que también resuelve que el error de `-r`
    sin id nombre `maha sessions`; luego el PR 6, de cierre.
