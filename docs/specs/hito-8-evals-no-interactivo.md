@@ -590,6 +590,11 @@ que se compara con la línea base.
   las diferencias son ruido del modelo. La línea base sigue siendo la del
   2026-10-27.
 
+**PR 5** (comandos de línea, 2026-10-30): sin evals, porque no cambia nada
+de lo que la batería ejecuta: son comandos de `maha` sobre sesiones y
+trazas, fuera del turno. Las evals no usan `/new`, `/export` ni los
+subcomandos; `Sessions.start(model)` sin modelo hace lo mismo que antes.
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit en verde. Seis PRs, en el milestone "Hito 8".
@@ -786,6 +791,48 @@ agente:
    línea base. Alternativa: el orden de DESIGN (`-p` primero).
 
 ## 12. Aprendido al implementar
+
+### PR 5 (`feature/hito-8-comandos`, 2026-10-30)
+
+36. **Tres puertos crecen un método:** `ModelCatalog.models()` (listar),
+    `TraceSink.sessions()` (los ids de todas las trazas: `maha stats` las
+    suma también sin su sesión) y `SessionStore.read()` (sin cerrojo:
+    exportar una sesión que otro `maha` tiene abierta). `read()` deja
+    fuera una línea a medio escribir y no toca el fichero.
+37. **`maha sessions delete ID` no pregunta,** como `rm` o `git branch
+    -d`: el id se escribe a propósito. `/delete` sigue preguntando, porque
+    en la conversación una línea pegada podría contestar.
+38. **`maha trace` sin id** es la última sesión de este directorio
+    (`Sessions.last_here()`): desde la shell no hay "la actual".
+39. **`maha stats` cuenta los días en el reloj de la persona,** no en UTC,
+    y `--days N` incluye hoy. Lo que no tiene precio va aparte: el coste
+    es un mínimo (`≥`) o desconocido (`?`).
+40. **Markdown para leer, JSON para volver:** el Markdown corta los
+    resultados a 40 líneas y avisa; el JSON es la `Session` entera, que
+    `maha import` valida con el mismo modelo. El cerco de cada bloque de
+    código es más largo que cualquier fila de comillas del contenido. A una
+    terminal sale limpio, como `maha -p`.
+41. **`/export` escribe junto a `maha`** (`ID.md` por defecto, o el
+    fichero que se diga, creando su carpeta) y nunca sobrescribe. Es un
+    comando de la persona, no del modelo: no pasa por los permisos.
+42. **`maha import`:** la sesión es de este directorio (para que `-c` la
+    encuentre) y con un id nuevo, que no tenga ninguna sesión ni ninguna
+    traza, aunque esté vacía. Lleva su coste y sus turnos sin precio. Un
+    historial que la API no aceptaría se rechaza, y si falla el guardado no
+    queda nada a medias.
+43. **`/new` conserva el modelo** de `/model`: es la elección de este
+    `maha`. La sesión anterior se suelta solo cuando la nueva está lista,
+    como en `/resume`, y avisa igual si no pudo guardar.
+44. **El error de `-r` sin id** nombra ya `maha sessions` (spec 8, §12.22).
+45. **ruff (ASYNC240) pidió sacar la escritura de `/export` a un hilo**
+    (`asyncio.to_thread`): una función asíncrona no hace E/S de disco que
+    bloquee el bucle.
+46. **Verificación a mano** (2026-10-30, el servidor local de §12.35, en un
+    directorio desechable; spec §7, punto 10): dos `maha -p`; `models` (sin
+    modelos de `local`) y `models --all` (113); `sessions`; `trace`;
+    `stats --days 1`; `export` en Markdown y en JSON, e `import` de ese
+    JSON; `/new` y `/export` dentro de la conversación; `sessions delete`;
+    y `-r` sin id, que nombra `maha sessions` y sale con 2.
 
 ### PR 4 (`feature/hito-8-reintentos`, 2026-10-30)
 
