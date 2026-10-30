@@ -34,7 +34,9 @@ type Reason = Literal[
 
 
 class RunResult(BaseModel, frozen=True):
-    session: str
+    # None if the run kept nothing: there is no session to resume (audit of
+    # hito 8).
+    session: str | None
     # The final answer: the text of the last call to the model.
     text: str
     reason: Reason
@@ -123,7 +125,7 @@ async def run_once(
     except ModelError as exc:
         error = str(exc)
     return RunResult(
-        session=conversation.id,
+        session=conversation.id if conversation.stored else None,
         text=answer,
         reason=reason,
         steps=steps,
