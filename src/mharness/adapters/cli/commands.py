@@ -1,11 +1,13 @@
 """What a line is: a command for maha, or text for the model (spec hito 6,
 §1.8)."""
 
+import asyncio
 import re
 from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import TextIO
 
+from mharness.adapters.cli.export import markdown
 from mharness.adapters.cli.input import Discard, ReadLine
 from mharness.adapters.cli.spinner import use_color
 from mharness.adapters.cli.text import clean, clean_line, usd
@@ -27,6 +29,7 @@ COMMANDS = {
     "delete": "/delete ID — delete a session",
     "model": "/model [ID] — show the model, or change it",
     "trace": "/trace [ID] — what a session did and cost; without ID, this one",
+    "export": "/export [FILE] — this conversation in Markdown; by default, ID.md",
     "help": "/help — this list",
     "exit": "/exit — quit",
 }
@@ -98,6 +101,8 @@ class Commands:
                     await self._trace(command.argument)
                 case "model":
                     await self._model(command.argument)
+                case "export":
+                    await self._export(command.argument)
                 case _:
                     self._say(f"unknown command: /{command.name} (see /help)")
         except (SessionError, TraceError) as exc:
@@ -197,6 +202,18 @@ class Commands:
         for line in trace_lines(report, self._home):
             self._say(line)
 
+    async def _export(self, file: str | None) -> None:
+        """This conversation in Markdown, to `file` or to `ID.md`, next to
+        maha; never over a file that exists (spec hito 8, §1.15)."""
+        conversation = self.conversation
+        if not conversation.stored:
+            self._say("(nothing to export yet)")
+            return
+        text = markdown(await self._sessions.read(conversation.id))
+        name = file or f"{conversation.id}.md"
+        path = await asyncio.to_thread(_write_new, Path(self._sessions.cwd), name, text)
+        self._say(f"[exported to {self._shown(str(path))}]")
+
     def _shown(self, cwd: str) -> str:
         return shown_dir(cwd, self._home)
 
@@ -220,6 +237,21 @@ async def session_lines(sessions: Sessions, home: Path) -> list[str]:
             f"{shown_dir(summary.cwd, home)}  {clean_line(summary.title)}"
         )
     return lines
+
+
+def _write_new(cwd: Path, name: str, text: str) -> Path:
+    """Write `text` to `name`, from `cwd`, creating its folder; never over
+    a file that exists. Raises `SessionError`."""
+    path = cwd / Path(name).expanduser()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("x", encoding="utf-8") as target:
+            target.write(text)
+    except FileExistsError:
+        raise SessionError(f"{path} already exists") from None
+    except OSError as exc:
+        raise SessionError(f"cannot write {path}: {exc.strerror}") from None
+    return path
 
 
 def resumed_notes(resumed: Resumed, cwd: str, home: Path) -> list[str]:

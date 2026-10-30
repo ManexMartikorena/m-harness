@@ -3,6 +3,7 @@
 
 import asyncio
 import io
+import os
 import signal
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -78,6 +79,7 @@ def test_the_known_commands() -> None:
         "delete",
         "model",
         "trace",
+        "export",
         "help",
         "exit",
     }
@@ -573,3 +575,48 @@ async def test_resume_says_what_the_catalog_knows_of_its_model() -> None:
     _, out, _ = await Maha(store, [], tokens=("b01c",)).run(f"/resume {FIRST}", "/exit")
 
     assert "  [model not in the catalog: cost only if the provider reports it]\n" in out
+
+
+# /export (spec hito 8, §1.15).
+
+
+async def test_export_writes_the_conversation_next_to_maha(tmp_path: Path) -> None:
+    maha = Maha(MemorySessionStore(), [reply("Hola.")], cwd=str(tmp_path))
+
+    _, out, err = await maha.run("Hola", "/export", "/exit")
+
+    written = tmp_path / f"{FIRST}.md"
+    assert err == ""
+    assert f"  [exported to {written}]\n" in out
+    assert written.read_text(encoding="utf-8").endswith("## maha\n\nHola.\n")
+
+
+async def test_export_to_a_file_of_its_own(tmp_path: Path) -> None:
+    maha = Maha(MemorySessionStore(), [reply("Hola.")], cwd=str(tmp_path))
+
+    await maha.run("Hola", "/export notas/hola.md", "/exit")
+
+    assert (
+        (tmp_path / "notas" / "hola.md")
+        .read_text(encoding="utf-8")
+        .startswith("# Hola\n")
+    )
+
+
+async def test_export_never_overwrites(tmp_path: Path) -> None:
+    (tmp_path / "hola.md").write_text("mío", encoding="utf-8")
+    maha = Maha(MemorySessionStore(), [reply("Hola.")], cwd=str(tmp_path))
+
+    _, _, err = await maha.run("Hola", "/export hola.md", "/exit")
+
+    assert err == f"error: {tmp_path / 'hola.md'} already exists\n"
+    assert (tmp_path / "hola.md").read_text(encoding="utf-8") == "mío"
+
+
+async def test_export_before_the_first_turn_has_nothing(tmp_path: Path) -> None:
+    maha = Maha(MemorySessionStore(), [], cwd=str(tmp_path))
+
+    _, out, _ = await maha.run("/export", "/exit")
+
+    assert "  (nothing to export yet)\n" in out
+    assert os.listdir(tmp_path) == []
