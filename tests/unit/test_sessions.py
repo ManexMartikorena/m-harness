@@ -23,12 +23,19 @@ from mharness.domain.approval import ApprovalRequest
 from mharness.domain.catalog import ModelInfo, Prices
 from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta
-from mharness.domain.messages import Message, TextBlock, ToolCallBlock
+from mharness.domain.messages import (
+    Message,
+    TextBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+)
 from mharness.domain.model import Usage
 from mharness.domain.retry import NO_RETRIES, RetryPolicy
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
+    Session,
+    SessionCorrupt,
     SessionEntry,
     SessionError,
     SessionHeader,
@@ -1370,3 +1377,92 @@ async def test_the_session_cost_has_the_turn_when_it_finishes() -> None:
     assert seen == [Decimal(1)]
     # Counted once.
     assert conversation.cost == Decimal(1)
+
+
+# Importing a session (spec hito 8, §1.15).
+
+
+async def exported(*answers: str, model: str = "kimi-k2.7-code") -> Session:
+    """A session as `maha export --format json` gives it back."""
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply(a) for a in answers]), model=model)
+    conversation = await world.sessions.start()
+    for answer in answers:
+        await turn(conversation, f"Pregunta para {answer}")
+    await conversation.close()
+    return Session.model_validate_json((await store.read(FIRST)).model_dump_json())
+
+
+async def test_an_imported_session_is_new_and_of_this_directory() -> None:
+    session = await exported("Uno.", "Dos.")
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([]), cwd="/home/ana/otro", tokens=["9abc"])
+
+    new = await world.sessions.import_session(session)
+
+    assert new == "20261026-091502-9abc"
+    imported = await store.read(new)
+    assert imported.messages == session.messages
+    assert (imported.model, imported.usage, imported.cost) == (
+        "kimi-k2.7-code",
+        session.usage,
+        session.cost,
+    )
+    assert imported.header.cwd == "/home/ana/otro"
+    assert imported.header.provider == session.header.provider
+
+
+async def test_an_import_never_takes_an_id_in_use() -> None:
+    session = await exported("Uno.")
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([]), tokens=["3fa2", "b01c", "c0de"])
+    await world.sessions.import_session(session)
+    # A trace left without its session keeps its id too.
+    await world.traces.open("20261026-091502-b01c")
+
+    again = await world.sessions.import_session(session)
+
+    assert again == "20261026-091502-c0de"
+    assert len(store.sessions) == 2
+
+
+async def test_an_import_keeps_the_turns_without_a_price() -> None:
+    session = (await exported("Uno.")).model_copy(update={"uncosted_turns": 2})
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([]), tokens=["9abc"])
+
+    new = await world.sessions.import_session(session)
+
+    assert (await store.read(new)).uncosted_turns == 2
+
+
+async def test_a_broken_history_is_not_imported() -> None:
+    session = await exported("Uno.")
+    broken = session.model_copy(
+        update={
+            "messages": [
+                *session.messages,
+                Message(role="tool", blocks=[ToolResultBlock(call_id="x", content="")]),
+            ]
+        }
+    )
+    store = MemorySessionStore()
+
+    with pytest.raises(SessionCorrupt):
+        await World(store, FakeModelClient([])).sessions.import_session(broken)
+
+    assert store.sessions == {}
+
+
+async def test_an_import_that_cannot_be_saved_leaves_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = await exported("Uno.")
+    monkeypatch.setattr("tests.fakes.sessions.MemoryLog", BrokenLog)
+    monkeypatch.setattr(BrokenLog, "failures", 1)
+    store = MemorySessionStore()
+
+    with pytest.raises(SessionError, match="No space left"):
+        await World(store, FakeModelClient([])).sessions.import_session(session)
+
+    assert store.sessions == {}
