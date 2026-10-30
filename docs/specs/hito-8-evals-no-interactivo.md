@@ -811,6 +811,9 @@ agente:
     - Revisando el diff: `maha -p … | head -1` acababa con una traza de
       Python. Ahora sale con 1 y en silencio.
     - `-r` sin id daba el error genérico de argparse.
+    - En la revisión del PR #95 (2026-10-30): `maha --max-cost 0 eval`
+      ignoraba el límite en silencio, porque `Decimal("0") == False`.
+      Ahora es un error de uso, como con cualquier otro valor.
 25. **Verificación a mano** (OpenCode Go, `glm-5.3-flash`, en un directorio
     desechable; spec §7, puntos 2 a 8):
     - respuesta solo en stdout, código 0;
