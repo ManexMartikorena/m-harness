@@ -14,3 +14,8 @@ class ModelCatalog(Protocol):
     def get(self, provider: str, model: str) -> ModelInfo | None:
         """The model on that provider, or None if the catalog lacks it."""
         ...
+
+    def models(self) -> list[ModelInfo]:
+        """Every model of every provider, for `maha models` (spec hito 8,
+        §1.15)."""
+        ...

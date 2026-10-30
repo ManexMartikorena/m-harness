@@ -13,3 +13,6 @@ class MemoryCatalog:
 
     def get(self, provider: str, model: str) -> ModelInfo | None:
         return self._models.get((provider, model))
+
+    def models(self) -> list[ModelInfo]:
+        return list(self._models.values())

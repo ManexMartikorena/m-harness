@@ -6,7 +6,7 @@ from mharness.adapters.cli.approval import DenyAll, TerminalApproval
 from mharness.adapters.cli.conversation import converse
 from mharness.adapters.cli.headless import print_mode
 from mharness.adapters.cli.input import StdinLines
-from mharness.adapters.cli.reports import eval_report, run_line
+from mharness.adapters.cli.reports import eval_report, models_report, run_line
 from mharness.adapters.cli.spinner import use_color
 
 __all__ = [
@@ -16,6 +16,7 @@ __all__ = [
     "converse",
     "eval_report",
     "fail",
+    "models_report",
     "parse",
     "print_mode",
     "run_line",

@@ -75,6 +75,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cli.fail(str(exc))
     if options.command == "eval":
         return asyncio.run(_eval(settings, catalog, options))
+    if options.command == "models":
+        cli.models_report(
+            catalog.models(),
+            settings.provider_name,
+            every=options.every,
+            out=sys.stdout,
+        )
+        return 0
     settings = _with_options(settings, options)
     start = Start(last=options.last, session=options.session, model=options.model)
     # Resolved once: the tools and the sessions name it the same way.

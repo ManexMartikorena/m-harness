@@ -331,3 +331,20 @@ def test_resume_without_an_id_says_where_to_find_one(
     assert "-r needs the id of a session: /sessions lists them" in (
         capsys.readouterr().err
     )
+
+
+def test_models_lists_the_provider_unless_all() -> None:
+    options = parse(["models"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.command, options.every) == ("models", False)
+
+    options = parse(["models", "--all"])
+    assert isinstance(options, argparse.Namespace)
+    assert options.every is True
+
+
+def test_models_takes_no_conversation_option(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert parse(["-m", "x", "models"]) == 2
+    assert "models does not take -m" in capsys.readouterr().err

@@ -44,6 +44,7 @@ def build_parser(tools: Sequence[str]) -> argparse.ArgumentParser:
     _conversation_options(parser, tools)
     commands = parser.add_subparsers(dest="command", metavar="COMMAND")
     _eval_parser(commands)
+    _models_parser(commands)
     return parser
 
 
@@ -158,6 +159,20 @@ def _eval_parser(commands: Any) -> None:
         "--retry-errors",
         action="store_true",
         help="run once more what the provider broke (429, 5xx, network)",
+    )
+
+
+def _models_parser(commands: Any) -> None:
+    """`maha models` (spec hito 8, §1.15)."""
+    models = commands.add_parser(
+        "models",
+        help="the models of the catalog, with their prices",
+        description="The models that maha's catalog knows for the configured "
+        "provider: context window and prices. A model that is not here may "
+        "still work; maha just cannot price it.",
+    )
+    models.add_argument(
+        "--all", action="store_true", dest="every", help="of every provider"
     )
 
 

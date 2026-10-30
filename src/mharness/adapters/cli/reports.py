@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import TextIO
 
 from mharness.adapters.cli.text import clean_line, usd
+from mharness.domain.catalog import ModelInfo
 from mharness.domain.evals import Baseline, Stats, TaskRun, by_task, compare, stats
 
 _MARKS = {"pass": "✓", "fail": "✗", "error": "!"}
@@ -108,3 +109,61 @@ def _spent(runs: Sequence[TaskRun]) -> Decimal | None:
             return None
         total += run.cost
     return total
+
+
+def models_report(
+    models: Sequence[ModelInfo], provider: str, *, every: bool, out: TextIO
+) -> None:
+    """`maha models`: those of `provider`, or `every` one, with their window
+    and prices (spec hito 8, §1.15). A model may still work if it is not
+    here: the catalog only prices it."""
+    shown = sorted(
+        (info for info in models if every or info.provider == provider),
+        key=lambda info: (info.provider, info.model),
+    )
+    more = " · maha models --all for every provider"
+    if not shown:
+        print(f"no models of {clean_line(provider)} in the catalog{more}", file=out)
+        return
+    rows = [
+        [
+            clean_line(f"{info.provider}/{info.model}" if every else info.model),
+            _context(info.context),
+            "?" if info.prices is None else _per_million(info.prices.input),
+            "?" if info.prices is None else _per_million(info.prices.output),
+            "may train on your data" if info.trains_on_data else "",
+        ]
+        for info in shown
+    ]
+    head = ["model", "context", "input $/M", "output $/M", ""]
+    widths = [max(len(row[i]) for row in [head, *rows]) for i in range(4)]
+    # Three spaces after the name, two between the numbers.
+    widths = [widths[0] + 3, *(width + 2 for width in widths[1:])]
+    for row in [head, *rows]:
+        cells = [cell.ljust(width) for cell, width in zip(row, widths, strict=False)]
+        print("".join([*cells, row[4]]).rstrip(), file=out)
+    print(file=out)
+    count = f"{len(shown)} model" + ("" if len(shown) == 1 else "s")
+    if every:
+        print(f"{count} · prices per million tokens", file=out)
+    else:
+        print(
+            f"{count} of {clean_line(provider)} · prices per million tokens{more}",
+            file=out,
+        )
+
+
+def _context(tokens: int | None) -> str:
+    """200k, 1M, 1.5M; ? if unknown."""
+    if tokens is None:
+        return "?"
+    if tokens >= 1_000_000:
+        return f"{round(tokens / 1_000_000, 1):g}M"
+    return f"{tokens // 1000}k"
+
+
+def _per_million(price: Decimal) -> str:
+    """At least two decimals, and all it has: 0.30, 0.075."""
+    text = format(price.normalize(), "f")
+    whole, _, decimals = text.partition(".")
+    return f"{whole}.{decimals.ljust(2, '0')}"

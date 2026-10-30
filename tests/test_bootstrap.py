@@ -1018,3 +1018,16 @@ def test_without_a_fallback_the_last_error_ends_the_run(
 
     assert len(route.calls) == 4
     assert "error: HTTP 429" in capsys.readouterr().err
+
+
+def test_models_lists_the_catalog_of_the_configured_provider(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+
+    assert main(["models"]) == 0
+
+    out = capsys.readouterr().out
+    assert out.startswith("model ")
+    assert "\nglm-5.3-flash " in out
+    assert "of opencode-go · prices per million tokens" in out
