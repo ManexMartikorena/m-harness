@@ -18,7 +18,8 @@ PRs 1 a 3 de 6 integrados; el 4, abierto. Plan: 23 hitos hasta la 1.0
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.7.1` — Comandos sin terminal** (2026-10-27):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.7.1
-- Ramas abiertas: `feature/hito-8-reintentos`, el PR 4 del hito 8. Las
+- Ramas abiertas: `feature/hito-8-reintentos`, el PR 4 del hito 8 (#96,
+  https://github.com/ManexMartikorena/m-harness/pull/96). Las
   integradas se conservan en GitHub.
 
 ## Para la release
@@ -43,7 +44,7 @@ spec, su nota de la guía y su release.
 | 5 | Permisos y herramientas con efecto | `v0.5.0` (2026-10-23), `v0.5.1`, `v0.5.2` (cero deuda) |
 | 6 | Sesiones e historial | `v0.6.0` (2026-10-26), `v0.6.1` |
 | 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
-| 8 | *En curso.* Evals y modo no interactivo: PR 1 (#91) núcleo sin persona, PR 2 (#92) evals con la primera línea base, PR 3 (#95) `maha -p` y PR 4 (reintentos y respaldo, abierto) | — |
+| 8 | *En curso.* Evals y modo no interactivo: PR 1 (#91) núcleo sin persona, PR 2 (#92) evals con la primera línea base, PR 3 (#95) `maha -p` y PR 4 (#96, reintentos y respaldo, abierto) | — |
 
 Después del hito 7 (2026-10-27, todo de documentación, decidido por el
 mantenedor):
@@ -80,7 +81,7 @@ tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
    lo que mide la batería (spec §5). Lo aprendido, en la spec §12.14–25.
 4. Hecho el 2026-10-30: revisado el PR #95 (un fallo, `--max-cost 0`
    junto a un subcomando, arreglado con su test) e integrado.
-5. Hecho el 2026-10-30, en `feature/hito-8-reintentos`: el PR 4,
+5. Hecho el 2026-10-30, en `feature/hito-8-reintentos` (PR #96): el PR 4,
    reintentos ante 429 y 5xx (`RetryPolicy`, `Retry-After`) y modelo de
    respaldo (`fallback_model`, `--fallback-model`), en la terminal, en
    `-p` y en la traza. Verificado a mano con un servidor que responde 503.
