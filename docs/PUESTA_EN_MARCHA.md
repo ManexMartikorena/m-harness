@@ -116,8 +116,16 @@ max_tokens = 400000  # entrada + salida
 timeout = 600        # segundos
 ```
 
-Un proyecto puede tener `.maha/config.toml` con `provider` y `model`, que
-ganan a los del usuario, y `[limits]`, de los que vale el más estricto de
+Desde el hito 8, también opcional, un modelo de respaldo: responde cuando
+el principal sigue fallando (429 o 5xx) tras tres reintentos. Va arriba,
+antes de `[limits]`; `--fallback-model` lo cambia para una ejecución.
+
+```toml
+fallback_model = "glm-5.3"
+```
+
+Un proyecto puede tener `.maha/config.toml` con `provider`, `model` y
+`fallback_model`, que ganan a los del usuario, y `[limits]`, de los que vale el más estricto de
 los dos ficheros: un repositorio ajeno no puede aflojar los tuyos. Si declara `[providers]`, `maha` se niega a
 arrancar: un repositorio ajeno podría enviar la clave a otro servidor (spec
 del hito 2, §1.10).

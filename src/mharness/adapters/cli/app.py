@@ -17,6 +17,7 @@ _CONVERSATION = {
     "last": "-c",
     "session": "-r",
     "model": "-m",
+    "fallback_model": "--fallback-model",
     "output_format": "--output-format",
     "allow": "--allow",
     "max_steps": "--max-steps",
@@ -82,6 +83,12 @@ def _conversation_options(
     )
     parser.add_argument(
         "-m", "--model", type=_text, metavar="ID", help="the model of this run"
+    )
+    parser.add_argument(
+        "--fallback-model",
+        type=_text,
+        metavar="ID",
+        help="the model that answers when the retries of the main one run out",
     )
     parser.add_argument(
         "--output-format",

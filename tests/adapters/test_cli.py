@@ -300,6 +300,8 @@ def test_continue_and_the_limits_go_with_the_conversation() -> None:
         (["--timeout", "nan"], "must be more than 0"),
         (["--timeout", "inf"], "must be more than 0"),
         (["-m", " "], "empty"),
+        (["--fallback-model", ""], "empty"),
+        (["--fallback-model", "x", "eval"], "eval does not take --fallback-model"),
         (["-r", " "], "-r needs the id of a session"),
         (["-c", "eval"], "eval does not take -c"),
         (["-m", "x", "--timeout", "5", "eval"], "eval does not take -m, --timeout"),
