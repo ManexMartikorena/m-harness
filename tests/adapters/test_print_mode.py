@@ -16,6 +16,7 @@ from mharness.adapters.cli.headless import (
     OutputFormat,
     exit_code,
     print_mode,
+    result_object,
 )
 from mharness.adapters.cli.input import InputTooLarge, ReadAll
 from mharness.application.agent import Agent
@@ -625,3 +626,92 @@ async def test_stream_json_has_the_retry_and_the_fallback() -> None:
         "fallback": "glm-5.3",
         "error": "HTTP 503",
     }
+
+
+# In json, a failure before or around the turn is a result too (audit of
+# hito 8): `| jq .result` got nothing.
+
+
+async def too_much(limit: int) -> str:
+    raise InputTooLarge("the input is larger than 10 MB")
+
+
+class Crashing(FakeModelClient):
+    async def stream(self, request: ModelRequest) -> AsyncGenerator[ModelEvent]:
+        raise RuntimeError("boom")
+        yield
+
+
+@pytest.mark.parametrize("output_format", ["json", "stream-json"])
+@pytest.mark.parametrize(
+    ("prompt", "read_all", "client", "code", "error"),
+    [
+        ("resume", too_much, FakeModelClient([]), 1, "the input is larger than 10 MB"),
+        (
+            " ",
+            None,
+            FakeModelClient([]),
+            2,
+            '-p needs an instruction: maha -p "…", or pipe it to maha -p',
+        ),
+        ("Hola", None, Crashing([]), 1, "internal: RuntimeError: boom"),
+    ],
+)
+async def test_a_failure_writes_a_result_in_json(
+    output_format: OutputFormat,
+    prompt: str,
+    read_all: ReadAll | None,
+    client: FakeModelClient,
+    code: int,
+    error: str,
+) -> None:
+    got, out, err = await run(
+        sessions(client), prompt, read_all=read_all, output_format=output_format
+    )
+
+    result = json.loads(out.splitlines()[-1])
+    assert got == code
+    assert err == f"error: {error}\n"
+    assert set(result) == set(
+        result_object(
+            RunResult(
+                session=None,
+                text="",
+                reason="error",
+                steps=0,
+                tool_calls=0,
+                tool_errors=0,
+                denials=[],
+                usage=Usage(),
+                cost=None,
+                duration=0.0,
+                model="m",
+                error=None,
+            )
+        )
+    )
+    assert (result["type"], result["is_error"], result["error"]) == (
+        "result",
+        True,
+        error,
+    )
+    assert (result["session_id"], result["reason"]) == (None, "error")
+
+
+async def test_a_session_that_cannot_be_resumed_writes_a_result_in_json() -> None:
+    out = io.StringIO()
+
+    code = await print_mode(
+        sessions(FakeModelClient([])),
+        "sigue",
+        read_all=None,
+        catalog=KNOWN,
+        provider="opencode-go",
+        output_format="json",
+        start=Start(last=True),
+        out=out,
+        err=io.StringIO(),
+    )
+
+    assert code == 1
+    assert json.loads(out.getvalue())["error"] == "no session in this directory"

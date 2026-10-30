@@ -53,6 +53,7 @@ from mharness.domain.agent_events import (
     ToolFinished,
     TurnFinished,
 )
+from mharness.domain.model import Usage
 from mharness.domain.session import SessionError
 from mharness.ports.catalog import ModelCatalog
 
@@ -150,21 +151,19 @@ async def _print(
     try:
         piped = None if read_all is None else await read_all(MAX_INPUT)
     except InputTooLarge as exc:
-        print(f"error: {exc}", file=err, flush=True)
-        return EXIT_ERROR
+        return _failed(str(exc), EXIT_ERROR, out, shown)
     text = instruction(prompt, piped)
     if not text.strip():
-        print(
-            'error: -p needs an instruction: maha -p "…", or pipe it to maha -p',
-            file=err,
-            flush=True,
+        return _failed(
+            '-p needs an instruction: maha -p "…", or pipe it to maha -p',
+            EXIT_USAGE,
+            out,
+            shown,
         )
-        return EXIT_USAGE
     try:
         opened = await sessions.open(start)
     except SessionError as exc:
-        print(f"error: {clean(str(exc))}", file=err, flush=True)
-        return EXIT_ERROR
+        return _failed(clean(str(exc)), EXIT_ERROR, out, shown)
     conversation = opened.conversation
     try:
         if opened.resumed is not None:
@@ -184,8 +183,8 @@ async def _print(
     except Exception as exc:
         # A bug, or the disk failing: the turn kept what ran.
         detail = clean(f"{type(exc).__name__}: {exc}")
-        print(f"error: internal: {detail}", file=err, flush=True)
-        return EXIT_ERROR
+        session = conversation.id if conversation.stored else None
+        return _failed(f"internal: {detail}", EXIT_ERROR, out, shown, session)
     finally:
         await conversation.close()
         warn_unsaved(conversation, err)
@@ -197,6 +196,39 @@ async def _print(
     else:
         _json_line(result_object(result), out)
     return exit_code(result)
+
+
+def _failed(
+    error: str, code: int, out: TextIO, shown: _Shown, session: str | None = None
+) -> int:
+    """A failure before or around the turn: on stderr, and in `json` and
+    `stream-json` also as their `result`, so that a script reading stdout
+    gets one (audit of hito 8). `error` is already clean."""
+    print(f"error: {error}", file=shown.err, flush=True)
+    if shown.output_format != "text":
+        _json_line(failure_object(error, session), out)
+    return code
+
+
+def failure_object(error: str, session: str | None = None) -> dict[str, Any]:
+    """The `result` of a run that did not get to its turn, or broke in it:
+    the names of `result_object()`, with nothing spent that is known."""
+    return {
+        "type": "result",
+        "session_id": session,
+        "result": "",
+        "reason": "error",
+        "is_error": True,
+        "steps": 0,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "denials": [],
+        "usage": Usage().model_dump(mode="json"),
+        "cost_usd": None,
+        "duration_s": 0.0,
+        "model": None,
+        "error": error,
+    }
 
 
 def exit_code(result: RunResult) -> int:
