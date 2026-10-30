@@ -363,3 +363,13 @@ def test_sessions_lists_or_deletes() -> None:
 def test_sessions_delete_needs_the_id(capsys: pytest.CaptureFixture[str]) -> None:
     assert parse(["sessions", "delete"]) == 2
     assert "the following arguments are required: ID" in capsys.readouterr().err
+
+
+def test_trace_takes_an_optional_id() -> None:
+    options = parse(["trace"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.command, options.id) == ("trace", None)
+
+    options = parse(["trace", "20261030-101500-3fa2"])
+    assert isinstance(options, argparse.Namespace)
+    assert options.id == "20261030-101500-3fa2"

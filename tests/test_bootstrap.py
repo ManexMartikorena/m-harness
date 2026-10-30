@@ -1063,3 +1063,21 @@ def test_sessions_lists_and_deletes_from_the_shell(
     assert main(["sessions"]) == 0
     assert capsys.readouterr().out == "(no sessions)\n"
     assert main(["sessions", "delete", session]) == 1
+
+
+@respx.mock
+def test_trace_shows_the_last_session_here_or_one_by_id(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    session = a_print_session(stdin)
+
+    assert main(["trace"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith(f"{session} · glm-5.3-flash · 1 turn · 1 model call")
+    assert f"/maha/traces/{session}.jsonl]\n" in out
+
+    assert main(["trace", session]) == 0
+    assert capsys.readouterr().out == out

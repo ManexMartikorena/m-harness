@@ -521,6 +521,14 @@ class Sessions:
         """Whether the session was in this directory."""
         return summary.cwd == self._origin.cwd
 
+    async def last_here(self) -> str:
+        """The id of the newest session of this directory, open or not.
+        Raises `SessionNotFound`."""
+        for summary in await self._store.summaries():
+            if self.here(summary):
+                return summary.id
+        raise SessionNotFound("no session in this directory")
+
     async def delete(self, session: str, *, current: Conversation) -> None:
         """The session and its trace; also a trace left without its session
         (its first turn could not be saved), which keeps that prompt."""

@@ -3,7 +3,11 @@
 import io
 from pathlib import Path
 
-from mharness.adapters.cli.subcommands import delete_session, list_sessions
+from mharness.adapters.cli.subcommands import (
+    delete_session,
+    list_sessions,
+    show_trace,
+)
 from tests.fakes.model import FakeModelClient, reply
 from tests.fakes.sessions import MemorySessionStore
 from tests.unit.test_sessions import FIRST, World, turn
@@ -63,3 +67,34 @@ async def test_delete_of_a_session_that_does_not_exist_fails() -> None:
 
     assert (code, out.getvalue()) == (1, "")
     assert err.getvalue().startswith("error: ")
+
+
+async def test_trace_without_id_is_the_last_session_here() -> None:
+    world = await with_a_session("Hola.")
+    out, err = io.StringIO(), io.StringIO()
+
+    code = await show_trace(world.sessions, None, out=out, err=err, home=HOME)
+
+    lines = out.getvalue().splitlines()
+    assert (code, err.getvalue()) == (0, "")
+    assert lines[0].startswith(f"{FIRST} · fake-model · 1 turn · 1 model call")
+    assert lines[-1] == f"[trace: /traces/{FIRST}.jsonl]"
+
+
+async def test_trace_of_a_session_by_id() -> None:
+    world = await with_a_session("Hola.")
+    out, err = io.StringIO(), io.StringIO()
+
+    assert await show_trace(world.sessions, FIRST, out=out, err=err, home=HOME) == 0
+
+    assert out.getvalue().startswith(f"{FIRST} · ")
+
+
+async def test_trace_without_sessions_here_fails() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]))
+    out, err = io.StringIO(), io.StringIO()
+
+    code = await show_trace(world.sessions, None, out=out, err=err, home=HOME)
+
+    assert (code, out.getvalue()) == (1, "")
+    assert err.getvalue() == "error: no session in this directory\n"

@@ -46,6 +46,7 @@ def build_parser(tools: Sequence[str]) -> argparse.ArgumentParser:
     _eval_parser(commands)
     _models_parser(commands)
     _sessions_parser(commands)
+    _trace_parser(commands)
     return parser
 
 
@@ -192,6 +193,22 @@ def _sessions_parser(commands: Any) -> None:
         description="Delete a session and its trace, without asking.",
     )
     delete.add_argument("id", metavar="ID")
+
+
+def _trace_parser(commands: Any) -> None:
+    """`maha trace [ID]` (spec hito 8, §1.15)."""
+    trace = commands.add_parser(
+        "trace",
+        help="what a session did and cost",
+        description="A row per turn of a session: calls, tools, tokens, cost "
+        "and time; and where its whole trace is.",
+    )
+    trace.add_argument(
+        "id",
+        nargs="?",
+        metavar="ID",
+        help="the session (default: the last one of this directory)",
+    )
 
 
 def _positive(text: str) -> int:

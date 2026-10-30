@@ -14,7 +14,7 @@ Each returns the exit code: 0, or 1 with the error on stderr.
 from pathlib import Path
 from typing import TextIO
 
-from mharness.adapters.cli.commands import session_lines
+from mharness.adapters.cli.commands import session_lines, trace_lines
 from mharness.adapters.cli.text import clean, clean_line
 from mharness.application.sessions import Sessions
 from mharness.domain.session import SessionError
@@ -44,6 +44,24 @@ async def delete_session(
     finally:
         await current.close()
     print(f"deleted {clean_line(session)}", file=out)
+    return EXIT_OK
+
+
+async def show_trace(
+    sessions: Sessions, session: str | None, *, out: TextIO, err: TextIO, home: Path
+) -> int:
+    """`maha trace [ID]`: what a session did and cost, as /trace; without
+    id, the last session of this directory (spec hito 7, §11.5)."""
+    current = await sessions.start()
+    try:
+        target = session if session is not None else await sessions.last_here()
+        report = await sessions.trace(target, current=current)
+    except (SessionError, TraceError) as exc:
+        return _fail(exc, err)
+    finally:
+        await current.close()
+    for line in trace_lines(report, home):
+        print(line, file=out)
     return EXIT_OK
 
 

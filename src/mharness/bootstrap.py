@@ -83,7 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             out=sys.stdout,
         )
         return 0
-    if options.command == "sessions":
+    if options.command in ("sessions", "trace"):
         return asyncio.run(_sessions_command(settings, catalog, data, options))
     settings = _with_options(settings, options)
     start = Start(last=options.last, session=options.session, model=options.model)
@@ -377,13 +377,18 @@ async def _sessions_command(
     data: Path,
     options: argparse.Namespace,
 ) -> int:
-    """`maha sessions` and what it takes (spec hito 8, §1.15). No call to
-    the model: the client is there because a conversation needs one."""
+    """`maha sessions`, `trace` and what they take (spec hito 8, §1.15). No
+    call to the model: the client is there because a conversation needs
+    one."""
     cwd = Path.cwd().resolve()
     async with _client(settings) as client:
         sessions = _sessions(
             settings, catalog, data, cwd, client, cli.DenyAll(sys.stdout)
         )
+        if options.command == "trace":
+            return await cli.show_trace(
+                sessions, options.id, out=sys.stdout, err=sys.stderr, home=Path.home()
+            )
         if options.action == "delete":
             return await cli.delete_session(
                 sessions, options.id, out=sys.stdout, err=sys.stderr
