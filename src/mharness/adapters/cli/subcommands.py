@@ -12,9 +12,12 @@ deleted 20261030-101500-3fa2
 Each returns the exit code: 0, or 1 with the error on stderr.
 """
 
+import asyncio
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal, TextIO
+
+from pydantic import ValidationError
 
 from mharness.adapters.cli.commands import session_lines, trace_lines
 from mharness.adapters.cli.export import markdown
@@ -22,7 +25,7 @@ from mharness.adapters.cli.reports import stats_report
 from mharness.adapters.cli.text import clean, clean_line
 from mharness.application.sessions import Sessions
 from mharness.application.stats import daily
-from mharness.domain.session import SessionError
+from mharness.domain.session import Session, SessionError
 from mharness.domain.trace import TraceError
 from mharness.ports.tracing import TraceSink
 
@@ -112,6 +115,30 @@ async def export_session(
     return EXIT_OK
 
 
-def _fail(exc: Exception, err: TextIO) -> int:
+async def import_session(
+    sessions: Sessions, file: Path, *, out: TextIO, err: TextIO
+) -> int:
+    """`maha import FILE`: a session of `maha export --format json`, as a
+    new session of this directory."""
+    try:
+        data = await asyncio.to_thread(file.read_bytes)
+    except OSError as exc:
+        return _fail(f"cannot read {file}: {exc.strerror}", err)
+    try:
+        session = Session.model_validate_json(data)
+    except ValidationError as exc:
+        problem = exc.errors(include_url=False, include_input=False)[0]
+        where = ".".join(str(part) for part in problem["loc"])
+        detail = f"{where}: {problem['msg']}" if where else problem["msg"]
+        return _fail(f"{file} is not a session of maha export: {detail}", err)
+    try:
+        new = await sessions.import_session(session)
+    except SessionError as exc:
+        return _fail(exc, err)
+    print(f"imported as {new} · maha -r {new} resumes it", file=out)
+    return EXIT_OK
+
+
+def _fail(exc: Exception | str, err: TextIO) -> int:
     print(f"error: {clean(str(exc))}", file=err, flush=True)
     return EXIT_ERROR

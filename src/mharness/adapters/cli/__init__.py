@@ -11,6 +11,7 @@ from mharness.adapters.cli.spinner import use_color
 from mharness.adapters.cli.subcommands import (
     delete_session,
     export_session,
+    import_session,
     list_sessions,
     show_stats,
     show_trace,
@@ -25,6 +26,7 @@ __all__ = [
     "eval_report",
     "export_session",
     "fail",
+    "import_session",
     "list_sessions",
     "models_report",
     "parse",

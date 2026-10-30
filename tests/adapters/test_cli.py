@@ -400,3 +400,9 @@ def test_export_takes_the_id_and_the_format() -> None:
     options = parse(["export", "20261030-101500-3fa2", "--format", "json"])
     assert isinstance(options, argparse.Namespace)
     assert options.export_format == "json"
+
+
+def test_import_takes_the_file() -> None:
+    options = parse(["import", "s.json"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.command, options.file) == ("import", Path("s.json"))

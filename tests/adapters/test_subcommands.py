@@ -1,12 +1,16 @@
 """The `maha` subcommands over sessions and traces (spec hito 8, §1.15)."""
 
+import asyncio
 import io
 from datetime import timedelta
 from pathlib import Path
 
+import pytest
+
 from mharness.adapters.cli.subcommands import (
     delete_session,
     export_session,
+    import_session,
     list_sessions,
     show_stats,
     show_trace,
@@ -179,3 +183,59 @@ async def test_export_of_a_session_that_does_not_exist() -> None:
 
     assert (code, out.getvalue()) == (1, "")
     assert err.getvalue() == f"error: no session {FIRST}\n"
+
+
+async def test_import_takes_back_an_export(tmp_path: Path) -> None:
+    world = await with_a_session("Hola.")
+    out = io.StringIO()
+    await export_session(
+        world.sessions, FIRST, output_format="json", out=out, err=io.StringIO()
+    )
+    file = tmp_path / "s.json"
+    await asyncio.to_thread(file.write_text, out.getvalue(), "utf-8")
+    out, err = io.StringIO(), io.StringIO()
+
+    code = await import_session(world.sessions, file, out=out, err=err)
+
+    new = "20261026-091502-b01c"
+    assert (code, err.getvalue()) == (0, "")
+    assert out.getvalue() == f"imported as {new} · maha -r {new} resumes it\n"
+    original = await world.sessions.read(FIRST)
+    assert (await world.sessions.read(new)).messages == original.messages
+
+
+@pytest.mark.parametrize(
+    ("content", "says"),
+    [
+        (b"no es json", "is not a session of maha export: Invalid JSON"),
+        (b'{"header": {}}', "is not a session of maha export: header.id: Field"),
+        (b"\xff\xfe", "is not a session of maha export: "),
+    ],
+)
+async def test_import_of_what_is_not_a_session_fails(
+    tmp_path: Path, content: bytes, says: str
+) -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]))
+    file = tmp_path / "s.json"
+    await asyncio.to_thread(file.write_bytes, content)
+    err = io.StringIO()
+
+    code = await import_session(world.sessions, file, out=io.StringIO(), err=err)
+
+    assert code == 1
+    assert says in err.getvalue()
+    assert await world.sessions.summaries() == []
+
+
+async def test_import_of_a_file_that_does_not_exist(tmp_path: Path) -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]))
+    err = io.StringIO()
+
+    code = await import_session(
+        world.sessions, tmp_path / "no.json", out=io.StringIO(), err=err
+    )
+
+    assert code == 1
+    assert err.getvalue() == (
+        f"error: cannot read {tmp_path / 'no.json'}: No such file or directory\n"
+    )

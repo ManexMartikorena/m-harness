@@ -4,6 +4,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
 from mharness import __version__
@@ -49,6 +50,7 @@ def build_parser(tools: Sequence[str]) -> argparse.ArgumentParser:
     _trace_parser(commands)
     _stats_parser(commands)
     _export_parser(commands)
+    _import_parser(commands)
     return parser
 
 
@@ -246,6 +248,18 @@ def _export_parser(commands: Any) -> None:
         default="md",
         help="md (default) or json",
     )
+
+
+def _import_parser(commands: Any) -> None:
+    """`maha import FILE` (spec hito 8, §1.15)."""
+    imports = commands.add_parser(
+        "import",
+        help="a session of maha export --format json, as a new one",
+        description="Save a session of maha export --format json as a new "
+        "session of this directory, with an id of its own. It never "
+        "overwrites another, and brings no approvals.",
+    )
+    imports.add_argument("file", type=Path, metavar="FILE")
 
 
 def _positive(text: str) -> int:

@@ -1128,3 +1128,30 @@ def test_export_writes_a_session_in_markdown_or_json(
     assert main(["export", session, "--format", "json"]) == 0
     exported = json.loads(capsys.readouterr().out)
     assert exported["header"]["id"] == session
+
+
+@respx.mock
+def test_an_exported_session_is_imported_and_resumed(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    session = a_print_session(stdin, "Hola, Ane.")
+    assert main(["export", session, "--format", "json"]) == 0
+    file = workspace / "s.json"
+    file.write_text(capsys.readouterr().out, encoding="utf-8")
+
+    assert main(["import", str(file)]) == 0
+
+    new = capsys.readouterr().out.split()[2]
+    assert new != session
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Sí.", 1, 1))
+    )
+    stdin("")
+    assert main(["-r", new, "-p", "¿Sigues?"]) == 0
+    assert json.loads(route.calls.last.request.content)["messages"][:2] == [
+        {"role": "user", "content": "Hola"},
+        {"role": "assistant", "content": "Hola, Ane."},
+    ]
