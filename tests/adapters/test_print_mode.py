@@ -23,10 +23,11 @@ from mharness.application.headless import Reason, RunResult
 from mharness.application.sessions import Sessions, Start
 from mharness.application.tools import ToolRegistry
 from mharness.domain.approval import ApprovalRequest
-from mharness.domain.errors import ModelAuthError
+from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import ModelEvent
 from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import ModelRequest, Usage
+from mharness.domain.retry import RetryPolicy
 from mharness.domain.session import is_session_id
 from tests.adapters.test_conversation import KNOWN
 from tests.fakes.approval import FakeApproval
@@ -555,3 +556,72 @@ async def test_a_denial_without_scope_says_it_needs_a_person() -> None:
         "or a file that runs code]\n"
     ) in err
     assert "--allow" not in err
+
+
+async def no_wait(seconds: float) -> None:
+    """A `sleep` that does not sleep."""
+
+
+def retrying(fake: FakeModelClient) -> Sessions:
+    """Sessions whose agents retry once, without waiting, and fall back."""
+
+    def new_agent(model: str, history: object) -> Agent:
+        return Agent(
+            fake,
+            ToolRegistry([]),
+            gate=FakeApproval(),
+            model=model,
+            catalog=MemoryCatalog(),
+            provider="opencode-go",
+            retry=RetryPolicy(max_retries=1, random=lambda: 0.0),
+            sleep=no_wait,
+            fallback="glm-5.3",
+        )
+
+    return Sessions(
+        MemorySessionStore(),
+        new_agent,
+        cwd="/home/ana/proyecto",
+        provider="opencode-go",
+        model="glm-5.3-flash",
+        version="0.8.0",
+        traces=MemoryTraceSink(),
+    )
+
+
+DOWN = ModelUnavailableError("HTTP 503")
+
+
+async def test_in_text_a_retry_and_a_fallback_go_to_stderr() -> None:
+    fake = FakeModelClient([DOWN, DOWN, reply("Hola.")])
+
+    code, out, err = await run(retrying(fake), "Hola")
+
+    assert (code, out) == (0, "Hola.\n")
+    assert err.startswith(
+        "  [glm-5.3-flash: HTTP 503; retrying in 1 s (1/1)]\n"
+        "  [glm-5.3-flash keeps failing (HTTP 503); glm-5.3 goes on]\n"
+    )
+
+
+async def test_stream_json_has_the_retry_and_the_fallback() -> None:
+    fake = FakeModelClient([DOWN, DOWN, reply("Hola.")])
+
+    code, out, err = await run(retrying(fake), "Hola", output_format="stream-json")
+
+    lines = [json.loads(line) for line in out.splitlines()]
+    assert (code, err) == (0, "")
+    assert lines[1] == {
+        "type": "model_retry",
+        "model": "glm-5.3-flash",
+        "attempt": 1,
+        "max_retries": 1,
+        "delay": 1.0,
+        "error": "HTTP 503",
+    }
+    assert lines[2] == {
+        "type": "model_fallback",
+        "model": "glm-5.3-flash",
+        "fallback": "glm-5.3",
+        "error": "HTTP 503",
+    }

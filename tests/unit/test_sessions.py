@@ -12,14 +12,20 @@ import pytest
 from mharness.application.agent import Agent
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.tools import ToolRegistry
-from mharness.domain.agent_events import AgentEvent, TurnFinished, TurnStarted
+from mharness.domain.agent_events import (
+    AgentEvent,
+    ModelFallback,
+    ModelRetry,
+    TurnFinished,
+    TurnStarted,
+)
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.catalog import ModelInfo, Prices
 from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock
 from mharness.domain.model import Usage
-from mharness.domain.retry import NO_RETRIES
+from mharness.domain.retry import NO_RETRIES, RetryPolicy
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
@@ -52,6 +58,10 @@ def said(text: str) -> Message:
     return Message(role="assistant", blocks=[TextBlock(text=text)])
 
 
+async def no_wait(seconds: float) -> None:
+    """A `sleep` that does not sleep."""
+
+
 class World:
     """One maha: a store shared with other maha, and how it builds agents."""
 
@@ -69,6 +79,8 @@ class World:
         catalog: MemoryCatalog | None = None,
         traces: MemoryTraceSink | None = None,
         secrets: Sequence[str] = (),
+        retry: RetryPolicy = NO_RETRIES,
+        fallback: str | None = None,
     ) -> None:
         self.gate = gate or FakeApproval()
         self.traces = traces or MemoryTraceSink()
@@ -86,8 +98,10 @@ class World:
                 catalog=catalog or MemoryCatalog(),
                 provider="opencode-go",
                 history=history,
-                # A failure in a script is one failure: no retry.
-                retry=NO_RETRIES,
+                # A failure in a script is one failure, unless a test says.
+                retry=retry,
+                sleep=no_wait,
+                fallback=fallback,
             )
 
         self.sessions = Sessions(
@@ -882,6 +896,41 @@ async def test_a_failed_call_to_the_model_is_traced_as_an_error() -> None:
 
     records = await world.traces.read(FIRST)
     assert records[-1].event == TurnFailed(kind="ModelUnavailableError", message="503")
+
+
+async def test_a_retry_and_a_fallback_are_traced_and_masked() -> None:
+    down = ModelUnavailableError(f"HTTP 503: bad key {SECRET}")
+    world = World(
+        MemorySessionStore(),
+        FakeModelClient([down, down, reply("Hola.", model="glm-5.3")]),
+        retry=RetryPolicy(max_retries=1, random=lambda: 0.0),
+        fallback="glm-5.3",
+        secrets=[SECRET],
+    )
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "Hola")
+
+    assert world.traces.events(FIRST) == [
+        "turn_started",
+        "model_retry",
+        "model_fallback",
+        "model_call_finished",
+        "turn_finished",
+    ]
+    records = await world.traces.read(FIRST)
+    assert records[1].event == ModelRetry(
+        model="glm-5.3-flash",
+        attempt=1,
+        max_retries=1,
+        delay=1.0,
+        error="HTTP 503: bad key [redacted]",
+    )
+    assert records[2].event == ModelFallback(
+        model="glm-5.3-flash",
+        fallback="glm-5.3",
+        error="HTTP 503: bad key [redacted]",
+    )
 
 
 async def test_ctrl_c_is_traced_as_interrupted() -> None:

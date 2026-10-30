@@ -35,6 +35,7 @@ from mharness.adapters.cli.commands import (
 from mharness.adapters.cli.conversation import (
     CLOSING,
     call_line,
+    retry_note,
     turn_note,
     usage_line,
     warn_crash,
@@ -46,6 +47,8 @@ from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.domain.agent_events import (
     AgentEvent,
     ApprovalRequested,
+    ModelFallback,
+    ModelRetry,
     ToolCallProposed,
     ToolFinished,
     TurnFinished,
@@ -282,6 +285,8 @@ class _Progress:
             case ApprovalRequested(call=call, request=request):
                 if request.scope is None:
                     self._scopeless.add(call.id)
+            case ModelRetry() | ModelFallback():
+                print(f"  {retry_note(event)}", file=err, flush=True)
             case ToolFinished():
                 mark = "✗" if event.result.is_error else "✓"
                 print(f"  {mark} {clean(event.summary)}", file=err, flush=True)
