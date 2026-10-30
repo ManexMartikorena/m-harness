@@ -19,6 +19,7 @@ from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock
 from mharness.domain.model import Usage
+from mharness.domain.retry import NO_RETRIES
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
@@ -85,6 +86,8 @@ class World:
                 catalog=catalog or MemoryCatalog(),
                 provider="opencode-go",
                 history=history,
+                # A failure in a script is one failure: no retry.
+                retry=NO_RETRIES,
             )
 
         self.sessions = Sessions(

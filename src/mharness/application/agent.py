@@ -8,7 +8,7 @@ the tool needs it, and runs them.
 import asyncio
 import json
 import time
-from collections.abc import AsyncGenerator, Awaitable, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass
 from decimal import Decimal
@@ -23,6 +23,7 @@ from mharness.domain.agent_events import (
     AgentEvent,
     ApprovalRequested,
     ModelCallFinished,
+    ModelRetry,
     ToolCallProposed,
     ToolFinished,
     TurnFinished,
@@ -30,10 +31,12 @@ from mharness.domain.agent_events import (
 )
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import add_cost, cost
-from mharness.domain.events import TextDelta
+from mharness.domain.errors import RetryableModelError
+from mharness.domain.events import ModelEvent, TextDelta
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import ModelRequest, ModelResponse, Usage
+from mharness.domain.retry import RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
 from mharness.ports.catalog import ModelCatalog
@@ -58,7 +61,9 @@ class Agent:
     for the whole session lives as long as the agent. `model` can change
     between turns (`/model`, spec hito 6, §1.8). The `catalog` prices each
     call for `provider` (spec hito 7, §1.6). Each turn stops at its
-    `limits` (spec hito 8, §1.1).
+    `limits` (spec hito 8, §1.1). A call that fails before its first event
+    with an error that may pass is made again, as `retry` says, after
+    `sleep` (spec hito 8, §1.14).
     """
 
     def __init__(
@@ -72,6 +77,8 @@ class Agent:
         provider: str,
         limits: TurnLimits | None = None,
         history: Sequence[Message] = (),
+        retry: RetryPolicy | None = None,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._client = client
         self._tools = tools
@@ -81,6 +88,8 @@ class Agent:
         self._catalog = catalog
         self._provider = provider
         self.limits = limits or TurnLimits()
+        self._retry = retry or RetryPolicy()
+        self._sleep = sleep
         # A resumed session starts with its history (spec hito 6, §1.6); its
         # approvals do not come back (§1.9).
         self._messages: list[Message] = list(history)
@@ -141,14 +150,16 @@ class Agent:
                     )
                     return
                 accumulator = Accumulator()
-                request = self._request(turn)
                 streaming = True
-                async with aclosing(self._client.stream(request)) as events:
+                async with aclosing(self._call(turn)) as events:
                     while True:
                         try:
                             event = await _within(anext(events), deadline)
                         except StopAsyncIteration:
                             break
+                        if isinstance(event, ModelRetry):
+                            yield event
+                            continue
                         accumulator.add(event)
                         if isinstance(event, TextDelta):
                             yield event
@@ -305,6 +316,39 @@ class Agent:
                     )
                 self._messages.extend(turn)
             raise
+
+    async def _call(
+        self, turn: list[Message]
+    ) -> AsyncGenerator[ModelEvent | ModelRetry]:
+        """One call to the model, made again while it fails before its first
+        event with an error that may pass (spec hito 8, §1.14). Once an
+        event came, a failure goes up: that answer was already shown."""
+        attempt = 0
+        while True:
+            began = False
+            try:
+                async with aclosing(self._client.stream(self._request(turn))) as events:
+                    async for event in events:
+                        began = True
+                        yield event
+                return
+            except RetryableModelError as exc:
+                if began:
+                    raise
+                attempt += 1
+                delay = self._retry.delay(attempt, exc.retry_after)
+                if delay is None:
+                    raise
+                retry = ModelRetry(
+                    model=self.model,
+                    attempt=attempt,
+                    max_retries=self._retry.max_retries,
+                    delay=delay,
+                    error=str(exc),
+                )
+            # Out of the `except`: a Ctrl+C here is not "during" the error.
+            yield retry
+            await self._sleep(delay)
 
     def _reached(
         self, usage: Usage, cost: Decimal | None

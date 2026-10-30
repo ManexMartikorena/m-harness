@@ -1,8 +1,9 @@
 """What the loop tells the terminal and the traces (DESIGN §5).
 
-Hito 4 implements these, hito 5 adds `ApprovalRequested`, and hito 7
-`TurnStarted` and the cost (spec hito 7, §1.6). There is no `AgentError`:
-errors are exceptions, and the trace records them from outside the loop.
+Hito 4 implements these, hito 5 adds `ApprovalRequested`, hito 7
+`TurnStarted` and the cost (spec hito 7, §1.6), and hito 8 `ModelRetry`
+(spec hito 8, §1.14). There is no `AgentError`: errors are exceptions, and
+the trace records them from outside the loop.
 """
 
 from typing import Literal
@@ -67,6 +68,22 @@ class ModelCallFinished(BaseModel, frozen=True):
     cost: Usd | None
 
 
+class ModelRetry(BaseModel, frozen=True):
+    """A call to the model failed before its first event with an error that
+    may pass (429, 5xx, network); it is made again after `delay` seconds
+    (spec hito 8, §1.14)."""
+
+    type: Literal["model_retry"] = "model_retry"
+    # The model that failed.
+    model: str
+    # This retry's number, from 1 to `max_retries`.
+    attempt: int
+    max_retries: int
+    delay: float
+    # What failed, as the error says it.
+    error: str
+
+
 class TurnFinished(BaseModel, frozen=True):
     """The turn ended and was kept in the history (after a timeout, only if
     a tool ran, as after Ctrl+C)."""
@@ -96,5 +113,6 @@ type AgentEvent = (
     | ApprovalRequested
     | ToolFinished
     | ModelCallFinished
+    | ModelRetry
     | TurnFinished
 )

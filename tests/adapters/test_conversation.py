@@ -28,6 +28,7 @@ from mharness.domain.events import TextDelta
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import ModelResponse, Usage
+from mharness.domain.retry import NO_RETRIES
 from mharness.domain.tools import ToolError
 from tests.adapters.test_local_runner import gone, written_pid
 from tests.fakes.approval import FakeApproval
@@ -437,6 +438,7 @@ async def converse_until_spinning(
                     model="m",
                     catalog=MemoryCatalog(),
                     provider="opencode-go",
+                    retry=NO_RETRIES,
                 )
             ),
             provider="p",
