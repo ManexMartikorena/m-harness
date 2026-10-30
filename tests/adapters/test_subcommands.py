@@ -6,10 +6,13 @@ from pathlib import Path
 
 from mharness.adapters.cli.subcommands import (
     delete_session,
+    export_session,
     list_sessions,
     show_stats,
     show_trace,
 )
+from mharness.domain.session import Session
+from tests.adapters.test_print_mode import Terminal
 from tests.fakes.model import FakeModelClient, reply
 from tests.fakes.sessions import MemorySessionStore
 from tests.unit.test_sessions import FIRST, NOW, World, turn
@@ -115,3 +118,64 @@ async def test_stats_counts_back_from_today() -> None:
         world.traces, days=1, today=day + timedelta(days=1), out=out, err=err
     )
     assert out.getvalue() == "(no calls to a model today)\n"
+
+
+async def test_export_writes_the_markdown() -> None:
+    world = await with_a_session("Hola.")
+    out, err = io.StringIO(), io.StringIO()
+
+    code = await export_session(
+        world.sessions, FIRST, output_format="md", out=out, err=err
+    )
+
+    assert (code, err.getvalue()) == (0, "")
+    assert out.getvalue().startswith("# Pregunta para Hola.\n")
+    assert out.getvalue().endswith("## maha\n\nHola.\n")
+
+
+async def test_export_in_json_is_the_session() -> None:
+    world = await with_a_session("Hola.")
+    out, err = io.StringIO(), io.StringIO()
+
+    await export_session(world.sessions, FIRST, output_format="json", out=out, err=err)
+
+    exported = Session.model_validate_json(out.getvalue())
+    assert exported == await world.sessions.read(FIRST)
+
+
+async def test_export_of_a_session_open_in_another_maha() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([reply("Hola.")]))
+    conversation = await world.sessions.start()
+    await turn(conversation, "Hola")
+    out, err = io.StringIO(), io.StringIO()
+
+    code = await export_session(
+        world.sessions, FIRST, output_format="md", out=out, err=err
+    )
+
+    assert code == 0
+    await conversation.close()
+
+
+async def test_export_to_a_terminal_is_clean() -> None:
+    world = await with_a_session("\x1b[2JHola.")
+    out = Terminal()
+
+    await export_session(
+        world.sessions, FIRST, output_format="md", out=out, err=io.StringIO()
+    )
+
+    assert "\x1b" not in out.getvalue()
+    assert "\\x1b[2JHola." in out.getvalue()
+
+
+async def test_export_of_a_session_that_does_not_exist() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]))
+    out, err = io.StringIO(), io.StringIO()
+
+    code = await export_session(
+        world.sessions, FIRST, output_format="md", out=out, err=err
+    )
+
+    assert (code, out.getvalue()) == (1, "")
+    assert err.getvalue() == f"error: no session {FIRST}\n"

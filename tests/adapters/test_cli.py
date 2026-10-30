@@ -390,3 +390,13 @@ def test_stats_needs_a_positive_number_of_days(
 ) -> None:
     assert parse(["stats", "--days", "0"]) == 2
     assert "must be 1 or more" in capsys.readouterr().err
+
+
+def test_export_takes_the_id_and_the_format() -> None:
+    options = parse(["export", "20261030-101500-3fa2"])
+    assert isinstance(options, argparse.Namespace)
+    assert (options.id, options.export_format) == ("20261030-101500-3fa2", "md")
+
+    options = parse(["export", "20261030-101500-3fa2", "--format", "json"])
+    assert isinstance(options, argparse.Namespace)
+    assert options.export_format == "json"

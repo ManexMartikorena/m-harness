@@ -1109,3 +1109,22 @@ def test_stats_without_traces_says_so(
     assert main(["stats"]) == 0
 
     assert capsys.readouterr().out == "(no calls to a model in the traces)\n"
+
+
+@respx.mock
+def test_export_writes_a_session_in_markdown_or_json(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    session = a_print_session(stdin, "Hola, Ane.")
+
+    assert main(["export", session]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("# Hola\n")
+    assert out.endswith("## maha\n\nHola, Ane.\n")
+
+    assert main(["export", session, "--format", "json"]) == 0
+    exported = json.loads(capsys.readouterr().out)
+    assert exported["header"]["id"] == session

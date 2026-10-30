@@ -10,6 +10,7 @@ from mharness.adapters.cli.reports import eval_report, models_report, run_line
 from mharness.adapters.cli.spinner import use_color
 from mharness.adapters.cli.subcommands import (
     delete_session,
+    export_session,
     list_sessions,
     show_stats,
     show_trace,
@@ -22,6 +23,7 @@ __all__ = [
     "converse",
     "delete_session",
     "eval_report",
+    "export_session",
     "fail",
     "list_sessions",
     "models_report",

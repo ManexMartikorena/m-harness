@@ -1,6 +1,6 @@
 """The `maha` subcommands over the sessions and their traces (spec hito 8,
-§1.15): what /sessions, /delete and /trace do, from the shell, and the
-cost of every session.
+§1.15): what /sessions, /delete and /trace do, from the shell; the cost
+of every session; and a session exported and imported.
 
 ```
 $ maha sessions
@@ -14,9 +14,10 @@ Each returns the exit code: 0, or 1 with the error on stderr.
 
 from datetime import date, timedelta
 from pathlib import Path
-from typing import TextIO
+from typing import Literal, TextIO
 
 from mharness.adapters.cli.commands import session_lines, trace_lines
+from mharness.adapters.cli.export import markdown
 from mharness.adapters.cli.reports import stats_report
 from mharness.adapters.cli.text import clean, clean_line
 from mharness.application.sessions import Sessions
@@ -27,6 +28,8 @@ from mharness.ports.tracing import TraceSink
 
 EXIT_OK = 0
 EXIT_ERROR = 1
+
+type ExportFormat = Literal["md", "json"]
 
 
 async def list_sessions(sessions: Sessions, *, out: TextIO, home: Path) -> int:
@@ -81,6 +84,31 @@ async def show_stats(
     except TraceError as exc:
         return _fail(exc, err)
     stats_report(rows, days=days, out=out)
+    return EXIT_OK
+
+
+async def export_session(
+    sessions: Sessions,
+    session: str,
+    *,
+    output_format: ExportFormat,
+    out: TextIO,
+    err: TextIO,
+) -> int:
+    """`maha export ID [--format md|json]`: the conversation in Markdown, or
+    the session in JSON, which `maha import` takes back."""
+    try:
+        found = await sessions.read(session)
+    except SessionError as exc:
+        return _fail(exc, err)
+    if output_format == "json":
+        # JSON escapes every control character: safe in a terminal too.
+        out.write(found.model_dump_json(indent=2) + "\n")
+    else:
+        text = markdown(found)
+        # As `maha -p`: clean to a terminal, as it is to a file.
+        out.write(clean(text) if out.isatty() else text)
+    out.flush()
     return EXIT_OK
 
 

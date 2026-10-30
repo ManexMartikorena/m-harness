@@ -521,6 +521,11 @@ class Sessions:
         """Whether the session was in this directory."""
         return summary.cwd == self._origin.cwd
 
+    async def read(self, session: str) -> Session:
+        """A session of any directory, as it is on disk, without opening it:
+        also one open in another maha. Raises `SessionError`."""
+        return await self._store.read(session)
+
     async def last_here(self) -> str:
         """The id of the newest session of this directory, open or not.
         Raises `SessionNotFound`."""

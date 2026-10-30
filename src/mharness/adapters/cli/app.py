@@ -48,6 +48,7 @@ def build_parser(tools: Sequence[str]) -> argparse.ArgumentParser:
     _sessions_parser(commands)
     _trace_parser(commands)
     _stats_parser(commands)
+    _export_parser(commands)
     return parser
 
 
@@ -225,6 +226,25 @@ def _stats_parser(commands: Any) -> None:
         type=_positive,
         metavar="N",
         help="only the last N days, today included",
+    )
+
+
+def _export_parser(commands: Any) -> None:
+    """`maha export ID [--format md|json]` (spec hito 8, §1.15)."""
+    export = commands.add_parser(
+        "export",
+        help="a session in Markdown or JSON, to stdout",
+        description="A session to stdout: the conversation in Markdown, to "
+        "read or share, or the whole session in JSON, which maha import "
+        "takes back.",
+    )
+    export.add_argument("id", metavar="ID")
+    export.add_argument(
+        "--format",
+        dest="export_format",
+        choices=["md", "json"],
+        default="md",
+        help="md (default) or json",
     )
 
 
