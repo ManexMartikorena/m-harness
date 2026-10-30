@@ -36,6 +36,12 @@ class SessionStore(Protocol):
         `SessionNotFound`, `SessionInUse` or `SessionCorrupt`."""
         ...
 
+    async def read(self, session_id: str) -> Session:
+        """Read without locking: also one that another maha has open, as it
+        was after its last whole turn. Raises `SessionNotFound` or
+        `SessionCorrupt`. For `maha export` (spec hito 8, §1.15)."""
+        ...
+
     async def exists(self, session_id: str) -> bool:
         """Whether a session has that id, open or not. An id of another
         form has none."""

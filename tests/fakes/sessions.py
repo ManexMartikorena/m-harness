@@ -80,6 +80,12 @@ class MemorySessionStore:
         self.locked.add(session_id)
         return session, MemoryLog(self, session_id)
 
+    async def read(self, session_id: str) -> Session:
+        if not is_session_id(session_id) or session_id not in self.sessions:
+            raise SessionNotFound(f"no session {session_id}")
+        stored = self.sessions[session_id]
+        return replay(stored.header, stored.entries)
+
     async def summaries(self) -> list[SessionSummary]:
         found = [
             summarize(stored.header, stored.entries, stored.updated_at)
