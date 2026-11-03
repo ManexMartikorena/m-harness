@@ -149,12 +149,22 @@ def printable(name: str) -> str:
     A file name with bytes that are not UTF-8 comes from `os` with
     surrogates ("caf\\udce9.txt" for b"caf\\xe9.txt"): no request to a
     model can encode them, and a tool result with one would block the
-    session for good (audit of hito 9, H2). Each such byte is shown as
-    `\\xe9`; any other lone surrogate, as `\\ud800`.
+    session for good (audit of hito 9, H2). Such a name is quoted as git
+    quotes it (`core.quotePath`): `"caf\\xe9.txt"`, each such byte as
+    `\\xe9` and any other lone surrogate as `\\ud800`. So is a name with a
+    "\\" or that starts with a quote: a name without quotes never holds an
+    escape, and the model cannot take one name for another (review of the
+    deep audit). `unquoted` reads it back.
     """
-    if name.isascii():
+    if not _needs_quotes(name):
         return name
-    return "".join(_escaped(char) if _is_surrogate(char) else char for char in name)
+    return '"' + "".join(_escaped(char) for char in name) + '"'
+
+
+def _needs_quotes(name: str) -> bool:
+    if name.startswith('"') or "\\" in name:
+        return True
+    return not name.isascii() and any(_is_surrogate(char) for char in name)
 
 
 def _is_surrogate(char: str) -> bool:
@@ -162,11 +172,56 @@ def _is_surrogate(char: str) -> bool:
 
 
 def _escaped(char: str) -> str:
+    if char in ('"', "\\"):
+        return "\\" + char
+    if not _is_surrogate(char):
+        return char
     code = ord(char)
     # `surrogateescape`: U+DC80 to U+DCFF stand for the bytes 0x80 to 0xFF.
     if 0xDC80 <= code <= 0xDCFF:
         return f"\\x{code - 0xDC00:02x}"
     return f"\\u{code:04x}"
+
+
+# The escapes `printable` writes, and how many hexadecimal digits follow.
+_DIGITS = {"x": 2, "u": 4}
+
+
+def unquoted(raw: str) -> str:
+    """A path as the model wrote it, with the quotes of `printable` taken
+    away; any other path as it is. Raises `ValueError` on a quoted path
+    with an escape `printable` does not write."""
+    if len(raw) < 2 or not (raw.startswith('"') and raw.endswith('"')):
+        return raw
+    body = raw[1:-1]
+    out: list[str] = []
+    i = 0
+    while i < len(body):
+        char = body[i]
+        if char == '"':
+            raise ValueError("a quote inside a quoted path")
+        if char != "\\":
+            out.append(char)
+            i += 1
+            continue
+        kind = body[i + 1 : i + 2]
+        if kind in ('"', "\\"):
+            out.append(kind)
+            i += 2
+            continue
+        digits = _DIGITS.get(kind)
+        code = body[i + 2 : i + 2 + digits] if digits else ""
+        if not digits or len(code) != digits or not _is_hex(code):
+            raise ValueError(f"unknown escape in a quoted path: {body[i : i + 2]}")
+        value = int(code, 16)
+        # A byte that is not UTF-8 goes back to its surrogate.
+        out.append(chr(0xDC00 + value) if kind == "x" and value >= 0x80 else chr(value))
+        i += 2 + digits
+    return "".join(out)
+
+
+def _is_hex(text: str) -> bool:
+    return all(char in "0123456789abcdefABCDEF" for char in text)
 
 
 def is_inside(path: PurePath, root: PurePath) -> bool:

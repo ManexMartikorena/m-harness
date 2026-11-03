@@ -40,6 +40,7 @@ from mharness.domain.paths import (
     is_secret_at,
     printable,
     read_warning,
+    unquoted,
 )
 from mharness.domain.tools import Permission, ToolError
 from mharness.domain.wildcard import glob_matches
@@ -90,7 +91,7 @@ class Workspace:
         they go: every check runs on the resolved path.
         """
         try:
-            return (self.root / raw).resolve()
+            return (self.root / _unquoted(raw)).resolve()
         except ValueError:
             # A NUL in the path (spec mejora-2026-10-23-deuda-hito-5, A5).
             raise ToolError(f"invalid path: {raw}") from None
@@ -111,7 +112,7 @@ class Workspace:
     def asked(self, raw: str) -> Path:
         """`raw` made absolute, without resolving links: the name the model
         asked for (spec mejora-2026-10-26-deuda-pre-hito-6, A1)."""
-        return Path(os.path.normpath(self.root / raw))
+        return Path(os.path.normpath(self.root / _unquoted(raw)))
 
     def warning(self, path: Path, secret: str | None, raw: str) -> str | None:
         """Why reading needs a question: by the resolved path and by the one
@@ -125,6 +126,15 @@ class Workspace:
         if _names(path) > 1:
             found.append(HARD_LINK)
         return "; ".join(warning for warning in found if warning) or None
+
+
+def _unquoted(raw: str) -> str:
+    """The path a quoted name of `printable` stands for (review of the deep
+    audit)."""
+    try:
+        return unquoted(raw)
+    except ValueError as exc:
+        raise ToolError(f"invalid path: {raw}: {exc}") from None
 
 
 def _names(path: Path) -> int:
@@ -445,8 +455,8 @@ class ListDir:
         return "\n".join(lines)
 
     def _entry(self, entry: Path) -> str:
-        shown = printable(entry.name)
-        name = f"{shown}/" if entry.is_dir() else shown
+        # The "/" inside the quotes, if any: the model can ask for it back.
+        name = printable(f"{entry.name}/" if entry.is_dir() else entry.name)
         # Shown, so the model knows it exists and does not ask for it.
         return f"{name} [secret]" if self._workspace.secret(entry) else name
 

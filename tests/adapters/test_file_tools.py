@@ -2926,15 +2926,32 @@ async def test_a_name_that_is_not_utf_8_is_listed_escaped(root: Path) -> None:
 
     result = await list_dir(root)
 
-    assert result == "caf\\xe9.txt"
+    assert result == '"caf\\xe9.txt"'
     result.encode("utf-8")
 
 
 async def test_a_name_that_is_not_utf_8_is_found_escaped(root: Path) -> None:
     not_utf_8(root)
 
-    assert await glob(root, "*.txt") == "caf\\xe9.txt"
-    assert await grep(root, "uno") == "caf\\xe9.txt:1: uno"
+    assert await glob(root, "*.txt") == '"caf\\xe9.txt"'
+    assert await grep(root, "uno") == '"caf\\xe9.txt":1: uno'
+
+
+async def test_a_name_that_is_not_utf_8_is_read_by_the_name_shown(root: Path) -> None:
+    # Review of the deep audit: the name shown leads back to the file.
+    not_utf_8(root)
+    (root / "caf\\xe9.txt").write_text("other\n")
+
+    shown = await list_dir(root)
+
+    assert shown.splitlines() == ['"caf\\\\xe9.txt"', '"caf\\xe9.txt"']
+    assert "uno" in await read(root, '"caf\\xe9.txt"')
+    assert "other" in await read(root, '"caf\\\\xe9.txt"')
+
+
+async def test_a_quoted_path_with_an_unknown_escape_is_an_error(root: Path) -> None:
+    with pytest.raises(ToolError, match="invalid path"):
+        await read(root, '"caf\\q.txt"')
 
 
 async def test_a_written_path_that_is_not_utf_8_is_shown_escaped(root: Path) -> None:
@@ -2946,8 +2963,8 @@ async def test_a_written_path_that_is_not_utf_8_is_shown_escaped(root: Path) -> 
     result = await tool.run(params)
 
     assert request is not None
-    assert request.title == "create dir\\xe9/new.txt (1 line)"
-    assert result == "wrote dir\\xe9/new.txt (1 line)"
+    assert request.title == 'create "dir\\xe9/new.txt" (1 line)'
+    assert result == 'wrote "dir\\xe9/new.txt" (1 line)'
 
 
 async def test_an_error_with_a_path_that_is_not_utf_8_is_escaped(root: Path) -> None:
@@ -2957,7 +2974,7 @@ async def test_an_error_with_a_path_that_is_not_utf_8_is_escaped(root: Path) -> 
     with pytest.raises(ToolError) as caught:
         await write_tool(root).approval(WriteFileParams(path="d/x.txt", content=""))
 
-    assert str(caught.value) == "not a directory: caf\\xe9"
+    assert str(caught.value) == 'not a directory: "caf\\xe9"'
 
 
 RUNS_CODE = "runs code: hooks, CI or editor tasks here can run code"

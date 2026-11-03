@@ -16,6 +16,7 @@ from mharness.domain.paths import (
     is_secret_at,
     printable,
     read_warning,
+    unquoted,
 )
 
 
@@ -242,15 +243,33 @@ def test_the_asked_path_counts_too() -> None:
     [
         ("notas.txt", "notas.txt"),
         ("café.txt", "café.txt"),
-        # A byte that is not UTF-8, as os gives it: a surrogate.
-        ("caf\udce9.txt", "caf\\xe9.txt"),
+        # A byte that is not UTF-8, as os gives it: a surrogate. Quoted, as
+        # git does (review of the deep audit).
+        ("caf\udce9.txt", '"caf\\xe9.txt"'),
         # A lone surrogate of no byte.
-        ("a\ud800b", "a\\ud800b"),
+        ("a\ud800b", '"a\\ud800b"'),
+        # A name that could be taken for an escape, or for quotes.
+        ("caf\\xe9.txt", '"caf\\\\xe9.txt"'),
+        ('"x"', '"\\"x\\""'),
+        ('say "hi"', 'say "hi"'),
     ],
 )
 def test_printable_names_can_go_to_json_in_utf_8(name: str, shown: str) -> None:
     assert printable(name) == shown
     printable(name).encode("utf-8")
+    assert unquoted(printable(name)) == name
+
+
+def test_a_path_that_is_not_quoted_is_left_as_it_is() -> None:
+    assert unquoted("src/a.py") == "src/a.py"
+    assert unquoted('"') == '"'
+    assert unquoted('a"b"') == 'a"b"'
+
+
+@pytest.mark.parametrize("raw", ['"a\\qb"', '"a\\x4"', '"a\\xzz"', '"a"b"', '"a\\"'])
+def test_a_quoted_path_with_an_unknown_escape_is_refused(raw: str) -> None:
+    with pytest.raises(ValueError, match="quoted path"):
+        unquoted(raw)
 
 
 def test_a_pth_outside_warns_that_it_runs_code() -> None:
