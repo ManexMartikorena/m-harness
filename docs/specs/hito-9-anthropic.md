@@ -1,5 +1,6 @@
 Estado: PROPUESTA (2026-11-03) → APROBADA (2026-11-03, por el humano: "el
-camino más profesional y robusto para el producto" en cada duda, §11)
+camino más profesional y robusto para el producto" en cada duda, §11) →
+IMPLEMENTADA (2026-11-03, `v0.9.0`)
 
 # Spec — Hito 9: Adaptador de Anthropic
 
@@ -777,6 +778,22 @@ recomendaciones (2, 5 y 9):
    conversaciones con pausas largas. *(Antes: 5 minutos fijos.)*
 
 ## 12. Aprendido al implementar
+
+### Cierre (`feature/hito-9-cierre`, 2026-11-03)
+
+PRs del hito: #100 (spec), #101 (PR 1), #102 (PR 2), #103 (PR 3) y el de
+cierre.
+
+17. **Verificación a mano** (§7), por el agente, por OpenCode Go: los
+    puntos 1 a 8, en el PR 3 (§12.16) y en el PR 1 (punto 7, el error de
+    `gpt-6-luna`). El punto 9 (la API directa de Anthropic) queda POR
+    VERIFICAR: no hay clave (decisión 1). El ejemplo de los README es una
+    sesión real de 0.9.0 con `claude-haiku-5-5`, en la que el segundo turno
+    cuesta la mitad por la caché del prompt.
+18. **Para la auditoría que pidió el mantenedor antes del hito 10:** la
+    puerta de las evals marca ⚠ con un solo fallo en 5 repeticiones (§5);
+    Zen tiene un modelo nuevo, `pulse-alpha-free`, sin catálogo (§12.4);
+    la API directa de Anthropic, sin probar con una llamada real.
 
 ### PR 1 (`feature/hito-9-formatos`, 2026-11-03)
 

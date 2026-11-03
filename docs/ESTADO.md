@@ -1,20 +1,20 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-03, al publicar la auditoría del hito 8.
-**Hito 8 cerrado y auditado: `v0.8.1`. En curso: el hito 9
-(adaptador de Anthropic), con su spec APROBADA. Cero deuda conocida.**
+Última actualización: 2026-11-03, al cerrar el hito 9. **Hito 9 cerrado:
+`v0.9.0` — Adaptador de Anthropic. Siguiente: una auditoría profunda antes
+de la spec del hito 10 (decisión del mantenedor).**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 ## Fase actual
 
-**Desarrollo. Hitos 1 a 8 cerrados; el siguiente, el hito 9 (adaptador de
-Anthropic), sin spec todavía. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
+**Desarrollo. Hitos 1 a 9 cerrados; antes del hito 10 (system prompt por
+capas), una auditoría profunda. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.8.1` — Auditoría del hito 8** (2026-11-03):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.8.1
+- Última versión: **`v0.9.0` — Adaptador de Anthropic** (2026-11-03):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.9.0
 - Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
@@ -40,16 +40,25 @@ spec, su nota de la guía y su release.
 | 6 | Sesiones e historial | `v0.6.0` (2026-10-26), `v0.6.1` |
 | 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
 | 8 | Evals (20 tareas, dos modelos, línea base), `maha -p`, reintentos con respaldo y comandos de línea; auditoría con tres revisiones independientes | `v0.8.0` (2026-10-30), `v0.8.1` (2026-11-03) |
+| 9 | Formato de Anthropic (Claude, MiniMax y Qwen por OpenCode; la API directa), el formato de cada modelo, razonamiento devuelto intacto, effort y caché del prompt | `v0.9.0` (2026-11-03) |
 
 ## Siguiente paso
 
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** el PR 3 del hito 9, `feature/hito-9-anthropic` (spec
-   `docs/specs/hito-9-anthropic.md`, §6): `AnthropicClient`, el proveedor
-   `anthropic` de serie y las evals. Hechos: PR 1 (#101, el formato de cada
-   modelo) y PR 2 (razonamiento, `max_tokens` y effort en el núcleo).
+1. **Agente, con el mantenedor:** una **auditoría profunda** antes de la
+   spec del hito 10, para no dejar deuda técnica (decisión del mantenedor,
+   2026-11-03). Revisores independientes del código (lo del hito 9 y lo
+   acumulado), con cada fallo con su test y arreglado, como en las
+   auditorías de los hitos 7 y 8. Puntos ya conocidos para ella (spec 9,
+   §12.18):
+   - la puerta de las evals marca ⚠ con un solo fallo en 5 repeticiones, y
+     avisa de ruido como si fuera regresión;
+   - Zen tiene un modelo nuevo, `pulse-alpha-free`, sin catálogo;
+   - la API directa de Anthropic, sin probar con una llamada real (no hay
+     clave).
+   La spec del hito 10 no se empieza hasta cerrar la auditoría.
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
@@ -160,6 +169,9 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 código y los tests cubren los dos casos):
 - cortar la red a mitad de una respuesta, a mano (spec 3, punto 9 de la
   verificación): no se pudo provocar en WSL; desde el Ubuntu de casa;
+- un turno con la API directa de Anthropic (`provider = "anthropic"`):
+  probada con respx; la llamada real, cuando haya `ANTHROPIC_API_KEY`
+  (spec 9, decisión 1);
 - el formato de un error a mitad de stream en OpenCode (spec 3, §10);
 - si OpenCode llega a partir los argumentos de una llamada o a mandar JSON
   inválido (spec 4, §10);
@@ -208,7 +220,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
   (2026-10-27)
 - [x] 8. Evals y modo no interactivo. `v0.8.0` (2026-10-30) y el arreglo
   `v0.8.1` (2026-11-03, la auditoría)
-- [ ] 9. Adaptador de Anthropic. `v0.9.0`
+- [x] 9. Adaptador de Anthropic. `v0.9.0` (2026-11-03)
 - [ ] 10. System prompt por capas. `v0.10.0`
 - [ ] 11. Gestión del contexto. `v0.11.0`
 - [ ] 12. Deshacer y puntos de control. `v0.12.0` *(nuevo, 2026-10-27)*
