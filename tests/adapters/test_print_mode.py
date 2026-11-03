@@ -344,6 +344,7 @@ async def test_json_is_one_object_with_stable_names() -> None:
             "output_tokens": 9,
             "cache_read_tokens": 0,
             "cache_write_tokens": 0,
+            "cache_write_1h_tokens": 0,
             "reasoning_tokens": 0,
         },
         "cost_usd": None,

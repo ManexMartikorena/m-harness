@@ -52,6 +52,9 @@ class Usage(BaseModel, frozen=True):
     output_tokens: int = Field(default=0, ge=0)
     cache_read_tokens: int = Field(default=0, ge=0)
     cache_write_tokens: int = Field(default=0, ge=0)
+    # Of those, the ones written to the one-hour cache, at their own price
+    # (spec hito 9, decision 9).
+    cache_write_1h_tokens: int = Field(default=0, ge=0)
     # Already inside output_tokens: they are billed as output.
     reasoning_tokens: int = Field(default=0, ge=0)
 
@@ -62,6 +65,8 @@ class Usage(BaseModel, frozen=True):
             output_tokens=self.output_tokens + more.output_tokens,
             cache_read_tokens=self.cache_read_tokens + more.cache_read_tokens,
             cache_write_tokens=self.cache_write_tokens + more.cache_write_tokens,
+            cache_write_1h_tokens=self.cache_write_1h_tokens
+            + more.cache_write_1h_tokens,
             reasoning_tokens=self.reasoning_tokens + more.reasoning_tokens,
         )
 

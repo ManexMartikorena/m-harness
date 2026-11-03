@@ -214,6 +214,21 @@ def test_a_user_model_says_its_api_and_longest_answer(tmp_path: Path) -> None:
     )
 
 
+def test_a_price_for_the_hour_cache(tmp_path: Path) -> None:
+    # Spec hito 9, decision 9.
+    path = write(
+        tmp_path,
+        '[models."local/m"]\ninput = 1\noutput = 5\ncache_write = 1.25\n'
+        "cache_write_1h = 2\nchecked = 2026-11-03\n",
+    )
+
+    info = TomlCatalog.load(path).get("local", "m")
+
+    assert info is not None
+    assert info.prices is not None
+    assert info.prices.cache_write_1h == Decimal(2)
+
+
 def test_a_model_id_may_hold_a_slash(tmp_path: Path) -> None:
     path = write(tmp_path, '[models."openrouter/anthropic/claude-x"]\n')
 

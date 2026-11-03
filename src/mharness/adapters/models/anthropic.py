@@ -453,11 +453,13 @@ def _usage(usage: dict[str, Any]) -> Usage:
     read = count(_int(usage.get("cache_read_input_tokens")))
     written = count(_int(usage.get("cache_creation_input_tokens")))
     details = _dict(usage.get("output_tokens_details"))
+    hour = _dict(usage.get("cache_creation")).get("ephemeral_1h_input_tokens")
     return Usage(
         input_tokens=count(_int(usage.get("input_tokens"))) + read + written,
         output_tokens=count(_int(usage.get("output_tokens"))),
         cache_read_tokens=read,
         cache_write_tokens=written,
+        cache_write_1h_tokens=min(count(_int(hour)), written),
         reasoning_tokens=count(_int(details.get("thinking_tokens"))),
     )
 

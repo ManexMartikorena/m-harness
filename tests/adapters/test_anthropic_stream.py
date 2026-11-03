@@ -371,3 +371,41 @@ async def test_the_reasoning_deltas_carry_text_and_signature(
         ("Pienso.", None),
         ("", "s"),
     ]
+
+
+@respx.mock
+async def test_writes_to_the_hour_cache_are_counted_apart(
+    client: AnthropicClient,
+) -> None:
+    usage = {
+        "input_tokens": 4,
+        "output_tokens": 5,
+        "cache_creation_input_tokens": 3000,
+        "cache_creation": {
+            "ephemeral_5m_input_tokens": 1000,
+            "ephemeral_1h_input_tokens": 2000,
+        },
+    }
+    respx.post(ENDPOINT).mock(
+        return_value=stream_of(
+            START,
+            event(
+                {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": "end_turn"},
+                    "usage": usage,
+                }
+            ),
+            event({"type": "message_stop"}),
+        )
+    )
+
+    response = await collect(client.stream(REQUEST))
+
+    assert (
+        response.usage.cache_write_tokens,
+        response.usage.cache_write_1h_tokens,
+    ) == (
+        3000,
+        2000,
+    )
