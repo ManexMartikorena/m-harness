@@ -13,6 +13,11 @@ type StopReason = Literal[
 ]
 
 
+# How hard the model works: the levels both formats take (spec hito 9,
+# §1.7). None: the model's own.
+type Effort = Literal["low", "medium", "high", "xhigh", "max"]
+
+
 class ToolSpec(BaseModel, frozen=True):
     """A tool as the model sees it (spec hito 4, §1.5)."""
 
@@ -31,6 +36,11 @@ class ModelRequest(BaseModel, frozen=True):
     messages: list[Message]
     # The tools the model may ask to call; none means plain conversation.
     tools: list[ToolSpec] = []
+    # The most tokens of the answer, from the catalog; None: the adapter's
+    # choice (spec hito 9, §1.6).
+    max_tokens: int | None = Field(default=None, gt=0)
+    # None: the model's own (spec hito 9, §1.7).
+    effort: Effort | None = None
 
 
 class Usage(BaseModel, frozen=True):

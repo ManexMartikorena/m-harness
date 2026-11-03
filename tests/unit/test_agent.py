@@ -1697,3 +1697,52 @@ async def test_a_request_in_the_name_of_another_tool_never_runs() -> None:
     )
     assert gate.requests == []
     assert sly.calls == []
+
+
+# The longest answer and the effort of each call (spec hito 9, §1.6, §1.7).
+
+
+async def test_each_call_asks_for_the_models_longest_answer() -> None:
+    fake = FakeModelClient([reply("Hola.")])
+    catalog = MemoryCatalog(
+        [ModelInfo(provider=PROVIDER, model=MODEL, max_output=128_000)]
+    )
+
+    await run(agent(fake, catalog=catalog))
+
+    assert fake.requests[0].max_tokens == 128_000
+
+
+async def test_without_it_in_the_catalog_the_adapter_decides() -> None:
+    fake = FakeModelClient([reply("Hola.")])
+
+    await run(agent(fake))
+
+    assert (fake.requests[0].max_tokens, fake.requests[0].effort) == (None, None)
+
+
+async def test_the_effort_goes_in_every_call_and_can_change() -> None:
+    echo = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    fake = FakeModelClient([tool_calls(echo), reply("Hecho."), reply("Otra.")])
+    subject = agent(fake, FakeTool())
+    subject.effort = "high"
+
+    await run(subject)
+    subject.effort = None
+    await run(subject, "Otra")
+
+    assert [r.effort for r in fake.requests] == ["high", "high", None]
+
+
+async def test_the_fallback_asks_for_its_own_longest_answer() -> None:
+    fake = FakeModelClient([ModelUnavailableError("503"), reply("Del respaldo.")])
+    catalog = MemoryCatalog(
+        [
+            ModelInfo(provider=PROVIDER, model=MODEL, max_output=128_000),
+            ModelInfo(provider=PROVIDER, model="respaldo", max_output=8_000),
+        ]
+    )
+
+    await run(agent(fake, catalog=catalog, fallback="respaldo"))
+
+    assert [r.max_tokens for r in fake.requests] == [128_000, 8_000]
