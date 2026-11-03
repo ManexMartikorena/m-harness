@@ -31,7 +31,6 @@ from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
     Session,
-    SessionCorrupt,
     SessionEntry,
     SessionError,
     SessionExists,
@@ -543,19 +542,16 @@ class Sessions:
         history is untrusted input, as any: it brings no approvals (spec
         hito 6, §1.9). Raises `SessionError`."""
         check_history(session.messages)
-        # Each turn starts with a message of the person: never more turns
-        # without a price than that (audit of hito 8).
-        turns = sum(message.role == "user" for message in session.messages)
-        if not 0 <= session.uncosted_turns <= turns:
-            raise SessionCorrupt(
-                f"uncosted_turns: {session.uncosted_turns}, with {turns} turns"
-            )
         entries: list[SessionEntry] = [
             MessageEntry(message=message) for message in session.messages
         ]
         # What it cost, so that its total is the same; the turns without
-        # a price, as such.
-        entries += [UsageEntry(usage=Usage(), cost=None)] * session.uncosted_turns
+        # a price, as such, in one entry: as many as it says take no more
+        # room (audit of hito 8).
+        if session.uncosted_turns:
+            entries.append(
+                UsageEntry(usage=Usage(), cost=None, turns=session.uncosted_turns)
+            )
         if session.usage != Usage() or session.cost:
             entries.append(UsageEntry(usage=session.usage, cost=session.cost))
         origin = self._origin
