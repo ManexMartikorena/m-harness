@@ -1,5 +1,6 @@
 """Model adapters: one per API format (DESIGN §8)."""
 
+from mharness.adapters.models.anthropic import AnthropicClient
 from mharness.adapters.models.openai_chat import OpenAIChatClient
 
-__all__ = ["OpenAIChatClient"]
+__all__ = ["AnthropicClient", "OpenAIChatClient"]
