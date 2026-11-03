@@ -70,9 +70,12 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 - **B8.** Deuda: `Agent.run()` es una función de unas 230 líneas con siete
   marcas; `Accumulator.text` une bloques sin separador; el docstring de
   `events.py`; los nombres de herramienta no se comprueban contra las
-  reglas de los proveedores. POR ARREGLAR, también la refactorización de
-  `Agent.run()`: el agente la hace al final de la auditoría, protegida por
-  los tests y con evals antes del merge. Lo demás, ARREGLADO (`ab348ed`).
+  reglas de los proveedores. ARREGLADO (`ab348ed`); la refactorización de
+  `Agent.run()`, ARREGLADO (`eccbcf1`): `run()` pasa de 252 líneas a 81,
+  con el estado del turno en `_Turn` y un ayudante privado por paso
+  (guardar, pedir la respuesta, ejecutar las llamadas, decidir el permiso,
+  cerrar por tiempo o por corte). Ningún test cambió; las evals del final
+  de la auditoría la cubren.
 
 ## Sesiones y trazas (S)
 
