@@ -623,6 +623,37 @@ PR 3 del hito 8. El router solo elige el cliente que ya se usaba. Las
 evals de §5 van en el PR 3, que sí cambia lo que se ejecuta (un formato
 nuevo).
 
+**PR 3** (2026-11-03, commit `fb72ce8`, OpenCode Go; 20 tareas, 5
+repeticiones, 4 a la vez, `--retry-errors`; unos 1,30 $ en total):
+
+| Modelo | Éxito | Base | train | validation | Coste de 100 |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 93/100 | 94/100 (2026-10-27) | 76/80 | 17/20 | 0,07 $ |
+| `kimi-k2.7-code` | 98/100 | 99/100 (2026-10-27) | 78/80 | 20/20 | 0,55 $ |
+| `claude-haiku-5-5` | **100/100** | primera | 80/80 | 20/20 | 0,29 $ |
+| `claude-haiku-5-5`, `--effort high` | 100/100 | 100/100 | 80/80 | 20/20 | 0,36 $ (+22 %) |
+
+- **Comparar proveedores:** Haiku 5.5 por el formato de Anthropic resuelve
+  las 100 ejecuciones, cuatro veces más caro que GLM y a la mitad de
+  precio que Kimi. Su línea base queda guardada
+  (`evals/baselines/2026-11-03-opencode-go-claude-haiku-5-5.json`).
+- **⚠ en GLM** (tareas 03, 14 y 20) **y en Kimi** (08): las 9 ejecuciones
+  fallidas acabaron con `end_turn` y fallan en la comprobación por el
+  código o la respuesta del modelo (por ejemplo, un descuento de `105.0`
+  en vez de `99.0`, o un `slugify` con guiones de más). En las 200 hubo 0
+  reintentos, 0 respaldos, 0 turnos fallidos y 0 errores del proveedor, y
+  con estos modelos la petición es la misma byte a byte (PR 1 y PR 2).
+- **Decisión** (2026-11-03; el mantenedor pidió "lo mejor para el producto
+  final" y el agente lo decidió con este motivo): se aceptan las ⚠ y el
+  PR se integra. Es ruido del modelo: la petición no cambió. Repetir daría
+  otra muestra con el mismo ruido. Las líneas base de GLM y Kimi siguen
+  siendo las del 2026-10-27. Para la auditoría que sigue al hito: la
+  puerta marca ⚠ con un solo fallo en 5 repeticiones, y avisa de ruido
+  como si fuera regresión.
+- **Effort con datos** (decisión 4, confirmada el 2026-11-03 con "lo mejor
+  y más robusto para el producto final"): `high` no mejora el éxito y
+  cuesta un 22 % más. El defecto sigue siendo el de cada modelo.
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit en verde. Tres PRs y el de cierre, en el milestone
@@ -789,4 +820,36 @@ recomendaciones (2, 5 y 9):
     cabecera de `maha eval` dice el effort.
 11. **El modelo falso de los tests** manda el razonamiento como Anthropic,
     cada bloque con su índice, para probar la sesión de punta a punta.
+
+### PR 3 (`feature/hito-9-anthropic`, 2026-11-03)
+
+12. **Los errores HTTP y la comprobación del stream se comparten**
+    (`status_error()` y `check_streaming()` en `adapters/models/http.py`):
+    Anthropic y OpenAI tratan igual un 401, un 429 con `retry-after` o un
+    5xx, también el 529.
+13. **La caché de una hora necesita su propio precio.** La decisión 9
+    (`cache_ttl = "1h"`) cobraba lo escrito a 1,25 × cuando cuesta 2 ×: el
+    catálogo gana `cache_write_1h`, `Usage` gana `cache_write_1h_tokens`
+    (dentro de `cache_write_tokens`) y el adaptador lo lee de
+    `cache_creation.ephemeral_1h_input_tokens`. Con OpenCode no importa:
+    él da el coste.
+14. **El proveedor `anthropic`:** 14 modelos de la página de precios (sin
+    los de acceso limitado), con la escritura de una hora; la ventana y la
+    salida máxima, de models.dev. Solo Haiku 5.5 tiene tramos.
+15. **`tool_use` trae campos que no están en la referencia**
+    (`"caller": {"type": "direct"}`): se ignoran, como todo lo desconocido.
+16. **Verificación a mano, por OpenCode Go** (2026-11-03, directorios
+    desechables):
+    - `claude-haiku-5-5` con `-p`; dos herramientas en el mismo paso;
+    - en la conversación, una edición con permiso, después `/model
+      glm-5.3-flash` y vuelta a Claude: el razonamiento vuelve con su firma
+      tras la herramienta y tras pasar por GLM, sin ningún 400;
+    - Ctrl+C a mitad de una respuesta de Claude y seguir: la marca de
+      interrupción llega y la siguiente llamada se acepta;
+    - `maha -c` retoma una sesión de Claude;
+    - `minimax-m3` y `qwen3.8-flash`, formato Anthropic sin ser Claude;
+    - `gpt-6-luna`: el error claro, sin llamar al proveedor;
+    - **GLM respeta el effort** (POR VERIFICAR de §1.0): con la misma
+      pregunta, dos veces cada uno, `low` da 0 tokens de razonamiento y
+      `high`, 39 y 42; Haiku, 65 y 86-88.
 
