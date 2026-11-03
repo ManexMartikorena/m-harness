@@ -141,6 +141,15 @@ def test_a_run_without_cost_makes_the_mean_unknown() -> None:
     assert stats([run(), run(cost=None)]).cost is None
 
 
+def test_a_mean_below_any_amount_is_rounded() -> None:
+    # Review of the deep audit: a mean of 3.3E-13 is no amount in USD, and
+    # building the report failed.
+    runs = [run(cost="1E-12"), run(cost="0"), run(cost="0")]
+
+    assert stats(runs).cost == 0
+    assert combine([stats(runs), stats([run(cost="0")])]).cost == 0
+
+
 def test_only_errors_have_no_success_rate() -> None:
     assert stats([run(outcome="error")]).success is None
 

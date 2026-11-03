@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, model_validator
 from mharness.domain.environment import CREDENTIAL_SUFFIXES
 from mharness.domain.limits import TurnLimits
 from mharness.domain.money import Usd
+from mharness.domain.money import mean as mean_usd
 
 # The limits of a task, unless it says otherwise.
 TASK_LIMITS = TurnLimits(max_steps=25, timeout=300)
@@ -233,7 +234,7 @@ def stats(runs: Sequence[TaskRun]) -> Stats:
     cost = (
         None
         if any(c is None for c in costs)
-        else sum((c for c in costs if c is not None), Decimal(0)) / count
+        else mean_usd(sum((c for c in costs if c is not None), Decimal(0)), count)
     )
     return Stats(
         runs=len(runs),
@@ -267,11 +268,13 @@ def combine(parts: Sequence[Stats]) -> Stats:
     cost = (
         None
         if any(c is None for c in costs)
-        else sum(
-            (c * part.finished for part in parts if (c := part.cost) is not None),
-            Decimal(0),
+        else mean_usd(
+            sum(
+                (c * part.finished for part in parts if (c := part.cost) is not None),
+                Decimal(0),
+            ),
+            weight,
         )
-        / weight
     )
     return Stats(
         runs=sum(part.runs for part in parts),

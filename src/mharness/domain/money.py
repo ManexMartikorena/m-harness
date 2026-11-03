@@ -29,6 +29,19 @@ def _not_tiny(amount: Decimal) -> Decimal:
     return amount
 
 
+def known(amount: Decimal) -> Decimal | None:
+    """`amount`, or unknown (None) past LARGEST: counts that large are a
+    provider's bug, and a sum of them must not break a turn or a session
+    (review of the deep audit)."""
+    return amount if amount <= LARGEST else None
+
+
+def mean(total: Decimal, count: int) -> Decimal:
+    """`total / count`, to SMALLEST: a mean below it is no amount in USD,
+    and would break the report it goes in (review of the deep audit)."""
+    return (total / count).quantize(SMALLEST)
+
+
 # An amount in USD, never negative nor absurd. In JSON, a string in plain
 # notation: exact, unlike a float, and readable, unlike "1.23E-7".
 type Usd = Annotated[

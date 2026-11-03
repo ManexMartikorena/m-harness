@@ -27,6 +27,7 @@ from mharness.domain.catalog import add_cost
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
 from mharness.domain.model import Effort, Usage
+from mharness.domain.money import known
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
@@ -224,8 +225,9 @@ class Conversation:
             await self._sync_trace()
 
     def _count(self, cost: Decimal | None) -> None:
-        """Add one turn's cost to the session's."""
-        if cost is None:
+        """Add one turn's cost to the session's; past what an amount in USD
+        can be, the turn counts as one without a cost, as on resuming."""
+        if cost is None or known(self.cost + cost) is None:
             self.uncosted_turns += 1
         else:
             self.cost += cost

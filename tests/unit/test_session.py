@@ -322,6 +322,23 @@ def test_replay_sums_the_cost_and_counts_the_turns_without_it() -> None:
     assert session.uncosted_turns == 1
 
 
+def test_replay_counts_a_cost_past_any_amount_as_unknown() -> None:
+    # Review of the deep audit: two turns within bounds, a sum that is not,
+    # and the session failed validating on resume.
+    entries: list[SessionEntry] = [
+        MessageEntry(message=user()),
+        MessageEntry(message=answer()),
+        UsageEntry(usage=Usage(), cost=Decimal("9E+11")),
+        MessageEntry(message=user("Otra")),
+        MessageEntry(message=answer("Vale.")),
+        UsageEntry(usage=Usage(), cost=Decimal("9E+11")),
+    ]
+
+    session = replay(HEADER, entries)
+
+    assert (session.cost, session.uncosted_turns) == (Decimal("9E+11"), 1)
+
+
 def test_replay_without_turns_costs_nothing() -> None:
     session = replay(HEADER, [])
 

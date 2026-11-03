@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from mharness.domain.messages import Message, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
-from mharness.domain.money import Usd
+from mharness.domain.money import Usd, known
 
 # Date and time in UTC, and 4 random hex digits: short to type, sorted by
 # date, and two sessions in the same second do not clash.
@@ -213,7 +213,9 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
                 models[provider or header.provider] = changed
             case UsageEntry(usage=more, cost=spent, turns=turns):
                 usage += more
-                if spent is None:
+                # A sum past what an amount in USD can be is no longer
+                # known (review of the deep audit).
+                if spent is None or known(cost + spent) is None:
                     uncosted += turns
                 else:
                     cost += spent

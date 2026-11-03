@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, BaseModel, Field, model_validator
 
 from mharness.domain.model import Usage
-from mharness.domain.money import SMALLEST
+from mharness.domain.money import SMALLEST, known
 
 _MILLION = 1_000_000
 # The name of an API format: lowercase words joined by hyphens.
@@ -88,8 +88,9 @@ class ModelInfo(BaseModel, frozen=True):
 
 
 def add_cost(total: Decimal | None, more: Decimal | None) -> Decimal | None:
-    """The sum of two costs; unknown (None) once one of them is."""
-    return None if total is None or more is None else total + more
+    """The sum of two costs; unknown (None) once one of them is, or past
+    what an amount in USD can be."""
+    return None if total is None or more is None else known(total + more)
 
 
 def cost(usage: Usage, prices: Prices) -> Decimal:

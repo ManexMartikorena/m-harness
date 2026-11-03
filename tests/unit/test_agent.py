@@ -1951,3 +1951,19 @@ async def test_an_absurd_count_of_tokens_gives_an_unknown_cost() -> None:
 
     assert isinstance(events[-1], TurnFinished)
     assert (events[-1].reason, events[-1].cost) == ("end_turn", None)
+
+
+async def test_calls_whose_costs_add_up_past_any_amount_give_an_unknown_cost() -> None:
+    # Review of the deep audit: each call was within bounds, their sum was
+    # not, and the turn failed validating it.
+    large = Usage(input_tokens=9 * 10**17)
+    catalog = MemoryCatalog([priced(FAKE_MODEL, "1", "1")])
+    fake = FakeModelClient(
+        [tool_calls(call("c1"), usage=large), reply("Hola.", usage=large)]
+    )
+    subject = agent(fake, catalog=catalog)
+
+    events = await run(subject)
+
+    assert isinstance(events[-1], TurnFinished)
+    assert (events[-1].reason, events[-1].cost) == ("end_turn", None)

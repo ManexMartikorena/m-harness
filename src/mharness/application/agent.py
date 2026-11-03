@@ -44,7 +44,7 @@ from mharness.domain.model import (
     StopReason,
     Usage,
 )
-from mharness.domain.money import LARGEST
+from mharness.domain.money import known
 from mharness.domain.retry import RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
@@ -431,7 +431,7 @@ class Agent:
                 # Past what an amount in USD can be, the counts are a
                 # provider's bug: unknown, never a broken turn (deep audit
                 # after hito 9, S9).
-                return amount if amount <= LARGEST else None
+                return known(amount)
         return None
 
     def _request(self, turn: list[Message], model: str) -> ModelRequest:

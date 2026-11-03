@@ -858,6 +858,21 @@ async def test_the_conversation_adds_up_the_cost_of_its_turns() -> None:
     assert conversation.uncosted_turns == 0
 
 
+async def test_a_session_cost_past_any_amount_counts_the_turn_as_unknown() -> None:
+    # Review of the deep audit: the sum of two turns within bounds could
+    # not be saved nor exported.
+    large = Usage(input_tokens=9 * 10**17)
+    store = MemorySessionStore()
+    fake = FakeModelClient([reply("Uno", usage=large), reply("Dos", usage=large)])
+    conversation = await World(store, fake, catalog=PRICED).sessions.start()
+
+    await turn(conversation, "A")
+    await turn(conversation, "B")
+
+    assert conversation.cost == Decimal("9E+11")
+    assert conversation.uncosted_turns == 1
+
+
 async def test_a_resumed_session_goes_on_from_its_saved_cost() -> None:
     store = MemorySessionStore()
     fake = FakeModelClient([reply("Uno", usage=MILLION), reply("Dos", usage=MILLION)])
