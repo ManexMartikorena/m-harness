@@ -8,19 +8,28 @@ about the agent.
 """
 
 import asyncio
-import codecs
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
-from email.utils import parsedate_to_datetime
+from decimal import Decimal
 from types import TracebackType
 from typing import Any, Self
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
-from mharness import __version__
+from mharness.adapters.models.http import (
+    STALL_SECONDS,
+    TIMEOUT,
+    USER_AGENT,
+    count,
+    error_message,
+    provider_cost,
+    provider_message,
+    retry_after,
+    safe,
+    text,
+)
 from mharness.adapters.models.sse import parse_sse
 from mharness.domain.errors import (
     ModelAuthError,
@@ -40,23 +49,12 @@ from mharness.domain.messages import (
 )
 from mharness.domain.model import ModelRequest, ModelResponse, StopReason, Usage
 
-USER_AGENT = f"maha/{__version__} (+https://github.com/ManexMartikorena/m-harness)"
-# `read` is the longest silence between two chunks, not the time of the whole
-# answer: a long answer that keeps arriving is never cut (spec hito 3, §1.8).
-TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0)
-# The longest wait for the next event with data. Comments (`: keep-alive`)
-# reset `read` but are no progress: a stream that only sends them stayed
-# open five minutes in the evals (spec hito 8, §12).
-STALL_SECONDS = 120.0
-
 STOP_REASONS: dict[str, StopReason] = {
     "stop": "end_turn",
     "length": "max_tokens",
     "tool_calls": "tool_use",
     "content_filter": "content_filter",
 }
-# The provider's error message is shown to the user, cut to this length.
-MAX_PROVIDER_MESSAGE = 300
 
 
 class OpenAIChatClient:
@@ -158,7 +156,7 @@ class OpenAIChatClient:
         detail = None
         if content_type.startswith("application/json"):
             await response.aread()
-            detail = self._safe(_provider_message(response))
+            detail = self._safe(provider_message(response))
         raise ModelResponseError(detail or "the provider did not stream")
 
     async def _events(
@@ -168,7 +166,7 @@ class OpenAIChatClient:
         finish_reason: str | None = None
         usage: _Usage | None = None
         model: str | None = None
-        datas = parse_sse(_text(response))
+        datas = parse_sse(text(response))
         while True:
             try:
                 async with asyncio.timeout(STALL_SECONDS):
@@ -190,7 +188,7 @@ class OpenAIChatClient:
                     "a chunk of the stream could not be understood"
                 ) from None
             if chunk.error is not None:
-                detail = self._safe(_error_message(chunk.error))
+                detail = self._safe(error_message(chunk.error))
                 message = "the provider failed while answering"
                 raise ModelUnavailableError(
                     f"{message}: {detail}" if detail else message
@@ -227,17 +225,11 @@ class OpenAIChatClient:
 
     def _safe(self, detail: str | None) -> str | None:
         """A provider's text, ready to show: without the key, and cut."""
-        if not detail:
-            return None
-        if self._api_key:
-            # Never show the key, even if the provider echoes it back. Before
-            # cutting, or a cut key would slip through.
-            detail = detail.replace(self._api_key, "[redacted]")
-        return detail[:MAX_PROVIDER_MESSAGE]
+        return safe(detail, self._api_key)
 
     def _status_error(self, response: httpx.Response) -> ModelError:
         status = response.status_code
-        detail = self._safe(_provider_message(response))
+        detail = self._safe(provider_message(response))
         message = f"HTTP {status}: {detail}" if detail else f"HTTP {status}"
         if status in (401, 403):
             return ModelAuthError(message)
@@ -248,42 +240,6 @@ class OpenAIChatClient:
         if status >= 500:
             return ModelUnavailableError(message, retry_after=wait)
         return ModelRequestError(message)
-
-
-def retry_after(value: str | None, now: datetime) -> float | None:
-    """The seconds a `Retry-After` header asks to wait: a whole number of
-    seconds, or an HTTP date (RFC 9110, §10.2.3); 0 if the date is past,
-    None if it says neither."""
-    if value is None:
-        return None
-    value = value.strip()
-    if value.isascii() and value.isdigit():
-        return float(value)
-    try:
-        when = parsedate_to_datetime(value)
-    except TypeError, ValueError:
-        return None
-    if when.tzinfo is None:
-        # An HTTP date is always in GMT, even if it does not say so.
-        when = when.replace(tzinfo=UTC)
-    return max((when - now).total_seconds(), 0.0)
-
-
-def _provider_message(response: httpx.Response) -> str | None:
-    """The `error.message` of an OpenAI error body, if there is one."""
-    try:
-        body = response.json()
-    except ValueError:
-        return None
-    return _error_message(body.get("error") if isinstance(body, dict) else None)
-
-
-def _error_message(error: Any) -> str | None:
-    """The message of an `error` value: an object with `message`, or text."""
-    message = error.get("message") if isinstance(error, dict) else error
-    if not isinstance(message, str) or not message.strip():
-        return None
-    return message.strip()
 
 
 def _to_openai(request: ModelRequest) -> dict[str, Any]:
@@ -459,62 +415,22 @@ class _Chunk(BaseModel):
     error: Any = None
 
 
-async def _text(response: httpx.Response) -> AsyncIterator[str]:
-    """The body as text. The incremental decoder never cuts a character split
-    between two network chunks, and drops a leading BOM."""
-    decoder = codecs.getincrementaldecoder("utf-8-sig")(errors="replace")
-    async for chunk in response.aiter_bytes():
-        if text := decoder.decode(chunk):
-            yield text
-    if text := decoder.decode(b"", final=True):
-        yield text
-
-
 def _usage(usage: _Usage | None) -> Usage:
     if usage is None:
         return Usage()
     prompt = usage.prompt_tokens_details
     completion = usage.completion_tokens_details
     return Usage(
-        input_tokens=_count(usage.prompt_tokens),
-        output_tokens=_count(usage.completion_tokens),
-        cache_read_tokens=_count(prompt.cached_tokens if prompt else None),
-        cache_write_tokens=_count(prompt.cache_write_tokens if prompt else None),
-        reasoning_tokens=_count(completion.reasoning_tokens if completion else None),
+        input_tokens=count(usage.prompt_tokens),
+        output_tokens=count(usage.completion_tokens),
+        cache_read_tokens=count(prompt.cached_tokens if prompt else None),
+        cache_write_tokens=count(prompt.cache_write_tokens if prompt else None),
+        reasoning_tokens=count(completion.reasoning_tokens if completion else None),
     )
 
 
 def _cost(usage: _Usage | None) -> Decimal | None:
-    """What the provider says the call cost, in USD; None if it does not
-    say. OpenCode first: what counts against the plan's limit, then the list
-    price; then the plain `cost` of OpenRouter and others."""
+    """What the provider says the call cost, in USD; None if it does not."""
     if usage is None:
         return None
-    opencode = usage.opencode if isinstance(usage.opencode, dict) else {}
-    for value in (opencode.get("allowance"), opencode.get("list_cost"), usage.cost):
-        if (amount := _amount(value)) is not None:
-            return amount
-    return None
-
-
-# More than this for one call is not a cost: a provider's bug.
-_MAX_CALL_COST = Decimal(1_000_000)
-
-
-def _amount(value: object) -> Decimal | None:
-    """A number of USD, or None if it is not one, is negative or absurd."""
-    if isinstance(value, bool) or not isinstance(value, int | float | str):
-        return None
-    try:
-        # str(): the float 6.225e-05 as written, not its binary value.
-        amount = Decimal(str(value))
-    except InvalidOperation:
-        return None
-    if not amount.is_finite() or not 0 <= amount <= _MAX_CALL_COST:
-        return None
-    return amount
-
-
-def _count(tokens: int | None) -> int:
-    """A count the provider sent; missing, null or negative is 0."""
-    return max(tokens or 0, 0)
+    return provider_cost(usage.opencode, usage.cost)

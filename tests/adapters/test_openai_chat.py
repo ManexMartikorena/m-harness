@@ -11,7 +11,7 @@ import pytest
 import respx
 
 from mharness.adapters.models import OpenAIChatClient
-from mharness.adapters.models.openai_chat import TIMEOUT, retry_after
+from mharness.adapters.models.http import TIMEOUT, retry_after
 from mharness.domain.errors import (
     ModelAuthError,
     ModelError,
