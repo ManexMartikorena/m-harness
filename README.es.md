@@ -11,21 +11,22 @@
 hacerlo, **preguntándote antes de cada cambio**. Funciona con el proveedor y
 el modelo que elijas, y te dice en cada turno lo que ha costado.
 
-> 🚧 **En desarrollo: `v0.8.1`.** Ya es usable para trabajar en un
+> 🚧 **En desarrollo: `v0.9.0`.** Ya es usable para trabajar en un
 > proyecto: conversar, leer y cambiar ficheros, ejecutar comandos, guardar y
-> retomar sesiones y ver el coste; y en scripts, con `maha -p`. Lo que
-> viene, en la [hoja de ruta](#hoja-de-ruta).
+> retomar sesiones y ver el coste, con modelos del formato de OpenAI y con
+> Claude; y en scripts, con `maha -p`. Lo que viene, en la [hoja de
+> ruta](#hoja-de-ruta).
 
 ```
-$ maha
-maha 0.8.1 · opencode-go · glm-5.3-flash · /help for commands
+$ maha -m claude-haiku-5-5
+maha 0.9.0 · opencode-go · claude-haiku-5-5 · /help for commands
 > Lee notas.txt con read_file y dime qué pone, en una frase.
   → read_file(path="notas.txt")
   ✓ 2 lines
-En notas.txt pone dos líneas: "uno" y "dos".
-  [tokens: 2585 in · 30 out · 1 call · $0.0003 · session $0.0003]
+El archivo notas.txt contiene solo dos palabras, una por línea: "uno" y "dos".
+  [tokens: 4027 in · 87 out · 1 call · $0.0013 · session $0.0013]
 > Cambia la segunda línea de notas.txt por 'tres' con edit_file.
-  → edit_file(new_string="tres", old_string="dos", path="notas.txt")
+  → edit_file(path="notas.txt", old_string="dos", new_string="tres")
   ┌ edit notas.txt
   │ @@ -1,2 +1,2 @@
   │  uno
@@ -33,26 +34,28 @@ En notas.txt pone dos líneas: "uno" y "dos".
   │ +tres
   └ Allow? [y] yes · [a] always this session · [n] no: y
   ✓ 1 replacement
-Listo: la segunda línea ahora dice "tres".
-  [tokens: 2721 in · 41 out · 1 call · $0.0002 · session $0.0004]
+He cambiado la segunda línea de notas.txt: ahora el archivo dice "uno" y "tres".
+  [tokens: 4415 in · 204 out (65 reasoning) · 1 call · $0.0007 · session $0.0020]
 > /trace
-  20261103-112003-82ad · glm-5.3-flash · 2 turns · 4 model calls · 2 tools
-  1  12:20:03  2 calls · 1 tool · 2585 in · 30 out · $0.0003 · 6.7 s
-  2  12:20:10  2 calls · 1 tool · 2721 in · 41 out · $0.0002 · 10.1 s
-  total: 5306 in · 71 out · $0.0004
-  [trace: ~/.local/share/maha/traces/20261103-112003-82ad.jsonl]
+  20261103-154631-4b20 · claude-haiku-5-5 · 2 turns · 4 model calls · 2 tools
+  1  16:46:32  2 calls · 1 tool · 4027 in · 87 out · $0.0013 · 3.2 s
+  2  16:46:35  2 calls · 1 tool · 4415 in · 204 out · $0.0007 · 3.9 s
+  total: 8442 in · 291 out · $0.0020
+  [trace: ~/.local/share/maha/traces/20261103-154631-4b20.jsonl]
 > /exit
 $ maha -c -p "¿Qué pone ahora en notas.txt? Una frase." --allow read_file
-  [resumed 20261103-112003-82ad · 8 messages · glm-5.3-flash]
+  [resumed 20261103-154631-4b20 · 8 messages · claude-haiku-5-5]
   → read_file(path="notas.txt")
   ✓ 2 lines
-  [tokens: 2841 in · 35 out · 1 call · $0.0002 · session $0.0006]
-Ahora notas.txt pone "uno" en la primera línea y "tres" en la segunda.
+  [tokens: 4795 in · 85 out · 1 call · $0.0004 · session $0.0024]
+El archivo notas.txt ahora contiene "uno" y "tres", una palabra por línea.
 ```
 
 *(Una sesión real. Los totales son exactos; cada turno se redondea a cuatro
 decimales. Con `-p`, por stdout sale solo la respuesta; las líneas entre
-corchetes y las llamadas van a stderr.)*
+corchetes y las llamadas van a stderr. Claude Haiku 5.5 por OpenCode Go:
+desde el segundo turno lee la conversación de la caché del prompt, y cada
+turno cuesta menos.)*
 
 ## Qué hace
 
@@ -70,9 +73,17 @@ corchetes y las llamadas van a stderr.)*
   contraseña o un editor, falla al momento) y sin tu clave del proveedor en
   el entorno, pero **con tus permisos: lee el comando antes de
   aprobarlo**.
-- **El modelo y el proveedor que quieras.** Formato de OpenAI de serie, con
-  OpenCode Go y Zen ya configurados, y cualquier servidor compatible que
-  declares. Cambias de modelo con `/model` o en la configuración.
+- **El modelo y el proveedor que quieras.** Habla dos formatos de API, el
+  de OpenAI y el de Anthropic, y elige el de cada modelo, también cuando
+  cambias con `/model` a mitad de sesión. OpenCode Go y Zen y la API de
+  Anthropic vienen configurados, y puedes declarar cualquier servidor
+  compatible. Eliges cuánto se esfuerza el modelo con `--effort` o
+  `/effort`.
+- **Aprovecha la caché del prompt del proveedor.** Con el formato de
+  Anthropic, cada paso lee de la caché lo que escribió el anterior: mucho
+  más barato que reenviar la conversación entera. Con Claude, el
+  razonamiento del modelo se guarda y se le devuelve intacto, como pide
+  Anthropic.
 - **También en scripts.** `maha -p "…"` hace una instrucción y sale: solo
   la respuesta en stdout, o JSON; lo que le llega por stdin va debajo
   (`git diff | maha -p "revisa este diff"`). Sin nadie a quien preguntar,
@@ -91,8 +102,8 @@ corchetes y las llamadas van a stderr.)*
 - **Sabes lo que gastas.** Cada turno dice sus tokens y su coste, y la
   sesión lo que lleva: el coste que da el proveedor (con OpenCode Go, lo
   que cuenta contra tu límite mensual) o, si no lo da, el de un catálogo con
-  los precios de todos los modelos de OpenCode Go y Zen. `maha stats` lo
-  suma por día y por modelo.
+  los precios de todos los modelos de OpenCode Go, Zen y Anthropic. `maha
+  stats` lo suma por día y por modelo.
 - **Todo queda registrado, sin tus secretos.** Cada sesión deja una traza
   de lo que hizo el agente; `/trace` la resume.
 
@@ -102,7 +113,7 @@ Necesitas [uv](https://docs.astral.sh/uv/) (instala también Python 3.14 si
 falta).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.8.1
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.9.0
 ```
 
 Después, elige proveedor y modelo:
@@ -139,9 +150,28 @@ timeout = 600        # segundos
 ```
 
 **Qué modelos funcionan hoy:** los que se sirven con el formato Chat
-Completions de OpenAI. En OpenCode Go y Zen son GLM, Kimi, DeepSeek, MiMo,
-MiniMax M3.1 Flash y varios más; Claude, GPT, Gemini y Grok usan otras APIs
-que `maha` aún no habla (la de Anthropic llega en el hito 9).
+Completions de OpenAI o con la Messages API de Anthropic. En OpenCode Go y
+Zen son GLM, Kimi, DeepSeek, MiMo, Claude, MiniMax, Qwen y muchos más. GPT,
+Gemini y Grok usan otras APIs que `maha` aún no habla: `maha models` los
+marca con `*`, y elegir uno lo dice antes de llamar.
+
+**Claude con tu propia cuenta de Anthropic:** crea una clave en la Claude
+Console (https://platform.claude.com/settings/keys) y después:
+
+```
+export ANTHROPIC_API_KEY=...
+```
+
+```toml
+# ~/.config/maha/config.toml
+provider = "anthropic"
+model = "claude-opus-5-5"
+cache_ttl = "1h"   # opcional: la caché del prompt dura una hora (5m por defecto)
+```
+
+Pagas por uso en tu cuenta de la Console. La suscripción de Claude (Pro,
+Max) no se puede usar: Anthropic no permite su acceso en herramientas de
+terceros.
 
 ### Otro proveedor
 
@@ -235,7 +265,6 @@ tu usuario. Respeta las variables `XDG_*`.
 
 `maha` crece hito a hito hasta la versión 1.0. Lo siguiente:
 
-- **Más proveedores:** formato de Anthropic, esfuerzo de razonamiento.
 - **Instrucciones del proyecto** (`AGENTS.md`, `/init`), compactación del
   contexto y **deshacer** cambios.
 - **Skills y comandos propios, memoria entre sesiones, sandbox, modos de
