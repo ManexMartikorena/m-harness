@@ -233,7 +233,7 @@ class Conversation:
         """Use `model` from the next turn on; the change keeps its place
         among the turns (final audit of hito 6, 4)."""
         self._agent.model = model
-        self._pending.append(ModelEntry(model=model))
+        self._pending.append(ModelEntry(model=model, provider=self._origin.provider))
         await self._save()
 
     async def close(self) -> None:
@@ -508,7 +508,10 @@ class Sessions:
             loaded, log = await self._store.open(session)
         header = loaded.header
         same_provider = header.provider == self._origin.provider
-        model = loaded.model if same_provider else self._model
+        # Of another provider, the model it chose last, if it ever resumed
+        # this session; else the configured one (audit after hito 9, S2).
+        own = loaded.models.get(self._origin.provider)
+        model = loaded.model if same_provider else own or self._model
         try:
             if model is None:
                 raise SessionError("no model configured")

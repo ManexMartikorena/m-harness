@@ -265,7 +265,7 @@ async def test_switching_the_model_is_saved() -> None:
     await turn(conversation, "B")
 
     assert conversation.model == "kimi-k3"
-    assert entries(store)[3] == ModelEntry(model="kimi-k3")
+    assert entries(store)[3] == ModelEntry(model="kimi-k3", provider="opencode-go")
     assert fake.requests[1].model == "kimi-k3"
 
 
@@ -280,7 +280,7 @@ async def test_switching_the_model_before_any_turn_is_saved_in_order() -> None:
     await turn(conversation, "A")
 
     assert store.sessions[FIRST].header.model == "glm-5.3-flash"
-    assert entries(store)[0] == ModelEntry(model="kimi-k3")
+    assert entries(store)[0] == ModelEntry(model="kimi-k3", provider="opencode-go")
 
 
 def kinds(store: MemorySessionStore) -> list[str]:
@@ -394,6 +394,31 @@ async def test_resume_from_another_provider_uses_the_configured_model() -> None:
 
     assert resumed.conversation.model == "llama"
     assert resumed.fallback_from == "glm-5.3-flash"
+
+
+async def test_a_model_chosen_by_another_provider_is_only_that_providers() -> None:
+    # Audit after hito 9, S2: the model of another provider written in the
+    # file never reaches the API of the session's own.
+    store = MemorySessionStore()
+    session_id = await saved(store)
+    other = World(store, FakeModelClient([]), provider="anthropic", model="claude-y")
+    opened = await other.sessions.open(Start(session=session_id, model="claude-x"))
+    await opened.conversation.close()
+
+    assert entries(store, session_id)[-1] == ModelEntry(
+        model="claude-x", provider="anthropic"
+    )
+    own = World(store, FakeModelClient([]), tokens=["9999"])
+    resumed = await own.sessions.resume(session_id, current=await own.sessions.start())
+    await resumed.conversation.close()
+    assert resumed.conversation.model == "glm-5.3-flash"
+    assert resumed.fallback_from is None
+    # The other provider gets back the one it chose.
+    again = World(store, FakeModelClient([]), provider="anthropic", model="claude-y")
+    back = await again.sessions.resume(session_id, current=await again.sessions.start())
+    await back.conversation.close()
+    assert back.conversation.model == "claude-x"
+    assert back.fallback_from == "glm-5.3-flash"
 
 
 async def test_resume_from_another_directory_says_where_it_was() -> None:
@@ -568,7 +593,9 @@ async def test_open_a_session_with_another_model_records_the_change() -> None:
     await opened.conversation.close()
 
     assert opened.conversation.model == "kimi-k2.7-code"
-    assert entries(store, session)[-1] == ModelEntry(model="kimi-k2.7-code")
+    assert entries(store, session)[-1] == ModelEntry(
+        model="kimi-k2.7-code", provider="opencode-go"
+    )
 
 
 async def test_open_a_session_with_its_own_model_changes_nothing() -> None:

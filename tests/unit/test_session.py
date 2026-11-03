@@ -191,6 +191,32 @@ def test_replay_gives_messages_the_last_model_and_the_tokens() -> None:
     )
 
 
+def test_replay_keeps_the_last_model_of_each_provider() -> None:
+    # Audit after hito 9, S2: another provider's model is never the
+    # session's own.
+    entries: list[SessionEntry] = [
+        ModelEntry(model="kimi-k3"),
+        ModelEntry(model="claude-x", provider="anthropic"),
+        ModelEntry(model="glm-5.3", provider="opencode-go"),
+        ModelEntry(model="claude-z", provider="anthropic"),
+    ]
+
+    session = replay(HEADER, entries)
+
+    assert session.model == "glm-5.3"
+    assert session.models == {"opencode-go": "glm-5.3", "anthropic": "claude-z"}
+
+
+def test_a_model_entry_names_its_provider_and_older_ones_do_not() -> None:
+    entry = ModelEntry(model="claude-x", provider="anthropic")
+
+    assert ENTRY.validate_json(entry.model_dump_json()) == entry
+    assert ModelEntry(model="k").model_dump(mode="json") == {
+        "type": "model",
+        "model": "k",
+    }
+
+
 def test_replay_without_entries_keeps_the_first_model() -> None:
     session = replay(HEADER, [])
 

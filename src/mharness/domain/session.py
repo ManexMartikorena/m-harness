@@ -72,10 +72,15 @@ class UsageEntry(BaseModel, frozen=True):
 
 
 class ModelEntry(BaseModel, frozen=True):
-    """`/model` changed the model from here on."""
+    """`/model` or `-m` changed the model from here on, for the maha of
+    `provider`: a session resumed by another provider names a model of
+    that one, which the API of the header's never gets (audit after hito
+    9, S2)."""
 
     type: Literal["model"] = "model"
     model: str
+    # None in older files: the header's.
+    provider: str | None = Field(default=None, exclude_if=lambda p: p is None)
 
 
 # Validated by `type`, as the blocks of a message.
@@ -89,13 +94,18 @@ class Session(BaseModel, frozen=True):
 
     header: SessionHeader
     messages: list[Message]
-    # The last one: the header's, or that of the last `ModelEntry`.
+    # The last one of the header's provider: the header's, or that of its
+    # last `ModelEntry`.
     model: str
     # The sum of every `UsageEntry`.
     usage: Usage
     # The sum of the turns with a cost, in USD, and how many had none.
     cost: Usd = Decimal(0)
     uncosted_turns: int = Field(default=0, ge=0)
+    # The last model of every provider that changed it, the header's too;
+    # empty in the exports before it. An import takes only `model`, with
+    # the header's provider.
+    models: dict[str, str] = Field(default_factory=dict)
 
 
 class SessionSummary(BaseModel, frozen=True):
@@ -191,7 +201,7 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
     """The session that `entries`, in the order of the file, build. Raises
     `SessionCorrupt` if its history could not go to the model."""
     messages: list[Message] = []
-    model = header.model
+    models = {header.provider: header.model}
     usage = Usage()
     cost = Decimal(0)
     uncosted = 0
@@ -199,8 +209,8 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
         match entry:
             case MessageEntry(message=message):
                 messages.append(message)
-            case ModelEntry(model=changed):
-                model = changed
+            case ModelEntry(model=changed, provider=provider):
+                models[provider or header.provider] = changed
             case UsageEntry(usage=more, cost=spent, turns=turns):
                 usage += more
                 if spent is None:
@@ -211,10 +221,11 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
     return Session(
         header=header,
         messages=messages,
-        model=model,
+        model=models[header.provider],
         usage=usage,
         cost=cost,
         uncosted_turns=uncosted,
+        models=models,
     )
 
 
