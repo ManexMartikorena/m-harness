@@ -65,8 +65,11 @@ reads the conversation from the prompt cache, and each turn costs less.)*
 - **Nothing changes without your permission.** Every write and every command
   asks first, showing the diff or the command: once, always in this session,
   or no. "Always" covers every later edit inside the working directory, but
-  only that exact command. Reading outside the working directory or a
-  secret file asks too, every time; a secret is recognized by its name
+  only that exact command; files that run code by themselves (`.git`, CI,
+  editor and agent configs, `.venv`, `node_modules`, `*.pth`) and files
+  with more than one hard link ask every time. Reading outside the working
+  directory or a secret file asks too, every time, and the model learns
+  nothing of those files before you approve; a secret is recognized by its name
   (`.env`, keys, `.ssh`…), not by its content. Commands run with a time
   limit, without a terminal (one that asks for something, such as a
   password or an editor, fails at once) and without your provider key in
@@ -183,9 +186,11 @@ base_url = "http://localhost:11434/v1"
 # api_key_env = "MY_KEY"   # without it, no key is sent
 ```
 
-A project can choose its provider, model and fallback in `.maha/config.toml`,
-and tighten the limits (never loosen them), but never declare providers:
-that way a foreign repository cannot send your key to another server.
+A project can choose its provider, model, fallback, effort and cache in
+`.maha/config.toml`, and tighten the limits (never loosen them), but never
+declare providers: that way a foreign repository cannot send your key to
+another server. What a project chooses is said at start, so it cannot raise
+your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
 
 ## Usage
 
@@ -235,8 +240,10 @@ With `-p`:
   denied.
 - With `-p` or without it: `-m ID` (model), `--fallback-model ID`,
   `--effort LEVEL`, `--max-steps N`, `--max-cost USD`, `--max-tokens N` and `--timeout S`.
-- Exit code: 0 fine, 1 error, 2 wrong usage, 3 a limit stopped the turn, 4
-  a call was denied; with Ctrl+C or a signal, 128 + the signal.
+- Exit code: 0 fine, 1 error (also when the model declines), 2 wrong usage,
+  3 a limit stopped the turn (also when the answer reached the model's
+  output limit), 4 a call was denied; with Ctrl+C or a signal, 128 + the
+  signal.
 
 ```
 $ git diff | maha -p "review this diff" --output-format json | jq -r .result

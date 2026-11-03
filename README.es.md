@@ -66,8 +66,12 @@ turno cuesta menos.)*
 - **Nada cambia sin tu permiso.** Cada escritura y cada comando te preguntan
   antes, con el diff o el comando: una vez, siempre en esta sesión, o no.
   "Siempre" cubre todas las ediciones siguientes dentro del directorio de
-  trabajo, pero solo ese comando exacto. Leer fuera del directorio o un
-  fichero secreto también pregunta, cada vez; un secreto se reconoce por
+  trabajo, pero solo ese comando exacto; los ficheros que ejecutan código
+  solos (`.git`, CI, configuración de editores y agentes, `.venv`,
+  `node_modules`, `*.pth`) y los que tienen más de un enlace duro preguntan
+  cada vez. Leer fuera del directorio o un fichero secreto también
+  pregunta, cada vez, y el modelo no sabe nada de esos ficheros antes de
+  que apruebes; un secreto se reconoce por
   el nombre (`.env`, claves, `.ssh`…), no por el contenido. Los comandos
   corren con un tiempo límite, sin terminal (uno que pide algo, como una
   contraseña o un editor, falla al momento) y sin tu clave del proveedor en
@@ -187,10 +191,12 @@ base_url = "http://localhost:11434/v1"
 # api_key_env = "MI_CLAVE"   # sin ella, no se envía clave
 ```
 
-Un proyecto puede elegir su proveedor, su modelo y su respaldo en
-`.maha/config.toml`, y apretar los topes (nunca aflojarlos), pero nunca
-declarar proveedores: así un repositorio ajeno no puede llevarse tu clave a
-otro servidor.
+Un proyecto puede elegir su proveedor, su modelo, su respaldo, el effort y
+la caché en `.maha/config.toml`, y apretar los topes (nunca aflojarlos),
+pero nunca declarar proveedores: así un repositorio ajeno no puede llevarse
+tu clave a otro servidor. Lo que elige un proyecto se dice al arrancar, para
+que no pueda subirte el coste sin que lo veas: `[from .maha/config.toml:
+effort max, cache 1h]`.
 
 ## Uso
 
@@ -241,8 +247,10 @@ Con `-p`:
   código se deniegan siempre.
 - Con `-p` o sin él: `-m ID` (modelo), `--fallback-model ID`,
   `--effort NIVEL`, `--max-steps N`, `--max-cost USD`, `--max-tokens N` y `--timeout S`.
-- Código de salida: 0 bien, 1 error, 2 uso incorrecto, 3 un tope paró el
-  turno, 4 se denegó una llamada; con Ctrl+C o una señal, 128 + la señal.
+- Código de salida: 0 bien, 1 error (también si el modelo se niega), 2 uso
+  incorrecto, 3 un tope paró el turno (también si la respuesta llegó a la
+  salida máxima del modelo), 4 se denegó una llamada; con Ctrl+C o una
+  señal, 128 + la señal.
 
 ```
 $ git diff | maha -p "revisa este diff" --output-format json | jq -r .result
