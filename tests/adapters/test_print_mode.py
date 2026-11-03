@@ -4,6 +4,7 @@ code (spec hito 8, §1.10, §1.11 and §1.4)."""
 import asyncio
 import io
 import json
+import re
 import signal
 from collections.abc import AsyncGenerator
 from typing import get_args
@@ -147,8 +148,10 @@ async def test_what_is_piped_goes_below_the_text() -> None:
 
     assert (code, out) == (0, "Dos palabras.\n")
     (request,) = fake.requests
-    assert request.messages[0].text == (
-        "cuenta las palabras\n\n<stdin>\nuno dos\n</stdin>"
+    # The tag carries a random value of this run (deep audit after hito 9).
+    assert re.fullmatch(
+        r"cuenta las palabras\n\n<(stdin-\w+)>\nuno dos\n</\1>",
+        request.messages[0].text,
     )
 
 

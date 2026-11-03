@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import os
+import re
 import signal
 import stat
 from collections.abc import AsyncIterator, Callable, Iterator
@@ -745,12 +746,11 @@ def test_print_answers_on_stdout_and_saves_the_session(
     assert (code, captured.out) == (0, "Dos palabras.\n")
     assert captured.err == "  [tokens: 12 in · 3 out · <$0.0001 · session <$0.0001]\n"
     messages = json.loads(route.calls.last.request.content)["messages"]
-    assert messages == [
-        {
-            "role": "user",
-            "content": "cuenta las palabras\n\n<stdin>\nuno dos\n</stdin>",
-        }
-    ]
+    [message] = messages
+    assert message["role"] == "user"
+    assert re.fullmatch(
+        r"cuenta las palabras\n\n<(stdin-\w+)>\nuno dos\n</\1>", message["content"]
+    )
     assert len(list((data_home / "maha" / "sessions").glob("*.jsonl"))) == 1
 
 

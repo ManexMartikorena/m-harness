@@ -4,7 +4,7 @@
 so the evals measure exactly what `-p` does.
 """
 
-import re
+import secrets
 import time
 from collections.abc import Callable
 from contextlib import aclosing
@@ -62,23 +62,21 @@ class RunResult(BaseModel, frozen=True):
     error: str | None
 
 
-# What could pass for the closing tag of the block: any case, spaces, what
-# follows the name, and the full-width "<" and "/" (review of the audit of
-# hito 8).
-_CLOSING = re.compile(r"[<\uff1c]\s*[/\uff0f]\s*(stdin)", re.IGNORECASE)
-
-
-def instruction(text: str, piped: str | None) -> str:
+def instruction(text: str, piped: str | None, *, tag: str | None = None) -> str:
     """What `maha -p` asks (spec hito 8, §1.10): `text`, and below it what
     was piped, between delimiters, because it is data and not the user's
-    words. Without `text`, what was piped is the instruction."""
+    words. Without `text`, what was piped is the instruction.
+
+    The tag carries a random value of this run: the piped text cannot know
+    it, so it cannot close its own block. Escaping look-alikes of
+    `</stdin>` always left some out (audits of hito 8 and after hito 9,
+    B5)."""
     if piped is None or not piped.strip():
         return text
     if not text.strip():
         return piped
-    # What was piped cannot close its own block (audit of hito 8).
-    data = _CLOSING.sub(lambda found: "<\\/" + found.group(1), piped.removesuffix("\n"))
-    return f"{text}\n\n<stdin>\n{data}\n</stdin>"
+    tag = tag or f"stdin-{secrets.token_hex(8)}"
+    return f"{text}\n\n<{tag}>\n{piped.removesuffix('\n')}\n</{tag}>"
 
 
 class TurnBroke(Exception):
