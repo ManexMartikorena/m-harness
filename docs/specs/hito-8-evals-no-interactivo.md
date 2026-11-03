@@ -802,6 +802,88 @@ agente:
 
 ## 12. Aprendido al implementar
 
+### Auditoría (`fix/auditoria-hito-8`, 2026-10-30 y 2026-11-03)
+
+Pedida por el mantenedor tras el cierre: dejar el hito 8 sin deuda antes
+del hito 9. Publicada como `v0.8.1`.
+
+50. **`Retry-After` de más de 60 s: sin reintento** (decisión del
+    mantenedor, 2026-10-30). Recortarlo a 60 s hacía esperar unos 3
+    minutos para fallar igual con una cuota agotada. Ahora pasa al
+    respaldo o falla al momento (§1.14, corregido en el sitio).
+51. **Los comandos que no llaman al modelo no piden `model`.** Sin él en
+    la configuración, `maha sessions`, `trace`, `stats`, `export` e
+    `import` no arrancaban. De la misma familia que §12.48.
+52. **Dos revisiones independientes** del diff `v0.7.1..v0.8.0`, con
+    subagentes que solo vieron el código: el núcleo (límites, evals,
+    reintentos) y la interfaz con el almacenamiento. 19 hallazgos, todos
+    confirmados en el código y arreglados, cada uno con su test primero:
+    - las evals: un proveedor parado o con 429 llegaba al tiempo límite
+      y se juzgaba por la comprobación, no como error (§12.9); la línea
+      base comparada era la primera del día, no la última; una tarea toda
+      en error y un coste desconocido pasaban la puerta sin aviso; una
+      excepción o un Ctrl+C perdían toda la batería ya pagada;
+    - la seguridad: un `.maha/config.toml` ajeno subía el tope de 25
+      pasos a un usuario sin `[limits]`; una petición de permiso a nombre
+      de otra herramienta; lo de stdin podía cerrar su propio bloque;
+    - `-p` y los comandos: una tubería cerrada acababa con una traza de
+      Python; `session_id` daba un id que `-r` no retomaba; con stdin
+      cerrado se leía como entrada el primer fichero abierto; varios
+      fallos tempranos no dejaban JSON; `steps` no cuadraba entre
+      `turn_finished` y `result`; `maha stats --days 1000000` reventaba;
+    - las sesiones: `maha import` se fiaba de `uncosted_turns`; `/trace`
+      nombraba una traza que no existía.
+53. **El WSL se cerró tres veces por un test.** El de `uncosted_turns`
+    usaba `10**8` y se lanzó sin el arreglo, para verlo fallar: creó 100
+    millones de entradas y agotó la memoria. Las dos sesiones siguientes
+    lo repitieron al retomar. Aprendido: un test que reproduce un
+    agotamiento de memoria o disco usa un valor pequeño que dice lo mismo
+    (aquí, 5), nunca el que lo agota.
+54. **Una tercera revisión independiente, de los arreglos** (2026-11-03),
+    porque 16 se escribieron en unos 20 minutos. Encontró un fallo nuevo
+    y huecos, arreglados con su test:
+    - el tope de §12.52 para `uncosted_turns` (un turno sin precio por
+      mensaje de la persona) rechazaba sesiones del propio `maha`: un
+      turno que acaba sin guardar mensajes también cuenta. Ahora
+      `UsageEntry.turns` dice cuántos turnos representa (1 por defecto,
+      y entonces no se escribe), y la importación escribe una sola
+      entrada: lo mismo ocupan 2 que `10**8`;
+    - con `--retry-errors`, un Ctrl+C guardaba el error y su reintento
+      como dos ejecuciones: ahora `Evaluator.finished`, una por ejecución;
+    - un error interno de las evals se reintentaba (y se pagaba dos
+      veces), perdía lo gastado si fallaba la comprobación, y el aviso lo
+      llamaba "provider error";
+    - un fallo de `maha` a mitad de turno daba 0 pasos y 0 tokens:
+      `run_once` lanza `TurnBroke` con lo gastado, y `-p` lee el id de la
+      sesión después de cerrarla;
+    - `-p` en JSON sin clave o sin modelo no escribía `result`;
+    - lo que imita el cierre de `<stdin>` (`</stdin/>`, el `<` de ancho
+      completo) no se escapaba;
+    - con `session_id` nulo, la traza de un `-p` que falló no se podía
+      encontrar: el JSON da `trace_id` (decisión del mantenedor, "lo más
+      profesional para el producto", §1.11).
+55. **Mirado y correcto, sin cambio:**
+    - el error guardado de un reintento no se queda viejo: una llamada
+      sin ningún evento ya es `ModelResponseError`;
+    - si el tiempo límite llega mientras un reintento tarda, cuenta como
+      error del proveedor: es lo que pide §12.9;
+    - una traza vacía se trata como sin traza.
+56. **Límites aceptados por el mantenedor** (2026-11-03):
+    - un error de uso de la línea (código 2) no escribe JSON: argparse
+      falla antes de saber el formato, y el código ya lo dice (como `gh`
+      o `claude -p`). Una señal tampoco lo escribe, como decidió §12.17;
+    - `main()` calla cualquier `BrokenPipeError` que le llega. Hoy solo
+      puede venir de stdout; pasa al hito 17 (MCP), donde los procesos
+      hijo tratan sus propias tuberías, con su test.
+57. **Proceso:** un commit del PR 5 tiene dos motivos en el mensaje ("…y
+    dejar el estado al día"). Está en `main` y no se reescribe historial
+    publicado; queda anotado.
+58. **Los README:** el ejemplo empezaba con `maha 0.7.0` y no enseñaba
+    `-p`. Ahora es una sesión real de 0.8.1 (OpenCode Go,
+    `glm-5.3-flash`, en un directorio desechable) que termina con
+    `maha -c -p … --allow read_file`: retomó la sesión, leyó el fichero y
+    respondió con código 0 (0,0006 $ en total).
+
 ### Cierre (`feature/hito-8-cierre`, 2026-10-30)
 
 PRs del hito: #90 (spec), #91 (PR 1), #92 (PR 2), #93 y #94 (estado), #95
