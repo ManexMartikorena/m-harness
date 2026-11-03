@@ -100,15 +100,38 @@ def test_the_report_marks_the_regressions_against_the_baseline() -> None:
     )
     out = io.StringIO()
 
-    regressed = eval_report(
-        [run(), run("01-version", "fail", attempt=2)], {"glm-5.3-flash": baseline}, out
-    )
+    now = [run(attempt=1)] + [run("01-version", "fail", attempt=n) for n in (2, 3, 4)]
+
+    regressed = eval_report(now, {"glm-5.3-flash": baseline}, out)
 
     assert regressed
     text = out.getvalue()
     assert "glm-5.3-flash · baseline 2026-10-27 (a3eb2c7, 5 runs each)\n" in text
-    assert "  ⚠ 01-version: passed every time in the baseline, now 1/2\n" in text
-    assert "  ⚠ success rate: 100% in the baseline, now 50%\n" in text
+    # With its p (deep audit, I4): 5/5 -> 1/4 is not noise.
+    assert "  ⚠ 01-version: 5/5 in the baseline, now 1/4 (p = 0.048)\n" in text
+
+
+def test_a_drop_within_the_noise_is_said_but_not_marked() -> None:
+    # Deep audit (I4): 5/5 -> 4/5 has p = 0.5; it marked a regression.
+    before = by_task([run()] * 5)
+    baseline = Baseline(
+        date=date(2026, 10, 27),
+        maha="0.7.1",
+        commit="a3eb2c7",
+        provider="opencode-go",
+        model="glm-5.3-flash",
+        repeat=5,
+        tasks=before,
+        total=combine(list(before.values())),
+    )
+    now = [run(attempt=n) for n in range(1, 5)] + [run("01-version", "fail", attempt=5)]
+    out = io.StringIO()
+
+    assert not eval_report(now, {"glm-5.3-flash": baseline}, out)
+    assert (
+        "  · 01-version: 5/5 in the baseline, now 4/5 (p = 0.5, within the noise)\n"
+        in out.getvalue()
+    )
 
 
 def test_an_internal_error_is_not_said_to_be_the_provider() -> None:

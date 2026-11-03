@@ -91,9 +91,12 @@ def eval_report(
         _total("total", stats(mine), _spent(mine), width, passed, out)
         _errors(mine, out)
         if baseline is not None:
-            for found in compare(tasks, baseline):
-                regressed = True
-                print(f"  ⚠ {found}", file=out)
+            # ⚠ a regression; · a difference within the noise (deep audit,
+            # I4), with its p: the maintainer reads both.
+            for found in compare(mine, baseline):
+                regressed = regressed or found.regression
+                mark = "⚠" if found.regression else "·"
+                print(f"  {mark} {found.text}", file=out)
     return regressed
 
 

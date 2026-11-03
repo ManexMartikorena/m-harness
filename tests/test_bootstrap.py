@@ -619,40 +619,40 @@ def test_eval_saves_a_baseline_and_then_marks_a_regression(
             return_value=sse_response(streamed("Es la 1.4.2.", 1000, 10))
         )
 
-        assert main(["eval", "--tasks", str(evals), "--repeat", "2", "--save"]) == 0
+        assert main(["eval", "--tasks", str(evals), "--repeat", "5", "--save"]) == 0
 
     out = capsys.readouterr().out
     assert "  ✓ 01-version · glm-5.3-flash #1 · 1 step ·" in out
     assert "glm-5.3-flash · no baseline yet\n" in out
-    # 2 * (1000 * 0.15 + 10 * 0.50) per million, exact before rounding.
-    assert "  total        2/2   100%   $0.0003 in all\n" in out
+    # 5 * (1000 * 0.15 + 10 * 0.50) per million, rounded.
+    assert "  total        5/5   100%   $0.0008 in all\n" in out
     [saved] = (evals / "baselines").glob("*.json")
     baseline = json.loads(saved.read_text())
-    assert (baseline["model"], baseline["repeat"]) == ("glm-5.3-flash", 2)
-    assert baseline["tasks"]["01-version"]["passes"] == 2
+    assert (baseline["model"], baseline["repeat"]) == ("glm-5.3-flash", 5)
+    assert baseline["tasks"]["01-version"]["passes"] == 5
     # Only numbers: never what the model said.
     assert "1.4.2." not in saved.read_text()
     # The runs' sessions and traces, apart from the user's.
     runs = list((workspace / "state" / "maha" / "evals").glob("*/sessions/*.jsonl"))
-    assert len(runs) == 2
+    assert len(runs) == 5
 
     with respx.mock:
         respx.post(GO_ENDPOINT).mock(
             return_value=sse_response(streamed("No lo sé.", 1000, 10))
         )
 
-        assert main(["eval", "--tasks", str(evals)]) == 1
+        assert main(["eval", "--tasks", str(evals), "--repeat", "5"]) == 1
 
     out = capsys.readouterr().out
     assert (
         "  ✗ 01-version · glm-5.3-flash #1 · the answer does not contain '1.4.2'" in out
     )
-    assert "  ⚠ 01-version: passed every time in the baseline, now 0/1" in out
+    assert "  ⚠ 01-version: 5/5 in the baseline, now 0/5 (p = 0.004)" in out
     # Every run in full, to look at a failure: the report shows one line.
     # By content: two `maha eval` of the same second do not sort by time.
     folders = (workspace / "state" / "maha" / "evals").iterdir()
     every = [run for f in folders for run in json.loads((f / "runs.json").read_text())]
-    [failed] = [run for run in every if run["outcome"] == "fail"]
+    failed = next(run for run in every if run["outcome"] == "fail")
     assert (failed["outcome"], failed["detail"]) == (
         "fail",
         "the answer does not contain '1.4.2'",
