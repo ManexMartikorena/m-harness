@@ -113,6 +113,10 @@ Desde el hito 8 (DESIGN §9).
   documentación del proyecto está en español) *(decisión del mantenedor,
   2026-10-27)*.
 - Cada fallo encontrado se convierte en test antes de arreglarse.
+- Un test que reproduce un agotamiento de memoria o disco usa un valor
+  pequeño que dice lo mismo, nunca el que lo agota: sin el arreglo, ese
+  test se ejecuta. *(Añadido el 2026-11-03, por decisión del mantenedor:
+  un test con `10**8` cerró el WSL tres veces; spec 8, §12.53.)*
 - Ningún fallo conocido se deja sin arreglar por decisión del agente: o se
   arregla, o se para y se pregunta al mantenedor, con opciones y
   recomendación. Un "límite aceptado" solo lo acepta el mantenedor, y se
