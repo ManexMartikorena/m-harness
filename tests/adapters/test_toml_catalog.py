@@ -34,7 +34,8 @@ def test_has_every_model_of_each_provider(builtin: TomlCatalog) -> None:
     providers = [info.provider for info in builtin.models()]
 
     assert providers.count("opencode-go") == 30
-    assert providers.count("opencode-zen") == 83
+    # One more on 2026-11-03: pulse-alpha-free (audit of hito 9).
+    assert providers.count("opencode-zen") == 84
     # Counted on Anthropic's pricing page, 2026-11-03 (spec hito 9, §3.3);
     # without the models of limited access.
     assert providers.count("anthropic") == 14
@@ -42,9 +43,12 @@ def test_has_every_model_of_each_provider(builtin: TomlCatalog) -> None:
 
 def test_every_model_has_dated_prices(builtin: TomlCatalog) -> None:
     checked = {"anthropic": date(2026, 11, 3)}
+    # Added in the audit of hito 9, with its own date.
+    later = {("opencode-zen", "pulse-alpha-free")}
     for info in builtin.models():
         assert info.prices is not None, info.model
-        assert info.prices.checked == checked.get(info.provider, CHECKED)
+        when = date(2026, 11, 3) if (info.provider, info.model) in later else None
+        assert info.prices.checked == (when or checked.get(info.provider, CHECKED))
 
 
 def test_a_model_as_the_docs_publish_it(builtin: TomlCatalog) -> None:
@@ -156,6 +160,7 @@ def test_an_hourly_price_takes_the_peak(builtin: TomlCatalog) -> None:
         ("opencode-zen", "nemotron-3-ultra-free"),
         ("opencode-zen", "nemotron-3.5-lightning-free"),
         ("opencode-zen", "nemotron-3.5-super-vl-free"),
+        ("opencode-zen", "pulse-alpha-free"),
     ],
 )
 def test_models_that_train_on_the_data(
@@ -170,7 +175,7 @@ def test_models_that_train_on_the_data(
 def test_only_those_train_on_the_data(builtin: TomlCatalog) -> None:
     training = [info for info in builtin.models() if info.trains_on_data]
 
-    assert len(training) == 9
+    assert len(training) == 10
 
 
 def test_an_unknown_model_is_none(builtin: TomlCatalog) -> None:
