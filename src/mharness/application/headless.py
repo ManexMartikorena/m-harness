@@ -155,6 +155,9 @@ async def run_once(
                     reason = event.reason
     except ModelError as exc:
         error = str(exc)
+        # The turn gave no final answer: the text of a step before ("let me
+        # read it") is not one (deep audit after hito 9, I11).
+        answer = ""
     except Exception as exc:
         raise TurnBroke(summed("error", f"{type(exc).__name__}: {exc}")) from exc
     return summed(reason, error)

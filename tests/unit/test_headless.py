@@ -220,3 +220,17 @@ async def test_a_run_that_kept_its_turn_names_its_trace_too() -> None:
     result = await run_once(await world.sessions.start(), "Hola")
 
     assert result.trace == result.session == "20261026-091502-3fa2"
+
+
+async def test_a_turn_that_fails_gives_no_answer() -> None:
+    # Deep audit after hito 9 (I11): the text of the step before ("let me
+    # read it") came out as the answer, on stdout and in the JSON.
+    echo = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    fake = FakeModelClient(
+        [tool_calls(echo, text="Voy a leerlo."), ModelUnavailableError("503")]
+    )
+    world = World(MemorySessionStore(), fake, tools=[FakeTool()])
+
+    result = await run_once(await world.sessions.start(), "Hola")
+
+    assert (result.reason, result.text) == ("error", "")
