@@ -249,7 +249,8 @@ Con `-p`:
   `--effort NIVEL`, `--max-steps N`, `--max-cost USD`, `--max-tokens N` y `--timeout S`.
 - Código de salida: 0 bien, 1 error (también si el modelo se niega), 2 uso
   incorrecto, 3 un tope paró el turno (también si la respuesta llegó a la
-  salida máxima del modelo), 4 se denegó una llamada; con Ctrl+C o una
+  salida máxima del modelo o la conversación llenó su ventana de
+  contexto), 4 se denegó una llamada; con Ctrl+C o una
   señal, 128 + la señal.
 
 ```

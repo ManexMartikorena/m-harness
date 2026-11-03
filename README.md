@@ -242,7 +242,7 @@ With `-p`:
   `--effort LEVEL`, `--max-steps N`, `--max-cost USD`, `--max-tokens N` and `--timeout S`.
 - Exit code: 0 fine, 1 error (also when the model declines), 2 wrong usage,
   3 a limit stopped the turn (also when the answer reached the model's
-  output limit), 4 a call was denied; with Ctrl+C or a signal, 128 + the
+  output limit or the conversation filled its context window), 4 a call was denied; with Ctrl+C or a signal, 128 + the
   signal.
 
 ```
