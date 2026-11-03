@@ -49,7 +49,8 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 
 - **B1.** El bucle no mira el motivo de parada: una respuesta cortada por
   la salida máxima acaba como `end_turn`, y una llamada cortada se repite
-  hasta `max_steps`. POR ARREGLAR.
+  hasta `max_steps`. ARREGLADO (`54fed71`): `max_output` y `refused`, y la
+  llamada cortada recibe un error que lo dice.
 - **B2.** Cortar el turno justo en `ModelCallFinished` pierde una
   respuesta que la persona ya vio. ARREGLADO (`cabd2d8`), con un fallo que
   el propio arreglo traía (las llamadas nuevas heredaban los resultados del
@@ -132,7 +133,9 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   es una carpeta, si no es un fichero normal o si es de solo lectura (del
   agente que arregló H). DECISIÓN: choca con una decisión anterior, fijada
   en `test_metadata_errors_with_a_warning_still_come_first` ("no hacer una
-  pregunta que solo puede fallar").
+  pregunta que solo puede fallar"). Decisión del mantenedor (2026-11-03):
+  preguntar primero; con aviso, ningún error del fichero llega al modelo
+  antes del permiso. POR ARREGLAR.
 - **H8.** El aviso de enlace duro de H5 tomaba cada carpeta por un fichero
   con enlaces duros (toda carpeta tiene dos o más). ARREGLADO (`fa51c36`),
   encontrado al revisar H6.
@@ -190,13 +193,18 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 
 - **I14.** Un agente podría dejar en su copia un módulo que tapa uno de la
   biblioteca estándar (`unittest.py`) y engañar a la comprobación. Del
-  agente que arregló I. DECISIÓN (el aislamiento completo es el hito 15).
+  agente que arregló I. Decisión del mantenedor (2026-11-03): al hito 15,
+  con el aislamiento de las comprobaciones (en ESTADO, "Con hito
+  asignado").
 - **I15.** "stream ended before the answer was complete" es un
   `ModelResponseError` y, tras I2, cuenta como fallo de `maha`; un corte de
-  red o del servidor saldría como fallo. DECISIÓN.
+  red o del servidor saldría como fallo. Decisión del mantenedor
+  (2026-11-03): es del proveedor ("no disponible"). POR ARREGLAR.
 - **I16.** Las comprobaciones cambiaron (I1, I10) y la puerta también (I4):
   las líneas base se midieron con otras reglas. DECISIÓN (nuevas líneas
-  base, con llamadas reales).
+  base, con llamadas reales). Decisión del mantenedor (2026-11-03): evals
+  completas y líneas base nuevas de los tres modelos, al final de la
+  auditoría.
 
 ## Otros
 
