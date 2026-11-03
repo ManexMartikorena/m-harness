@@ -75,6 +75,15 @@ def instruction(text: str, piped: str | None) -> str:
     return f"{text}\n\n<stdin>\n{data}\n</stdin>"
 
 
+class TurnBroke(Exception):
+    """A bug, or the disk failing, in the middle of a turn. `result` is what
+    the turn ran and spent until then (review of the audit of hito 8)."""
+
+    def __init__(self, result: RunResult) -> None:
+        super().__init__(result.error)
+        self.result = result
+
+
 async def run_once(
     conversation: Conversation,
     text: str,
@@ -83,7 +92,7 @@ async def run_once(
     """Run one turn of `conversation` with `text` and sum it up; `on_event`
     sees each event as it comes. A failed call to the model is an `error`
     result, with what the turn kept saved; anything else that fails is a
-    bug, and goes up."""
+    bug, and goes up as `TurnBroke`, with what the turn spent."""
     started = time.monotonic()
     # The text of the call in progress, and of the last one that ended.
     current: list[str] = []
@@ -98,6 +107,23 @@ async def run_once(
     tool_calls = 0
     reason: Reason = "error"
     error: str | None = None
+
+    def summed(reason: Reason, error: str | None) -> RunResult:
+        return RunResult(
+            session=conversation.id if conversation.stored else None,
+            text=answer,
+            reason=reason,
+            steps=steps,
+            tool_calls=tool_calls,
+            tool_errors=tool_errors,
+            denials=denials,
+            usage=usage,
+            cost=cost,
+            duration=time.monotonic() - started,
+            model=model,
+            error=error,
+        )
+
     try:
         async with aclosing(conversation.run(text)) as events:
             async for event in events:
@@ -124,17 +150,6 @@ async def run_once(
                     reason = event.reason
     except ModelError as exc:
         error = str(exc)
-    return RunResult(
-        session=conversation.id if conversation.stored else None,
-        text=answer,
-        reason=reason,
-        steps=steps,
-        tool_calls=tool_calls,
-        tool_errors=tool_errors,
-        denials=denials,
-        usage=usage,
-        cost=cost,
-        duration=time.monotonic() - started,
-        model=model,
-        error=error,
-    )
+    except Exception as exc:
+        raise TurnBroke(summed("error", f"{type(exc).__name__}: {exc}")) from exc
+    return summed(reason, error)

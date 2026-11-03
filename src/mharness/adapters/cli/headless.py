@@ -42,7 +42,7 @@ from mharness.adapters.cli.conversation import (
 )
 from mharness.adapters.cli.input import InputTooLarge, ReadAll
 from mharness.adapters.cli.text import clean
-from mharness.application.headless import RunResult, instruction, run_once
+from mharness.application.headless import RunResult, TurnBroke, instruction, run_once
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.domain.agent_events import (
     AgentEvent,
@@ -165,6 +165,9 @@ async def _print(
     except SessionError as exc:
         return _failed(clean(str(exc)), EXIT_ERROR, out, shown)
     conversation = opened.conversation
+    # A bug, or the disk failing: what broke, and what the turn spent.
+    broke: str | None = None
+    spent: RunResult | None = None
     try:
         if opened.resumed is not None:
             for line in resumed_notes(opened.resumed, sessions.cwd, shown.home):
@@ -180,15 +183,24 @@ async def _print(
         raise
     except BrokenPipeError:
         raise
+    except TurnBroke as exc:
+        if isinstance(exc.__cause__, BrokenPipeError):
+            # Writing an event: nobody reads stdout any more.
+            raise exc.__cause__ from None
+        broke, spent = exc.result.error, exc.result
     except Exception as exc:
-        # A bug, or the disk failing: the turn kept what ran.
-        detail = clean(f"{type(exc).__name__}: {exc}")
-        session = conversation.id if conversation.stored else None
-        return _failed(f"internal: {detail}", EXIT_ERROR, out, shown, session)
+        broke = f"{type(exc).__name__}: {exc}"
     finally:
         await conversation.close()
         warn_unsaved(conversation, err)
         warn_trace(conversation, err)
+    if broke is not None:
+        # The turn kept what ran. The id once closed: closing may be what
+        # saved it (review of the audit of hito 8).
+        session = conversation.id if conversation.stored else None
+        return _failed(
+            f"internal: {clean(broke)}", EXIT_ERROR, out, shown, session, spent
+        )
     if shown.output_format == "text":
         _answer(result.text, out)
         if result.error is not None:
@@ -199,14 +211,24 @@ async def _print(
 
 
 def _failed(
-    error: str, code: int, out: TextIO, shown: _Shown, session: str | None = None
+    error: str,
+    code: int,
+    out: TextIO,
+    shown: _Shown,
+    session: str | None = None,
+    spent: RunResult | None = None,
 ) -> int:
     """A failure before or around the turn: on stderr, and in `json` and
     `stream-json` also as their `result`, so that a script reading stdout
-    gets one (audit of hito 8). `error` is already clean."""
+    gets one (audit of hito 8). `error` is already clean; `spent`, what a
+    turn that broke ran and spent."""
     print(f"error: {error}", file=shown.err, flush=True)
     if shown.output_format != "text":
-        _json_line(failure_object(error, session), out)
+        if spent is None:
+            _json_line(failure_object(error, session), out)
+        else:
+            update = {"session": session, "error": error}
+            _json_line(result_object(spent.model_copy(update=update)), out)
     return code
 
 

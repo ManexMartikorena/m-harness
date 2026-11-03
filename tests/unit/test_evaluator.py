@@ -12,6 +12,7 @@ from mharness.domain.commands import CommandResult
 from mharness.domain.errors import ModelRateLimitError
 from mharness.domain.evals import Check, Task, TaskRun
 from mharness.domain.model import Usage
+from tests.adapters.test_print_mode import crashing_second
 from tests.fakes.commands import FakeRunner
 from tests.fakes.evals import MemoryEvalSuite
 from tests.fakes.model import FakeModelClient, Step, reply
@@ -297,3 +298,29 @@ async def test_a_check_that_crashes_keeps_what_the_run_spent() -> None:
 
     assert (run.outcome, run.reason, run.tokens) == ("error", "internal", 100)
     assert (run.detail or "").startswith("AssertionError: ")
+
+
+async def test_a_run_that_breaks_mid_turn_keeps_what_it_spent() -> None:
+    # Review of the audit of hito 8: as with a check that crashes.
+    @asynccontextmanager
+    async def open_run(t: Task, model: str, path: Path) -> AsyncIterator[Conversation]:
+        world = World(MemorySessionStore(), crashing_second(), model=model)
+        conversation = await world.sessions.start()
+        try:
+            yield conversation
+        finally:
+            await conversation.close()
+
+    subject = Evaluator(
+        MemoryEvalSuite([task()], FIXTURES), open_run, FakeRunner(), ENV
+    )
+
+    [run] = await subject.run([task()], ["m"])
+
+    assert (run.outcome, run.reason, run.tokens, run.steps) == (
+        "error",
+        "internal",
+        700,
+        1,
+    )
+    assert run.detail == "RuntimeError: boom"

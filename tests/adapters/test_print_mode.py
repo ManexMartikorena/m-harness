@@ -29,12 +29,12 @@ from mharness.domain.events import ModelEvent
 from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import ModelRequest, Usage
 from mharness.domain.retry import RetryPolicy
-from mharness.domain.session import is_session_id
+from mharness.domain.session import SessionError, SessionHeader, is_session_id
 from tests.adapters.test_conversation import KNOWN
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FAKE_MODEL, FakeModelClient, reply, tool_calls
-from tests.fakes.sessions import MemorySessionStore
+from tests.fakes.sessions import MemoryLog, MemorySessionStore
 from tests.fakes.tools import FakeTool
 from tests.fakes.tracing import MemoryTraceSink
 
@@ -715,3 +715,62 @@ async def test_a_session_that_cannot_be_resumed_writes_a_result_in_json() -> Non
 
     assert code == 1
     assert json.loads(out.getvalue())["error"] == "no session in this directory"
+
+
+class CrashingSecond(FakeModelClient):
+    """Asks for a tool, and breaks on the next call: a bug mid-turn."""
+
+    async def stream(self, request: ModelRequest) -> AsyncGenerator[ModelEvent]:
+        if self.requests:
+            raise RuntimeError("boom")
+        async for event in super().stream(request):
+            yield event
+
+
+class FailsToCreateOnce(MemorySessionStore):
+    """The first save of a session fails; the next one, at close, works."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.failed = False
+
+    async def create(self, header: SessionHeader) -> MemoryLog:
+        if not self.failed:
+            self.failed = True
+            raise SessionError("disk full")
+        return await super().create(header)
+
+
+def crashing_second() -> CrashingSecond:
+    echo = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    return CrashingSecond([tool_calls(echo, usage=Usage(input_tokens=700))])
+
+
+async def test_a_bug_mid_turn_says_what_the_turn_spent() -> None:
+    # Review of the audit of hito 8: the result said 0 steps and no tokens,
+    # though a call was paid and a tool ran.
+    where = sessions(crashing_second(), tools=[FakeTool()])
+
+    code, out, _ = await run(where, "Hola", output_format="json")
+
+    result = json.loads(out.splitlines()[-1])
+    assert (code, result["reason"], result["error"]) == (
+        1,
+        "error",
+        "internal: RuntimeError: boom",
+    )
+    assert (result["steps"], result["tool_calls"]) == (1, 1)
+    assert result["usage"]["input_tokens"] == 700
+    assert is_session_id(result["session_id"])
+
+
+async def test_a_bug_mid_turn_names_the_session_saved_at_close() -> None:
+    # Review of the audit of hito 8: the id was read before closing, and the
+    # close is what saved the turn.
+    store = FailsToCreateOnce()
+    where = sessions(crashing_second(), tools=[FakeTool()], store=store)
+
+    _, out, _ = await run(where, "Hola", output_format="json")
+
+    result = json.loads(out.splitlines()[-1])
+    assert list(store.sessions) == [result["session_id"]]

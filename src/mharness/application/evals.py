@@ -13,7 +13,7 @@ from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Literal
 
-from mharness.application.headless import RunResult, run_once
+from mharness.application.headless import RunResult, TurnBroke, run_once
 from mharness.application.sessions import Conversation
 from mharness.domain.evals import Check, EvalError, Outcome, Task, TaskRun
 from mharness.ports.commands import CommandRunner
@@ -136,8 +136,15 @@ class Evaluator:
 
     async def _one(self, task: Task, model: str, attempt: int) -> TaskRun:
         async with self._suite.workspace(task) as path:
-            async with self._open_run(task, model, path) as conversation:
-                result = await run_once(conversation, task.instruction)
+            try:
+                async with self._open_run(task, model, path) as conversation:
+                    result = await run_once(conversation, task.instruction)
+            except TurnBroke as exc:
+                # With what the run spent, already paid.
+                spent = exc.result
+                return _run(
+                    task, model, attempt, spent, "error", spent.error, reason="internal"
+                )
             if result.reason == "error":
                 return _run(task, model, attempt, result, "error", result.error)
             try:
