@@ -18,7 +18,7 @@ import tomllib
 from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -28,6 +28,10 @@ from mharness.domain.model import Effort
 
 PROJECT_FILE = Path(".maha") / "config.toml"
 DEFAULT_PROVIDER = "opencode-go"
+
+
+# How long Anthropic's prompt cache lasts.
+type CacheTtl = Literal["5m", "1h"]
 
 
 class ConfigError(Exception):
@@ -46,6 +50,9 @@ class ProviderSettings(BaseModel, frozen=True, extra="forbid"):
     # Name of the environment variable that holds the key; None sends no key.
     api_key_env: str | None = None
     session_header: str | None = None
+    # The version of Anthropic's API it is asked for; the latest by default
+    # (spec hito 9, decision 2).
+    anthropic_version: str = Field(default="2026-10-21", min_length=1)
 
     def url(self, api: str) -> str | None:
         """Where this provider speaks `api`; None if it does not."""
@@ -60,6 +67,12 @@ BUILTIN_PROVIDERS: Mapping[str, ProviderSettings] = {
         endpoints={"anthropic": "https://opencode.ai/inference/go/anthropic/v1"},
         api_key_env="OPENCODE_API_KEY",
         session_header="x-opencode-session",
+    ),
+    # The API, direct: a key of the Claude Console (spec hito 9, §1.1).
+    "anthropic": ProviderSettings(
+        api="anthropic",
+        base_url="https://api.anthropic.com/v1",
+        api_key_env="ANTHROPIC_API_KEY",
     ),
     "opencode-zen": ProviderSettings(
         base_url="https://opencode.ai/inference/openai/v1",
@@ -81,6 +94,8 @@ class Settings(BaseModel, frozen=True):
     fallback_model: str | None = None
     # None: the model's own (spec hito 9, §1.7).
     effort: Effort | None = None
+    # How long Anthropic's prompt cache lasts (spec hito 9, decision 9).
+    cache_ttl: CacheTtl = "5m"
     limits: TurnLimits = TurnLimits()
     # Kept out of repr, so it never lands in a log or a traceback.
     api_key: str | None = Field(default=None, repr=False)
@@ -100,6 +115,7 @@ class _ProjectFile(BaseModel, extra="forbid"):
     model: str | None = Field(default=None, min_length=1)
     fallback_model: str | None = Field(default=None, min_length=1)
     effort: Effort | None = None
+    cache_ttl: CacheTtl | None = None
     limits: _Limits = _Limits()
 
 
@@ -184,6 +200,7 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
         model=model,
         fallback_model=project.fallback_model or user.fallback_model,
         effort=project.effort or user.effort,
+        cache_ttl=project.cache_ttl or user.cache_ttl or "5m",
         limits=_stricter(user.limits, project.limits),
         api_key=_api_key(provider_name, provider, env, need=calls_model),
     )

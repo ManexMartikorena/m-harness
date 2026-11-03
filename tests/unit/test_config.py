@@ -169,6 +169,46 @@ def test_a_provider_speaks_only_what_maha_speaks(
         load(home, project)
 
 
+def test_anthropic_is_a_builtin_provider() -> None:
+    # Spec hito 9, §1.1: a key of the Claude Console in ANTHROPIC_API_KEY.
+    provider = BUILTIN_PROVIDERS["anthropic"]
+
+    assert (provider.api, provider.base_url, provider.api_key_env) == (
+        "anthropic",
+        "https://api.anthropic.com/v1",
+        "ANTHROPIC_API_KEY",
+    )
+    assert provider.anthropic_version == "2026-10-21"
+
+
+def test_a_provider_may_ask_for_another_anthropic_version(
+    home: Path, project: Path
+) -> None:
+    write_user(
+        home,
+        'provider = "local"\nmodel = "m"\n[providers.local]\n'
+        'api = "anthropic"\nbase_url = "http://x"\nanthropic_version = "2023-06-01"\n',
+    )
+
+    assert load(home, project).provider.anthropic_version == "2023-06-01"
+
+
+def test_the_cache_lasts_five_minutes_unless_said(home: Path, project: Path) -> None:
+    # Spec hito 9, decision 9.
+    write_user(home, 'model = "m"\n')
+    assert load(home, project).cache_ttl == "5m"
+
+    write_project(project, 'cache_ttl = "1h"\n')
+    assert load(home, project).cache_ttl == "1h"
+
+
+def test_an_unknown_cache_ttl_is_an_error(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\ncache_ttl = "1d"\n')
+
+    with pytest.raises(ConfigError, match="cache_ttl"):
+        load(home, project)
+
+
 # The effort (spec hito 9, §1.7).
 
 
