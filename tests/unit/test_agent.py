@@ -1286,24 +1286,21 @@ async def test_the_time_limit_while_a_tool_runs_keeps_the_turn() -> None:
     ]
 
 
-async def test_the_time_limit_while_asking_after_a_run_keeps_the_turn() -> None:
-    fake = FakeModelClient([tool_calls(call("c1")), tool_calls(call("c2"), call("c3"))])
-    # The first call is approved once, the second waits forever.
+async def test_the_time_limit_waits_while_the_person_is_asked() -> None:
+    # Deep audit after hito 9 (B4), decision of the maintainer: the turn's
+    # clock stops while the person decides. Before, it ended the turn with
+    # "timeout" at the question.
+    fake = FakeModelClient([tool_calls(call("c1")), tool_calls(call("c2"))])
+    # The first call is approved once, the second waits for the person.
     effect = FakeTool(permission="effect", requests=[ask(), ask()])
     gate = OnceThenHang()
-
     subject = agent(fake, effect, gate=gate, limits=LIMIT)
-    events = await run(subject)
 
-    turn = events[-1]
-    assert isinstance(turn, TurnFinished)
-    assert (turn.reason, turn.tool_calls, turn.steps) == ("timeout", 1, 2)
+    with pytest.raises(TimeoutError):
+        # Six times the limit, and still waiting for the answer.
+        await asyncio.wait_for(run(subject), 0.3)
+
     assert len(gate.requests) == 2
-    *_, results = subject.messages
-    assert [b.content for b in results.blocks] == [  # type: ignore[union-attr]
-        "error: stopped by the time limit",
-        "error: not run",
-    ]
 
 
 class OnceThenHang(HangingApproval):
@@ -1913,3 +1910,30 @@ async def test_a_refusal_ends_the_turn_as_refused() -> None:
 
     assert isinstance(events[-1], TurnFinished)
     assert events[-1].reason == "refused"
+
+
+class SlowPerson:
+    """A person who takes a while to read the question, then allows it."""
+
+    async def decide(self, request: ApprovalRequest) -> Decision:
+        await asyncio.sleep(0.5)
+        return "once"
+
+
+async def test_the_turn_clock_stops_while_the_person_decides() -> None:
+    # Deep audit after hito 9 (B4), decision of the maintainer: reading a
+    # long diff must not cost the turn.
+    write = FakeTool("write", permission="effect", requests=[ask(tool="write")])
+    call = ToolCallBlock(id="c1", name="write", arguments='{"text": "x"}')
+    subject = agent(
+        FakeModelClient([tool_calls(call), reply("Hecho.")]),
+        write,
+        gate=SlowPerson(),
+        limits=TurnLimits(timeout=0.2),
+    )
+
+    events = await run(subject)
+
+    assert isinstance(events[-1], TurnFinished)
+    assert events[-1].reason == "end_turn"
+    assert len(write.calls) == 1

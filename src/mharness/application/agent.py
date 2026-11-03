@@ -251,9 +251,14 @@ class Agent:
                         ):
                             yield ApprovalRequested(call=call, request=question)
                             asked = True
-                            answer: object = await _within(
-                                self._gate.decide(question), deadline
-                            )
+                            # The turn's clock stops while the person reads
+                            # and decides (deep audit after hito 9, B4, a
+                            # decision of the maintainer); without a person
+                            # the answer is at once.
+                            waiting = asyncio.get_running_loop().time()
+                            answer: object = await self._gate.decide(question)
+                            if deadline is not None:
+                                deadline += asyncio.get_running_loop().time() - waiting
                             # The time spent deciding is not the tool's.
                             started = time.monotonic()
                             if answer in DECISIONS:
