@@ -368,7 +368,7 @@ def _content(message: Message) -> list[dict[str, Any]]:
     content: list[dict[str, Any]] = []
     for block in message.blocks:
         match block:
-            case TextBlock(text=said) if said:
+            case TextBlock(text=said) if said.strip():
                 content.append({"type": "text", "text": said})
             case ReasoningBlock(redacted=str() as data):
                 content.append({"type": "redacted_thinking", "data": data})

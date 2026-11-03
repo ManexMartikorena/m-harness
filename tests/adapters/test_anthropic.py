@@ -484,3 +484,30 @@ async def test_ids_anthropic_would_refuse_go_remade_the_same_on_both_sides(
     assert uses[2] == "toolu_ok-1"
     assert len(set(uses)) == 3
     assert all(re.fullmatch(r"[a-zA-Z0-9_-]+", id_) for id_ in uses)
+
+
+@respx.mock
+async def test_text_of_only_spaces_stays_out(client: AnthropicClient) -> None:
+    # Deep audit after hito 9 (M3): the API refuses a text block without
+    # visible text; another model, or a cut answer, may leave "\n\n".
+    call = ToolCallBlock(id="t1", name="read_file", arguments="{}")
+    request = ModelRequest(
+        model=MODEL,
+        messages=[
+            user("Lee"),
+            Message(role="assistant", blocks=[TextBlock(text="\n\n"), call]),
+            Message(role="tool", blocks=[ToolResultBlock(call_id="t1", content="x")]),
+            Message(role="assistant", blocks=[TextBlock(text=" \n")], interrupted=True),
+            user("Sigue"),
+        ],
+    )
+
+    body = await ask(client, request)
+
+    assert body["messages"][1]["content"] == [
+        {"type": "tool_use", "id": "t1", "name": "read_file", "input": {}}
+    ]
+    assert body["messages"][3] == {
+        "role": "assistant",
+        "content": [{"type": "text", "text": "[interrupted by the user]"}],
+    }
