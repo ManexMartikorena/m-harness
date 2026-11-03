@@ -213,3 +213,57 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 ## Otros
 
 - `pulse-alpha-free` en el catálogo de Zen. ARREGLADO (`25f1157`).
+
+## Revisión independiente de los arreglos (R)
+
+Dos revisores nuevos, que solo ven el diff `v0.9.0..HEAD` y AGENTS.md:
+uno el bucle, los modelos, la configuración y la terminal; otro las
+herramientas, el disco, las sesiones y las evals. La refactorización de
+`Agent.run()` se comparó paso a paso con la versión anterior: igual.
+Cada hallazgo se comprobó antes de tocarlo, con su test primero.
+
+- **R1.** H1 a medias: una cadena de `**/` en un `.gitignore` (60 KB)
+  costaba 0,36 s por ruta. ARREGLADO (`9b9de26`): los estados se mueven
+  como bits de un entero (Shift-And, como agrep); con reglas de 1 MiB,
+  milisegundos por ruta. Comparado con el comparador anterior en 480.000 casos al
+  azar: iguales.
+- **R2.** Cada `.gitignore` leído se miraba para cada ruta: cuadrático en
+  un árbol con muchos. ARREGLADO (`98cde12`): solo los de las carpetas de
+  encima.
+- **R3.** `***/` no era `**/` como en git. ARREGLADO (`ade66eb`).
+- **R4.** Regresión de H1: `./src/*.py`, `src//*.py` o `src/**/` dejaron
+  de encontrar nada. ARREGLADO (`b49241b`): el patrón se limpia como lo
+  limpiaba `full_match`; igual que él en 35.466 casos al azar.
+- **R5.** H5 a medias: las subcarpetas de un listado no contaban para el
+  límite ni cedían el control. ARREGLADO (`80c97c9`).
+- **R6.** I1 a medias: un `conftest.py`, un `pytest.ini` o un paquete
+  `test_x/` añadidos por el agente pasaban la comprobación. ARREGLADO
+  (`891023d`): se borran, y si cambian los ajustes de pytest de
+  `pyproject.toml` o `setup.cfg`, el fichero vuelve entero.
+- **R7.** Un nombre con un byte que no es UTF-8 y otro llamado
+  literalmente `caf\xe9.txt` se veían igual. ARREGLADO (`e32ab61`): entre
+  comillas, como `core.quotePath` de git, y una ruta entre comillas lleva
+  de vuelta al fichero.
+- **R8.** S9 a medias: cada coste se acotaba, su suma no (turno, sesión
+  al reanudar, exportación); una media de evals por debajo de 1E-12
+  rompía el informe. ARREGLADO (`66216aa`).
+- **R9.** `max_steps = true` valía 1, y un `max_cost` fuera de los
+  límites de `Usd` acababa en una traza. ARREGLADO (`2311450`).
+- **R10.** Con M7, una clave mal formada rompía `maha sessions`, que no la
+  usa. ARREGLADO (`e9d56d5`).
+- **R11.** B3 partía en dos una llamada si el servidor manda otro id en
+  cada pieza. ARREGLADO (`89ccb45`): hace falta también un nombre.
+- **R12.** B8 a medias: `-p` y la terminal pegaban los bloques de texto.
+  ARREGLADO (`5141ec1`).
+- **R13.** B1: una llamada cortada sin argumentos llega como `{}` y se
+  ejecutaba. ARREGLADO (`f7a4f65`): la última llamada de una respuesta
+  cortada nunca se ejecuta. Y `model_context_window_exceeded` se tomaba
+  por la salida máxima. ARREGLADO (`fb763ee`): motivo propio,
+  `context_full` (código 3 en `-p`, "/new" en la terminal).
+- **R14.** I11 a medias: con el tiempo agotado mientras el modelo
+  contesta, `-p` daba el texto del paso anterior. ARREGLADO (`b8379c6`).
+  Tras una negación o un límite al acabar las herramientas, `-p` da el
+  texto del último paso: NO ES FALLO, es lo que fija la spec 8 (§1.11,
+  "el texto del último paso") y su test.
+- **R15.** Una segunda señal mientras `maha eval` guardaba lo terminado
+  acababa en una traza. ARREGLADO (`d8bad78`).
