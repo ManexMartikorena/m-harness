@@ -6,17 +6,16 @@ import sys
 from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any
 
 from mharness import __version__
 from mharness.adapters.cli.headless import failure_object
 from mharness.adapters.cli.text import clean
-from mharness.domain.model import Effort
+from mharness.domain.model import EFFORTS
 
 # How `-p` writes its result (spec hito 8, §1.11).
 OUTPUT_FORMATS = ("text", "json", "stream-json")
-# The levels of effort (spec hito 9, §1.7).
-EFFORTS = get_args(Effort.__value__)
+
 # The options of a conversation, and how each one is named in an error.
 _CONVERSATION = {
     "prompt": "-p",

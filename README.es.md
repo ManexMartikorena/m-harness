@@ -123,11 +123,13 @@ maha
 
 `maha` trabaja sobre el directorio donde lo abres.
 
-Opcional, en el mismo fichero: un modelo de respaldo y topes para cada
-turno.
+Opcional, en el mismo fichero: un modelo de respaldo, cuánto se esfuerza
+el modelo (`effort`: `low`, `medium`, `high`, `xhigh` o `max`; sin él, el
+del modelo) y topes para cada turno.
 
 ```toml
 fallback_model = "glm-5.3"
+effort = "high"
 
 [limits]
 max_steps = 25       # llamadas al modelo
@@ -166,6 +168,7 @@ otro servidor.
 |---|---|
 | `/help` | Lista los comandos |
 | `/model [ID]` | Enseña el modelo, o lo cambia |
+| `/effort [NIVEL]` | Enseña o cambia cuánto se esfuerza el modelo; `default` vuelve al del modelo |
 | `/sessions` | Las sesiones recientes, de todos los directorios |
 | `/resume [ID]` | Retoma una sesión; sin ID, la última de este directorio |
 | `/delete ID` | Borra una sesión y su traza |
@@ -207,7 +210,7 @@ Con `-p`:
   dentro del directorio. Fuera de él, un secreto o un fichero que ejecuta
   código se deniegan siempre.
 - Con `-p` o sin él: `-m ID` (modelo), `--fallback-model ID`,
-  `--max-steps N`, `--max-cost USD`, `--max-tokens N` y `--timeout S`.
+  `--effort NIVEL`, `--max-steps N`, `--max-cost USD`, `--max-tokens N` y `--timeout S`.
 - Código de salida: 0 bien, 1 error, 2 uso incorrecto, 3 un tope paró el
   turno, 4 se denegó una llamada; con Ctrl+C o una señal, 128 + la señal.
 

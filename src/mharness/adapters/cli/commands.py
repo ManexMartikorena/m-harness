@@ -18,6 +18,7 @@ from mharness.application.sessions import (
     TraceReport,
 )
 from mharness.application.traces import TraceSummary, TurnSummary
+from mharness.domain.model import EFFORTS
 from mharness.domain.session import SessionError, SessionNotFound
 from mharness.domain.trace import TraceError
 from mharness.ports.catalog import ModelCatalog
@@ -28,6 +29,9 @@ COMMANDS = {
     "resume": "/resume [ID] — resume a session; without ID, the last one here",
     "delete": "/delete ID — delete a session",
     "model": "/model [ID] — show the model, or change it",
+    "effort": "/effort [LEVEL] — show or change how hard the model works: "
+    "low, medium, high, xhigh, max or default (the model's own); a change "
+    "makes the next call pay its prompt again, without the cache",
     "trace": "/trace [ID] — what a session did and cost; without ID, this one",
     "new": "/new — a new session, with the same model",
     "export": "/export [FILE] — this conversation in Markdown; by default, ID.md",
@@ -102,6 +106,8 @@ class Commands:
                     await self._trace(command.argument)
                 case "model":
                     await self._model(command.argument)
+                case "effort":
+                    self._effort(command.argument)
                 case "export":
                     await self._export(command.argument)
                 case "new":
@@ -189,6 +195,22 @@ class Commands:
         self._say(f"[model: {clean_line(self.conversation.model)}]")
         if model is not None:
             self.note_model()
+
+    def _effort(self, level: str | None) -> None:
+        """This maha's effort: the conversations it opens next take it too,
+        as the model of /model (spec hito 9, §1.7)."""
+        if level is not None:
+            if level == "default":
+                effort = None
+            elif level in EFFORTS:
+                effort = level
+            else:
+                choices = "|".join([*EFFORTS, "default"])
+                self._say(f"usage: /effort [{choices}]")
+                return
+            self._sessions.effort = self.conversation.effort = effort
+        shown = self.conversation.effort or "the model's own"
+        self._say(f"[effort: {shown}]")
 
     async def _trace(self, session: str | None) -> None:
         """A row per turn and the total; the detail, in the file (spec hito

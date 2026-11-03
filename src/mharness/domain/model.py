@@ -1,6 +1,6 @@
 """What the core sends to a model and what it gets back (DESIGN §5)."""
 
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,7 @@ type StopReason = Literal[
 # How hard the model works: the levels both formats take (spec hito 9,
 # §1.7). None: the model's own.
 type Effort = Literal["low", "medium", "high", "xhigh", "max"]
+EFFORTS: tuple[Effort, ...] = get_args(Effort.__value__)
 
 
 class ToolSpec(BaseModel, frozen=True):
