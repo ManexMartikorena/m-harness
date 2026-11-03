@@ -3,11 +3,11 @@
 
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
-from typing import TextIO
+from typing import TextIO, get_args
 
 from mharness.adapters.cli.text import clean_line, usd
 from mharness.application.stats import DayModel
-from mharness.domain.catalog import ModelInfo
+from mharness.domain.catalog import ModelInfo, SpokenApi
 from mharness.domain.evals import Baseline, Stats, TaskRun, by_task, compare, stats
 
 _MARKS = {"pass": "✓", "fail": "✗", "error": "!"}
@@ -114,12 +114,23 @@ def _spent(runs: Sequence[TaskRun]) -> Decimal | None:
     return total
 
 
+# The API formats maha speaks.
+_SPOKEN = get_args(SpokenApi.__value__)
+
+
 def models_report(
-    models: Sequence[ModelInfo], provider: str, *, every: bool, out: TextIO
+    models: Sequence[ModelInfo],
+    provider: str,
+    *,
+    every: bool,
+    out: TextIO,
+    apis: Mapping[str, str],
 ) -> None:
-    """`maha models`: those of `provider`, or `every` one, with their window
-    and prices (spec hito 8, §1.15). A model may still work if it is not
-    here: the catalog only prices it."""
+    """`maha models`: those of `provider`, or `every` one, with their API
+    format, window and prices (spec hito 8, §1.15; spec hito 9, §3.3).
+    `apis` has each known provider's format, for the models the catalog
+    does not give one. A model may still work if it is not here: the
+    catalog only prices it."""
     shown = sorted(
         (info for info in models if every or info.provider == provider),
         key=lambda info: (info.provider, info.model),
@@ -128,9 +139,15 @@ def models_report(
     if not shown:
         print(f"no models of {clean_line(provider)} in the catalog{more}", file=out)
         return
+
+    def api(info: ModelInfo) -> str:
+        name = info.api or apis.get(info.provider, "?")
+        return clean_line(name if name in _SPOKEN or name == "?" else f"{name}*")
+
     rows = [
         [
             clean_line(f"{info.provider}/{info.model}" if every else info.model),
+            api(info),
             _context(info.context),
             "?" if info.prices is None else _per_million(info.prices.input),
             "?" if info.prices is None else _per_million(info.prices.output),
@@ -138,13 +155,13 @@ def models_report(
         ]
         for info in shown
     ]
-    head = ["model", "context", "input $/M", "output $/M", ""]
-    widths = [max(len(row[i]) for row in [head, *rows]) for i in range(4)]
-    # Three spaces after the name, two between the numbers.
+    head = ["model", "api", "context", "input $/M", "output $/M", ""]
+    widths = [max(len(row[i]) for row in [head, *rows]) for i in range(5)]
+    # Three spaces after the name, two between the rest.
     widths = [widths[0] + 3, *(width + 2 for width in widths[1:])]
     for row in [head, *rows]:
         cells = [cell.ljust(width) for cell, width in zip(row, widths, strict=False)]
-        print("".join([*cells, row[4]]).rstrip(), file=out)
+        print("".join([*cells, row[5]]).rstrip(), file=out)
     print(file=out)
     count = f"{len(shown)} model" + ("" if len(shown) == 1 else "s")
     if every:
@@ -154,6 +171,8 @@ def models_report(
             f"{count} of {clean_line(provider)} · prices per million tokens{more}",
             file=out,
         )
+    if any(row[1].endswith("*") for row in rows):
+        print("* maha does not speak this API yet", file=out)
 
 
 def _context(tokens: int | None) -> str:

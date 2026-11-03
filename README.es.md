@@ -190,7 +190,7 @@ otro servidor.
 |---|---|
 | `maha -p "…"` | Una instrucción y salir; lo de stdin va debajo |
 | `maha -c`, `maha -r ID` | Seguir la última sesión de aquí, o una por su id |
-| `maha models [--all]` | Los modelos del catálogo, con su ventana y precios |
+| `maha models [--all]` | Los modelos del catálogo, con su formato de API, ventana y precios |
 | `maha sessions` | Las sesiones recientes; `sessions delete ID` borra una |
 | `maha trace [ID]` | Lo que hizo y costó una sesión; sin id, la última de aquí |
 | `maha stats [--days N]` | Coste y tokens por día y por modelo |

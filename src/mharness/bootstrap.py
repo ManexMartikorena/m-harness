@@ -113,6 +113,11 @@ def _dispatch(
             settings.provider_name,
             every=options.every,
             out=sys.stdout,
+            # The format of the built-in providers' models, and the user's.
+            apis={
+                **{name: p.api for name, p in config.BUILTIN_PROVIDERS.items()},
+                settings.provider_name: settings.provider.api,
+            },
         )
         return 0
     if options.command == "stats":
