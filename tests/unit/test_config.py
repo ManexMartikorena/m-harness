@@ -539,6 +539,19 @@ def test_without_calling_the_model_its_key_is_not_needed(
     assert settings.api_key is None
 
 
+def test_without_calling_the_model_a_bad_key_is_not_an_error(
+    home: Path, project: Path
+) -> None:
+    # Review of the deep audit: `maha sessions` failed over a key it does
+    # not use.
+    write_user(home, 'model = "glm-5.3-flash"\n')
+    env = {"XDG_CONFIG_HOME": str(home), "OPENCODE_API_KEY": "sk test"}
+
+    settings = config.load(cwd=project, env=env, calls_model=False)
+
+    assert settings.api_key is None
+
+
 def test_without_calling_the_model_no_model_is_needed(
     home: Path, project: Path
 ) -> None:

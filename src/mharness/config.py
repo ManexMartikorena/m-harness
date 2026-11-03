@@ -299,14 +299,17 @@ def _api_key(
     if provider.api_key_env is None:
         return None
     key = env.get(provider.api_key_env, "").strip()
-    if not key and not need:
+    valid = key.isascii() and key.isprintable() and " " not in key
+    if not need and not (key and valid):
+        # A command that does not call the model must not fail over a key
+        # it does not use (review of the deep audit).
         return None
     if not key:
         raise ConfigError(
             f"{provider.api_key_env} is not set: it holds the key for provider "
             f"{name!r}. In development: uv run --env-file .env maha"
         )
-    if not (key.isascii() and key.isprintable() and " " not in key):
+    if not valid:
         # It goes in an HTTP header; never echoed (deep audit after hito 9).
         raise ConfigError(
             f"{provider.api_key_env} has characters a key cannot have (spaces, "
