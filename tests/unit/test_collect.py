@@ -186,7 +186,8 @@ async def test_the_text_so_far_joins_every_text_block() -> None:
     ):
         accumulator.add(event)
 
-    assert accumulator.text == "Uno. Dos."
+    # As Message.text: blocks joined with a newline (deep audit after hito 9).
+    assert accumulator.text == "Uno. \nDos."
 
 
 async def test_two_calls_that_share_an_index_stay_two() -> None:

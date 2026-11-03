@@ -4,11 +4,15 @@ What is not registered does not exist for the model (DESIGN §10). Effect tools
 are accepted: the loop asks before running them (spec hito 5, §1.4).
 """
 
+import re
 from collections.abc import Iterable
 from typing import Any
 
 from mharness.domain.model import ToolSpec
 from mharness.ports.tools import Tool
+
+# The names the providers take for a tool.
+_NAME = re.compile(r"[a-zA-Z0-9_-]{1,64}")
 
 
 class ToolRegistry:
@@ -20,6 +24,11 @@ class ToolRegistry:
             self._add(tool)
 
     def _add(self, tool: Tool[Any]) -> None:
+        if not _NAME.fullmatch(tool.name):
+            # What OpenAI and Anthropic take (deep audit after hito 9).
+            raise ValueError(
+                f"invalid tool name {tool.name!r}: ^[a-zA-Z0-9_-]{{1,64}}$"
+            )
         if tool.name in self._tools:
             raise ValueError(f'tool "{tool.name}" is registered twice')
         self._tools[tool.name] = tool

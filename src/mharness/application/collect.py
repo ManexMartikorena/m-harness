@@ -101,7 +101,11 @@ class Accumulator:
     def text(self) -> str:
         """The text so far, also before the answer ends (spec hito 6,
         §1.7)."""
-        return "".join(self._texts)
+        # Each block's text, joined as Message.text does (deep audit after
+        # hito 9): two paragraphs must not run together.
+        return "\n".join(
+            part.text for _, part in sorted(self._text_blocks.items()) if part.text
+        )
 
     def response(self) -> ModelResponse:
         """The answer. Raises `ModelResponseError` if it never ended."""
