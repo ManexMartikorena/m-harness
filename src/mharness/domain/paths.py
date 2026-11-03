@@ -118,6 +118,32 @@ CODE_FILES = frozenset({".pre-commit-config.yaml", ".envrc", ".gitlab-ci.yml"})
 MAHA_CONFIG = "maha configuration: it chooses the provider and the model"
 
 
+def printable(name: str) -> str:
+    """`name` as the model and the user see it, always valid UTF-8.
+
+    A file name with bytes that are not UTF-8 comes from `os` with
+    surrogates ("caf\\udce9.txt" for b"caf\\xe9.txt"): no request to a
+    model can encode them, and a tool result with one would block the
+    session for good (audit of hito 9, H2). Each such byte is shown as
+    `\\xe9`; any other lone surrogate, as `\\ud800`.
+    """
+    if name.isascii():
+        return name
+    return "".join(_escaped(char) if _is_surrogate(char) else char for char in name)
+
+
+def _is_surrogate(char: str) -> bool:
+    return 0xD800 <= ord(char) <= 0xDFFF
+
+
+def _escaped(char: str) -> str:
+    code = ord(char)
+    # `surrogateescape`: U+DC80 to U+DCFF stand for the bytes 0x80 to 0xFF.
+    if 0xDC80 <= code <= 0xDCFF:
+        return f"\\x{code - 0xDC00:02x}"
+    return f"\\u{code:04x}"
+
+
 def is_inside(path: PurePath, root: PurePath) -> bool:
     """Whether the resolved `path` is in the working directory `root`."""
     return path.is_relative_to(root)

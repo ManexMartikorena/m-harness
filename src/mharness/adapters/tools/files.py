@@ -37,6 +37,7 @@ from mharness.domain.paths import (
     change_warning,
     is_inside,
     is_secret_at,
+    printable,
     read_warning,
 )
 from mharness.domain.tools import Permission, ToolError
@@ -101,10 +102,10 @@ class Workspace:
 
     def shown(self, path: Path) -> str:
         """What the model and the user see: relative inside, absolute
-        outside."""
+        outside, and always valid UTF-8 (`printable`)."""
         if self.contains(path):
-            return str(path.relative_to(self.root))
-        return str(path)
+            return printable(str(path.relative_to(self.root)))
+        return printable(str(path))
 
     def asked(self, raw: str) -> Path:
         """`raw` made absolute, without resolving links: the name the model
@@ -164,7 +165,8 @@ def _request(
 ) -> ApprovalRequest:
     """A question about reading `path`: never for the whole session."""
     shown = workspace.shown(path)
-    detail = str(path) if raw == shown else f"{path} (asked: {raw})"
+    full = printable(str(path))
+    detail = full if raw == shown else f"{full} (asked: {raw})"
     return ApprovalRequest(
         tool=tool, title=title, detail=detail, scope=None, warning=warning
     )
@@ -414,7 +416,8 @@ class ListDir:
         return "\n".join(lines)
 
     def _entry(self, entry: Path) -> str:
-        name = f"{entry.name}/" if entry.is_dir() else entry.name
+        shown = printable(entry.name)
+        name = f"{shown}/" if entry.is_dir() else shown
         # Shown, so the model knows it exists and does not ask for it.
         return f"{name} [secret]" if self._workspace.secret(entry) else name
 
@@ -458,7 +461,9 @@ class _Walk:
     def _shown(self, path: Path) -> str:
         # A search outside shows every path absolute, also the ones of the
         # working directory.
-        return self._workspace.shown(path) if self._inside else str(path)
+        if self._inside:
+            return self._workspace.shown(path)
+        return printable(str(path))
 
     def _rules_above(self) -> GitIgnore:
         """The rules that already apply at the base: `.git/info/exclude` and

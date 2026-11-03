@@ -14,6 +14,7 @@ from mharness.domain.paths import (
     is_inside,
     is_secret,
     is_secret_at,
+    printable,
     read_warning,
 )
 
@@ -197,3 +198,19 @@ def test_the_asked_path_counts_too() -> None:
         change_warning(resolved, ROOT, asked=ROOT / ".github/workflows/ci.yml")
         == RUNS_CODE
     )
+
+
+@pytest.mark.parametrize(
+    ("name", "shown"),
+    [
+        ("notas.txt", "notas.txt"),
+        ("café.txt", "café.txt"),
+        # A byte that is not UTF-8, as os gives it: a surrogate.
+        ("caf\udce9.txt", "caf\\xe9.txt"),
+        # A lone surrogate of no byte.
+        ("a\ud800b", "a\\ud800b"),
+    ],
+)
+def test_printable_names_can_go_to_json_in_utf_8(name: str, shown: str) -> None:
+    assert printable(name) == shown
+    printable(name).encode("utf-8")

@@ -2869,3 +2869,59 @@ async def test_glob_patterns_with_folders(root: Path, pattern: str, found: str) 
     write(root, "src/notes.md", "")
 
     assert await glob(root, pattern) == found
+
+
+# Names that are not UTF-8
+
+
+def not_utf_8(folder: Path, name: bytes = b"caf\xe9.txt") -> Path:
+    """A file whose name has a Latin-1 byte, as os gives it: a surrogate."""
+    path = Path(os.fsdecode(os.fsencode(folder) + b"/" + name))
+    path.write_text("uno\n", encoding="utf-8")
+    return path
+
+
+def not_utf_8_folder(folder: Path) -> Path:
+    path = Path(os.fsdecode(os.fsencode(folder) + b"/dir\xe9"))
+    path.mkdir()
+    return path
+
+
+async def test_a_name_that_is_not_utf_8_is_listed_escaped(root: Path) -> None:
+    # Found in the audit of hito 9 (H2): a surrogate breaks the request.
+    not_utf_8(root)
+
+    result = await list_dir(root)
+
+    assert result == "caf\\xe9.txt"
+    result.encode("utf-8")
+
+
+async def test_a_name_that_is_not_utf_8_is_found_escaped(root: Path) -> None:
+    not_utf_8(root)
+
+    assert await glob(root, "*.txt") == "caf\\xe9.txt"
+    assert await grep(root, "uno") == "caf\\xe9.txt:1: uno"
+
+
+async def test_a_written_path_that_is_not_utf_8_is_shown_escaped(root: Path) -> None:
+    (root / "d").symlink_to(not_utf_8_folder(root))
+    tool = write_tool(root)
+    params = WriteFileParams(path="d/new.txt", content="x\n")
+
+    request = await tool.approval(params)
+    result = await tool.run(params)
+
+    assert request is not None
+    assert request.title == "create dir\\xe9/new.txt (1 line)"
+    assert result == "wrote dir\\xe9/new.txt (1 line)"
+
+
+async def test_an_error_with_a_path_that_is_not_utf_8_is_escaped(root: Path) -> None:
+    blocker = not_utf_8(root, b"caf\xe9")
+    (root / "d").symlink_to(blocker)
+
+    with pytest.raises(ToolError) as caught:
+        await write_tool(root).approval(WriteFileParams(path="d/x.txt", content=""))
+
+    assert str(caught.value) == "not a directory: caf\\xe9"
