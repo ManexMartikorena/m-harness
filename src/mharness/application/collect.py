@@ -85,11 +85,14 @@ class Accumulator:
                 self._end = event
 
     def _call(self, event: ToolCallDelta) -> _PartialCall:
-        """The call this piece belongs to: a new id at an index already in
-        use starts another call."""
+        """The call this piece belongs to: a new id with a name at an index
+        already in use starts another call. Without a name it is the same
+        call: some servers send another id in every piece (review of the
+        deep audit)."""
         order = self._latest.get(event.index, 0)
         call = self._calls.get((event.index, order))
-        if call is not None and event.id and call.id and event.id != call.id:
+        renamed = event.id and call is not None and call.id and event.id != call.id
+        if renamed and event.name:
             order += 1
             self._latest[event.index] = order
             call = None

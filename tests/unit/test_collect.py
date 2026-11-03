@@ -205,3 +205,19 @@ async def test_two_calls_that_share_an_index_stay_two() -> None:
         ToolCallBlock(id="a", name="read_file", arguments='{"path":"x"}'),
         ToolCallBlock(id="b", name="grep", arguments='{"pattern":"y"}'),
     ]
+
+
+async def test_pieces_of_one_call_with_another_id_each_stay_one() -> None:
+    # Review of the deep audit: some servers send a new id in every piece of
+    # the same call; split, the second had no name and the turn failed.
+    response = await collect(
+        events(
+            ToolCallDelta(index=0, id="a", name="read_file", arguments='{"pa'),
+            ToolCallDelta(index=0, id="a2", arguments='th":"x"}'),
+            TOOL_END,
+        )
+    )
+
+    assert response.message.blocks == [
+        ToolCallBlock(id="a", name="read_file", arguments='{"path":"x"}'),
+    ]
