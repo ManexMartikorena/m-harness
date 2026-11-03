@@ -406,6 +406,20 @@ def test_missing_key_names_the_variable(
         config.load(cwd=project, env=env)
 
 
+@pytest.mark.parametrize("key", ["clé-0000", "sk test", "sk-\x07"])
+def test_a_key_a_header_cannot_carry_says_so(
+    home: Path, project: Path, key: str
+) -> None:
+    # Deep audit after hito 9 (M7): it ended with a Python traceback when
+    # the HTTP client was built, and broke the JSON of -p.
+    write_user(home, 'model = "m"\n')
+
+    with pytest.raises(ConfigError, match="OPENCODE_API_KEY has characters") as raised:
+        load(home, project, OPENCODE_API_KEY=key)
+
+    assert key not in str(raised.value)
+
+
 def test_key_is_not_in_the_repr(home: Path, project: Path) -> None:
     write_user(home, 'model = "glm-5.3-flash"\n')
 

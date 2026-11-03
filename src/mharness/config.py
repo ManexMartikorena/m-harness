@@ -277,4 +277,10 @@ def _api_key(
             f"{provider.api_key_env} is not set: it holds the key for provider "
             f"{name!r}. In development: uv run --env-file .env maha"
         )
+    if not (key.isascii() and key.isprintable() and " " not in key):
+        # It goes in an HTTP header; never echoed (deep audit after hito 9).
+        raise ConfigError(
+            f"{provider.api_key_env} has characters a key cannot have (spaces, "
+            "accents or control characters): copy it again from the console"
+        )
     return key
