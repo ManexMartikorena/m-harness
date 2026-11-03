@@ -37,6 +37,10 @@ class RunResult(BaseModel, frozen=True):
     # None if the run kept nothing: there is no session to resume (audit of
     # hito 8).
     session: str | None
+    # The id of its trace, if it has one: where `maha trace` finds what
+    # happened, also in a run that kept nothing (review of the audit of
+    # hito 8).
+    trace: str | None
     # The final answer: the text of the last call to the model.
     text: str
     reason: Reason
@@ -113,6 +117,7 @@ async def run_once(
     def summed(reason: Reason, error: str | None) -> RunResult:
         return RunResult(
             session=conversation.id if conversation.stored else None,
+            trace=conversation.id if conversation.exists else None,
             text=answer,
             reason=reason,
             steps=steps,

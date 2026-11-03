@@ -192,7 +192,9 @@ otro servidor.
 Con `-p`:
 - `--output-format text|json|stream-json`: solo la respuesta (por
   defecto; las llamadas y los tokens van a stderr), un objeto JSON al
-  final o un evento JSON por línea.
+  final o un evento JSON por línea. En JSON, `session_id` es la sesión
+  que se retoma con `-r` (`null` si la ejecución no guardó nada) y
+  `trace_id`, lo que enseña `maha trace`, también de una que falló.
 - `--allow TOOL` (repetible): esa herramienta se ejecuta sin preguntar
   dentro del directorio. Fuera de él, un secreto o un fichero que ejecuta
   código se deniegan siempre.

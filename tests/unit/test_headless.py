@@ -49,6 +49,7 @@ async def test_the_result_has_the_final_answer_and_the_counts() -> None:
 
     assert result.model_dump(exclude={"duration"}) == RunResult(
         session=FIRST,
+        trace=FIRST,
         text="Hay dos ficheros.",
         reason="end_turn",
         steps=2,
@@ -192,3 +193,24 @@ def test_no_look_alike_closes_the_delimiter(closing: str) -> None:
 
     body = asked.removesuffix("\n</stdin>")
     assert re.search(r"[<\uff1c]\s*[/\uff0f]\s*stdin", body, re.IGNORECASE) is None
+
+
+async def test_a_run_that_kept_nothing_still_names_its_trace() -> None:
+    # Review of the audit of hito 8: with no session to resume, the trace
+    # of what failed is still there, and `maha trace` must find it.
+    fake = FakeModelClient([ModelUnavailableError("503 Service Unavailable")])
+    world = World(MemorySessionStore(), fake)
+
+    result = await run_once(await world.sessions.start(), "Hola")
+
+    assert (result.session, result.trace) == (None, "20261026-091502-3fa2")
+    report = await world.sessions.trace(result.trace)
+    assert len(report.summary.turns) == 1
+
+
+async def test_a_run_that_kept_its_turn_names_its_trace_too() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([reply("Hola.")]))
+
+    result = await run_once(await world.sessions.start(), "Hola")
+
+    assert result.trace == result.session == "20261026-091502-3fa2"

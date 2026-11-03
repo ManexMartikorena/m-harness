@@ -337,6 +337,11 @@ maha -p < instrucciones.txt
    "tool_errors": 0, "denials": [], "usage": {"input_tokens": 5236, "…": 0},
    "cost_usd": "0.0004", "duration_s": 4.1, "model": "glm-5.3-flash"}
   ```
+
+  *(Ampliado el 2026-11-03, en la revisión de la auditoría del hito 8,
+  por decisión del mantenedor, §12.50: `session_id` es `null` si la
+  ejecución no guardó nada, y `trace_id` da siempre la traza, si la hay,
+  para que `maha trace` encuentre por qué falló.)*
 - **`stream-json`**: un `AgentEvent` por línea, como su JSON de Pydantic, y
   la última, el `result`. Es el mismo contrato que las trazas.
 

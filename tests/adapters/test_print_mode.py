@@ -331,6 +331,7 @@ async def test_json_is_one_object_with_stable_names() -> None:
     assert result == {
         "type": "result",
         "session_id": result["session_id"],
+        "trace_id": result["session_id"],
         "result": "Hay dos.",
         "reason": "end_turn",
         "is_error": False,
@@ -479,6 +480,7 @@ async def test_a_session_that_cannot_be_resumed_is_an_error() -> None:
 def ended(reason: Reason) -> RunResult:
     return RunResult(
         session="20261027-101500-3fa2",
+        trace="20261027-101500-3fa2",
         text="",
         reason=reason,
         steps=1,
@@ -676,6 +678,7 @@ async def test_a_failure_writes_a_result_in_json(
         result_object(
             RunResult(
                 session=None,
+                trace=None,
                 text="",
                 reason="error",
                 steps=0,
@@ -774,3 +777,21 @@ async def test_a_bug_mid_turn_names_the_session_saved_at_close() -> None:
 
     result = json.loads(out.splitlines()[-1])
     assert list(store.sessions) == [result["session_id"]]
+
+
+async def test_in_json_a_run_that_kept_nothing_gives_its_trace() -> None:
+    # Review of the audit of hito 8: session_id is null, and the trace was
+    # out of reach from the output.
+    fake = FakeModelClient([ModelUnavailableError("503 Service Unavailable")])
+
+    _, out, _ = await run(sessions(fake), "Hola", output_format="json")
+
+    result = json.loads(out.splitlines()[-1])
+    assert result["session_id"] is None
+    assert is_session_id(result["trace_id"])
+
+
+async def test_in_json_a_failure_before_the_turn_has_no_trace() -> None:
+    _, out, _ = await run(sessions(FakeModelClient([])), " ", output_format="json")
+
+    assert json.loads(out.splitlines()[-1])["trace_id"] is None

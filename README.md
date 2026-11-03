@@ -189,7 +189,9 @@ that way a foreign repository cannot send your key to another server.
 With `-p`:
 - `--output-format text|json|stream-json`: only the answer (default; calls
   and tokens go to stderr), one JSON object at the end, or one JSON event
-  per line.
+  per line. In JSON, `session_id` is the session to continue with `-r`
+  (`null` if the run kept nothing) and `trace_id` is what `maha trace`
+  shows, also of a run that failed.
 - `--allow TOOL` (repeatable): that tool runs without asking inside the
   directory. Outside it, a secret or a file that runs code are always
   denied.
