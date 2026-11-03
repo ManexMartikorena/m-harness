@@ -152,6 +152,11 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   mirando el contenido (mejora `2026-10-23`, E5); con el sandbox,
   `run_command` en las evals y tareas de "ejecuta y arregla" (spec 8,
   §11.2).
+- **Hito 15:** (también) que una comprobación de las evals no se pueda
+  engañar con un módulo que tapa uno de la biblioteca estándar
+  (`unittest.py` en la copia): el aislamiento completo de las comprobaciones
+  (auditoría profunda tras el hito 9, I14 e I5; decisión del mantenedor,
+  2026-11-03).
 - **Hito 16:** llamadas a herramientas en paralelo (spec 4, §11); comandos
   que esperan entrada, con los comandos en segundo plano (spec 5, §10);
   varios comandos a la vez, hoy uno a uno por el subreaper (spec 8, §12.10).

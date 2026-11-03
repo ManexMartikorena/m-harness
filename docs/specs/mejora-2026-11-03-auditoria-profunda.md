@@ -27,7 +27,7 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 - **M4.** Un `.maha/config.toml` puede subir el coste: `effort`,
   `cache_ttl` y `fallback_model`. DECISIÓN del mantenedor (2026-11-03):
   se mantiene lo que el proyecto puede elegir, pero `maha` lo dice al
-  arrancar. POR ARREGLAR.
+  arrancar. ARREGLADO (`59a6b43`).
 - **M5.** OpenAI: un contador raro en el uso (`10.5`, `choices: null`)
   pierde la respuesta entera. ARREGLADO (`4c22614`).
 - **M6.** OpenAI: un `rate_limit_error` a mitad de stream sale como "no
@@ -43,7 +43,7 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   `config.py` sin `cache_ttl`; envoltorios sobrantes en `openai_chat.py`;
   `complete()` de Anthropic puede guardar una firma vacía; ningún test de
   `anthropic_version` de punta a punta. ARREGLADO (`1dd9df1`, `1f287b8`),
-  salvo el test de punta a punta, POR ARREGLAR.
+  salvo el test de punta a punta, ARREGLADO (`7e5a5ae`).
 
 ## Bucle y núcleo (B)
 
@@ -135,12 +135,13 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   en `test_metadata_errors_with_a_warning_still_come_first` ("no hacer una
   pregunta que solo puede fallar"). Decisión del mantenedor (2026-11-03):
   preguntar primero; con aviso, ningún error del fichero llega al modelo
-  antes del permiso. POR ARREGLAR.
+  antes del permiso. ARREGLADO (`99548af`): si mirar el fichero falla, se pregunta igual
+  ("checked after your approval") y el error sale en `run()`.
 - **H8.** El aviso de enlace duro de H5 tomaba cada carpeta por un fichero
   con enlaces duros (toda carpeta tiene dos o más). ARREGLADO (`fa51c36`),
   encontrado al revisar H6.
 - **H7.** El directorio de trabajo, en la pregunta de `run_command`, no pasa
-  por `printable()`. POR ARREGLAR.
+  por `printable()`. ARREGLADO (`d15cfb7`).
 
 ## Interfaz y evals (I)
 
@@ -199,7 +200,7 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 - **I15.** "stream ended before the answer was complete" es un
   `ModelResponseError` y, tras I2, cuenta como fallo de `maha`; un corte de
   red o del servidor saldría como fallo. Decisión del mantenedor
-  (2026-11-03): es del proveedor ("no disponible"). POR ARREGLAR.
+  (2026-11-03): es del proveedor ("no disponible"). ARREGLADO (`16043be`).
 - **I16.** Las comprobaciones cambiaron (I1, I10) y la puerta también (I4):
   las líneas base se midieron con otras reglas. DECISIÓN (nuevas líneas
   base, con llamadas reales). Decisión del mantenedor (2026-11-03): evals
