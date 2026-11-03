@@ -324,6 +324,8 @@ def error(status: int, message: str, **headers: str) -> httpx.Response:
         (402, ModelRequestError),
         (403, ModelAuthError),
         (404, ModelRequestError),
+        # Deep audit after hito 9 (M8): it can pass, as the SDKs retry it.
+        (408, ModelUnavailableError),
         (413, ModelRequestError),
         (429, ModelRateLimitError),
         (500, ModelUnavailableError),

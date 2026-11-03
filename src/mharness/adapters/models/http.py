@@ -142,7 +142,9 @@ def status_error(response: httpx.Response, api_key: str | None) -> ModelError:
     wait = retry_after(response.headers.get("retry-after"), datetime.now(UTC))
     if status == 429:
         return ModelRateLimitError(message, retry_after=wait)
-    if status >= 500:
+    # 408: the server gave up waiting for the request; it can pass (deep
+    # audit after hito 9, M8).
+    if status >= 500 or status == 408:
         return ModelUnavailableError(message, retry_after=wait)
     return ModelRequestError(message)
 
