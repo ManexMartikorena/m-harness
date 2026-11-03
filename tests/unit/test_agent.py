@@ -1793,3 +1793,60 @@ async def test_a_denied_call_keeps_the_history_growing_at_the_end() -> None:
     await run(subject, "Déjalo")
 
     assert_only_grows(fake.requests)
+
+
+async def test_a_turn_cut_once_its_answer_is_complete_keeps_it() -> None:
+    # Deep audit after hito 9: closed at ModelCallFinished, the turn lost an
+    # answer the person had already seen, while a half one was kept.
+    subject = agent(FakeModelClient([reply("La respuesta entera.")]))
+
+    async with aclosing(subject.run("Hola")) as events:
+        async for event in events:
+            if isinstance(event, ModelCallFinished):
+                break
+
+    assert subject.messages == (
+        user("Hola"),
+        Message(role="assistant", blocks=[TextBlock(text="La respuesta entera.")]),
+    )
+
+
+async def test_a_turn_cut_after_a_tool_keeps_the_next_answer_too() -> None:
+    echo = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    subject = agent(FakeModelClient([tool_calls(echo), reply("Hecho.")]), FakeTool())
+    finished = 0
+
+    async with aclosing(subject.run("Hola")) as events:
+        async for event in events:
+            if isinstance(event, ModelCallFinished):
+                finished += 1
+                if finished == 2:
+                    break
+
+    assert subject.messages[-1] == Message(
+        role="assistant", blocks=[TextBlock(text="Hecho.")]
+    )
+
+
+async def test_a_cut_right_after_new_calls_gives_them_their_own_results() -> None:
+    first = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    second = ToolCallBlock(id="c2", name="echo", arguments='{"text": "y"}')
+    third = ToolCallBlock(id="c3", name="echo", arguments='{"text": "z"}')
+    subject = agent(
+        FakeModelClient([tool_calls(first), tool_calls(second, third)]), FakeTool()
+    )
+    finished = 0
+
+    async with aclosing(subject.run("Hola")) as events:
+        async for event in events:
+            if isinstance(event, ModelCallFinished):
+                finished += 1
+                if finished == 2:
+                    break
+
+    last = subject.messages[-1]
+    assert last.role == "tool"
+    assert [b.call_id for b in last.blocks if isinstance(b, ToolResultBlock)] == [
+        "c2",
+        "c3",
+    ]

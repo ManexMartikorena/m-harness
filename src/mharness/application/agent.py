@@ -135,6 +135,8 @@ class Agent:
         accumulator = Accumulator()
         # Whether the model is writing the answer of this step.
         streaming = False
+        # Whether the turn holds a whole final answer, not yet kept.
+        answered = False
         step = 0
         # The model of this turn: the fallback, once it takes over.
         model = self.model
@@ -182,13 +184,20 @@ class Agent:
                 usage += response.usage
                 call_cost = self._cost(response, model)
                 turn_cost = add_cost(turn_cost, call_cost)
-                yield ModelCallFinished(
-                    usage=response.usage, model=response.model, cost=call_cost
-                )
+                # In the turn before it is told: a turn closed right at
+                # ModelCallFinished keeps the answer the person saw (deep
+                # audit after hito 9).
                 turn.append(response.message)
                 calls = [
                     b for b in response.message.blocks if isinstance(b, ToolCallBlock)
                 ]
+                answered = not calls
+                # This step's results only: a cut right here must not give
+                # its calls the last step's.
+                results = []
+                yield ModelCallFinished(
+                    usage=response.usage, model=response.model, cost=call_cost
+                )
                 if not calls:
                     self._messages.extend(turn)
                     kept = True
@@ -200,7 +209,6 @@ class Agent:
                         cost=turn_cost,
                     )
                     return
-                results = []
                 # In order, not in parallel, until hito 16 (spec hito 4, §1.7).
                 for call in calls:
                     yield ToolCallProposed(call=call)
@@ -322,7 +330,7 @@ class Agent:
             # The text the person already saw; a half tool call never ran. A
             # failed model call keeps none: its text may be broken.
             half = accumulator.text if streaming and by_user else ""
-            if (executed or half) and not kept:
+            if (executed or half or (answered and by_user)) and not kept:
                 if calls:
                     # The model is not called while the calls run: here only
                     # Ctrl+C or an unexpected error can cut the step.
