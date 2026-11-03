@@ -307,11 +307,8 @@ async def _eval(
         flush=True,
     )
     evaluator = Evaluator(suite, open_run, LocalCommandRunner(), env)
-    # As they end: Ctrl+C keeps them, with their paid calls (audit of hito 8).
-    done: list[TaskRun] = []
 
     def on_run(run: TaskRun) -> None:
-        done.append(run)
         print(cli.run_line(run), flush=True)
 
     try:
@@ -324,6 +321,8 @@ async def _eval(
             on_run=on_run,
         )
     except asyncio.CancelledError:
+        # What ended, with its paid calls (audit of hito 8).
+        done = evaluator.finished
         await asyncio.to_thread(_write_runs, run_dir / "runs.json", done)
         kept = f"{len(done)} run" + ("" if len(done) == 1 else "s")
         print(f"\ninterrupted: {kept} kept in {run_dir}", file=sys.stderr, flush=True)

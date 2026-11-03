@@ -248,3 +248,22 @@ async def test_a_run_that_crashes_does_not_take_the_others_with_it() -> None:
     assert first.outcome == "pass"
     assert (second.outcome, second.reason) == ("error", "internal")
     assert second.detail == "PermissionError: cannot read the fixture"
+
+
+async def test_what_finished_keeps_the_last_try_of_each_run() -> None:
+    # Review of the audit of hito 8: Ctrl+C after a retry kept the error and
+    # its retry, as two runs of attempt 1. `finished` is what Ctrl+C keeps.
+    calls = 0
+
+    def script(t: Task, m: str) -> list[Step]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return [ModelRateLimitError("429 Too Many Requests")]
+        return [reply("1.4.2")]
+
+    subject, _ = evaluator(script, task())
+
+    await subject.run([task()], ["m"], retry_errors=True)
+
+    assert [(r.attempt, r.outcome) for r in subject.finished] == [(1, "pass")]

@@ -60,6 +60,18 @@ class Evaluator:
         self._runner = runner
         # The variables of the check command, as for any command of maha.
         self._env = env
+        # Each run as it ends, its last try: a retry replaces the error it
+        # repeats (review of the audit of hito 8).
+        self._finished: dict[tuple[str, str, int], TaskRun] = {}
+
+    @property
+    def finished(self) -> list[TaskRun]:
+        """The runs that ended so far, one per run: what Ctrl+C keeps."""
+        return list(self._finished.values())
+
+    def _ended(self, run: TaskRun, on_run: Callable[[TaskRun], None]) -> None:
+        self._finished[run.model, run.task, run.attempt] = run
+        on_run(run)
 
     async def run(
         self,
@@ -79,11 +91,11 @@ class Evaluator:
         async def one(task: Task, model: str, attempt: int) -> TaskRun:
             async with limit:
                 run = await self._safe(task, model, attempt)
-            on_run(run)
+            self._ended(run, on_run)
             if run.outcome == "error" and retry_errors:
                 async with limit:
                     run = await self._safe(task, model, attempt)
-                on_run(run)
+                self._ended(run, on_run)
             return run
 
         return list(
