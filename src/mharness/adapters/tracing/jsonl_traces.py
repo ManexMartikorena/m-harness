@@ -18,10 +18,10 @@ from pathlib import Path
 from mharness.domain.session import is_session_id
 from mharness.domain.trace import TraceError, TraceExists, TraceInUse, TraceRecord
 
-# Read too: to see whether the file ends in a whole line.
 # Diagnosis only, never content (spec hito 7, §1.11).
 _log = logging.getLogger(__name__)
 
+# Read too: to see whether the file ends in a whole line.
 _OPEN = os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW
 # Opens of a trace that another maha deletes each time, at most.
 _TRIES = 3
