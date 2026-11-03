@@ -8,6 +8,7 @@ Prices are in USD per million tokens, as providers publish them, and in
 from datetime import date
 from decimal import Decimal
 from itertools import pairwise
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -16,6 +17,8 @@ from mharness.domain.model import Usage
 _MILLION = 1_000_000
 # The name of an API format: lowercase words joined by hyphens.
 API_NAME = r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+# The formats maha speaks; the catalog may name others (spec hito 9, §1.2).
+type SpokenApi = Literal["openai-chat", "anthropic"]
 
 
 class _Rates(BaseModel, frozen=True):
