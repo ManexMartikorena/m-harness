@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.gitignore import GitIgnore
 from mharness.domain.paths import (
+    HARD_LINK,
     SECRET_DIR,
     SECRET_FILE,
     SKIPPED_DIRS,
@@ -118,7 +119,20 @@ class Workspace:
         return read_warning(path, self.root, secret=secret, asked=self.asked(raw))
 
     def change_warning(self, path: Path, raw: str) -> str | None:
-        return change_warning(path, self.root, asked=self.asked(raw))
+        """Why changing needs a question each time: by both paths, and by
+        the other names of the file, which change with it."""
+        found = [change_warning(path, self.root, asked=self.asked(raw))]
+        if _names(path) > 1:
+            found.append(HARD_LINK)
+        return "; ".join(warning for warning in found if warning) or None
+
+
+def _names(path: Path) -> int:
+    """How many hard links the file `path` has; 0 if it is not there."""
+    try:
+        return os.stat(path).st_nlink
+    except OSError:
+        return 0
 
 
 class _Asked:

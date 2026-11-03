@@ -2970,3 +2970,29 @@ async def test_reading_from_inside_a_secret_folder_asks(tmp_path: Path) -> None:
 
     assert request is not None
     assert request.warning == SECRET_FILE
+
+
+HARD_LINK = "hard link: its other names change too, and one may run code"
+
+
+async def test_a_file_with_other_hard_links_is_never_for_the_session(
+    root: Path,
+) -> None:
+    # Audit of hito 9, H5: written in place (D1), a harmless name changed a
+    # hook without a warning.
+    hook = write(root, ".git/hooks/pre-commit", "uno\n")
+    os.link(hook, root / "notes.txt")
+
+    written = await ask_write(write_tool(root), "notes.txt", "dos\n")
+    edited = await ask_edit(edit_tool(root), edit_params("notes.txt", "uno", "dos"))
+
+    assert (written.scope, written.warning) == (None, HARD_LINK)
+    assert (edited.scope, edited.warning) == (None, HARD_LINK)
+
+
+async def test_a_file_with_one_name_is_for_the_session(root: Path) -> None:
+    write(root, "notes.txt", "uno\n")
+
+    written = await ask_write(write_tool(root), "notes.txt", "dos\n")
+
+    assert (written.scope, written.warning) == ("write_file", None)

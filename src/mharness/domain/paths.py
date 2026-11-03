@@ -137,6 +137,10 @@ CODE_PATTERNS = ("*.pth",)
 # A file in a directory: cargo's config can set the build's commands.
 CODE_SUBFILES = frozenset({(".cargo", "config"), (".cargo", "config.toml")})
 MAHA_CONFIG = "maha configuration: it chooses the provider and the model"
+# A file with more than one name is written in place, so all of them change
+# (spec mejora-2026-10-23-deuda-hito-5, D1): one could be in `.git/hooks`.
+# Only the disk tells; the tools add it (audit of hito 9, H5).
+HARD_LINK = "hard link: its other names change too, and one may run code"
 
 
 def printable(name: str) -> str:
