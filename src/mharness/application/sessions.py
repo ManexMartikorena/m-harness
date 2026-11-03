@@ -26,7 +26,7 @@ from mharness.domain.agent_events import (
 from mharness.domain.catalog import add_cost
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
-from mharness.domain.model import Usage
+from mharness.domain.model import Effort, Usage
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
@@ -158,6 +158,15 @@ class Conversation:
     @property
     def messages(self) -> Sequence[Message]:
         return self._agent.messages
+
+    @property
+    def effort(self) -> Effort | None:
+        """How hard the model works in each call; None: the model's own."""
+        return self._agent.effort
+
+    @effort.setter
+    def effort(self, effort: Effort | None) -> None:
+        self._agent.effort = effort
 
     async def run(self, text: str) -> AsyncGenerator[AgentEvent]:
         """`Agent.run()`, and then the turn saved, however it ends."""
@@ -445,10 +454,14 @@ class Sessions:
         masked: Collection[str] = (),
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         token: Callable[[], str] = lambda: secrets.token_hex(2),
+        effort: Effort | None = None,
     ) -> None:
         self._store = store
         self._new_agent = new_agent
         self._model = model
+        # This maha's: every conversation it opens takes it, and /effort
+        # changes it (spec hito 9, §1.7).
+        self.effort = effort
         self._origin = _Origin(
             cwd, provider, version, now, token, traces, Secrets(masked)
         )
@@ -467,6 +480,7 @@ class Sessions:
         if chosen is None:
             raise SessionError("no model configured")
         agent = self._new_agent(chosen, ())
+        agent.effort = self.effort
         return Conversation(self._store, agent, self._origin)
 
     async def open(self, start: Start | None = None) -> Opened:
@@ -499,6 +513,7 @@ class Sessions:
             if model is None:
                 raise SessionError("no model configured")
             agent = self._new_agent(model, loaded.messages)
+            agent.effort = self.effort
         except BaseException:
             await log.close()
             raise

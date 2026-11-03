@@ -29,7 +29,7 @@ from mharness.domain.messages import (
     ToolCallBlock,
     ToolResultBlock,
 )
-from mharness.domain.model import Usage
+from mharness.domain.model import Effort, Usage
 from mharness.domain.retry import NO_RETRIES, RetryPolicy
 from mharness.domain.session import (
     MessageEntry,
@@ -88,6 +88,7 @@ class World:
         secrets: Sequence[str] = (),
         retry: RetryPolicy = NO_RETRIES,
         fallback: str | None = None,
+        effort: Effort | None = None,
     ) -> None:
         self.gate = gate or FakeApproval()
         self.traces = traces or MemoryTraceSink()
@@ -122,6 +123,7 @@ class World:
             masked=secrets,
             now=lambda: NOW,
             token=lambda: left.pop(0),
+            effort=effort,
         )
 
 
@@ -1572,3 +1574,32 @@ def test_a_usage_entry_of_one_turn_is_written_as_before() -> None:
     # The lines of every turn stay as in 0.8.0; only an import says more.
     assert "turns" not in UsageEntry(usage=Usage()).model_dump(mode="json")
     assert UsageEntry(usage=Usage(), turns=3).model_dump(mode="json")["turns"] == 3
+
+
+# The effort of this maha (spec hito 9, §1.7).
+
+
+async def test_every_conversation_takes_the_effort_of_this_maha() -> None:
+    fake = FakeModelClient([reply("Uno."), reply("Dos.")])
+    world = World(MemorySessionStore(), fake, effort="high")
+    first = await world.sessions.start()
+    await turn(first, "A")
+    await first.close()
+
+    resumed = await world.sessions.resume(FIRST, current=await world.sessions.start())
+    await turn(resumed.conversation, "B")
+
+    assert [r.effort for r in fake.requests] == ["high", "high"]
+
+
+async def test_a_change_of_effort_lasts_for_the_next_conversations() -> None:
+    fake = FakeModelClient([reply("Uno."), reply("Dos.")])
+    world = World(MemorySessionStore(), fake)
+    conversation = await world.sessions.start()
+    assert (world.sessions.effort, conversation.effort) == (None, None)
+
+    world.sessions.effort = conversation.effort = "low"
+    await turn(conversation, "A")
+    await turn(await world.sessions.start(), "B")
+
+    assert [r.effort for r in fake.requests] == ["low", "low"]
