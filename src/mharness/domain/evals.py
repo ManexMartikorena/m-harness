@@ -28,6 +28,9 @@ WORSE_BY = Decimal("0.20")
 # A drop in success is a regression if the noise explains it less than
 # once in 20 times (one-sided p, deep audit, I4).
 ALPHA = 0.05
+# The runs of each task a baseline needs: fewer are noise (spec hito 8,
+# decision 3; deep audit, I13).
+BASELINE_REPEAT = 5
 # The one-sided 95 % quantile of the normal law: the lower bound of a mean.
 Z_95 = 1.645
 

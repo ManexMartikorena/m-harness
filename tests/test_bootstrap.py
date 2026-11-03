@@ -1471,3 +1471,40 @@ def test_eval_with_an_effort_does_not_judge_against_the_baseline(
     out = capsys.readouterr().out
     assert "  · 01-version: 5/5 in the baseline, now 0/5 (p = 0.004)" in out
     assert "  · effort high: the baseline ran at the model's own effort" in out
+
+
+def test_eval_keeps_a_baseline_only_of_five_runs_or_more(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Deep audit (I13): spec hito 8, decision 3, asks 5 runs of each task.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    evals = battery(workspace / "evals")
+
+    assert main(["eval", "--tasks", str(evals), "--save", "--repeat", "4"]) == 1
+
+    assert "--save keeps a baseline of 5 runs of each task or more" in (
+        capsys.readouterr().err
+    )
+    assert not (evals / "baselines").exists()
+
+
+@respx.mock
+def test_eval_keeps_no_baseline_with_runs_that_ended_in_an_error(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Deep audit (I13): the runs that did not finish would be missing from it.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    respx.post(GO_ENDPOINT).mock(return_value=httpx.Response(401))
+
+    assert main(["eval", "--tasks", str(evals), "--save", "--repeat", "5"]) == 1
+
+    captured = capsys.readouterr()
+    assert "not saved: 5 runs of glm-5.3-flash ended in an error" in captured.err
+    assert not (evals / "baselines").exists()
+    # What ran is kept all the same.
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    assert len(json.loads((folder / "runs.json").read_text())) == 5

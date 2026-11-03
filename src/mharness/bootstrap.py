@@ -46,7 +46,15 @@ from mharness.application.routing import ModelRouter
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.tools import ToolRegistry
 from mharness.domain.environment import command_env
-from mharness.domain.evals import Baseline, EvalError, Task, TaskRun, by_task, stats
+from mharness.domain.evals import (
+    BASELINE_REPEAT,
+    Baseline,
+    EvalError,
+    Task,
+    TaskRun,
+    by_task,
+    stats,
+)
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message
 from mharness.domain.trace import known_secrets
@@ -261,6 +269,12 @@ async def _eval(
             "--save keeps a baseline with the model's own effort: drop --effort "
             "and the effort of the configuration"
         )
+    if options.save and options.repeat < BASELINE_REPEAT:
+        # One pass is noise (spec hito 8, decision 3; deep audit, I13).
+        return cli.fail(
+            f"--save keeps a baseline of {BASELINE_REPEAT} runs of each task or "
+            f"more: add --repeat {BASELINE_REPEAT}"
+        )
     # load() requires a model for the evals.
     assert settings.model is not None
     # Each run's sessions and traces, apart from the user's; the suffix
@@ -357,6 +371,22 @@ async def _eval(
     regressed = cli.eval_report(runs, baselines, sys.stdout, effort=effort)
     # Every run in full: the report shows one line of a failure.
     await asyncio.to_thread(_write_runs, run_dir / "runs.json", runs)
+    broken = {
+        model: count
+        for model in models
+        if (count := sum(r.model == model and r.outcome == "error" for r in runs))
+    }
+    if options.save and broken:
+        # A baseline without the runs that did not finish would not be the
+        # battery's (deep audit, I13).
+        for model, count in broken.items():
+            cli.fail(
+                f"not saved: {count} run{'' if count == 1 else 's'} of {model} "
+                "ended in an error; run the battery again (--retry-errors) to "
+                "keep a baseline"
+            )
+        print(f"\nsessions and traces of these runs: {run_dir}")
+        return 1
     if options.save:
         commit = _commit()
         for model in models:
