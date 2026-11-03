@@ -108,17 +108,24 @@ class Check(BaseModel, frozen=True, extra="forbid"):
         return None
 
 
+# The settings files that are only of the test runner.
+TEST_SETTINGS = frozenset({"pytest.ini", ".pytest.ini", "tox.ini"})
+
+
 def is_test_file(path: str) -> bool:
     """Whether a file of a fixture, by its path from the fixture's root, is
-    a test: under `tests/` or `test/`, `test_*.py`, `*_test.py` or
-    `conftest.py` (deep audit, I1)."""
+    a test: under a folder whose name starts with "test" (`tests/`, or a
+    `test_x/` that would hide the module `test_x.py`), `test_*.py`,
+    `*_test.py`, `conftest.py` or a settings file of the test runner (deep
+    audit, I1, and its review)."""
     parts = PurePosixPath(path).parts
     name = parts[-1] if parts else ""
     return (
-        any(part in ("tests", "test") for part in parts[:-1])
+        any(part.startswith("test") for part in parts[:-1])
         or (name.startswith("test_") and name.endswith(".py"))
         or name.endswith("_test.py")
         or name == "conftest.py"
+        or name in TEST_SETTINGS
     )
 
 

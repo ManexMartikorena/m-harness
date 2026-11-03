@@ -13,6 +13,8 @@ is never touched, and runs in parallel never see each other's changes.
 """
 
 import asyncio
+import configparser
+import os
 import shutil
 import tempfile
 import tomllib
@@ -96,19 +98,27 @@ class TomlEvalSuite:
         return await asyncio.to_thread(self._save, baseline)
 
     def _restore_tests(self, task: Task, workspace: Path) -> list[str]:
+        """The test files of the fixture put back, and those the agent added
+        taken away: a new `conftest.py` or `addopts = -k nothing` must not
+        pass the check (review of the deep audit). The names changed."""
         fixture = self._root / "fixtures" / task.fixture
         own = set(task.check.own_tests)
         restored = []
+        originals: set[str] = set()
         for source in sorted(fixture.rglob("*")):
             name = source.relative_to(fixture).as_posix()
             if source.is_symlink() or not source.is_file():
                 continue
-            if name in own or not is_test_file(name):
+            originals.add(name)
+            if name in own:
                 continue
-            original = source.read_bytes()
-            if _put_back(workspace, name, original):
+            test = is_test_file(name) or _test_settings_changed(
+                source, workspace / name
+            )
+            if test and _put_back(workspace, name, source.read_bytes()):
                 restored.append(name)
-        return restored
+        restored += _added(workspace, fixture, originals | own)
+        return sorted(restored)
 
     def _tasks(self) -> list[Task]:
         folder = self._root / "tasks"
@@ -184,6 +194,65 @@ def _put_back(workspace: Path, name: str, original: bytes) -> bool:
         return False
     target.write_bytes(original)
     return True
+
+
+# Files of the project that may hold settings of pytest, in a section.
+_SETTINGS_SECTIONS = ("pyproject.toml", "setup.cfg")
+
+
+def _test_settings_changed(source: Path, copy: Path) -> bool:
+    """Whether the copy of a `pyproject.toml` or `setup.cfg` changed its
+    settings of pytest: then the fixture's file goes back whole."""
+    if source.name not in _SETTINGS_SECTIONS:
+        return False
+    return _pytest_settings(source) != _pytest_settings(copy)
+
+
+def _pytest_settings(path: Path) -> object:
+    """The section of pytest of `path`; None if there is none, and a mark
+    of its own if the file cannot be read: changed, as far as we know."""
+    try:
+        if path.is_symlink() or not path.is_file():
+            return None
+        text = path.read_text(encoding="utf-8")
+        if path.name == "pyproject.toml":
+            return tomllib.loads(text).get("tool", {}).get("pytest")
+        parser = configparser.ConfigParser(interpolation=None)
+        parser.read_string(text)
+        if not parser.has_section("tool:pytest"):
+            return None
+        return dict(parser.items("tool:pytest"))
+    except (OSError, UnicodeDecodeError, ValueError, configparser.Error) as exc:
+        return f"unreadable: {type(exc).__name__}"
+
+
+def _added(workspace: Path, fixture: Path, kept: set[str]) -> list[str]:
+    """Take away what the agent added that the check could run as a test:
+    a test file, or a project file with settings of pytest. Links are not
+    followed; a folder that is not in the fixture and is left empty goes
+    too: an empty `test_x/` would still hide the module `test_x.py`."""
+    removed: list[str] = []
+    emptied: set[Path] = set()
+    for folder, dirnames, filenames in os.walk(workspace, topdown=False):
+        here = Path(folder)
+        links = [name for name in dirnames if (here / name).is_symlink()]
+        for name in [*filenames, *links]:
+            path = here / name
+            relative = path.relative_to(workspace).as_posix()
+            if relative in kept:
+                continue
+            settings = name in _SETTINGS_SECTIONS and _pytest_settings(path) is not None
+            # A link to a folder is that folder: "tests" holds tests.
+            linked = name in links and name.startswith("test")
+            if is_test_file(relative) or linked or settings:
+                path.unlink()
+                removed.append(relative)
+                emptied.add(here)
+        gone = here in emptied and here != workspace and not any(here.iterdir())
+        if gone and not (fixture / here.relative_to(workspace)).is_dir():
+            here.rmdir()
+            emptied.add(here.parent)
+    return removed
 
 
 def _stem(baseline: Baseline) -> str:
