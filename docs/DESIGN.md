@@ -191,6 +191,9 @@ proveedor.
 TextBlock(text)
 ImageBlock(media_type, data)
 ReasoningBlock(text, signature)          # razonamiento del modelo, si lo devuelve
+# (Concretado el 03/11/2026, spec del hito 9, §1.5: ReasoningBlock(text,
+#  signature, redacted); se guarda en la sesión y se devuelve intacto y en su
+#  sitio, y el adaptador de OpenAI no lo manda.)
 ToolCallBlock(id, name, arguments: str)
 ToolResultBlock(call_id, content: str, is_error)
 # (Corregido el 21/10/2026, spec del hito 4, §1.2: `arguments` es el texto JSON
@@ -207,6 +210,9 @@ ModelRequest(model, system, messages, tools: list[ToolSpec], max_tokens)
 # (Decidido el 27/10/2026, spec del hito 8, §1.1: el tope de tokens por
 #  turno lo aplica el bucle con el uso sumado, sin `max_tokens`; el de cada
 #  llamada sigue para el hito 11.)
+# (Adelantado el 03/11/2026, spec del hito 9, §1.6 y §1.7: Anthropic exige
+#  `max_tokens`. ModelRequest gana `max_tokens` (la salida máxima del modelo,
+#  del catálogo) y `effort`.)
 ToolSpec(name, description, input_schema)       # JSON Schema generado por Pydantic
 
 # Respuesta del modelo, en streaming             (adaptador → bucle)
@@ -216,6 +222,9 @@ ModelEvent = TextDelta | ReasoningDelta | ToolCallDelta | MessageEnd(stop_reason
 # (Corregido el 20/10/2026, spec del hito 3, §1.4: MessageEnd lleva `model`, que
 #  ModelResponse exige y solo llega en los trozos. El hito 3 solo implementa
 #  TextDelta y MessageEnd.)
+# (Concretado el 03/11/2026, spec del hito 9, §1.5: ReasoningDelta(index,
+#  text, signature, redacted) y TextDelta(text, block), para rehacer los
+#  bloques en el orden en que llegaron.)
 Usage(input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
 # (Corregido el 26/10/2026, spec del hito 7, §1.2: también reasoning_tokens,
 #  dentro de output_tokens, que es lo que se factura.)
@@ -272,7 +281,7 @@ Session(id, created_at, cwd, model, messages, usage)
 ## 6. Integraciones
 | Puerto | Qué ofrece | Implementaciones (real · falsa) |
 |---|---|---|
-| `ModelClient` | `stream(ModelRequest)` → eventos `ModelEvent` asíncronos; `complete(ModelRequest)` → `ModelResponse` entera. *(Corregido el 21/10/2026, spec del hito 3, §1.2: `complete()` se queda junto a `stream()`, por decisión del mantenedor.)* | `OpenAIChatClient` (hito 2), `AnthropicClient` (hito 9) · `FakeModelClient` guionizado |
+| `ModelClient` | `stream(ModelRequest)` → eventos `ModelEvent` asíncronos; `complete(ModelRequest)` → `ModelResponse` entera. *(Corregido el 21/10/2026, spec del hito 3, §1.2: `complete()` se queda junto a `stream()`, por decisión del mantenedor.)* *(Ampliado el 03/11/2026, spec del hito 9, §1.1 y §1.2: el formato es de cada modelo, según el catálogo; `ModelRouter`, en `application`, cumple el puerto y reparte cada petición al cliente de su formato.)* | `OpenAIChatClient` (hito 2), `AnthropicClient` (hito 9) · `FakeModelClient` guionizado |
 | `ModelCatalog` | Ventana de contexto, precios y capacidades de cada modelo | Fichero TOML propio (formato inspirado en models.dev) · catálogo en memoria. *(Concretado el 26/10/2026, spec del hito 7, §1.3: un TOML en el paquete, con la fecha de los precios, y otro opcional del usuario, `~/.config/maha/models.toml`, que manda; claves `proveedor/modelo`.)* *(Ampliado el 27/10/2026, spec del hito 7, §1.3 y §11: todos los modelos de cada proveedor, y precios por tramos de tamaño del prompt.)* |
 | `Tool` | Especificación y ejecución de una herramienta | Ficheros, búsqueda, terminal, web, memoria, subagente, herramientas MCP · `FakeTool` |
 | `ApprovalGate` | Decide sobre cada llamada con efecto: una vez, toda la sesión o denegar | Aviso en la terminal · política automática (evals) · `FakeApproval` |
@@ -291,7 +300,7 @@ Session(id, created_at, cwd, model, messages, usage)
 | Concurrencia | `asyncio` | Streaming, cancelación y paralelismo |
 | Transporte HTTP | httpx (asíncrono), directo | Se ve el JSON exacto que viaja. En la industria se usan los SDK oficiales o LiteLLM (§7.1) |
 | Validación y esquemas | Pydantic v2 | Herramientas, JSON Schema para el modelo, configuración, tipos del dominio |
-| Configuración | TOML (`tomllib`) validado con Pydantic. Usuario: `~/.config/maha/config.toml`; proyecto: `.maha/config.toml` | Biblioteca estándar. La configuración del proyecto prevalece sobre la del usuario, pero solo puede elegir proveedor y modelo: los proveedores (URL y variable de la clave) solo se declaran en la del usuario. *(Corregido el 20/10/2026, spec del hito 2, §1.10: un repositorio ajeno podría desviar la clave del usuario a otro servidor.)* |
+| Configuración | TOML (`tomllib`) validado con Pydantic. Usuario: `~/.config/maha/config.toml`; proyecto: `.maha/config.toml` | Biblioteca estándar. La configuración del proyecto prevalece sobre la del usuario, pero solo puede elegir proveedor y modelo: los proveedores (URL y variable de la clave) solo se declaran en la del usuario. *(Corregido el 20/10/2026, spec del hito 2, §1.10: un repositorio ajeno podría desviar la clave del usuario a otro servidor.)* *(Ampliado el 03/11/2026, spec del hito 9, §1.1: un proveedor declara su formato por defecto y, si sirve varios, una URL por formato.)* |
 | Credenciales | Variables de entorno (por ejemplo, `OPENCODE_API_KEY`). En desarrollo, `.env` cargado con `uv run --env-file .env` | `maha` nunca lee un `.env` por su cuenta, para no cargar secretos de los proyectos donde trabaja |
 | Interfaz de terminal | Rich (pintar) + prompt_toolkit (entrada) | Fontanería estándar. Textual queda como opción si algún día se quiere una TUI completa. *(Cambiado el 27/10/2026 por decisión del mantenedor: el hito 21 es una TUI completa, con Textual salvo que su spec justifique otra cosa; la interfaz de línea se conserva para el modo no interactivo, `maha < fichero` y los evals.)* |
 | Argumentos de línea de comandos | `argparse` | Biblioteca estándar; bastan unas pocas opciones |

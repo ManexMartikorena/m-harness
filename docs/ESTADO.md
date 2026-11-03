@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 Última actualización: 2026-11-03, al publicar la auditoría del hito 8.
-**Hito 8 cerrado y auditado: `v0.8.1`. Siguiente: la spec del hito 9,
-cuando el mantenedor dé el visto bueno. Cero deuda conocida.**
+**Hito 8 cerrado y auditado: `v0.8.1`. En curso: el hito 9
+(adaptador de Anthropic), con su spec APROBADA. Cero deuda conocida.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -46,13 +46,9 @@ spec, su nota de la guía y su release.
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente, con el visto bueno del mantenedor:** proponer la spec del
-   hito 9, adaptador de Anthropic
-   (DESIGN §14, punto 9; `docs/specs/PLANTILLA.md`), en su propio PR
-   (`docs/spec-hito-9-<slug>`, milestone "Hito 9"), con sus dudas para el
-   mantenedor. Antes, comprobar contra la documentación oficial de
-   Anthropic el formato de Messages, el streaming y las herramientas, y
-   anotarlo con la fecha.
+1. **Agente:** el PR 1 del hito 9, `feature/hito-9-formatos` (spec
+   `docs/specs/hito-9-anthropic.md`, §6): el formato de cada modelo en el
+   catálogo, los proveedores con varios formatos y `ModelRouter`.
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
@@ -150,7 +146,11 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   test (spec 8, §12.56; decisión del mantenedor, 2026-11-03).
 - **Hito 21:** lo que se teclea mientras gira el spinner y el eco de `^C`
   se mezclan con la salida (spec 3, §12.10; spec 4, §12.13); ver el texto
-  del razonamiento (spec 7).
+  del razonamiento (spec 7); con el selector de modelo, que un id que no
+  está en el catálogo (`-m kimi`, `model = "kimi"`) sugiera los parecidos
+  y que el error del proveedor diga qué hacer (`/model`, `maha models`):
+  hoy da solo `HTTP 400 … Model is unavailable` (prueba del mantenedor,
+  2026-11-03).
 - **Mejora posible:** refrescar los precios desde models.dev a una caché, a
   petición, si mantener a mano 113 modelos pesa (spec 7, §11). Hoy, con
   OpenCode Go, el coste que vale es el del proveedor.
