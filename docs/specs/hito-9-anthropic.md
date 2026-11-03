@@ -62,6 +62,9 @@ Dentro de alcance:
 - **Herramientas de servidor** (búsqueda web de Anthropic, ejecución de
   código): hito 19 decide la web; `pause_turn` no puede llegar sin ellas.
 - **Compactación en la API** y edición del contexto: hito 11 (contexto).
+- **Entrar con la suscripción de Claude (Pro o Max):** Anthropic no lo
+  permite a productos de terceros salvo aprobación (§1.0). Se usa con una
+  clave de la API, creada en la Claude Console.
 - **Respaldo de servidor ante un `refusal`** (`fallbacks` de Anthropic):
   `maha` ya tiene su modelo de respaldo (hito 8) para todos los
   proveedores; el de servidor es solo de la API directa de Anthropic.
@@ -78,10 +81,18 @@ reales a OpenCode Go (0,0005 $ en total):
 
 - **Messages API** (https://platform.claude.com/docs/en/api/messages,
   `/build-with-claude/streaming`, `/api/versioning`): `POST /v1/messages`;
-  cabeceras `x-api-key` y `anthropic-version` (obligatoria; versiones
+  cabeceras de la clave y `anthropic-version` (obligatoria; versiones
   `2023-06-01` y `2026-10-21`, la más reciente; `2026-10-21` quita
   `temperature`, `top_p` y `top_k`, que `maha` no manda). `max_tokens` es
   obligatorio. El system va aparte (`system`), no como mensaje.
+- **Clave** (`/manage-claude/authentication`): se crea en la Claude Console
+  (`platform.claude.com/settings/keys`) y se manda como `Authorization:
+  Bearer <key>`; "the legacy `x-api-key` header is still supported".
+- **Suscripción** (https://code.claude.com/docs/en/agent-sdk/overview):
+  "Unless previously approved, Anthropic does not allow third party
+  developers to offer claude.ai login or rate limits for their products".
+  Un producto como `maha` no puede usar la suscripción Pro o Max: solo
+  claves de la API.
 - **Streaming:** eventos con nombre: `message_start` (con `usage`), por cada
   bloque `content_block_start`, `content_block_delta` y
   `content_block_stop`, uno o más `message_delta` (con `stop_reason` y el
@@ -143,8 +154,9 @@ reales a OpenCode Go (0,0005 $ en total):
 - **Llamadas reales a OpenCode Go con `claude-haiku-5-5`:**
   - sin `x-opencode-session`, 400 `MissingSessionID`: hace falta la misma
     cabecera que en el formato de OpenAI;
-  - con `x-api-key`, la cabecera de sesión y `anthropic-version` igual a
-    `2023-06-01` o `2026-10-21`: 200;
+  - con la clave en `x-api-key` o en `Authorization: Bearer`, la cabecera
+    de sesión y `anthropic-version` igual a `2023-06-01` o `2026-10-21`:
+    200;
   - el stream es el de la documentación; el `tool_use` trae además
     `"caller": {"type": "direct"}`;
   - la caché automática funciona: con un system de unos 2.500 tokens, la
@@ -197,7 +209,9 @@ api_key_env = "MY_KEY"
 ```
 
 - **Proveedor `anthropic` de serie**, la API directa, con sus modelos y
-  precios en el catálogo (comprobados el 2026-11-03).
+  precios en el catálogo (comprobados el 2026-11-03). Quien paga en la
+  Claude Console crea una clave, la pone en `ANTHROPIC_API_KEY` y usa
+  `provider = "anthropic"`.
 - Un `.maha/config.toml` sigue sin poder declarar proveedores (spec 2,
   §1.10): tampoco `endpoints`.
 
@@ -253,7 +267,9 @@ Del `ModelRequest` al JSON de Anthropic (`adapters/models/anthropic.py`):
 }
 ```
 
-- **Cabeceras:** `x-api-key`, `anthropic-version: 2023-06-01` (duda 2),
+- **Cabeceras:** `Authorization: Bearer <clave>` (la forma actual; funciona
+  en la API directa y en OpenCode, §1.0), `anthropic-version: 2023-06-01`
+  (duda 2),
   `content-type`, el `User-Agent` de `maha` y la cabecera de sesión del
   proveedor si la declara (OpenCode la exige, §1.0).
 - **Mensajes `tool`:** pasan a `user` con un `tool_result` por resultado,
