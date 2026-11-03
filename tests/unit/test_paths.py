@@ -160,6 +160,25 @@ def test_change_warning(path: str, warning: str | None) -> None:
         (".git/HEAD", GIT_DIR),
         ("docs/github.md", None),
         ("envrc.txt", None),
+        # Run by themselves too (audit of hito 9, H3): a `.pth` runs at every
+        # start of Python, maha's grep worker included.
+        (".venv/lib/python3.14/site-packages/evil.pth", RUNS_CODE),
+        (".venv/bin/activate", RUNS_CODE),
+        ("venv/bin/python", RUNS_CODE),
+        ("node_modules/left-pad/index.js", RUNS_CODE),
+        (".mcp.json", RUNS_CODE),
+        (".cursor/mcp.json", RUNS_CODE),
+        (".zed/tasks.json", RUNS_CODE),
+        (".nvim.lua", RUNS_CODE),
+        (".exrc", RUNS_CODE),
+        (".cargo/config.toml", RUNS_CODE),
+        (".cargo/config", RUNS_CODE),
+        ("sub/.CARGO/Config.toml", RUNS_CODE),
+        ("lib/anything.pth", RUNS_CODE),
+        ("lib/ANYTHING.PTH", RUNS_CODE),
+        ("docs/config.toml", None),
+        ("docs/cargo.md", None),
+        ("pth.txt", None),
     ],
 )
 def test_change_warning_of_what_runs_code(path: str, warning: str | None) -> None:
@@ -214,3 +233,10 @@ def test_the_asked_path_counts_too() -> None:
 def test_printable_names_can_go_to_json_in_utf_8(name: str, shown: str) -> None:
     assert printable(name) == shown
     printable(name).encode("utf-8")
+
+
+def test_a_pth_outside_warns_that_it_runs_code() -> None:
+    # The user's site-packages, outside the working directory.
+    path = PurePath("/home/ane/.local/lib/python3.14/site-packages/x.pth")
+
+    assert change_warning(path, ROOT) == f"{OUTSIDE}; {RUNS_CODE}"

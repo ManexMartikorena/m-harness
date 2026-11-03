@@ -112,9 +112,30 @@ CODE_DIRS = frozenset(
         ".idea",
         ".devcontainer",
         ".claude",
+        # More editors and agents, and installed packages: a `.pth` in a
+        # site-packages runs at every start of Python, maha's grep worker
+        # included (audit of hito 9, H3).
+        ".cursor",
+        ".zed",
+        ".venv",
+        "venv",
+        "node_modules",
     }
 )
-CODE_FILES = frozenset({".pre-commit-config.yaml", ".envrc", ".gitlab-ci.yml"})
+CODE_FILES = frozenset(
+    {
+        ".pre-commit-config.yaml",
+        ".envrc",
+        ".gitlab-ci.yml",
+        ".mcp.json",
+        ".nvim.lua",
+        ".exrc",
+    }
+)
+# Anywhere: Python runs the `.pth` files of its site directories.
+CODE_PATTERNS = ("*.pth",)
+# A file in a directory: cargo's config can set the build's commands.
+CODE_SUBFILES = frozenset({(".cargo", "config"), (".cargo", "config.toml")})
 MAHA_CONFIG = "maha configuration: it chooses the provider and the model"
 
 
@@ -201,11 +222,22 @@ def change_warning(
     names = {each.name.casefold() for each in seen}
     if ".git" in parts:
         found.append(GIT_DIR)
-    elif any(part in CODE_DIRS for part in parts) or names & CODE_FILES:
+    elif parts & CODE_DIRS or names & CODE_FILES or _runs_code(seen):
         found.append(RUNS_CODE)
     elif ".maha" in parts:
         found.append(MAHA_CONFIG)
     return "; ".join(warning for warning in found if warning) or None
+
+
+def _runs_code(seen: list[PurePath]) -> bool:
+    """Whether a file of `seen` runs code by its name and its folder."""
+    for each in seen:
+        name = each.name.casefold()
+        if any(fnmatchcase(name, pattern) for pattern in CODE_PATTERNS):
+            return True
+        if (each.parent.name.casefold(), name) in CODE_SUBFILES:
+            return True
+    return False
 
 
 def _both(path: PurePath, asked: PurePath | None) -> list[PurePath]:

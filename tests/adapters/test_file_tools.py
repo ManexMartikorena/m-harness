@@ -2925,3 +2925,28 @@ async def test_an_error_with_a_path_that_is_not_utf_8_is_escaped(root: Path) -> 
         await write_tool(root).approval(WriteFileParams(path="d/x.txt", content=""))
 
     assert str(caught.value) == "not a directory: caf\\xe9"
+
+
+RUNS_CODE = "runs code: hooks, CI or editor tasks here can run code"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".venv/lib/python3.14/site-packages/evil.pth",
+        "node_modules/pkg/index.js",
+        ".mcp.json",
+        ".cargo/config.toml",
+    ],
+)
+async def test_changing_what_runs_by_itself_is_never_for_the_session(
+    root: Path, path: str
+) -> None:
+    # Audit of hito 9, H3.
+    write(root, path, "uno\n")
+
+    written = await ask_write(write_tool(root), path, "dos\n")
+    edited = await ask_edit(edit_tool(root), edit_params(path, "uno", "dos"))
+
+    assert (written.scope, written.warning) == (None, RUNS_CODE)
+    assert (edited.scope, edited.warning) == (None, RUNS_CODE)
