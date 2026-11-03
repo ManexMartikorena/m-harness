@@ -17,10 +17,12 @@ def model(
     context: int | None = 200_000,
     prices: tuple[str, str] | None = ("0.30", "1.20"),
     trains: bool = False,
+    api: str | None = None,
 ) -> ModelInfo:
     return ModelInfo(
         provider=provider,
         model=name,
+        api=api,
         context=context,
         prices=None
         if prices is None
@@ -30,6 +32,9 @@ def model(
         trains_on_data=trains,
     )
 
+
+# The format of each provider's models, unless the catalog says another.
+APIS = {"opencode-go": "openai-chat", "opencode-zen": "openai-chat"}
 
 CATALOG = [
     model("opencode-go", "kimi-k2.7-code", context=262_144, prices=("0.6", "2.5")),
@@ -42,13 +47,13 @@ CATALOG = [
 def test_the_models_of_the_provider_in_order() -> None:
     out = io.StringIO()
 
-    models_report(CATALOG, "opencode-go", every=False, out=out)
+    models_report(CATALOG, "opencode-go", every=False, out=out, apis=APIS)
 
     assert out.getvalue() == (
-        "model            context  input $/M  output $/M\n"
-        "glm-5.3-flash    200k     0.075      0.30\n"
-        "kimi-k2.7-code   262k     0.60       2.50\n"
-        "nuevo            ?        ?          ?\n"
+        "model            api          context  input $/M  output $/M\n"
+        "glm-5.3-flash    openai-chat  200k     0.075      0.30\n"
+        "kimi-k2.7-code   openai-chat  262k     0.60       2.50\n"
+        "nuevo            openai-chat  ?        ?          ?\n"
         "\n"
         "3 models of opencode-go · prices per million tokens · maha models --all "
         "for every provider\n"
@@ -58,13 +63,13 @@ def test_the_models_of_the_provider_in_order() -> None:
 def test_every_provider_with_all_and_the_training_warning() -> None:
     out = io.StringIO()
 
-    models_report(CATALOG, "opencode-go", every=True, out=out)
+    models_report(CATALOG, "opencode-go", every=True, out=out, apis=APIS)
 
     lines = out.getvalue().splitlines()
     assert lines[0].startswith("model ")
     assert lines[1].startswith("opencode-go/glm-5.3-flash ")
     assert lines[4] == (
-        "opencode-zen/glm-5.3         200k     0.30       1.20        "
+        "opencode-zen/glm-5.3         openai-chat  200k     0.30       1.20        "
         "may train on your data"
     )
     assert lines[-1] == "4 models · prices per million tokens"
@@ -73,7 +78,7 @@ def test_every_provider_with_all_and_the_training_warning() -> None:
 def test_a_provider_without_models_says_so() -> None:
     out = io.StringIO()
 
-    models_report(CATALOG, "local", every=False, out=out)
+    models_report(CATALOG, "local", every=False, out=out, apis=APIS)
 
     assert out.getvalue() == (
         "no models of local in the catalog · maha models --all for every provider\n"
@@ -83,6 +88,29 @@ def test_a_provider_without_models_says_so() -> None:
 def test_names_from_the_user_catalog_are_clean() -> None:
     out = io.StringIO()
 
-    models_report([model("local", "m\x1b[2J")], "local", every=False, out=out)
+    models_report(
+        [model("local", "m\x1b[2J")], "local", every=False, out=out, apis=APIS
+    )
 
     assert "m\\x1b[2J" in out.getvalue()
+
+
+def test_the_format_of_each_model_and_those_maha_does_not_speak() -> None:
+    # Spec hito 9, §3.3.
+    catalog = [
+        model("opencode-go", "claude-haiku-5-5", api="anthropic"),
+        model("opencode-go", "gpt-6-luna", api="openai-responses"),
+        model("local", "x"),
+    ]
+    out = io.StringIO()
+
+    models_report(catalog, "opencode-go", every=True, out=out, apis=APIS)
+
+    lines = out.getvalue().splitlines()
+    assert lines[1].split()[:2] == ["local/x", "?"]
+    assert lines[2].split()[:2] == ["opencode-go/claude-haiku-5-5", "anthropic"]
+    assert lines[3].split()[:2] == ["opencode-go/gpt-6-luna", "openai-responses*"]
+    assert lines[-2:] == [
+        "3 models · prices per million tokens",
+        "* maha does not speak this API yet",
+    ]

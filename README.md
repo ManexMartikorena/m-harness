@@ -188,7 +188,7 @@ that way a foreign repository cannot send your key to another server.
 |---|---|
 | `maha -p "…"` | One instruction and exit; stdin goes below it |
 | `maha -c`, `maha -r ID` | Continue the last session here, or one by its id |
-| `maha models [--all]` | The models of the catalog, with their window and prices |
+| `maha models [--all]` | The models of the catalog, with their API format, window and prices |
 | `maha sessions` | Recent sessions; `sessions delete ID` deletes one |
 | `maha trace [ID]` | What a session did and cost; without id, the last one here |
 | `maha stats [--days N]` | Cost and tokens by day and model |

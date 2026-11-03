@@ -107,6 +107,68 @@ def test_user_can_declare_a_provider(home: Path, project: Path) -> None:
     assert settings.api_key is None
 
 
+# A provider of several API formats (spec hito 9, §1.1).
+
+
+def test_a_provider_of_another_format(home: Path, project: Path) -> None:
+    write_user(
+        home,
+        'provider = "local"\nmodel = "claude-x"\n'
+        "[providers.local]\n"
+        'api = "anthropic"\nbase_url = "http://localhost:4000/v1"\n',
+    )
+
+    provider = load(home, project).provider
+
+    assert provider.api == "anthropic"
+    assert provider.url("anthropic") == "http://localhost:4000/v1"
+    assert provider.url("openai-chat") is None
+
+
+def test_a_provider_with_one_url_per_format(home: Path, project: Path) -> None:
+    write_user(
+        home,
+        'provider = "local"\nmodel = "m"\n'
+        "[providers.local]\n"
+        'base_url = "http://h/openai/v1"\n'
+        "[providers.local.endpoints]\n"
+        'anthropic = "http://h/anthropic/v1"\n',
+    )
+
+    provider = load(home, project).provider
+
+    assert provider.api == "openai-chat"
+    assert provider.url("openai-chat") == "http://h/openai/v1"
+    assert provider.url("anthropic") == "http://h/anthropic/v1"
+
+
+def test_opencode_serves_both_formats() -> None:
+    # Spec hito 9, §1.0: its docs give each model one of two URLs.
+    go = BUILTIN_PROVIDERS["opencode-go"]
+    zen = BUILTIN_PROVIDERS["opencode-zen"]
+
+    assert go.url("openai-chat") == "https://opencode.ai/inference/go/openai/v1"
+    assert go.url("anthropic") == "https://opencode.ai/inference/go/anthropic/v1"
+    assert zen.url("anthropic") == "https://opencode.ai/inference/anthropic/v1"
+
+
+@pytest.mark.parametrize(
+    "provider",
+    [
+        'api = "google"\nbase_url = "http://x"\n',
+        'base_url = "http://x"\n[providers.local.endpoints]\ngoogle = "http://y"\n',
+        'base_url = "http://x"\n[providers.local.endpoints]\nanthropic = ""\n',
+    ],
+)
+def test_a_provider_speaks_only_what_maha_speaks(
+    home: Path, project: Path, provider: str
+) -> None:
+    write_user(home, f'provider = "local"\nmodel = "m"\n[providers.local]\n{provider}')
+
+    with pytest.raises(ConfigError, match="providers"):
+        load(home, project)
+
+
 def test_without_model_says_what_to_write(home: Path, project: Path) -> None:
     with pytest.raises(ConfigError) as raised:
         load(home, project)

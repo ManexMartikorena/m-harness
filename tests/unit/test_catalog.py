@@ -203,3 +203,29 @@ def test_add_cost_is_unknown_once_a_part_is(
     total: Decimal | None, more: Decimal | None, result: Decimal | None
 ) -> None:
     assert add_cost(total, more) == result
+
+
+# The API format and the longest answer of a model (spec hito 9, §1.1).
+
+
+def test_a_model_knows_its_api_and_longest_answer() -> None:
+    info = ModelInfo(provider="p", model="m", api="anthropic", max_output=128_000)
+
+    assert (info.api, info.max_output) == ("anthropic", 128_000)
+
+
+def test_without_them_the_provider_decides() -> None:
+    info = ModelInfo(provider="p", model="m")
+
+    assert (info.api, info.max_output) == (None, None)
+
+
+@pytest.mark.parametrize("api", ["", "Anthropic", "open ai", "-x"])
+def test_an_api_is_a_lowercase_name(api: str) -> None:
+    with pytest.raises(ValidationError):
+        ModelInfo(provider="p", model="m", api=api)
+
+
+def test_the_longest_answer_is_positive() -> None:
+    with pytest.raises(ValidationError):
+        ModelInfo(provider="p", model="m", max_output=0)

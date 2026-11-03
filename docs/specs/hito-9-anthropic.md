@@ -239,8 +239,8 @@ sesión. Por eso no basta un cliente por sesión:
 error: gpt-6-luna uses the openai-responses API, which maha does not speak yet
 ```
 
-  Es un `ModelRequestError`: no se reintenta, y el respaldo (si es de otro
-  formato) sí puede responder.
+  Es un `ModelRequestError`: no se reintenta. *(Corregido al implementarlo,
+  §12.1: tampoco pasa al respaldo.)*
 
 ### 1.3 La petición
 
@@ -739,4 +739,23 @@ recomendaciones (2, 5 y 9):
 
 ## 12. Aprendido al implementar
 
-(Se añade al implementar.)
+### PR 1 (`feature/hito-9-formatos`, 2026-11-03)
+
+1. **Un formato no soportado no pasa al respaldo.** §1.2 decía que el
+   respaldo podía responder, pero el bucle solo pasa a él cuando se agotan
+   los reintentos de un 429 o un 5xx (spec 8, §1.14). Un formato que
+   `maha` no habla es un error de configuración: falla claro, sin saltar a
+   otro modelo que la persona no eligió.
+2. **El router también distingue "el proveedor no lo sirve"**: un modelo
+   `anthropic` en un proveedor que solo tiene URL para `openai-chat` dice
+   "which this provider does not serve", no "maha does not speak yet".
+3. **Un id de sesión común:** con dos clientes (uno por formato), los dos
+   mandan el mismo `x-opencode-session`, como una sola sesión de `maha`.
+4. **El catálogo, contra la documentación de OpenCode del 2026-11-03:**
+   coinciden los 113 modelos; Zen tiene uno nuevo, `pulse-alpha-free`, que
+   no entra aquí (añadir un modelo es comprobar sus precios). `jev-1.13` y
+   `jev-1.13-free` van a un endpoint propio de OpenCode: `api =
+   "systemone"`. models.dev no da su salida máxima; da la de los 22
+   modelos de formato `anthropic`.
+5. **`maha models`** enseña el formato con un asterisco en los que `maha`
+   aún no habla (`openai-responses*`, `google*`), y una nota debajo.

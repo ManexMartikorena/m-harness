@@ -18,10 +18,11 @@ import tomllib
 from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, ValidationError
 
+from mharness.domain.catalog import SpokenApi
 from mharness.domain.limits import TurnLimits
 
 PROJECT_FILE = Path(".maha") / "config.toml"
@@ -35,22 +36,33 @@ class ConfigError(Exception):
 class ProviderSettings(BaseModel, frozen=True, extra="forbid"):
     """How to reach one provider."""
 
-    # The only API format until hito 9 adds "anthropic".
-    api: Literal["openai-chat"] = "openai-chat"
+    # The format of its models, unless the catalog says another (spec hito
+    # 9, §1.1); `base_url` is where it is spoken.
+    api: SpokenApi = "openai-chat"
     base_url: str = Field(min_length=1)
+    # Where it speaks its other formats, if it serves several.
+    endpoints: dict[SpokenApi, Annotated[str, Field(min_length=1)]] = {}
     # Name of the environment variable that holds the key; None sends no key.
     api_key_env: str | None = None
     session_header: str | None = None
+
+    def url(self, api: str) -> str | None:
+        """Where this provider speaks `api`; None if it does not."""
+        if api == self.api:
+            return self.base_url
+        return next((url for name, url in self.endpoints.items() if name == api), None)
 
 
 BUILTIN_PROVIDERS: Mapping[str, ProviderSettings] = {
     "opencode-go": ProviderSettings(
         base_url="https://opencode.ai/inference/go/openai/v1",
+        endpoints={"anthropic": "https://opencode.ai/inference/go/anthropic/v1"},
         api_key_env="OPENCODE_API_KEY",
         session_header="x-opencode-session",
     ),
     "opencode-zen": ProviderSettings(
         base_url="https://opencode.ai/inference/openai/v1",
+        endpoints={"anthropic": "https://opencode.ai/inference/anthropic/v1"},
         api_key_env="OPENCODE_API_KEY",
         session_header="x-opencode-session",
     ),

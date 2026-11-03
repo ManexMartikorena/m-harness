@@ -1299,3 +1299,26 @@ def test_p_in_text_without_key_writes_nothing_on_stdout(
 
     assert main(["-p", "hola"]) == 1
     assert capsys.readouterr().out == ""
+
+
+@respx.mock
+def test_p_with_a_model_of_an_unspoken_format_calls_nobody(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    data_home: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Spec hito 9, §1.2: the catalog says gpt-6-luna speaks the Responses
+    # API; a 400 from the provider would not say why.
+    write_user_config(workspace, 'model = "gpt-6-luna"\n')
+    route = respx.post(GO_ENDPOINT)
+    stdin("")
+
+    code = main(["-p", "hola"])
+
+    assert code == 1
+    assert not route.called
+    assert (
+        "gpt-6-luna uses the openai-responses API, which maha does not speak yet"
+        in capsys.readouterr().err
+    )

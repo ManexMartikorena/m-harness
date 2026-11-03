@@ -13,8 +13,9 @@ import os
 import secrets
 import subprocess
 import sys
+import uuid
 from collections.abc import AsyncIterator, Mapping, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import date, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -40,6 +41,7 @@ from mharness.adapters.tracing import JsonlTraceSink
 from mharness.application.agent import Agent
 from mharness.application.approvals import AllowList
 from mharness.application.evals import Evaluator, choose
+from mharness.application.routing import ModelRouter
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.tools import ToolRegistry
 from mharness.domain.environment import command_env
@@ -49,6 +51,7 @@ from mharness.domain.messages import Message
 from mharness.domain.trace import known_secrets
 from mharness.ports.approval import ApprovalGate
 from mharness.ports.catalog import ModelCatalog
+from mharness.ports.model import ModelClient
 
 # The tools of maha, by name: what `--allow` takes.
 TOOL_NAMES = tuple(
@@ -110,6 +113,11 @@ def _dispatch(
             settings.provider_name,
             every=options.every,
             out=sys.stdout,
+            # The format of the built-in providers' models, and the user's.
+            apis={
+                **{name: p.api for name, p in config.BUILTIN_PROVIDERS.items()},
+                settings.provider_name: settings.provider.api,
+            },
         )
         return 0
     if options.command == "stats":
@@ -268,7 +276,7 @@ async def _eval(
     ) -> AsyncIterator[Conversation]:
         # A client per run: each one is a session of its own for the
         # provider, as a `maha -p` would be.
-        async with _client(settings) as client:
+        async with _client(settings, catalog) as client:
             tools = _eval_tools(cwd)
 
             def new_agent(model: str, history: Sequence[Message]) -> Agent:
@@ -389,7 +397,7 @@ def _sessions(
     catalog: ModelCatalog,
     data: Path,
     cwd: Path,
-    client: OpenAIChatClient,
+    client: ModelClient,
     gate: ApprovalGate,
 ) -> Sessions:
     """The user's sessions, whose agents have the seven tools and `gate`."""
@@ -437,7 +445,7 @@ async def _sessions_command(
     (spec hito 8, §1.15). No call to the model: the client is there
     because a conversation needs one."""
     cwd = Path.cwd().resolve()
-    async with _client(settings) as client:
+    async with _client(settings, catalog) as client:
         sessions = _sessions(
             settings, catalog, data, cwd, client, cli.DenyAll(sys.stdout)
         )
@@ -464,13 +472,32 @@ async def _sessions_command(
         return await cli.list_sessions(sessions, out=sys.stdout, home=Path.home())
 
 
-def _client(settings: config.Settings) -> OpenAIChatClient:
+@asynccontextmanager
+async def _client(
+    settings: config.Settings, catalog: ModelCatalog
+) -> AsyncIterator[ModelClient]:
+    """A client for each API format the provider serves, behind a router
+    that picks the one of each request's model (spec hito 9, §1.2)."""
     provider = settings.provider
-    return OpenAIChatClient(
-        base_url=provider.base_url,
-        api_key=settings.api_key,
-        session_header=provider.session_header,
-    )
+    # One id for the provider's session, whatever the format.
+    session = str(uuid.uuid4())
+    async with AsyncExitStack() as stack:
+        clients: dict[str, ModelClient] = {}
+        if (url := provider.url("openai-chat")) is not None:
+            clients["openai-chat"] = await stack.enter_async_context(
+                OpenAIChatClient(
+                    base_url=url,
+                    api_key=settings.api_key,
+                    session_header=provider.session_header,
+                    session_id=session,
+                )
+            )
+
+        def api_of(model: str) -> str:
+            info = catalog.get(settings.provider_name, model)
+            return info.api if info is not None and info.api else provider.api
+
+        yield ModelRouter(clients, api_of)
 
 
 async def _print(
@@ -485,7 +512,7 @@ async def _print(
     tools of `--allow` run, and only with a scope (§1.2)."""
     # From a terminal nothing is piped: -p does not wait for Ctrl+D.
     read_all = None if os.isatty(0) else cli.StdinLines().read_all
-    async with _client(settings) as client:
+    async with _client(settings, catalog) as client:
         sessions = _sessions(
             settings, catalog, data, cwd, client, AllowList(options.allow)
         )
@@ -509,7 +536,7 @@ async def _converse(
 ) -> int:
     # One reader for the conversation and the questions (B3).
     lines = cli.StdinLines()
-    async with _client(settings) as client:
+    async with _client(settings, catalog) as client:
         sessions = _sessions(settings, catalog, data, cwd, client, _gate(lines))
         return await cli.converse(
             sessions,

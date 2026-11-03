@@ -10,7 +10,9 @@ checked = 2026-10-27          # default date of that provider's prices
 source = "https://opencode.ai/docs/go/"
 
 [models."opencode-go/gpt-6-luna"]
+api = "openai-responses"      # optional: the format it speaks
 context = 1_050_000
+max_output = 128_000          # optional: the longest answer, in tokens
 input = 0.10                  # USD per million tokens
 output = 0.50
 
@@ -72,6 +74,8 @@ class _Tier(BaseModel, extra="forbid"):
 
 class _Model(BaseModel, extra="forbid"):
     context: int | None = None
+    api: str | None = None
+    max_output: int | None = None
     # Both or neither: a model without prices is known, but has no cost.
     input: _Price | None = None
     output: _Price | None = None
@@ -161,6 +165,8 @@ def _info(key: str, model: _Model, providers: dict[str, _Provider]) -> ModelInfo
         provider=provider,
         model=name,
         context=model.context,
+        api=model.api,
+        max_output=model.max_output,
         prices=_prices(model, providers.get(provider)),
         trains_on_data=model.trains_on_data,
     )
