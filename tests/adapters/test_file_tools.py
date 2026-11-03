@@ -2950,3 +2950,16 @@ async def test_changing_what_runs_by_itself_is_never_for_the_session(
 
     assert (written.scope, written.warning) == (None, RUNS_CODE)
     assert (edited.scope, edited.warning) == (None, RUNS_CODE)
+
+
+async def test_reading_from_inside_a_secret_folder_asks(tmp_path: Path) -> None:
+    # Audit of hito 9, H5: the working directory is ~/.aws itself.
+    root = tmp_path / ".aws"
+    write(root, "credentials", "[default]\n")
+
+    request = await ReadFile(Workspace(root)).approval(
+        ReadFileParams(path="credentials")
+    )
+
+    assert request is not None
+    assert request.warning == SECRET_FILE

@@ -194,12 +194,30 @@ def test_a_working_directory_inside_git_does_not_warn_every_write() -> None:
 
 
 def test_inside_by_the_relative_path() -> None:
-    # ".ssh" above the root is not part of the relative path.
-    root = PurePath("/home/ane/.ssh/project")
+    root = PurePath("/home/ane/project")
 
-    assert is_inside(PurePath("/home/ane/.ssh/project/a.txt"), root)
-    assert not is_secret_at(PurePath("/home/ane/.ssh/project/a.txt"), root)
-    assert is_secret_at(PurePath("/home/ane/.ssh/a.txt"), root)
+    assert is_inside(PurePath("/home/ane/project/a.txt"), root)
+    assert not is_inside(PurePath("/home/ane/projectx/a.txt"), root)
+
+
+@pytest.mark.parametrize(
+    ("root", "name"),
+    [
+        ("/home/ane/.aws", "credentials"),
+        ("/home/ane/.ssh", "config"),
+        ("/home/ane/.ssh/project", "a.txt"),
+        ("/home/ane/.config/gcloud", "credentials.db"),
+    ],
+)
+def test_a_working_directory_inside_a_secret_folder_keeps_it_secret(
+    root: str, name: str
+) -> None:
+    # Audit of hito 9, H5: only the path below the root counted, so the
+    # credentials of ~/.aws were read without asking from inside it.
+    where = PurePath(root)
+
+    assert is_secret_at(where / name, where)
+    assert read_warning(where / name, where, secret=SECRET_FILE) == SECRET_FILE
 
 
 def test_the_asked_path_counts_too() -> None:

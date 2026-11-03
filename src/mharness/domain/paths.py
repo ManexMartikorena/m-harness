@@ -171,11 +171,11 @@ def is_inside(path: PurePath, root: PurePath) -> bool:
 
 
 def is_secret_at(path: PurePath, root: PurePath) -> bool:
-    """`is_secret` for a resolved path. Inside, by the path relative to the
-    root; outside, by the absolute path, so an approved `~/.ssh` still counts
-    as secret."""
-    if is_inside(path, root):
-        return is_secret(path.relative_to(root))
+    """`is_secret` for a resolved path, by its absolute path, so an approved
+    `~/.ssh` still counts as secret, and also a working directory inside one
+    (audit of hito 9, H5). Inside, by the path relative to the root too."""
+    if is_inside(path, root) and is_secret(path.relative_to(root)):
+        return True
     return is_secret(path)
 
 
