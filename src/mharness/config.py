@@ -1,7 +1,7 @@
 """Load and validate the configuration (spec hito 2, §1.10).
 
-Three levels, the later one winning for `provider`, `model` and
-`fallback_model`; of each limit of the turn, the stricter one wins (spec
+Three levels, the later one winning for `provider`, `model`,
+`fallback_model` and `effort`; of each limit of the turn, the stricter one wins (spec
 hito 8, §3.2):
 
 1. built-in providers, in this module;
@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from mharness.domain.catalog import SpokenApi
 from mharness.domain.limits import TurnLimits
+from mharness.domain.model import Effort
 
 PROJECT_FILE = Path(".maha") / "config.toml"
 DEFAULT_PROVIDER = "opencode-go"
@@ -78,6 +79,8 @@ class Settings(BaseModel, frozen=True):
     model: str | None
     # Answers when the retries of `model` run out (spec hito 8, §1.14).
     fallback_model: str | None = None
+    # None: the model's own (spec hito 9, §1.7).
+    effort: Effort | None = None
     limits: TurnLimits = TurnLimits()
     # Kept out of repr, so it never lands in a log or a traceback.
     api_key: str | None = Field(default=None, repr=False)
@@ -96,6 +99,7 @@ class _ProjectFile(BaseModel, extra="forbid"):
     provider: str | None = Field(default=None, min_length=1)
     model: str | None = Field(default=None, min_length=1)
     fallback_model: str | None = Field(default=None, min_length=1)
+    effort: Effort | None = None
     limits: _Limits = _Limits()
 
 
@@ -179,6 +183,7 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
         provider=provider,
         model=model,
         fallback_model=project.fallback_model or user.fallback_model,
+        effort=project.effort or user.effort,
         limits=_stricter(user.limits, project.limits),
         api_key=_api_key(provider_name, provider, env, need=calls_model),
     )

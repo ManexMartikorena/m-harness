@@ -78,6 +78,7 @@ def test_the_known_commands() -> None:
         "resume",
         "delete",
         "model",
+        "effort",
         "trace",
         "new",
         "export",
@@ -325,6 +326,36 @@ async def test_model_shows_and_changes_the_model() -> None:
     assert out.count("  [model: glm-5.3-flash]\n") == 1
     assert out.count("  [model: kimi-k3]\n") == 1
     assert maha.fake.requests[0].model == "kimi-k3"
+
+
+async def test_effort_shows_changes_and_goes_back_to_the_models_own() -> None:
+    # Spec hito 9, §1.7.
+    maha = Maha(MemorySessionStore(), [reply("Uno."), reply("Dos."), reply("Tres.")])
+
+    _, out, _ = await maha.run(
+        "/effort",
+        "/effort high",
+        "Hola",
+        "/new",
+        "Otra",
+        "/effort default",
+        "Última",
+        "/exit",
+    )
+
+    assert out.count("  [effort: the model's own]\n") == 2
+    assert out.count("  [effort: high]\n") == 1
+    # /new keeps it: it is this maha's choice, as the model of /model.
+    assert [r.effort for r in maha.fake.requests] == ["high", "high", None]
+
+
+async def test_an_unknown_effort_says_which_there_are() -> None:
+    maha = Maha(MemorySessionStore(), [])
+
+    _, out, _ = await maha.run("/effort extreme", "/exit")
+
+    assert "  usage: /effort [low|medium|high|xhigh|max|default]\n" in out
+    assert maha.sessions.effort is None
 
 
 async def test_titles_from_the_disk_are_escaped() -> None:

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from mharness.domain.events import MessageEnd, TextDelta, ToolCallDelta
+from mharness.domain.events import MessageEnd, ReasoningDelta, TextDelta, ToolCallDelta
 from mharness.domain.model import Usage
 
 
@@ -46,3 +46,20 @@ def test_tool_call_delta_defaults_and_is_immutable() -> None:
     )
     with pytest.raises(ValidationError):
         delta.arguments = "{}"  # type: ignore[misc]
+
+
+def test_a_text_delta_may_name_its_block() -> None:
+    # Spec hito 9, §1.5: Anthropic sends blocks; OpenAI does not.
+    assert TextDelta(text="a").block is None
+    assert TextDelta(text="a", block=2).block == 2
+
+
+def test_a_reasoning_delta_carries_text_signature_or_redacted() -> None:
+    delta = ReasoningDelta(index=0, signature="s")
+
+    assert (delta.type, delta.text, delta.signature, delta.redacted) == (
+        "reasoning_delta",
+        "",
+        "s",
+        None,
+    )

@@ -46,9 +46,10 @@ spec, su nota de la guía y su release.
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** el PR 1 del hito 9, `feature/hito-9-formatos` (spec
-   `docs/specs/hito-9-anthropic.md`, §6): el formato de cada modelo en el
-   catálogo, los proveedores con varios formatos y `ModelRouter`.
+1. **Agente:** el PR 3 del hito 9, `feature/hito-9-anthropic` (spec
+   `docs/specs/hito-9-anthropic.md`, §6): `AnthropicClient`, el proveedor
+   `anthropic` de serie y las evals. Hechos: PR 1 (#101, el formato de cada
+   modelo) y PR 2 (razonamiento, `max_tokens` y effort en el núcleo).
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.

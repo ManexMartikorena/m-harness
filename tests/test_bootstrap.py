@@ -667,6 +667,45 @@ def test_eval_keeps_a_baseline_only_of_the_whole_battery(
     assert "--save keeps a baseline of the whole battery" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    ("config", "args"),
+    [
+        ('model = "glm-5.3-flash"\n', ["--effort", "high"]),
+        ('model = "glm-5.3-flash"\neffort = "low"\n', []),
+    ],
+)
+def test_eval_keeps_a_baseline_only_with_the_models_own_effort(
+    workspace: Path, capsys: pytest.CaptureFixture[str], config: str, args: list[str]
+) -> None:
+    # Spec hito 9, §5: a baseline does not say its effort, and the next ones
+    # would compare against it.
+    write_user_config(workspace, config)
+
+    assert main(["eval", "--save", *args]) == 1
+
+    assert "--save keeps a baseline with the model's own effort" in (
+        capsys.readouterr().err
+    )
+
+
+@respx.mock
+def test_eval_says_the_effort_it_runs_with(
+    workspace: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Es la 1.4.2.", 10, 5))
+    )
+
+    main(["eval", "--tasks", str(evals), "--effort", "high"])
+
+    first = capsys.readouterr().out.splitlines()[0]
+    assert first.endswith(" · effort high")
+    assert json.loads(route.calls.last.request.content)["reasoning_effort"] == "high"
+
+
 def test_eval_names_a_task_that_does_not_exist(
     workspace: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1322,3 +1361,21 @@ def test_p_with_a_model_of_an_unspoken_format_calls_nobody(
         "gpt-6-luna uses the openai-responses API, which maha does not speak yet"
         in capsys.readouterr().err
     )
+
+
+@respx.mock
+def test_the_effort_of_the_command_line_wins_over_the_configuration(
+    workspace: Path, stdin: Callable[[str], None]
+) -> None:
+    # Spec hito 9, §1.7.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\neffort = "low"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Hola.", 1, 1))
+    )
+    stdin("")
+
+    main(["-p", "Hola"])
+    main(["-p", "Hola", "--effort", "high"])
+
+    sent = [json.loads(call.request.content) for call in route.calls]
+    assert [body["reasoning_effort"] for body in sent] == ["low", "high"]

@@ -124,10 +124,13 @@ maha
 
 `maha` works on the directory where you open it.
 
-Optional, in the same file: a fallback model and limits for each turn.
+Optional, in the same file: a fallback model, how hard the model works
+(`effort`: `low`, `medium`, `high`, `xhigh` or `max`; without it, the
+model's own) and limits for each turn.
 
 ```toml
 fallback_model = "glm-5.3"
+effort = "high"
 
 [limits]
 max_steps = 25       # calls to the model
@@ -165,6 +168,7 @@ that way a foreign repository cannot send your key to another server.
 |---|---|
 | `/help` | Lists the commands |
 | `/model [ID]` | Shows the model, or changes it |
+| `/effort [LEVEL]` | Shows or changes how hard the model works; `default` goes back to the model's own |
 | `/sessions` | Recent sessions, from every directory |
 | `/resume [ID]` | Resumes a session; without ID, the last one here |
 | `/delete ID` | Deletes a session and its trace |
@@ -205,7 +209,7 @@ With `-p`:
   directory. Outside it, a secret or a file that runs code are always
   denied.
 - With `-p` or without it: `-m ID` (model), `--fallback-model ID`,
-  `--max-steps N`, `--max-cost USD`, `--max-tokens N` and `--timeout S`.
+  `--effort LEVEL`, `--max-steps N`, `--max-cost USD`, `--max-tokens N` and `--timeout S`.
 - Exit code: 0 fine, 1 error, 2 wrong usage, 3 a limit stopped the turn, 4
   a call was denied; with Ctrl+C or a signal, 128 + the signal.
 

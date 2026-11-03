@@ -36,7 +36,7 @@ from mharness.domain.errors import RetryableModelError
 from mharness.domain.events import ModelEvent, TextDelta
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
-from mharness.domain.model import ModelRequest, ModelResponse, Usage
+from mharness.domain.model import Effort, ModelRequest, ModelResponse, Usage
 from mharness.domain.retry import RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
@@ -82,6 +82,7 @@ class Agent:
         retry: RetryPolicy | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         fallback: str | None = None,
+        effort: Effort | None = None,
     ) -> None:
         self._client = client
         self._tools = tools
@@ -94,6 +95,8 @@ class Agent:
         self._retry = retry or RetryPolicy()
         self._sleep = sleep
         self.fallback = fallback
+        # In every call; /effort changes it (spec hito 9, §1.7).
+        self.effort = effort
         # A resumed session starts with its history (spec hito 6, §1.6); its
         # approvals do not come back (§1.9).
         self._messages: list[Message] = list(history)
@@ -412,10 +415,13 @@ class Agent:
 
     def _request(self, turn: list[Message], model: str) -> ModelRequest:
         # No system prompt until hito 10 (spec hito 2, §1.5).
+        info = self._catalog.get(self._provider, model)
         return ModelRequest(
             model=model,
             messages=[*self._messages, *turn],
             tools=self._tools.specs(),
+            max_tokens=info.max_output if info is not None else None,
+            effort=self.effort,
         )
 
     async def _prepare(self, call: ToolCallBlock) -> _Ready | _Outcome:

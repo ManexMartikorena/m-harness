@@ -36,9 +36,24 @@ class ToolResultBlock(BaseModel, frozen=True):
     is_error: bool = False
 
 
+class ReasoningBlock(BaseModel, frozen=True):
+    """What the model thought before it answered (spec hito 9, §1.5).
+
+    Kept in its place and given back intact: Anthropic checks it with its
+    signature. Empty `text` is normal: by default the model does not show
+    it. A safety-redacted one carries its encrypted `redacted` data instead.
+    """
+
+    type: Literal["reasoning"] = "reasoning"
+    text: str = ""
+    signature: str | None = None
+    redacted: str | None = None
+
+
 # Validated by `type`, so a message read from JSON gets the right blocks.
 type Block = Annotated[
-    TextBlock | ToolCallBlock | ToolResultBlock, Field(discriminator="type")
+    TextBlock | ReasoningBlock | ToolCallBlock | ToolResultBlock,
+    Field(discriminator="type"),
 ]
 
 

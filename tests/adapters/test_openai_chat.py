@@ -11,7 +11,7 @@ import pytest
 import respx
 
 from mharness.adapters.models import OpenAIChatClient
-from mharness.adapters.models.openai_chat import TIMEOUT, retry_after
+from mharness.adapters.models.http import TIMEOUT, retry_after
 from mharness.domain.errors import (
     ModelAuthError,
     ModelError,
@@ -21,7 +21,13 @@ from mharness.domain.errors import (
     ModelUnavailableError,
     RetryableModelError,
 )
-from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
+from mharness.domain.messages import (
+    Message,
+    ReasoningBlock,
+    TextBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+)
 from mharness.domain.model import ModelRequest, StopReason, ToolSpec, Usage
 from mharness.ports.model import ModelClient
 
@@ -129,6 +135,51 @@ async def test_an_interrupted_answer_carries_the_mark(client: OpenAIChatClient) 
         "role": "assistant",
         "content": "La capital es\n\n[interrupted by the user]",
     }
+
+
+@respx.mock
+async def test_the_effort_goes_as_reasoning_effort(client: OpenAIChatClient) -> None:
+    # Spec hito 9, §1.7.
+    route = respx.post(ENDPOINT).respond(json=fixture("completion.json"))
+
+    await client.complete(
+        ModelRequest(model="glm-5.3-flash", messages=CONVERSATION, effort="high")
+    )
+
+    assert sent_json(route)["reasoning_effort"] == "high"
+
+
+@respx.mock
+async def test_without_effort_nor_max_tokens_neither_is_sent(
+    client: OpenAIChatClient,
+) -> None:
+    # max_tokens stays out, as before: compatible servers have their own
+    # (spec hito 9, §1.6).
+    route = respx.post(ENDPOINT).respond(json=fixture("completion.json"))
+
+    await client.complete(
+        ModelRequest(model="glm-5.3-flash", messages=CONVERSATION, max_tokens=8_000)
+    )
+
+    assert {"reasoning_effort", "max_tokens", "max_completion_tokens"}.isdisjoint(
+        sent_json(route)
+    )
+
+
+@respx.mock
+async def test_reasoning_blocks_are_not_sent(client: OpenAIChatClient) -> None:
+    # The format has no place for them (spec hito 9, §1.5).
+    route = respx.post(ENDPOINT).respond(json=fixture("completion.json"))
+    answer = Message(
+        role="assistant",
+        blocks=[ReasoningBlock(text="pienso", signature="s"), TextBlock(text="Hola.")],
+    )
+
+    await client.complete(
+        ModelRequest(model="glm-5.3-flash", messages=[CONVERSATION[0], answer])
+    )
+
+    assert sent_json(route)["messages"][1] == {"role": "assistant", "content": "Hola."}
 
 
 @respx.mock

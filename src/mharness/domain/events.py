@@ -18,6 +18,21 @@ class TextDelta(BaseModel, frozen=True):
     # Names the event in traces (hito 7); nothing parses events from JSON yet.
     type: Literal["text_delta"] = "text_delta"
     text: str
+    # The index of its block in the answer, if the format has blocks
+    # (Anthropic); None joins it to the answer's one text (spec hito 9,
+    # §1.5).
+    block: int | None = None
+
+
+class ReasoningDelta(BaseModel, frozen=True):
+    """A piece of a reasoning block: its text, its signature or, if it was
+    redacted, its encrypted data (spec hito 9, §1.5)."""
+
+    type: Literal["reasoning_delta"] = "reasoning_delta"
+    index: int
+    text: str = ""
+    signature: str | None = None
+    redacted: str | None = None
 
 
 class ToolCallDelta(BaseModel, frozen=True):
@@ -47,4 +62,4 @@ class MessageEnd(BaseModel, frozen=True):
     cost: Usd | None = None
 
 
-type ModelEvent = TextDelta | ToolCallDelta | MessageEnd
+type ModelEvent = TextDelta | ReasoningDelta | ToolCallDelta | MessageEnd

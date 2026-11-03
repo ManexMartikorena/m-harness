@@ -160,7 +160,10 @@ def _with_options(
     }
     limits = TurnLimits.model_validate(settings.limits.model_dump() | given)
     fallback = options.fallback_model or settings.fallback_model
-    return settings.model_copy(update={"limits": limits, "fallback_model": fallback})
+    effort = options.effort or settings.effort
+    return settings.model_copy(
+        update={"limits": limits, "fallback_model": fallback, "effort": effort}
+    )
 
 
 # The application log: diagnosis for whoever maintains maha, never what was
@@ -249,6 +252,14 @@ async def _eval(
         return cli.fail(
             "--save keeps a baseline of the whole battery: drop --split and --only"
         )
+    effort = options.eval_effort or settings.effort
+    if options.save and effort is not None:
+        # A baseline does not say its effort, and the next runs compare
+        # against it (spec hito 9, §5).
+        return cli.fail(
+            "--save keeps a baseline with the model's own effort: drop --effort "
+            "and the effort of the configuration"
+        )
     # load() requires a model for the evals.
     assert settings.model is not None
     suite = TomlEvalSuite(Path(options.tasks), keep=options.keep)
@@ -302,6 +313,7 @@ async def _eval(
                 version=__version__,
                 traces=JsonlTraceSink(run_dir / "traces"),
                 masked=masked,
+                effort=effort,
             )
             conversation = await sessions.start()
             try:
@@ -312,7 +324,7 @@ async def _eval(
     print(
         f"evals: {len(tasks)} tasks · {', '.join(models)} · "
         f"{options.repeat} run{'' if options.repeat == 1 else 's'} each · "
-        f"{options.jobs} at once",
+        f"{options.jobs} at once" + (f" · effort {effort}" if effort else ""),
         flush=True,
     )
     evaluator = Evaluator(suite, open_run, LocalCommandRunner(), env)
@@ -432,6 +444,7 @@ def _sessions(
         # The provider's key and every variable that looks like one never
         # reach a trace (spec hito 7, §1.8).
         masked=known_secrets(os.environ, also=[settings.api_key]),
+        effort=settings.effort,
     )
 
 

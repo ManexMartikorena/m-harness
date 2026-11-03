@@ -1,6 +1,6 @@
 """What the core sends to a model and what it gets back (DESIGN §5)."""
 
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, Field
 
@@ -11,6 +11,12 @@ from mharness.domain.money import Usd
 type StopReason = Literal[
     "end_turn", "max_tokens", "tool_use", "content_filter", "other"
 ]
+
+
+# How hard the model works: the levels both formats take (spec hito 9,
+# §1.7). None: the model's own.
+type Effort = Literal["low", "medium", "high", "xhigh", "max"]
+EFFORTS: tuple[Effort, ...] = get_args(Effort.__value__)
 
 
 class ToolSpec(BaseModel, frozen=True):
@@ -31,6 +37,11 @@ class ModelRequest(BaseModel, frozen=True):
     messages: list[Message]
     # The tools the model may ask to call; none means plain conversation.
     tools: list[ToolSpec] = []
+    # The most tokens of the answer, from the catalog; None: the adapter's
+    # choice (spec hito 9, §1.6).
+    max_tokens: int | None = Field(default=None, gt=0)
+    # None: the model's own (spec hito 9, §1.7).
+    effort: Effort | None = None
 
 
 class Usage(BaseModel, frozen=True):

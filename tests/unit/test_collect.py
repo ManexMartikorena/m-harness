@@ -3,9 +3,16 @@ from decimal import Decimal
 
 import pytest
 
+from mharness.application.collect import Accumulator
 from mharness.domain.errors import ModelResponseError
-from mharness.domain.events import MessageEnd, ModelEvent, TextDelta, ToolCallDelta
-from mharness.domain.messages import Message, TextBlock, ToolCallBlock
+from mharness.domain.events import (
+    MessageEnd,
+    ModelEvent,
+    ReasoningDelta,
+    TextDelta,
+    ToolCallDelta,
+)
+from mharness.domain.messages import Message, ReasoningBlock, TextBlock, ToolCallBlock
 from mharness.domain.model import ModelResponse, Usage
 from tests.fakes.model import collect
 
@@ -129,3 +136,54 @@ async def test_text_and_calls_in_the_same_message() -> None:
 async def test_a_call_without_id_or_name_fails(delta: ToolCallDelta) -> None:
     with pytest.raises(ModelResponseError, match="without its id or name"):
         await collect(events(delta, TOOL_END))
+
+
+# Blocks in the order the model wrote them (spec hito 9, §1.5).
+
+
+async def test_anthropic_blocks_keep_their_order() -> None:
+    # Reasoning, text and calls interleaved, as Anthropic sends them: given
+    # back reordered, the reasoning would not pass its check.
+    response = await collect(
+        events(
+            ReasoningDelta(index=0, text="Pien"),
+            ReasoningDelta(index=0, text="so."),
+            ReasoningDelta(index=0, signature="firma-0"),
+            TextDelta(text="Voy a ", block=1),
+            TextDelta(text="leerlo.", block=1),
+            ToolCallDelta(index=2, id="t1", name="read_file", arguments='{"p'),
+            ToolCallDelta(index=2, arguments='ath": "a"}'),
+            ReasoningDelta(index=3, redacted="cifrado"),
+            ToolCallDelta(index=4, id="t2", name="list_dir", arguments="{}"),
+            TOOL_END,
+        )
+    )
+
+    assert response.message.blocks == [
+        ReasoningBlock(text="Pienso.", signature="firma-0"),
+        TextBlock(text="Voy a leerlo."),
+        ToolCallBlock(id="t1", name="read_file", arguments='{"path": "a"}'),
+        ReasoningBlock(redacted="cifrado"),
+        ToolCallBlock(id="t2", name="list_dir", arguments="{}"),
+    ]
+
+
+async def test_two_text_blocks_stay_two() -> None:
+    response = await collect(
+        events(TextDelta(text="Uno.", block=0), TextDelta(text="Dos.", block=2), END)
+    )
+
+    assert response.message.blocks == [TextBlock(text="Uno."), TextBlock(text="Dos.")]
+
+
+async def test_the_text_so_far_joins_every_text_block() -> None:
+    # What an answer cut by Ctrl+C keeps (spec hito 6, §1.7).
+    accumulator = Accumulator()
+    for event in (
+        TextDelta(text="Uno. ", block=0),
+        ReasoningDelta(index=1, text="pienso"),
+        TextDelta(text="Dos.", block=2),
+    ):
+        accumulator.add(event)
+
+    assert accumulator.text == "Uno. Dos."
