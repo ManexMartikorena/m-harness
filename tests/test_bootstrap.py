@@ -1379,3 +1379,41 @@ def test_the_effort_of_the_command_line_wins_over_the_configuration(
 
     sent = [json.loads(call.request.content) for call in route.calls]
     assert [body["reasoning_effort"] for body in sent] == ["low", "high"]
+
+
+GO_ANTHROPIC = "https://opencode.ai/inference/go/anthropic/v1/messages"
+
+
+@respx.mock
+def test_each_model_goes_to_the_url_of_its_format(
+    workspace: Path, stdin: Callable[[str], None], capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Spec hito 9, §4, test 14: OpenCode Go serves claude-haiku-5-5 in
+    # Anthropic's format and glm-5.3-flash in OpenAI's.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\ncache_ttl = "1h"\n')
+    openai = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("De GLM.", 1, 1))
+    )
+    claude = respx.post(GO_ANTHROPIC).mock(
+        return_value=httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                Path(__file__).parent / "fixtures" / "anthropic" / "hello.sse"
+            ).read_bytes(),
+        )
+    )
+    stdin("")
+
+    assert main(["-p", "Hola"]) == 0
+    assert main(["-p", "Hola", "-m", "claude-haiku-5-5"]) == 0
+
+    assert capsys.readouterr().out == "De GLM.\nHola, Ane.\n"
+    assert openai.call_count == claude.call_count == 1
+    request = claude.calls.last.request
+    body = json.loads(request.content)
+    assert request.headers["authorization"] == f"Bearer {KEY}"
+    assert request.headers["anthropic-version"] == "2026-10-21"
+    assert "x-opencode-session" in request.headers
+    assert (body["model"], body["max_tokens"]) == ("claude-haiku-5-5", 128_000)
+    assert body["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
