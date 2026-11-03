@@ -72,7 +72,7 @@ def test_the_report_of_a_model_without_baseline() -> None:
         "  07-renombrar   0/1   2.0    0.0          3120    $0.0004  2.1 s\n"
         "  train          2/2   100%\n"
         "  validation     0/1   0%\n"
-        "  total          2/3   67%    $0.0012 in all\n"
+        "  total          2/3   67%    ≥$0.0012 in all\n"
         "  provider errors: 1, not counted (--retry-errors runs them again)\n"
     )
 
@@ -187,3 +187,25 @@ def test_each_kind_of_error_says_whose_it_is() -> None:
     assert "  internal errors: 1, not counted (a bug of maha: see runs.json)\n" in (
         text
     )
+
+
+def test_in_all_counts_what_the_runs_with_an_error_cost() -> None:
+    # Deep audit (I8): a run that ended in an error was paid all the same.
+    paid = errored("provider", "503").model_copy(update={"cost": Decimal("0.0002")})
+    out = io.StringIO()
+
+    eval_report([run(), paid], {"glm-5.3-flash": None}, out)
+
+    assert "  total        1/1   100%   $0.0006 in all\n" in out.getvalue()
+
+
+def test_in_all_is_a_minimum_if_a_run_with_an_error_has_no_cost() -> None:
+    out = io.StringIO()
+
+    eval_report(
+        [run(), errored("internal", "OSError: disk full")],
+        {"glm-5.3-flash": None},
+        out,
+    )
+
+    assert "  total        1/1   100%   ≥$0.0004 in all\n" in out.getvalue()

@@ -125,7 +125,7 @@ def _passed(row: Stats) -> str:
 def _total(
     label: str,
     row: Stats,
-    spent: Decimal | None,
+    spent: str | None,
     width: int,
     passed: int,
     out: TextIO,
@@ -133,20 +133,24 @@ def _total(
     rate = "—" if row.success is None else f"{row.success:.0%}"
     line = f"  {label:<{width}}{_passed(row):<{passed}}{rate:<7}"
     if label == "total":
-        line += "cost unknown" if spent is None else f"{usd(spent)} in all"
+        line += "cost unknown" if spent is None else f"{spent} in all"
     print(line.rstrip(), file=out)
 
 
-def _spent(runs: Sequence[TaskRun]) -> Decimal | None:
-    """What the runs that finished cost, all together."""
+def _spent(runs: Sequence[TaskRun]) -> str | None:
+    """What every run cost, all together, also those that ended in an
+    error: they were paid (deep audit, I8). None if a run that finished
+    has no known cost; a minimum (≥) if one with an error has none."""
     total = Decimal(0)
+    unknown = False
     for run in runs:
-        if run.outcome == "error":
-            continue
-        if run.cost is None:
+        if run.cost is not None:
+            total += run.cost
+        elif run.outcome == "error":
+            unknown = True
+        else:
             return None
-        total += run.cost
-    return total
+    return ("≥" if unknown else "") + usd(total)
 
 
 # The API formats maha speaks.
