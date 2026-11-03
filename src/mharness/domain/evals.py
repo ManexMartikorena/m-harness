@@ -234,7 +234,7 @@ def compare(current: dict[str, Stats], baseline: Baseline) -> list[str]:
         if before.finished and now.runs and not now.finished:
             # Nothing to compare: what broke may be the change itself.
             found.append(
-                f"{task}: no run finished, every one was a provider error "
+                f"{task}: no run finished, every one ended in an error "
                 f"({now.errors}/{now.runs})"
             )
         if always and now.finished and now.passes < now.finished:

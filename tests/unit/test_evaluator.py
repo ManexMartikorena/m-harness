@@ -267,3 +267,33 @@ async def test_what_finished_keeps_the_last_try_of_each_run() -> None:
     await subject.run([task()], ["m"], retry_errors=True)
 
     assert [(r.attempt, r.outcome) for r in subject.finished] == [(1, "pass")]
+
+
+async def test_an_internal_error_is_not_run_again() -> None:
+    # Review of the audit of hito 8: a bug of maha comes back on a retry,
+    # and the retry is paid.
+    calls = 0
+
+    def script(t: Task, m: str) -> list[Step]:
+        nonlocal calls
+        calls += 1
+        raise PermissionError("cannot read the fixture")
+
+    seen: list[TaskRun] = []
+    subject, _ = evaluator(script, task())
+
+    [run] = await subject.run([task()], ["m"], retry_errors=True, on_run=seen.append)
+
+    assert (run.reason, calls, len(seen)) == ("internal", 1, 1)
+
+
+async def test_a_check_that_crashes_keeps_what_the_run_spent() -> None:
+    # Review of the audit of hito 8: the run was kept with no tokens and no
+    # cost, though its calls were paid.
+    broken = task(check=Check(command="pytest -q"))
+    subject, _ = evaluator(says("1.4.2", tokens=100), broken, runner=FakeRunner())
+
+    [run] = await subject.run([broken], ["m"])
+
+    assert (run.outcome, run.reason, run.tokens) == ("error", "internal", 100)
+    assert (run.detail or "").startswith("AssertionError: ")

@@ -220,7 +220,7 @@ def test_a_task_with_no_run_finished_is_a_regression() -> None:
     }
 
     assert compare(now, baseline(before)) == [
-        "01: no run finished, every one was a provider error (5/5)"
+        "01: no run finished, every one ended in an error (5/5)"
     ]
 
 

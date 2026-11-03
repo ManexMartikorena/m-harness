@@ -92,7 +92,9 @@ class Evaluator:
             async with limit:
                 run = await self._safe(task, model, attempt)
             self._ended(run, on_run)
-            if run.outcome == "error" and retry_errors:
+            # Only what the provider broke: a bug of maha comes back, and
+            # the retry is paid (review of the audit of hito 8).
+            if run.outcome == "error" and run.reason != "internal" and retry_errors:
                 async with limit:
                     run = await self._safe(task, model, attempt)
                 self._ended(run, on_run)
@@ -138,7 +140,15 @@ class Evaluator:
                 result = await run_once(conversation, task.instruction)
             if result.reason == "error":
                 return _run(task, model, attempt, result, "error", result.error)
-            detail = await self.check(task.check, path, result.text)
+            try:
+                detail = await self.check(task.check, path, result.text)
+            except Exception as exc:
+                # With what the run spent, already paid (review of the
+                # audit of hito 8).
+                broke = f"{type(exc).__name__}: {exc}"
+                return _run(
+                    task, model, attempt, result, "error", broke, reason="internal"
+                )
         outcome: Outcome = "pass" if detail is None else "fail"
         return _run(task, model, attempt, result, outcome, detail)
 
@@ -172,6 +182,8 @@ def _run(
     result: RunResult,
     outcome: Outcome,
     detail: str | None,
+    *,
+    reason: str | None = None,
 ) -> TaskRun:
     return TaskRun(
         task=task.id,
@@ -179,7 +191,7 @@ def _run(
         model=model,
         attempt=attempt,
         outcome=outcome,
-        reason=result.reason,
+        reason=reason or result.reason,
         steps=result.steps,
         tool_calls=result.tool_calls,
         tool_errors=result.tool_errors,
