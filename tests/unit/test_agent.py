@@ -2,6 +2,7 @@
 §4.2), with fakes."""
 
 import asyncio
+import itertools
 from collections.abc import Awaitable, Callable
 from contextlib import aclosing
 from datetime import date
@@ -36,7 +37,7 @@ from mharness.domain.errors import (
 from mharness.domain.events import TextDelta, ToolCallDelta
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
-from mharness.domain.model import Usage
+from mharness.domain.model import ModelRequest, Usage
 from mharness.domain.retry import NO_RETRIES, RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
@@ -1746,3 +1747,49 @@ async def test_the_fallback_asks_for_its_own_longest_answer() -> None:
     await run(agent(fake, catalog=catalog, fallback="respaldo"))
 
     assert [r.max_tokens for r in fake.requests] == [128_000, 8_000]
+
+
+# What goes to the model only grows at the end (spec hito 9, §1.5): an
+# edit invalidates Anthropic's reasoning and its prompt cache.
+
+
+def assert_only_grows(requests: list[ModelRequest]) -> None:
+    for before, after in itertools.pairwise(requests):
+        assert (after.system, after.tools) == (before.system, before.tools)
+        assert after.messages[: len(before.messages)] == before.messages
+
+
+async def test_every_call_of_a_session_starts_with_the_previous_one() -> None:
+    echo = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    again = ToolCallBlock(id="c2", name="echo", arguments='{"text": "y"}')
+    fake = FakeModelClient(
+        [
+            tool_calls(echo, text="Miro."),
+            tool_calls(again),
+            reply("Hecho."),
+            reply("Segunda."),
+        ]
+    )
+    subject = agent(fake, FakeTool())
+
+    await run(subject)
+    await run(subject, "Otra")
+
+    assert len(fake.requests) == 4
+    assert_only_grows(fake.requests)
+    # Each answer is in the next call exactly as it came.
+    assert fake.requests[1].messages[1] == Message(
+        role="assistant", blocks=[TextBlock(text="Miro."), echo]
+    )
+
+
+async def test_a_denied_call_keeps_the_history_growing_at_the_end() -> None:
+    write = FakeTool("write", permission="effect", requests=[ask(tool="write")])
+    call = ToolCallBlock(id="c1", name="write", arguments='{"text": "x"}')
+    fake = FakeModelClient([tool_calls(call), reply("Vale.")])
+    subject = agent(fake, write, gate=FakeApproval(["deny"]))
+
+    await run(subject)
+    await run(subject, "Déjalo")
+
+    assert_only_grows(fake.requests)
