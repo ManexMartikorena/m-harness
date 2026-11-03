@@ -174,6 +174,19 @@ def test_a_user_model_without_prices_has_no_cost(tmp_path: Path) -> None:
     assert info == ModelInfo(provider="ollama", model="qwen-local", context=32_768)
 
 
+def test_a_user_model_says_its_api_and_longest_answer(tmp_path: Path) -> None:
+    # Spec hito 9, §1.1.
+    path = write(
+        tmp_path, '[models."local/claude-x"]\napi = "anthropic"\nmax_output = 64_000\n'
+    )
+
+    info = TomlCatalog.load(path).get("local", "claude-x")
+
+    assert info == ModelInfo(
+        provider="local", model="claude-x", api="anthropic", max_output=64_000
+    )
+
+
 def test_a_model_id_may_hold_a_slash(tmp_path: Path) -> None:
     path = write(tmp_path, '[models."openrouter/anthropic/claude-x"]\n')
 
@@ -236,6 +249,8 @@ def test_an_unreadable_user_file_is_an_error(tmp_path: Path) -> None:
             '[models."ollama/x"]\ninput = "1.5"\noutput = 1\nchecked = 2026-10-27\n',
             r'models\."ollama/x"\.input: .*number, not text',
         ),
+        ('[models."ollama/x"]\napi = "Anthropic"\n', r'models\."ollama/x"\.api'),
+        ('[models."ollama/x"]\nmax_output = 0\n', "greater than 0"),
         ('[models." ollama/x"]\n', "no spaces"),
         ('[models."ollama/qwen local"]\n', "no spaces"),
     ],

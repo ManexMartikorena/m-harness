@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field, model_validator
 from mharness.domain.model import Usage
 
 _MILLION = 1_000_000
+# The name of an API format: lowercase words joined by hyphens.
+API_NAME = r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
 
 
 class _Rates(BaseModel, frozen=True):
@@ -56,6 +58,11 @@ class ModelInfo(BaseModel, frozen=True):
     model: str
     # Context window, in tokens; None: unknown.
     context: int | None = Field(default=None, gt=0)
+    # The API format it speaks ("openai-chat", "anthropic", or one that maha
+    # does not speak yet); None: the provider's (spec hito 9, §1.1).
+    api: str | None = Field(default=None, pattern=API_NAME)
+    # The most tokens one answer may have; None: unknown (spec hito 9, §1.6).
+    max_output: int | None = Field(default=None, gt=0)
     # None: unknown, and no cost is shown.
     prices: Prices | None = None
     # The provider may use the conversation to train (ANALISIS §9).
