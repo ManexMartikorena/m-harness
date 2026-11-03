@@ -109,3 +109,25 @@ def test_the_report_marks_the_regressions_against_the_baseline() -> None:
     assert "glm-5.3-flash · baseline 2026-10-27 (a3eb2c7, 5 runs each)\n" in text
     assert "  ⚠ 01-version: passed every time in the baseline, now 1/2\n" in text
     assert "  ⚠ success rate: 100% in the baseline, now 50%\n" in text
+
+
+def test_an_internal_error_is_not_said_to_be_the_provider() -> None:
+    crashed = TaskRun(
+        task="02",
+        split="train",
+        model="m",
+        attempt=1,
+        outcome="error",
+        reason="internal",
+        steps=0,
+        tool_calls=0,
+        tool_errors=0,
+        tokens=0,
+        cost=None,
+        duration=0.0,
+        detail="PermissionError: cannot read the fixture",
+    )
+
+    assert run_line(crashed) == (
+        "  ! 02 · m #1 · internal: PermissionError: cannot read the fixture"
+    )

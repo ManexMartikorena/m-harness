@@ -113,7 +113,7 @@ class TurnFinished(BaseModel, frozen=True):
     usage: Usage
     # Calls handled by the loop; not those skipped after a denial.
     tool_calls: int
-    # Calls to the model in the turn.
+    # Calls to the model in the turn that ended; not one cut by a limit.
     steps: int
     # Summed over its calls; None if one of them has no price.
     cost: Usd | None

@@ -19,7 +19,7 @@ from mharness.domain.session import Session
 from tests.adapters.test_print_mode import Terminal
 from tests.fakes.model import FakeModelClient, reply
 from tests.fakes.sessions import MemorySessionStore
-from tests.unit.test_sessions import FIRST, NOW, World, turn
+from tests.unit.test_sessions import FIRST, NOW, World, exported, turn
 
 HOME = Path("/home/ana")
 
@@ -239,3 +239,27 @@ async def test_import_of_a_file_that_does_not_exist(tmp_path: Path) -> None:
     assert err.getvalue() == (
         f"error: cannot read {tmp_path / 'no.json'}: No such file or directory\n"
     )
+
+
+async def test_stats_with_more_days_than_the_calendar_has_is_every_day() -> None:
+    # Audit of hito 8: --days 1000000 crashed with an OverflowError.
+    world = await with_a_session("Hola.")
+    out, err = io.StringIO(), io.StringIO()
+
+    code = await show_stats(
+        world.traces, days=10**9, today=NOW.astimezone().date(), out=out, err=err
+    )
+
+    assert (code, err.getvalue()) == (0, "")
+    assert "fake-model" in out.getvalue()
+
+
+async def test_trace_without_a_trace_names_no_file() -> None:
+    # Audit of hito 8: an imported session has no trace.
+    world = World(MemorySessionStore(), FakeModelClient([]), tokens=["9abc"])
+    new = await world.sessions.import_session(await exported("Hola."))
+    out, err = io.StringIO(), io.StringIO()
+
+    assert await show_trace(world.sessions, new, out=out, err=err, home=HOME) == 0
+
+    assert (out.getvalue(), err.getvalue()) == ("(no trace for this session)\n", "")

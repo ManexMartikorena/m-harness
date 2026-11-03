@@ -443,7 +443,7 @@ async def test_cancelling_during_the_only_call_keeps_it_as_cancelled() -> None:
 async def test_cancelling_while_asking_after_a_run_keeps_the_turn() -> None:
     # D3: the call being approved was cancelled; the next one did not run.
     echo = FakeTool("echo")
-    write = FakeTool("write", permission="effect", requests=[ask()])
+    write = FakeTool("write", permission="effect", requests=[ask(tool="write")])
     calls = [call("c1"), call("c2", name="write"), call("c3")]
     fake = FakeModelClient([tool_calls(*calls)])
     gate = HangingApproval()
@@ -484,7 +484,7 @@ async def test_an_unexpected_error_after_a_run_keeps_the_turn() -> None:
     # Any exception, not only the expected ones (spec
     # mejora-2026-10-23-deuda-hito-5, E4): the model must know what ran.
     echo = FakeTool("echo")
-    write = FakeTool("write", permission="effect", requests=[ask()])
+    write = FakeTool("write", permission="effect", requests=[ask(tool="write")])
     calls = [call("c1"), call("c2", name="write"), call("c3")]
     fake = FakeModelClient([tool_calls(*calls)])
     subject = Agent(
@@ -509,7 +509,7 @@ async def test_an_unexpected_error_after_a_run_keeps_the_turn() -> None:
 
 
 async def test_cancelling_while_asking_before_any_run_keeps_nothing() -> None:
-    write = FakeTool("write", permission="effect", requests=[ask()])
+    write = FakeTool("write", permission="effect", requests=[ask(tool="write")])
     fake = FakeModelClient([tool_calls(call("c1", name="write"))])
     gate = HangingApproval()
     subject = Agent(
@@ -568,7 +568,7 @@ async def test_turn_is_kept_when_the_caller_stops_at_the_end() -> None:
 async def test_closing_the_loop_after_a_denial_keeps_the_denial() -> None:
     calls = [call("c1"), call("c2", name="write"), call("c3")]
     fake = FakeModelClient([tool_calls(*calls)])
-    write = FakeTool("write", permission="effect", requests=[ask()])
+    write = FakeTool("write", permission="effect", requests=[ask(tool="write")])
     subject = agent(fake, FakeTool("echo"), write, gate=FakeApproval(["deny"]))
 
     async with aclosing(subject.run("Hola")) as events:
@@ -589,8 +589,8 @@ async def test_closing_the_loop_after_a_denial_keeps_the_denial() -> None:
 # The loop asks before running a call (spec hito 5, §1.2 and §1.4).
 
 
-def ask(scope: str | None = "echo") -> ApprovalRequest:
-    return ApprovalRequest(tool="echo", title="echo Hola", detail="", scope=scope)
+def ask(scope: str | None = "echo", *, tool: str = "echo") -> ApprovalRequest:
+    return ApprovalRequest(tool=tool, title=f"{tool} Hola", detail="", scope=scope)
 
 
 def finished(events: list[AgentEvent]) -> list[ToolFinished]:
@@ -1258,8 +1258,10 @@ async def test_the_time_limit_while_the_model_answers_keeps_nothing_new() -> Non
 
     events = await run(subject)
 
+    # No call to the model ended: 0 steps, as `run_once()` and /trace count
+    # them (audit of hito 8).
     assert events[-1] == TurnFinished(
-        reason="timeout", usage=Usage(), tool_calls=0, steps=1, cost=Decimal(0)
+        reason="timeout", usage=Usage(), tool_calls=0, steps=0, cost=Decimal(0)
     )
     # Nothing ran: the user writes again, as after Ctrl+C. The half answer
     # is not kept: its mark would say the user cut it.
@@ -1496,9 +1498,42 @@ async def test_a_retry_in_a_later_step_keeps_the_turn_so_far() -> None:
     assert fake.requests[1] == fake.requests[2]
 
 
-async def test_the_time_limit_cuts_the_wait() -> None:
+async def test_the_time_limit_in_a_retry_ends_with_the_provider_error() -> None:
+    # The provider kept failing until the limit: that is the error, not the
+    # limit; an eval counts it as the provider's (audit of hito 8; spec
+    # §12.9).
     subject = agent(
         FakeModelClient([ModelUnavailableError("down")]),
+        limits=TurnLimits(timeout=0.05),
+        retry=RetryPolicy(base_delay=60.0),
+    )
+
+    with pytest.raises(ModelUnavailableError, match="down"):
+        await run(subject)
+
+    assert subject.messages == ()
+
+
+async def test_the_time_limit_in_a_retry_keeps_what_ran() -> None:
+    echo = FakeTool()
+    subject = agent(
+        FakeModelClient([tool_calls(call("c1")), ModelUnavailableError("down")]),
+        echo,
+        limits=TurnLimits(timeout=0.05),
+        retry=RetryPolicy(base_delay=60.0),
+    )
+
+    with pytest.raises(ModelUnavailableError):
+        await run(subject)
+
+    # The call that ran is in the history, with its result.
+    assert [m.role for m in subject.messages] == ["user", "assistant", "tool"]
+
+
+async def test_the_time_limit_on_a_slow_answer_is_still_a_time_limit() -> None:
+    # No failure before: the model was just slow.
+    subject = agent(
+        FakeModelClient([[HANG]]),
         limits=TurnLimits(timeout=0.05),
         retry=RetryPolicy(base_delay=60.0),
     )
@@ -1508,7 +1543,6 @@ async def test_the_time_limit_cuts_the_wait() -> None:
     finished = events[-1]
     assert isinstance(finished, TurnFinished)
     assert finished.reason == "timeout"
-    assert subject.messages == ()
 
 
 async def test_ctrl_c_cuts_the_wait() -> None:
@@ -1625,3 +1659,41 @@ async def test_the_fallback_is_priced_as_itself() -> None:
     finished = events[-1]
     assert isinstance(finished, TurnFinished)
     assert finished.cost == Decimal("2")
+
+
+async def test_a_long_retry_after_goes_to_the_fallback_at_once() -> None:
+    fake = FakeModelClient(
+        [ModelRateLimitError("HTTP 429", retry_after=3600.0), reply("Hola.")]
+    )
+    waits = Waits()
+
+    events = await run(agent(fake, retry=RETRY, sleep=waits, fallback=FALLBACK))
+
+    assert (waits.asked, retries(events)) == ([], [])
+    assert [request.model for request in fake.requests] == [MODEL, FALLBACK]
+
+
+async def test_a_request_in_the_name_of_another_tool_never_runs() -> None:
+    # Audit of hito 8: the gate trusts the tool named in the request; a tool
+    # (an MCP one, later) could ask under the name of an allowed one.
+    sly = FakeTool(
+        name="echo",
+        permission="effect",
+        requests=[
+            ApprovalRequest(tool="read_file", title="read", detail="", scope="x")
+        ],
+    )
+    gate = FakeApproval(["once"])
+    subject = agent(
+        FakeModelClient([tool_calls(call("c1")), reply("No.")]), sly, gate=gate
+    )
+
+    events = await run(subject)
+
+    finished = [e for e in events if isinstance(e, ToolFinished)]
+    assert finished[0].result.is_error
+    assert finished[0].internal_error == (
+        'approval request names "read_file", not "echo"'
+    )
+    assert gate.requests == []
+    assert sly.calls == []

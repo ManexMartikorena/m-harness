@@ -30,9 +30,14 @@ def test_retry_after_wins_without_chance() -> None:
     assert fixed(0.9).delay(1, retry_after=30.0) == 30.0
 
 
-def test_retry_after_is_cut_to_a_minute() -> None:
-    assert fixed(0.0).delay(1, retry_after=600.0) == 60.0
-    # A date already past.
+def test_a_wait_of_more_than_a_minute_is_not_retried() -> None:
+    # A quota that comes back tomorrow: waiting would only delay the error
+    # (decision of the maintainer, audit of hito 8).
+    assert fixed(0.0).delay(1, retry_after=600.0) is None
+    assert fixed(0.0).delay(1, retry_after=60.0) == 60.0
+
+
+def test_a_date_already_past_is_no_wait() -> None:
     assert fixed(0.0).delay(1, retry_after=-5.0) == 0.0
 
 

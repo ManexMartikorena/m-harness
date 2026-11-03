@@ -106,13 +106,13 @@ class TomlEvalSuite:
             except (OSError, ValidationError) as exc:
                 raise EvalError(f"cannot read the baseline {path}: {exc}") from None
             if (baseline.provider, baseline.model) == (provider, model):
-                found.append((baseline.date, path.name, baseline))
+                found.append((baseline.date, _number(path, baseline), baseline))
         return max(found, key=lambda item: item[:2])[2] if found else None
 
     def _save(self, baseline: Baseline) -> str:
         folder = self._root / "baselines"
         folder.mkdir(parents=True, exist_ok=True)
-        stem = f"{baseline.date}-{baseline.provider}-{baseline.model}".replace("/", "_")
+        stem = _stem(baseline)
         path = folder / f"{stem}.json"
         number = 1
         while path.exists():
@@ -123,6 +123,21 @@ class TomlEvalSuite:
             return str(path.relative_to(Path.cwd()))
         except ValueError:
             return str(path)
+
+
+def _stem(baseline: Baseline) -> str:
+    return f"{baseline.date}-{baseline.provider}-{baseline.model}".replace("/", "_")
+
+
+def _number(path: Path, baseline: Baseline) -> int:
+    """Which of the baselines of its day it is: `STEM.json` is 1, and
+    `STEM-N.json`, N. Not by the name: "…-flash.json" sorts after
+    "…-flash-2.json" (audit of hito 8). A name of another form, 0."""
+    stem = _stem(baseline)
+    if path.stem == stem:
+        return 1
+    number = path.stem.removeprefix(f"{stem}-")
+    return int(number) if number != path.stem and number.isdigit() else 0
 
 
 def _limits(table: Any) -> TurnLimits:

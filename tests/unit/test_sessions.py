@@ -79,7 +79,7 @@ class World:
         *,
         cwd: str = CWD,
         provider: str = "opencode-go",
-        model: str = "glm-5.3-flash",
+        model: str | None = "glm-5.3-flash",
         tools: Sequence[FakeTool] = (),
         gate: FakeApproval | None = None,
         tokens: Sequence[str] = ("3fa2", "b01c", "c0de"),
@@ -1427,7 +1427,7 @@ async def test_an_import_never_takes_an_id_in_use() -> None:
 
 
 async def test_an_import_keeps_the_turns_without_a_price() -> None:
-    session = (await exported("Uno.")).model_copy(update={"uncosted_turns": 2})
+    session = (await exported("Uno.", "Dos.")).model_copy(update={"uncosted_turns": 2})
     store = MemorySessionStore()
     world = World(store, FakeModelClient([]), tokens=["9abc"])
 
@@ -1466,3 +1466,109 @@ async def test_an_import_that_cannot_be_saved_leaves_nothing(
         await World(store, FakeModelClient([])).sessions.import_session(session)
 
     assert store.sessions == {}
+
+
+# Without a model: the commands that never call it (audit of hito 8).
+
+
+async def test_without_a_model_a_conversation_cannot_start() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]), model=None)
+
+    with pytest.raises(SessionError, match="no model configured"):
+        await world.sessions.start()
+    # A model of its own is enough.
+    assert (await world.sessions.start("kimi-k3")).model == "kimi-k3"
+
+
+async def test_without_a_model_sessions_are_listed_traced_and_deleted() -> None:
+    store = MemorySessionStore()
+    first = World(store, FakeModelClient([reply("Hola.")]))
+    conversation = await first.sessions.start()
+    await turn(conversation, "Hola")
+    await conversation.close()
+    world = World(store, FakeModelClient([]), model=None, traces=first.traces)
+
+    assert [s.id for s in await world.sessions.summaries()] == [FIRST]
+    assert (await world.sessions.trace(FIRST)).summary.turns
+    await world.sessions.delete(FIRST)
+    assert store.sessions == {}
+
+
+async def test_a_trace_without_a_session_nor_a_conversation_is_an_error() -> None:
+    world = World(MemorySessionStore(), FakeModelClient([]))
+
+    with pytest.raises(TraceError, match="which session"):
+        await world.sessions.trace(None)
+
+
+async def test_an_import_takes_a_turn_that_kept_no_message() -> None:
+    # Review of the audit of hito 8: a call that ended in a tool call that
+    # never ran, and then a failure, keeps no message but is an unpriced
+    # turn. An export of maha itself must import.
+    store = MemorySessionStore()
+    fake = FakeModelClient(
+        [
+            reply("Hola."),
+            tool_calls(ToolCallBlock(id="c1", name="nope", arguments="{}")),
+            ModelUnavailableError("down"),
+        ]
+    )
+    conversation = await World(store, fake).sessions.start()
+    await turn(conversation, "A")
+    with pytest.raises(ModelUnavailableError):
+        await turn(conversation, "B")
+    await conversation.close()
+    session = Session.model_validate_json((await store.read(FIRST)).model_dump_json())
+    assert session.uncosted_turns == 2
+    other = MemorySessionStore()
+    world = World(other, FakeModelClient([]), tokens=["9abc"])
+
+    new = await world.sessions.import_session(session)
+
+    assert (await other.read(new)).uncosted_turns == 2
+
+
+async def test_an_import_writes_its_unpriced_turns_in_one_entry() -> None:
+    # Audit of hito 8: a crafted export with uncosted_turns = 10**8 wrote
+    # that many lines and took the whole memory of WSL. Five tell it, and
+    # are safe to run without the fix.
+    session = (await exported("Uno.")).model_copy(update={"uncosted_turns": 5})
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([]), tokens=["9abc"])
+
+    new = await world.sessions.import_session(session)
+
+    usages = [e for e in entries(store, new) if isinstance(e, UsageEntry)]
+    assert [e.turns for e in usages if e.cost is None] == [5]
+    assert (await store.read(new)).uncosted_turns == 5
+
+
+def test_a_negative_count_of_unpriced_turns_is_refused() -> None:
+    session = Session(
+        header=SessionHeader(
+            id=FIRST, created_at=NOW, cwd=CWD, provider="p", model="m", maha="0"
+        ),
+        messages=[],
+        model="m",
+        usage=Usage(),
+    )
+
+    with pytest.raises(ValueError, match="uncosted_turns"):
+        Session.model_validate({**session.model_dump(), "uncosted_turns": -1})
+
+
+async def test_trace_of_an_imported_session_names_no_file() -> None:
+    # Audit of hito 8: the import creates no trace, and /trace named a
+    # file that did not exist.
+    world = World(MemorySessionStore(), FakeModelClient([]), tokens=["9abc"])
+    new = await world.sessions.import_session(await exported("Uno."))
+
+    report = await world.sessions.trace(new)
+
+    assert (report.summary.turns, report.location) == ([], None)
+
+
+def test_a_usage_entry_of_one_turn_is_written_as_before() -> None:
+    # The lines of every turn stay as in 0.8.0; only an import says more.
+    assert "turns" not in UsageEntry(usage=Usage()).model_dump(mode="json")
+    assert UsageEntry(usage=Usage(), turns=3).model_dump(mode="json")["turns"] == 3

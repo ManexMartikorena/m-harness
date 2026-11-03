@@ -42,7 +42,7 @@ from mharness.adapters.cli.conversation import (
 )
 from mharness.adapters.cli.input import InputTooLarge, ReadAll
 from mharness.adapters.cli.text import clean
-from mharness.application.headless import RunResult, instruction, run_once
+from mharness.application.headless import RunResult, TurnBroke, instruction, run_once
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.domain.agent_events import (
     AgentEvent,
@@ -53,6 +53,7 @@ from mharness.domain.agent_events import (
     ToolFinished,
     TurnFinished,
 )
+from mharness.domain.model import Usage
 from mharness.domain.session import SessionError
 from mharness.ports.catalog import ModelCatalog
 
@@ -116,7 +117,7 @@ async def print_mode(
     except BrokenPipeError:
         # Nobody reads stdout any more (`maha -p … | head -1`): what is left
         # is dropped, as is Python's last flush, which would print a trace.
-        _drop(out)
+        drop_output(out)
         return EXIT_ERROR
     finally:
         for number in (signal.SIGINT, *CLOSING):
@@ -150,22 +151,23 @@ async def _print(
     try:
         piped = None if read_all is None else await read_all(MAX_INPUT)
     except InputTooLarge as exc:
-        print(f"error: {exc}", file=err, flush=True)
-        return EXIT_ERROR
+        return _failed(str(exc), EXIT_ERROR, out, shown)
     text = instruction(prompt, piped)
     if not text.strip():
-        print(
-            'error: -p needs an instruction: maha -p "…", or pipe it to maha -p',
-            file=err,
-            flush=True,
+        return _failed(
+            '-p needs an instruction: maha -p "…", or pipe it to maha -p',
+            EXIT_USAGE,
+            out,
+            shown,
         )
-        return EXIT_USAGE
     try:
         opened = await sessions.open(start)
     except SessionError as exc:
-        print(f"error: {clean(str(exc))}", file=err, flush=True)
-        return EXIT_ERROR
+        return _failed(clean(str(exc)), EXIT_ERROR, out, shown)
     conversation = opened.conversation
+    # A bug, or the disk failing: what broke, and what the turn spent.
+    broke: str | None = None
+    spent: RunResult | None = None
     try:
         if opened.resumed is not None:
             for line in resumed_notes(opened.resumed, sessions.cwd, shown.home):
@@ -181,15 +183,25 @@ async def _print(
         raise
     except BrokenPipeError:
         raise
+    except TurnBroke as exc:
+        if isinstance(exc.__cause__, BrokenPipeError):
+            # Writing an event: nobody reads stdout any more.
+            raise exc.__cause__ from None
+        broke, spent = exc.result.error, exc.result
     except Exception as exc:
-        # A bug, or the disk failing: the turn kept what ran.
-        detail = clean(f"{type(exc).__name__}: {exc}")
-        print(f"error: internal: {detail}", file=err, flush=True)
-        return EXIT_ERROR
+        broke = f"{type(exc).__name__}: {exc}"
     finally:
         await conversation.close()
         warn_unsaved(conversation, err)
         warn_trace(conversation, err)
+    if broke is not None:
+        # The turn kept what ran. The id once closed: closing may be what
+        # saved it (review of the audit of hito 8).
+        session = conversation.id if conversation.stored else None
+        trace = conversation.id if conversation.exists else None
+        return _failed(
+            f"internal: {clean(broke)}", EXIT_ERROR, out, shown, session, trace, spent
+        )
     if shown.output_format == "text":
         _answer(result.text, out)
         if result.error is not None:
@@ -197,6 +209,53 @@ async def _print(
     else:
         _json_line(result_object(result), out)
     return exit_code(result)
+
+
+def _failed(
+    error: str,
+    code: int,
+    out: TextIO,
+    shown: _Shown,
+    session: str | None = None,
+    trace: str | None = None,
+    spent: RunResult | None = None,
+) -> int:
+    """A failure before or around the turn: on stderr, and in `json` and
+    `stream-json` also as their `result`, so that a script reading stdout
+    gets one (audit of hito 8). `error` is already clean; `spent`, what a
+    turn that broke ran and spent."""
+    print(f"error: {error}", file=shown.err, flush=True)
+    if shown.output_format != "text":
+        if spent is None:
+            _json_line(failure_object(error, session, trace), out)
+        else:
+            update = {"session": session, "trace": trace, "error": error}
+            _json_line(result_object(spent.model_copy(update=update)), out)
+    return code
+
+
+def failure_object(
+    error: str, session: str | None = None, trace: str | None = None
+) -> dict[str, Any]:
+    """The `result` of a run that did not get to its turn, or broke in it:
+    the names of `result_object()`, with nothing spent that is known."""
+    return {
+        "type": "result",
+        "session_id": session,
+        "trace_id": trace,
+        "result": "",
+        "reason": "error",
+        "is_error": True,
+        "steps": 0,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "denials": [],
+        "usage": Usage().model_dump(mode="json"),
+        "cost_usd": None,
+        "duration_s": 0.0,
+        "model": None,
+        "error": error,
+    }
 
 
 def exit_code(result: RunResult) -> int:
@@ -220,6 +279,7 @@ def result_object(result: RunResult) -> dict[str, Any]:
     return {
         "type": "result",
         "session_id": data["session"],
+        "trace_id": data["trace"],
         "result": data["text"],
         "reason": data["reason"],
         "is_error": result.reason != "end_turn",
@@ -301,8 +361,9 @@ class _Progress:
                 err.flush()
 
 
-def _drop(out: TextIO) -> None:
-    """Point `out` at /dev/null, if it has a descriptor."""
+def drop_output(out: TextIO) -> None:
+    """Point `out` at /dev/null, if it has a descriptor: what is left is
+    dropped, and so is Python's last flush, which would print a trace."""
     try:
         fd = out.fileno()
         devnull = os.open(os.devnull, os.O_WRONLY)

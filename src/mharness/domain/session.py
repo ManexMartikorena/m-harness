@@ -65,6 +65,9 @@ class UsageEntry(BaseModel, frozen=True):
     usage: Usage
     # None without prices, and in the sessions of hito 6.
     cost: Usd | None = None
+    # How many turns it stands for: one, but an import writes the turns
+    # without a price in a single entry (audit of hito 8).
+    turns: int = Field(default=1, ge=1, exclude_if=lambda turns: turns == 1)
 
 
 class ModelEntry(BaseModel, frozen=True):
@@ -91,7 +94,7 @@ class Session(BaseModel, frozen=True):
     usage: Usage
     # The sum of the turns with a cost, in USD, and how many had none.
     cost: Usd = Decimal(0)
-    uncosted_turns: int = 0
+    uncosted_turns: int = Field(default=0, ge=0)
 
 
 class SessionSummary(BaseModel, frozen=True):
@@ -171,10 +174,10 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
                 messages.append(message)
             case ModelEntry(model=changed):
                 model = changed
-            case UsageEntry(usage=more, cost=spent):
+            case UsageEntry(usage=more, cost=spent, turns=turns):
                 usage += more
                 if spent is None:
-                    uncosted += 1
+                    uncosted += turns
                 else:
                     cost += spent
     check_history(messages)

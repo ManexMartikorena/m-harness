@@ -208,3 +208,27 @@ def test_provider_errors_are_not_failures() -> None:
     now = {"01": stats([run()] * 3 + [run(outcome="error")] * 2)}
 
     assert compare(now, baseline(before)) == []
+
+
+def test_a_task_with_no_run_finished_is_a_regression() -> None:
+    # Audit of hito 8: a change that makes the provider refuse every call
+    # (a broken tool schema) left nothing to compare and passed the gate.
+    before = {"01": stats([run()] * 5), "02": stats([run("02")] * 5)}
+    now = {
+        "01": stats([run(outcome="error")] * 5),
+        "02": stats([run("02")] * 5),
+    }
+
+    assert compare(now, baseline(before)) == [
+        "01: no run finished, every one ended in an error (5/5)"
+    ]
+
+
+def test_a_cost_that_cannot_be_compared_is_said() -> None:
+    # Audit of hito 8: it was skipped in silence.
+    before = {"01": stats([run()] * 5)}
+    now = {"01": stats([run(cost=None)] * 5)}
+
+    assert compare(now, baseline(before)) == [
+        "cost per run: unknown now (a run had no price), $0.0010 in the baseline"
+    ]

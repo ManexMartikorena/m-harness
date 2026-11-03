@@ -4,6 +4,7 @@
 so the evals measure exactly what `-p` does.
 """
 
+import re
 import time
 from collections.abc import Callable
 from contextlib import aclosing
@@ -33,7 +34,13 @@ type Reason = Literal[
 
 
 class RunResult(BaseModel, frozen=True):
-    session: str
+    # None if the run kept nothing: there is no session to resume (audit of
+    # hito 8).
+    session: str | None
+    # The id of its trace, if it has one: where `maha trace` finds what
+    # happened, also in a run that kept nothing (review of the audit of
+    # hito 8).
+    trace: str | None
     # The final answer: the text of the last call to the model.
     text: str
     reason: Reason
@@ -55,6 +62,12 @@ class RunResult(BaseModel, frozen=True):
     error: str | None
 
 
+# What could pass for the closing tag of the block: any case, spaces, what
+# follows the name, and the full-width "<" and "/" (review of the audit of
+# hito 8).
+_CLOSING = re.compile(r"[<\uff1c]\s*[/\uff0f]\s*(stdin)", re.IGNORECASE)
+
+
 def instruction(text: str, piped: str | None) -> str:
     """What `maha -p` asks (spec hito 8, §1.10): `text`, and below it what
     was piped, between delimiters, because it is data and not the user's
@@ -63,8 +76,18 @@ def instruction(text: str, piped: str | None) -> str:
         return text
     if not text.strip():
         return piped
-    data = piped.removesuffix("\n")
+    # What was piped cannot close its own block (audit of hito 8).
+    data = _CLOSING.sub(lambda found: "<\\/" + found.group(1), piped.removesuffix("\n"))
     return f"{text}\n\n<stdin>\n{data}\n</stdin>"
+
+
+class TurnBroke(Exception):
+    """A bug, or the disk failing, in the middle of a turn. `result` is what
+    the turn ran and spent until then (review of the audit of hito 8)."""
+
+    def __init__(self, result: RunResult) -> None:
+        super().__init__(result.error)
+        self.result = result
 
 
 async def run_once(
@@ -75,7 +98,7 @@ async def run_once(
     """Run one turn of `conversation` with `text` and sum it up; `on_event`
     sees each event as it comes. A failed call to the model is an `error`
     result, with what the turn kept saved; anything else that fails is a
-    bug, and goes up."""
+    bug, and goes up as `TurnBroke`, with what the turn spent."""
     started = time.monotonic()
     # The text of the call in progress, and of the last one that ended.
     current: list[str] = []
@@ -90,6 +113,24 @@ async def run_once(
     tool_calls = 0
     reason: Reason = "error"
     error: str | None = None
+
+    def summed(reason: Reason, error: str | None) -> RunResult:
+        return RunResult(
+            session=conversation.id if conversation.stored else None,
+            trace=conversation.id if conversation.exists else None,
+            text=answer,
+            reason=reason,
+            steps=steps,
+            tool_calls=tool_calls,
+            tool_errors=tool_errors,
+            denials=denials,
+            usage=usage,
+            cost=cost,
+            duration=time.monotonic() - started,
+            model=model,
+            error=error,
+        )
+
     try:
         async with aclosing(conversation.run(text)) as events:
             async for event in events:
@@ -116,17 +157,6 @@ async def run_once(
                     reason = event.reason
     except ModelError as exc:
         error = str(exc)
-    return RunResult(
-        session=conversation.id,
-        text=answer,
-        reason=reason,
-        steps=steps,
-        tool_calls=tool_calls,
-        tool_errors=tool_errors,
-        denials=denials,
-        usage=usage,
-        cost=cost,
-        duration=time.monotonic() - started,
-        model=model,
-        error=error,
-    )
+    except Exception as exc:
+        raise TurnBroke(summed("error", f"{type(exc).__name__}: {exc}")) from exc
+    return summed(reason, error)

@@ -332,6 +332,8 @@ def warn_unsaved(conversation: Conversation, err: TextIO) -> None:
 
 def trace_lines(report: TraceReport, home: Path) -> list[str]:
     """A row per turn, the total and where the whole trace is."""
+    if report.location is None:
+        return ["(no trace for this session)"]
     summary = report.summary
     lines = _summary_lines(summary) if summary.turns else ["(no turns in the trace)"]
     return [*lines, f"[trace: {shown_dir(report.location, home)}]"]

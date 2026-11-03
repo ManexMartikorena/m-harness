@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import os
+import signal
 import stat
 from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
@@ -1191,3 +1192,110 @@ def test_what_calls_the_model_still_needs_the_key(
     assert main(args) == 1
 
     assert "OPENCODE_API_KEY is not set" in capsys.readouterr().err
+
+
+@respx.mock
+@pytest.mark.parametrize("args", [["sessions"], ["stats"], ["models", "--all"]])
+def test_commands_that_do_not_call_the_model_need_no_model(
+    workspace: Path, capsys: pytest.CaptureFixture[str], args: list[str]
+) -> None:
+    # Found in the audit of hito 8: without `model`, `maha sessions` did not
+    # start. Without a configuration file at all, too.
+    assert main(args) == 0
+
+    assert "no model configured" not in capsys.readouterr().err
+
+
+@respx.mock
+def test_trace_and_export_without_a_model_still_work(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    session = a_print_session(stdin)
+    (workspace / "xdg" / "maha" / "config.toml").write_text("", encoding="utf-8")
+
+    assert main(["trace", session]) == 0
+    assert main(["export", session]) == 0
+    assert main(["sessions", "delete", session]) == 0
+    assert "no model configured" not in capsys.readouterr().err
+
+
+def test_what_calls_the_model_still_needs_a_model(
+    workspace: Path,
+    stdin: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    stdin("")
+
+    assert main(["-p", "Hola"]) == 1
+
+    assert "no model configured" in capsys.readouterr().err
+
+
+def test_ctrl_c_in_eval_keeps_the_runs_that_finished(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Audit of hito 8: Ctrl+C lost every run, paid calls included, behind a
+    # Python traceback.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    calls = 0
+
+    def answer(request: httpx.Request) -> respx.MockResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            # As a person pressing Ctrl+C during the second run.
+            os.kill(os.getpid(), signal.SIGINT)
+        return sse_response(streamed("Es la 1.4.2.", 1000, 10))
+
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(side_effect=answer)
+
+        code = main(["eval", "--tasks", str(evals), "--repeat", "2", "--jobs", "1"])
+
+    assert code == 130
+    err = capsys.readouterr().err
+    assert "interrupted: 1 run kept in " in err
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    [kept] = json.loads((folder / "runs.json").read_text())
+    assert (kept["attempt"], kept["outcome"]) == (1, "pass")
+
+
+@pytest.mark.parametrize("output_format", ["json", "stream-json"])
+def test_p_in_json_without_key_still_writes_a_result(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    output_format: str,
+) -> None:
+    # Review of the audit of hito 8: an error of the configuration left
+    # `| jq .result` with nothing to read.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.delenv("OPENCODE_API_KEY")
+
+    code = main(["-p", "hola", "--output-format", output_format])
+
+    out, err = capsys.readouterr()
+    result = json.loads(out)
+    assert code == 1
+    assert (result["type"], result["is_error"]) == ("result", True)
+    assert "OPENCODE_API_KEY is not set" in result["error"]
+    assert "OPENCODE_API_KEY is not set" in err
+
+
+def test_p_in_text_without_key_writes_nothing_on_stdout(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.delenv("OPENCODE_API_KEY")
+
+    assert main(["-p", "hola"]) == 1
+    assert capsys.readouterr().out == ""

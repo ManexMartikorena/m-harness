@@ -13,7 +13,7 @@ from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Literal
 
-from mharness.application.headless import RunResult, run_once
+from mharness.application.headless import RunResult, TurnBroke, run_once
 from mharness.application.sessions import Conversation
 from mharness.domain.evals import Check, EvalError, Outcome, Task, TaskRun
 from mharness.ports.commands import CommandRunner
@@ -60,6 +60,18 @@ class Evaluator:
         self._runner = runner
         # The variables of the check command, as for any command of maha.
         self._env = env
+        # Each run as it ends, its last try: a retry replaces the error it
+        # repeats (review of the audit of hito 8).
+        self._finished: dict[tuple[str, str, int], TaskRun] = {}
+
+    @property
+    def finished(self) -> list[TaskRun]:
+        """The runs that ended so far, one per run: what Ctrl+C keeps."""
+        return list(self._finished.values())
+
+    def _ended(self, run: TaskRun, on_run: Callable[[TaskRun], None]) -> None:
+        self._finished[run.model, run.task, run.attempt] = run
+        on_run(run)
 
     async def run(
         self,
@@ -78,12 +90,14 @@ class Evaluator:
 
         async def one(task: Task, model: str, attempt: int) -> TaskRun:
             async with limit:
-                run = await self._one(task, model, attempt)
-            on_run(run)
-            if run.outcome == "error" and retry_errors:
+                run = await self._safe(task, model, attempt)
+            self._ended(run, on_run)
+            # Only what the provider broke: a bug of maha comes back, and
+            # the retry is paid (review of the audit of hito 8).
+            if run.outcome == "error" and run.reason != "internal" and retry_errors:
                 async with limit:
-                    run = await self._one(task, model, attempt)
-                on_run(run)
+                    run = await self._safe(task, model, attempt)
+                self._ended(run, on_run)
             return run
 
         return list(
@@ -97,13 +111,51 @@ class Evaluator:
             )
         )
 
+    async def _safe(self, task: Task, model: str, attempt: int) -> TaskRun:
+        """`_one()`, where a bug or the disk failing is an `error` of this
+        run alone, with the reason `internal`: one run must not take the
+        battery, and its paid calls, with it (audit of hito 8)."""
+        try:
+            return await self._one(task, model, attempt)
+        except Exception as exc:
+            return TaskRun(
+                task=task.id,
+                split=task.split,
+                model=model,
+                attempt=attempt,
+                outcome="error",
+                reason="internal",
+                steps=0,
+                tool_calls=0,
+                tool_errors=0,
+                tokens=0,
+                cost=None,
+                duration=0.0,
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+
     async def _one(self, task: Task, model: str, attempt: int) -> TaskRun:
         async with self._suite.workspace(task) as path:
-            async with self._open_run(task, model, path) as conversation:
-                result = await run_once(conversation, task.instruction)
+            try:
+                async with self._open_run(task, model, path) as conversation:
+                    result = await run_once(conversation, task.instruction)
+            except TurnBroke as exc:
+                # With what the run spent, already paid.
+                spent = exc.result
+                return _run(
+                    task, model, attempt, spent, "error", spent.error, reason="internal"
+                )
             if result.reason == "error":
                 return _run(task, model, attempt, result, "error", result.error)
-            detail = await self.check(task.check, path, result.text)
+            try:
+                detail = await self.check(task.check, path, result.text)
+            except Exception as exc:
+                # With what the run spent, already paid (review of the
+                # audit of hito 8).
+                broke = f"{type(exc).__name__}: {exc}"
+                return _run(
+                    task, model, attempt, result, "error", broke, reason="internal"
+                )
         outcome: Outcome = "pass" if detail is None else "fail"
         return _run(task, model, attempt, result, outcome, detail)
 
@@ -137,6 +189,8 @@ def _run(
     result: RunResult,
     outcome: Outcome,
     detail: str | None,
+    *,
+    reason: str | None = None,
 ) -> TaskRun:
     return TaskRun(
         task=task.id,
@@ -144,7 +198,7 @@ def _run(
         model=model,
         attempt=attempt,
         outcome=outcome,
-        reason=result.reason,
+        reason=reason or result.reason,
         steps=result.steps,
         tool_calls=result.tool_calls,
         tool_errors=result.tool_errors,

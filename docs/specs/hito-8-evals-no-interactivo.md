@@ -337,6 +337,11 @@ maha -p < instrucciones.txt
    "tool_errors": 0, "denials": [], "usage": {"input_tokens": 5236, "…": 0},
    "cost_usd": "0.0004", "duration_s": 4.1, "model": "glm-5.3-flash"}
   ```
+
+  *(Ampliado el 2026-11-03, en la revisión de la auditoría del hito 8,
+  por decisión del mantenedor, §12.50: `session_id` es `null` si la
+  ejecución no guardó nada, y `trace_id` da siempre la traza, si la hay,
+  para que `maha trace` encuentre por qué falló.)*
 - **`stream-json`**: un `AgentEvent` por línea, como su JSON de Pydantic, y
   la última, el `result`. Es el mismo contrato que las trazas.
 
@@ -379,8 +384,12 @@ es lo que escribe el usuario (spec 4), así que `--max-steps`.
   texto ya se mostró (spec 3, §1.9).
 - **Cuánto:** 3 reintentos, con espera de 1, 2 y 4 s más un azar de hasta
   el 25 % (*jitter*: que varios clientes no reintenten a la vez). Si el
-  proveedor manda `Retry-After`, se respeta hasta 60 s. La espera se corta
-  con Ctrl+C y cuenta para `timeout`.
+  proveedor manda `Retry-After`, se respeta hasta 60 s. *(Corregido el
+  2026-10-30, en la auditoría del hito 8, por decisión del mantenedor: si
+  pide más de 60 s no se reintenta, se pasa al respaldo o falla; recortarlo
+  a 60 s hacía esperar unos 3 minutos para fallar igual con una cuota
+  agotada. §12.50.)* La espera se corta con Ctrl+C y cuenta para
+  `timeout`.
 - **Dónde:** en el bucle (`application/agent.py`), que puede emitir un
   evento nuevo `ModelRetry(attempt, max_retries, delay, error)`; la terminal
   lo enseña y la traza lo guarda. La política (cuántos, cuánto) es pura, en
@@ -496,7 +505,8 @@ Todo con fakes y directorios temporales; ninguna llamada real.
    sin ámbito (fuera, secreto, `.github`) aunque esté en la lista; deniega
    lo que no está.
 3. **`RetryPolicy`:** esperas 1-2-4 con el azar fijado; `Retry-After`
-   respetado y recortado a 60 s.
+   respetado y recortado a 60 s. *(Desde la auditoría, §12.50: más de 60 s,
+   sin reintento.)*
 4. **Reintentos en el bucle:** 429 y 503 antes del primer evento se
    reintentan y emiten `ModelRetry`; un error a mitad de respuesta no; 401
    no; agotados, el error sale como hoy; con respaldo, `ModelFallback` y el
@@ -594,6 +604,31 @@ que se compara con la línea base.
 de lo que la batería ejecuta: son comandos de `maha` sobre sesiones y
 trazas, fuera del turno. Las evals no usan `/new`, `/export` ni los
 subcomandos; `Sessions.start(model)` sin modelo hace lo mismo que antes.
+
+**Auditoría** (`v0.8.1`, 2026-11-03, commit `f4f676a`, OpenCode Go; 20
+tareas, 5 repeticiones, 4 a la vez, `--retry-errors`; comparado con la
+línea base del 2026-10-27; unos 0,68 $). Toca el bucle (reintentos, tiempo
+límite, permisos y pasos), así que se compara (§12.50 a §12.58):
+
+| Modelo | Éxito | Base | train | validation | Coste total |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 97/100 | 94/100 | 78/80 | 19/20 | 0,07 $ |
+| `kimi-k2.7-code` | 98/100 | 99/100 | 79/80 | 19/20 | 0,62 $ |
+
+- **El código nuevo no actuó:** en las 200 ejecuciones hubo 0
+  `model_retry`, 0 `model_fallback`, 0 `turn_failed`, 0 errores del
+  proveedor y 0 internos (contado en las trazas y en `runs.json`).
+- **Tres ⚠ en `kimi-k2.7-code`:** las tareas 08 (4/5) y 14 (4/5), que en
+  la base pasaban siempre, y el éxito total (99 → 98). Las dos son
+  errores de lógica del modelo que el test de la tarea detecta: un
+  `slugify` que da `version-20` en vez de `version-2-0`, y un descuento
+  de 67.5 en vez de 52.5. `glm-5.3-flash` sube de 94 a 97; fallan las de
+  siempre (12, 13 y 18, una vez cada una).
+- **Decisión del mantenedor** (2026-11-03): se aceptan las tres ⚠ y la
+  auditoría se integra. Motivo: el código nuevo no actuó en ninguna
+  ejecución, así que el modelo recibió las mismas peticiones que antes;
+  las diferencias son ruido del modelo. La línea base sigue siendo la del
+  2026-10-27.
 
 ## 6. Orden de piezas para el implementador
 
@@ -792,6 +827,88 @@ agente:
 
 ## 12. Aprendido al implementar
 
+### Auditoría (`fix/auditoria-hito-8`, 2026-10-30 y 2026-11-03)
+
+Pedida por el mantenedor tras el cierre: dejar el hito 8 sin deuda antes
+del hito 9. Publicada como `v0.8.1`.
+
+50. **`Retry-After` de más de 60 s: sin reintento** (decisión del
+    mantenedor, 2026-10-30). Recortarlo a 60 s hacía esperar unos 3
+    minutos para fallar igual con una cuota agotada. Ahora pasa al
+    respaldo o falla al momento (§1.14, corregido en el sitio).
+51. **Los comandos que no llaman al modelo no piden `model`.** Sin él en
+    la configuración, `maha sessions`, `trace`, `stats`, `export` e
+    `import` no arrancaban. De la misma familia que §12.48.
+52. **Dos revisiones independientes** del diff `v0.7.1..v0.8.0`, con
+    subagentes que solo vieron el código: el núcleo (límites, evals,
+    reintentos) y la interfaz con el almacenamiento. 19 hallazgos, todos
+    confirmados en el código y arreglados, cada uno con su test primero:
+    - las evals: un proveedor parado o con 429 llegaba al tiempo límite
+      y se juzgaba por la comprobación, no como error (§12.9); la línea
+      base comparada era la primera del día, no la última; una tarea toda
+      en error y un coste desconocido pasaban la puerta sin aviso; una
+      excepción o un Ctrl+C perdían toda la batería ya pagada;
+    - la seguridad: un `.maha/config.toml` ajeno subía el tope de 25
+      pasos a un usuario sin `[limits]`; una petición de permiso a nombre
+      de otra herramienta; lo de stdin podía cerrar su propio bloque;
+    - `-p` y los comandos: una tubería cerrada acababa con una traza de
+      Python; `session_id` daba un id que `-r` no retomaba; con stdin
+      cerrado se leía como entrada el primer fichero abierto; varios
+      fallos tempranos no dejaban JSON; `steps` no cuadraba entre
+      `turn_finished` y `result`; `maha stats --days 1000000` reventaba;
+    - las sesiones: `maha import` se fiaba de `uncosted_turns`; `/trace`
+      nombraba una traza que no existía.
+53. **El WSL se cerró tres veces por un test.** El de `uncosted_turns`
+    usaba `10**8` y se lanzó sin el arreglo, para verlo fallar: creó 100
+    millones de entradas y agotó la memoria. Las dos sesiones siguientes
+    lo repitieron al retomar. Aprendido: un test que reproduce un
+    agotamiento de memoria o disco usa un valor pequeño que dice lo mismo
+    (aquí, 5), nunca el que lo agota.
+54. **Una tercera revisión independiente, de los arreglos** (2026-11-03),
+    porque 16 se escribieron en unos 20 minutos. Encontró un fallo nuevo
+    y huecos, arreglados con su test:
+    - el tope de §12.52 para `uncosted_turns` (un turno sin precio por
+      mensaje de la persona) rechazaba sesiones del propio `maha`: un
+      turno que acaba sin guardar mensajes también cuenta. Ahora
+      `UsageEntry.turns` dice cuántos turnos representa (1 por defecto,
+      y entonces no se escribe), y la importación escribe una sola
+      entrada: lo mismo ocupan 2 que `10**8`;
+    - con `--retry-errors`, un Ctrl+C guardaba el error y su reintento
+      como dos ejecuciones: ahora `Evaluator.finished`, una por ejecución;
+    - un error interno de las evals se reintentaba (y se pagaba dos
+      veces), perdía lo gastado si fallaba la comprobación, y el aviso lo
+      llamaba "provider error";
+    - un fallo de `maha` a mitad de turno daba 0 pasos y 0 tokens:
+      `run_once` lanza `TurnBroke` con lo gastado, y `-p` lee el id de la
+      sesión después de cerrarla;
+    - `-p` en JSON sin clave o sin modelo no escribía `result`;
+    - lo que imita el cierre de `<stdin>` (`</stdin/>`, el `<` de ancho
+      completo) no se escapaba;
+    - con `session_id` nulo, la traza de un `-p` que falló no se podía
+      encontrar: el JSON da `trace_id` (decisión del mantenedor, "lo más
+      profesional para el producto", §1.11).
+55. **Mirado y correcto, sin cambio:**
+    - el error guardado de un reintento no se queda viejo: una llamada
+      sin ningún evento ya es `ModelResponseError`;
+    - si el tiempo límite llega mientras un reintento tarda, cuenta como
+      error del proveedor: es lo que pide §12.9;
+    - una traza vacía se trata como sin traza.
+56. **Límites aceptados por el mantenedor** (2026-11-03):
+    - un error de uso de la línea (código 2) no escribe JSON: argparse
+      falla antes de saber el formato, y el código ya lo dice (como `gh`
+      o `claude -p`). Una señal tampoco lo escribe, como decidió §12.17;
+    - `main()` calla cualquier `BrokenPipeError` que le llega. Hoy solo
+      puede venir de stdout; pasa al hito 17 (MCP), donde los procesos
+      hijo tratan sus propias tuberías, con su test.
+57. **Proceso:** un commit del PR 5 tiene dos motivos en el mensaje ("…y
+    dejar el estado al día"). Está en `main` y no se reescribe historial
+    publicado; queda anotado.
+58. **Los README:** el ejemplo empezaba con `maha 0.7.0` y no enseñaba
+    `-p`. Ahora es una sesión real de 0.8.1 (OpenCode Go,
+    `glm-5.3-flash`, en un directorio desechable) que termina con
+    `maha -c -p … --allow read_file`: retomó la sesión, leyó el fichero y
+    respondió con código 0 (0,0006 $ en total).
+
 ### Cierre (`feature/hito-8-cierre`, 2026-10-30)
 
 PRs del hito: #90 (spec), #91 (PR 1), #92 (PR 2), #93 y #94 (estado), #95
@@ -872,7 +989,8 @@ PRs del hito: #90 (spec), #91 (PR 1), #92 (PR 2), #93 y #94 (estado), #95
 27. **`Retry-After` gana a la espera calculada, sin azar:** el proveedor
     sabe cuándo puede responder. Una fecha pasada es 0. Un valor que no
     son segundos enteros ni una fecha HTTP se ignora (RFC 9110, §10.2.3).
-    Más de 60 s se recorta a 60, como pide §4, punto 3.
+    Más de 60 s se recorta a 60, como pide §4, punto 3. *(Cambiado en la
+    auditoría, §12.50: más de 60 s no se reintenta.)*
 28. **El respaldo tiene sus propios reintentos.** Si también se agotan,
     el error sale como siempre. Un respaldo igual al modelo en uso (tras
     `/model`) no es un respaldo. `ModelRetry` lleva el modelo, para saber

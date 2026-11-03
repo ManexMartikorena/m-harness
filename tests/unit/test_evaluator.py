@@ -12,6 +12,7 @@ from mharness.domain.commands import CommandResult
 from mharness.domain.errors import ModelRateLimitError
 from mharness.domain.evals import Check, Task, TaskRun
 from mharness.domain.model import Usage
+from tests.adapters.test_print_mode import crashing_second
 from tests.fakes.commands import FakeRunner
 from tests.fakes.evals import MemoryEvalSuite
 from tests.fakes.model import FakeModelClient, Step, reply
@@ -231,3 +232,95 @@ def test_choose_by_split_and_by_id() -> None:
     assert [t.id for t in choose(tasks, "validation")] == ["02"]
     assert [t.id for t in choose(tasks, "all")] == ["01", "02", "03"]
     assert [t.id for t in choose(tasks, "all", only=["03", "01"])] == ["01", "03"]
+
+
+async def test_a_run_that_crashes_does_not_take_the_others_with_it() -> None:
+    # Audit of hito 8: one unexpected exception threw away the whole
+    # battery, paid calls included.
+    def script(t: Task, m: str) -> list[Step]:
+        if t.id == "02":
+            raise PermissionError("cannot read the fixture")
+        return [reply("1.4.2")]
+
+    subject, _ = evaluator(script, task("01"), task("02"))
+
+    first, second = await subject.run([task("01"), task("02")], ["m"])
+
+    assert first.outcome == "pass"
+    assert (second.outcome, second.reason) == ("error", "internal")
+    assert second.detail == "PermissionError: cannot read the fixture"
+
+
+async def test_what_finished_keeps_the_last_try_of_each_run() -> None:
+    # Review of the audit of hito 8: Ctrl+C after a retry kept the error and
+    # its retry, as two runs of attempt 1. `finished` is what Ctrl+C keeps.
+    calls = 0
+
+    def script(t: Task, m: str) -> list[Step]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return [ModelRateLimitError("429 Too Many Requests")]
+        return [reply("1.4.2")]
+
+    subject, _ = evaluator(script, task())
+
+    await subject.run([task()], ["m"], retry_errors=True)
+
+    assert [(r.attempt, r.outcome) for r in subject.finished] == [(1, "pass")]
+
+
+async def test_an_internal_error_is_not_run_again() -> None:
+    # Review of the audit of hito 8: a bug of maha comes back on a retry,
+    # and the retry is paid.
+    calls = 0
+
+    def script(t: Task, m: str) -> list[Step]:
+        nonlocal calls
+        calls += 1
+        raise PermissionError("cannot read the fixture")
+
+    seen: list[TaskRun] = []
+    subject, _ = evaluator(script, task())
+
+    [run] = await subject.run([task()], ["m"], retry_errors=True, on_run=seen.append)
+
+    assert (run.reason, calls, len(seen)) == ("internal", 1, 1)
+
+
+async def test_a_check_that_crashes_keeps_what_the_run_spent() -> None:
+    # Review of the audit of hito 8: the run was kept with no tokens and no
+    # cost, though its calls were paid.
+    broken = task(check=Check(command="pytest -q"))
+    subject, _ = evaluator(says("1.4.2", tokens=100), broken, runner=FakeRunner())
+
+    [run] = await subject.run([broken], ["m"])
+
+    assert (run.outcome, run.reason, run.tokens) == ("error", "internal", 100)
+    assert (run.detail or "").startswith("AssertionError: ")
+
+
+async def test_a_run_that_breaks_mid_turn_keeps_what_it_spent() -> None:
+    # Review of the audit of hito 8: as with a check that crashes.
+    @asynccontextmanager
+    async def open_run(t: Task, model: str, path: Path) -> AsyncIterator[Conversation]:
+        world = World(MemorySessionStore(), crashing_second(), model=model)
+        conversation = await world.sessions.start()
+        try:
+            yield conversation
+        finally:
+            await conversation.close()
+
+    subject = Evaluator(
+        MemoryEvalSuite([task()], FIXTURES), open_run, FakeRunner(), ENV
+    )
+
+    [run] = await subject.run([task()], ["m"])
+
+    assert (run.outcome, run.reason, run.tokens, run.steps) == (
+        "error",
+        "internal",
+        700,
+        1,
+    )
+    assert run.detail == "RuntimeError: boom"

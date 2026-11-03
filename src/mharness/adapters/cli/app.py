@@ -1,6 +1,7 @@
 """Command-line parsing for `maha`."""
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mharness import __version__
+from mharness.adapters.cli.headless import failure_object
 from mharness.adapters.cli.text import clean
 
 # How `-p` writes its result (spec hito 8, §1.11).
@@ -349,7 +351,12 @@ def _given(value: object) -> bool:
     return value is not None and value is not False and value != []
 
 
-def fail(message: str) -> int:
-    """Report an error that stops `maha` before the conversation opens."""
+def fail(message: str, *, result: bool = False) -> int:
+    """Report an error that stops `maha` before the conversation opens.
+    With `result` (`-p` in json or stream-json), also as the `result` on
+    stdout, so that a script reading it gets one (review of the audit of
+    hito 8)."""
     print(f"error: {clean(message)}", file=sys.stderr)
+    if result:
+        print(json.dumps(failure_object(clean(message))), flush=True)
     return 1

@@ -62,7 +62,8 @@ class Settings(BaseModel, frozen=True):
 
     provider_name: str
     provider: ProviderSettings
-    model: str
+    # None only for the commands that never call the model (`load()`).
+    model: str | None
     # Answers when the retries of `model` run out (spec hito 8, §1.14).
     fallback_model: str | None = None
     limits: TurnLimits = TurnLimits()
@@ -126,10 +127,11 @@ def state_dir(env: Mapping[str, str]) -> Path:
     return base / "maha"
 
 
-def load(*, cwd: Path, env: Mapping[str, str], need_key: bool = True) -> Settings:
+def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Settings:
     """Read, validate and combine the configuration; raise `ConfigError`.
-    Without `need_key`, a missing key is no error: the commands that never
-    call the model do not need it (`maha sessions`, `stats`…)."""
+    Without `calls_model`, a missing model or key is no error: the commands
+    that never call the model do not need them (`maha sessions`, `stats`…),
+    and `model` may be None."""
     user_path = user_config_path(env)
     project_path = cwd / PROJECT_FILE
 
@@ -151,7 +153,7 @@ def load(*, cwd: Path, env: Mapping[str, str], need_key: bool = True) -> Setting
             f"Available: {', '.join(sorted(providers))}."
         )
     model = project.model or user.model
-    if model is None:
+    if model is None and calls_model:
         # No default model in the code: model ids change too often.
         raise ConfigError(
             f"no model configured. Add it to {user_path}, for example:\n\n"
@@ -166,18 +168,22 @@ def load(*, cwd: Path, env: Mapping[str, str], need_key: bool = True) -> Setting
         model=model,
         fallback_model=project.fallback_model or user.fallback_model,
         limits=_stricter(user.limits, project.limits),
-        api_key=_api_key(provider_name, provider, env, need=need_key),
+        api_key=_api_key(provider_name, provider, env, need=calls_model),
     )
 
 
 def _stricter(user: _Limits, project: _Limits) -> TurnLimits:
     """Of each limit, the lower of the two files: a project can tighten the
-    user's limits, never loosen them."""
+    user's limits, never loosen them. What the user does not set is the
+    default, also for the project: 25 steps stay 25 (audit of hito 8)."""
+    defaults = TurnLimits()
     values: dict[str, Any] = {}
     for name in _Limits.model_fields:
-        set_to = [
-            v for v in (getattr(user, name), getattr(project, name)) if v is not None
-        ]
+        mine = getattr(user, name)
+        if mine is None:
+            mine = getattr(defaults, name)
+        theirs = getattr(project, name)
+        set_to = [value for value in (mine, theirs) if value is not None]
         if set_to:
             values[name] = min(set_to)
     return TurnLimits(**values)

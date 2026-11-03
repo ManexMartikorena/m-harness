@@ -423,7 +423,9 @@ class TraceReport:
     """What /trace shows: the summary, and where the whole trace is."""
 
     summary: TraceSummary
-    location: str
+    # None without a trace: an imported session, one of hito 6, or one
+    # before its first turn (audit of hito 8).
+    location: str | None
 
 
 class Sessions:
@@ -437,7 +439,7 @@ class Sessions:
         *,
         cwd: str,
         provider: str,
-        model: str,
+        model: str | None,
         version: str,
         traces: TraceSink,
         masked: Collection[str] = (),
@@ -458,8 +460,13 @@ class Sessions:
 
     async def start(self, model: str | None = None) -> Conversation:
         """A new conversation, with `model` or the configured one; its
-        session is created with the first turn."""
-        agent = self._new_agent(model or self._model, ())
+        session is created with the first turn. Raises `SessionError` if
+        there is neither: the commands that never call the model run
+        without one."""
+        chosen = model or self._model
+        if chosen is None:
+            raise SessionError("no model configured")
+        agent = self._new_agent(chosen, ())
         return Conversation(self._store, agent, self._origin)
 
     async def open(self, start: Start | None = None) -> Opened:
@@ -489,6 +496,8 @@ class Sessions:
         same_provider = header.provider == self._origin.provider
         model = loaded.model if same_provider else self._model
         try:
+            if model is None:
+                raise SessionError("no model configured")
             agent = self._new_agent(model, loaded.messages)
         except BaseException:
             await log.close()
@@ -537,8 +546,12 @@ class Sessions:
             MessageEntry(message=message) for message in session.messages
         ]
         # What it cost, so that its total is the same; the turns without
-        # a price, as such.
-        entries += [UsageEntry(usage=Usage(), cost=None)] * session.uncosted_turns
+        # a price, as such, in one entry: as many as it says take no more
+        # room (audit of hito 8).
+        if session.uncosted_turns:
+            entries.append(
+                UsageEntry(usage=Usage(), cost=None, turns=session.uncosted_turns)
+            )
         if session.usage != Usage() or session.cost:
             entries.append(UsageEntry(usage=session.usage, cost=session.cost))
         origin = self._origin
@@ -580,9 +593,12 @@ class Sessions:
                 return summary.id
         raise SessionNotFound("no session in this directory")
 
-    async def delete(self, session: str, *, current: Conversation) -> None:
+    async def delete(
+        self, session: str, *, current: Conversation | None = None
+    ) -> None:
         """The session and its trace; also a trace left without its session
-        (its first turn could not be saved), which keeps that prompt."""
+        (its first turn could not be saved), which keeps that prompt. From
+        the shell there is no `current`."""
         if _is_current(session, current):
             raise SessionError("this is the current session")
         traces = self._origin.traces
@@ -598,15 +614,21 @@ class Sessions:
                 f"session {session} deleted, but not its trace: {exc}"
             ) from None
 
-    async def trace(self, session: str | None, *, current: Conversation) -> TraceReport:
+    async def trace(
+        self, session: str | None, *, current: Conversation | None = None
+    ) -> TraceReport:
         """The trace of `session`, of any directory, or of the current one.
         It only reads: a session open in another maha has its trace too.
         Raises `TraceError`."""
-        target = session if session is not None else current.id
+        if session is not None:
+            target, own = session, True
+        elif current is not None:
+            # Before its first turn the id is not yet the current one's:
+            # another session may have it.
+            target, own = current.id, current.exists
+        else:
+            raise TraceError("which session? Without a conversation, an id")
         traces = self._origin.traces
-        # Before its first turn the id is not yet the current one's: another
-        # session may have it.
-        own = session is not None or current.exists
         records = await traces.read(target) if own else []
         if (
             session is not None
@@ -614,7 +636,8 @@ class Sessions:
             and not await self._store.exists(session)
         ):
             raise TraceError(f"no session {session}")
-        return TraceReport(summarize(target, records), traces.location(target))
+        location = traces.location(target) if records else None
+        return TraceReport(summarize(target, records), location)
 
     async def _has_trace(self, session: str) -> bool:
         try:
@@ -644,6 +667,6 @@ class Sessions:
         raise SessionNotFound(f"no {other}session in this directory")
 
 
-def _is_current(session: str, current: Conversation) -> bool:
+def _is_current(session: str, current: Conversation | None) -> bool:
     # A new conversation's id is not its own until it exists.
-    return current.exists and session == current.id
+    return current is not None and current.exists and session == current.id

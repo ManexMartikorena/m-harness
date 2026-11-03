@@ -47,13 +47,10 @@ async def delete_session(
 ) -> int:
     """`maha sessions delete ID`: the session and its trace, without asking:
     the id was written on purpose, as with `rm`."""
-    current = await sessions.start()
     try:
-        await sessions.delete(session, current=current)
+        await sessions.delete(session)
     except (SessionError, TraceError) as exc:
         return _fail(exc, err)
-    finally:
-        await current.close()
     print(f"deleted {clean_line(session)}", file=out)
     return EXIT_OK
 
@@ -63,14 +60,11 @@ async def show_trace(
 ) -> int:
     """`maha trace [ID]`: what a session did and cost, as /trace; without
     id, the last session of this directory (spec hito 7, §11.5)."""
-    current = await sessions.start()
     try:
         target = session if session is not None else await sessions.last_here()
-        report = await sessions.trace(target, current=current)
+        report = await sessions.trace(target)
     except (SessionError, TraceError) as exc:
         return _fail(exc, err)
-    finally:
-        await current.close()
     for line in trace_lines(report, home):
         print(line, file=out)
     return EXIT_OK
@@ -81,7 +75,9 @@ async def show_stats(
 ) -> int:
     """`maha stats [--days N]`: cost and tokens by day and model; with
     `days`, only the last ones, today included."""
-    since = None if days is None else today - timedelta(days=days - 1)
+    # More days than the calendar holds is every day (audit of hito 8).
+    back = None if days is None else min(days - 1, (today - date.min).days)
+    since = None if back is None else today - timedelta(days=back)
     try:
         rows = await daily(traces, since=since)
     except TraceError as exc:

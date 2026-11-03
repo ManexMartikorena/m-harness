@@ -11,21 +11,21 @@
 hacerlo, **preguntándote antes de cada cambio**. Funciona con el proveedor y
 el modelo que elijas, y te dice en cada turno lo que ha costado.
 
-> 🚧 **En desarrollo: `v0.8.0`.** Ya es usable para trabajar en un
+> 🚧 **En desarrollo: `v0.8.1`.** Ya es usable para trabajar en un
 > proyecto: conversar, leer y cambiar ficheros, ejecutar comandos, guardar y
 > retomar sesiones y ver el coste; y en scripts, con `maha -p`. Lo que
 > viene, en la [hoja de ruta](#hoja-de-ruta).
 
 ```
 $ maha
-maha 0.7.0 · opencode-go · glm-5.3-flash · /help for commands
+maha 0.8.1 · opencode-go · glm-5.3-flash · /help for commands
 > Lee notas.txt con read_file y dime qué pone, en una frase.
   → read_file(path="notas.txt")
   ✓ 2 lines
-El archivo notas.txt contiene dos líneas con las palabras "uno" y "dos".
-  [tokens: 2547 in · 53 out (20 reasoning) · 1 call · $0.0003 · session $0.0003]
+En notas.txt pone dos líneas: "uno" y "dos".
+  [tokens: 2585 in · 30 out · 1 call · $0.0003 · session $0.0003]
 > Cambia la segunda línea de notas.txt por 'tres' con edit_file.
-  → edit_file(path="notas.txt", old_string="dos", new_string="tres")
+  → edit_file(new_string="tres", old_string="dos", path="notas.txt")
   ┌ edit notas.txt
   │ @@ -1,2 +1,2 @@
   │  uno
@@ -33,18 +33,26 @@ El archivo notas.txt contiene dos líneas con las palabras "uno" y "dos".
   │ +tres
   └ Allow? [y] yes · [a] always this session · [n] no: y
   ✓ 1 replacement
-Hecho: la segunda línea de notas.txt ahora dice "tres" (el archivo queda con "uno" y "tres").
-  [tokens: 2689 in · 128 out (72 reasoning) · 1 call · $0.0002 · session $0.0004]
+Listo: la segunda línea ahora dice "tres".
+  [tokens: 2721 in · 41 out · 1 call · $0.0002 · session $0.0004]
 > /trace
-  20261027-151848-9e34 · glm-5.3-flash · 2 turns · 4 model calls · 2 tools
-  1  16:18:48  2 calls · 1 tool · 2547 in · 53 out · $0.0003 · 2.7 s
-  2  16:18:51  2 calls · 1 tool · 2689 in · 128 out · $0.0002 · 2.9 s
-  total: 5236 in · 181 out · $0.0004
-  [trace: ~/.local/share/maha/traces/20261027-151848-9e34.jsonl]
+  20261103-112003-82ad · glm-5.3-flash · 2 turns · 4 model calls · 2 tools
+  1  12:20:03  2 calls · 1 tool · 2585 in · 30 out · $0.0003 · 6.7 s
+  2  12:20:10  2 calls · 1 tool · 2721 in · 41 out · $0.0002 · 10.1 s
+  total: 5306 in · 71 out · $0.0004
+  [trace: ~/.local/share/maha/traces/20261103-112003-82ad.jsonl]
+> /exit
+$ maha -c -p "¿Qué pone ahora en notas.txt? Una frase." --allow read_file
+  [resumed 20261103-112003-82ad · 8 messages · glm-5.3-flash]
+  → read_file(path="notas.txt")
+  ✓ 2 lines
+  [tokens: 2841 in · 35 out · 1 call · $0.0002 · session $0.0006]
+Ahora notas.txt pone "uno" en la primera línea y "tres" en la segunda.
 ```
 
 *(Una sesión real. Los totales son exactos; cada turno se redondea a cuatro
-decimales.)*
+decimales. Con `-p`, por stdout sale solo la respuesta; las líneas entre
+corchetes y las llamadas van a stderr.)*
 
 ## Qué hace
 
@@ -94,7 +102,7 @@ Necesitas [uv](https://docs.astral.sh/uv/) (instala también Python 3.14 si
 falta).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.8.0
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.8.1
 ```
 
 Después, elige proveedor y modelo:
@@ -192,7 +200,9 @@ otro servidor.
 Con `-p`:
 - `--output-format text|json|stream-json`: solo la respuesta (por
   defecto; las llamadas y los tokens van a stderr), un objeto JSON al
-  final o un evento JSON por línea.
+  final o un evento JSON por línea. En JSON, `session_id` es la sesión
+  que se retoma con `-r` (`null` si la ejecución no guardó nada) y
+  `trace_id`, lo que enseña `maha trace`, también de una que falló.
 - `--allow TOOL` (repetible): esa herramienta se ejecuta sin preguntar
   dentro del directorio. Fuera de él, un secreto o un fichero que ejecuta
   código se deniegan siempre.

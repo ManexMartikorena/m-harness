@@ -16,6 +16,7 @@ from mharness.adapters.cli.headless import (
     OutputFormat,
     exit_code,
     print_mode,
+    result_object,
 )
 from mharness.adapters.cli.input import InputTooLarge, ReadAll
 from mharness.application.agent import Agent
@@ -28,12 +29,12 @@ from mharness.domain.events import ModelEvent
 from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import ModelRequest, Usage
 from mharness.domain.retry import RetryPolicy
-from mharness.domain.session import is_session_id
+from mharness.domain.session import SessionError, SessionHeader, is_session_id
 from tests.adapters.test_conversation import KNOWN
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FAKE_MODEL, FakeModelClient, reply, tool_calls
-from tests.fakes.sessions import MemorySessionStore
+from tests.fakes.sessions import MemoryLog, MemorySessionStore
 from tests.fakes.tools import FakeTool
 from tests.fakes.tracing import MemoryTraceSink
 
@@ -330,6 +331,7 @@ async def test_json_is_one_object_with_stable_names() -> None:
     assert result == {
         "type": "result",
         "session_id": result["session_id"],
+        "trace_id": result["session_id"],
         "result": "Hay dos.",
         "reason": "end_turn",
         "is_error": False,
@@ -478,6 +480,7 @@ async def test_a_session_that_cannot_be_resumed_is_an_error() -> None:
 def ended(reason: Reason) -> RunResult:
     return RunResult(
         session="20261027-101500-3fa2",
+        trace="20261027-101500-3fa2",
         text="",
         reason=reason,
         steps=1,
@@ -625,3 +628,170 @@ async def test_stream_json_has_the_retry_and_the_fallback() -> None:
         "fallback": "glm-5.3",
         "error": "HTTP 503",
     }
+
+
+# In json, a failure before or around the turn is a result too (audit of
+# hito 8): `| jq .result` got nothing.
+
+
+async def too_much(limit: int) -> str:
+    raise InputTooLarge("the input is larger than 10 MB")
+
+
+class Crashing(FakeModelClient):
+    async def stream(self, request: ModelRequest) -> AsyncGenerator[ModelEvent]:
+        raise RuntimeError("boom")
+        yield
+
+
+@pytest.mark.parametrize("output_format", ["json", "stream-json"])
+@pytest.mark.parametrize(
+    ("prompt", "read_all", "client", "code", "error"),
+    [
+        ("resume", too_much, FakeModelClient([]), 1, "the input is larger than 10 MB"),
+        (
+            " ",
+            None,
+            FakeModelClient([]),
+            2,
+            '-p needs an instruction: maha -p "…", or pipe it to maha -p',
+        ),
+        ("Hola", None, Crashing([]), 1, "internal: RuntimeError: boom"),
+    ],
+)
+async def test_a_failure_writes_a_result_in_json(
+    output_format: OutputFormat,
+    prompt: str,
+    read_all: ReadAll | None,
+    client: FakeModelClient,
+    code: int,
+    error: str,
+) -> None:
+    got, out, err = await run(
+        sessions(client), prompt, read_all=read_all, output_format=output_format
+    )
+
+    result = json.loads(out.splitlines()[-1])
+    assert got == code
+    assert err == f"error: {error}\n"
+    assert set(result) == set(
+        result_object(
+            RunResult(
+                session=None,
+                trace=None,
+                text="",
+                reason="error",
+                steps=0,
+                tool_calls=0,
+                tool_errors=0,
+                denials=[],
+                usage=Usage(),
+                cost=None,
+                duration=0.0,
+                model="m",
+                error=None,
+            )
+        )
+    )
+    assert (result["type"], result["is_error"], result["error"]) == (
+        "result",
+        True,
+        error,
+    )
+    assert (result["session_id"], result["reason"]) == (None, "error")
+
+
+async def test_a_session_that_cannot_be_resumed_writes_a_result_in_json() -> None:
+    out = io.StringIO()
+
+    code = await print_mode(
+        sessions(FakeModelClient([])),
+        "sigue",
+        read_all=None,
+        catalog=KNOWN,
+        provider="opencode-go",
+        output_format="json",
+        start=Start(last=True),
+        out=out,
+        err=io.StringIO(),
+    )
+
+    assert code == 1
+    assert json.loads(out.getvalue())["error"] == "no session in this directory"
+
+
+class CrashingSecond(FakeModelClient):
+    """Asks for a tool, and breaks on the next call: a bug mid-turn."""
+
+    async def stream(self, request: ModelRequest) -> AsyncGenerator[ModelEvent]:
+        if self.requests:
+            raise RuntimeError("boom")
+        async for event in super().stream(request):
+            yield event
+
+
+class FailsToCreateOnce(MemorySessionStore):
+    """The first save of a session fails; the next one, at close, works."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.failed = False
+
+    async def create(self, header: SessionHeader) -> MemoryLog:
+        if not self.failed:
+            self.failed = True
+            raise SessionError("disk full")
+        return await super().create(header)
+
+
+def crashing_second() -> CrashingSecond:
+    echo = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    return CrashingSecond([tool_calls(echo, usage=Usage(input_tokens=700))])
+
+
+async def test_a_bug_mid_turn_says_what_the_turn_spent() -> None:
+    # Review of the audit of hito 8: the result said 0 steps and no tokens,
+    # though a call was paid and a tool ran.
+    where = sessions(crashing_second(), tools=[FakeTool()])
+
+    code, out, _ = await run(where, "Hola", output_format="json")
+
+    result = json.loads(out.splitlines()[-1])
+    assert (code, result["reason"], result["error"]) == (
+        1,
+        "error",
+        "internal: RuntimeError: boom",
+    )
+    assert (result["steps"], result["tool_calls"]) == (1, 1)
+    assert result["usage"]["input_tokens"] == 700
+    assert is_session_id(result["session_id"])
+
+
+async def test_a_bug_mid_turn_names_the_session_saved_at_close() -> None:
+    # Review of the audit of hito 8: the id was read before closing, and the
+    # close is what saved the turn.
+    store = FailsToCreateOnce()
+    where = sessions(crashing_second(), tools=[FakeTool()], store=store)
+
+    _, out, _ = await run(where, "Hola", output_format="json")
+
+    result = json.loads(out.splitlines()[-1])
+    assert list(store.sessions) == [result["session_id"]]
+
+
+async def test_in_json_a_run_that_kept_nothing_gives_its_trace() -> None:
+    # Review of the audit of hito 8: session_id is null, and the trace was
+    # out of reach from the output.
+    fake = FakeModelClient([ModelUnavailableError("503 Service Unavailable")])
+
+    _, out, _ = await run(sessions(fake), "Hola", output_format="json")
+
+    result = json.loads(out.splitlines()[-1])
+    assert result["session_id"] is None
+    assert is_session_id(result["trace_id"])
+
+
+async def test_in_json_a_failure_before_the_turn_has_no_trace() -> None:
+    _, out, _ = await run(sessions(FakeModelClient([])), " ", output_format="json")
+
+    assert json.loads(out.splitlines()[-1])["trace_id"] is None

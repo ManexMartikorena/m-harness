@@ -68,18 +68,42 @@ def main(argv: Sequence[str] | None = None) -> int:
         # No home: the error comes, with what to do, from load() below.
         _log_to(None)
     try:
-        # Only what calls the model needs the key.
+        # Only what calls the model needs a model and the key.
         settings = config.load(
             cwd=Path.cwd(),
             env=os.environ,
-            need_key=options.command in _CALL_THE_MODEL,
+            calls_model=options.command in _CALL_THE_MODEL,
         )
         catalog = TomlCatalog.load(config.user_catalog_path(os.environ))
         data = config.data_dir(os.environ)
     except (config.ConfigError, CatalogError) as exc:
-        return cli.fail(str(exc))
+        json_result = options.prompt is not None and options.output_format != "text"
+        return cli.fail(str(exc), result=json_result)
+    try:
+        code = _dispatch(options, settings, catalog, data)
+        # Inside: Python's own last flush would print "Exception ignored".
+        sys.stdout.flush()
+    except BrokenPipeError:
+        # Nobody reads stdout any more (`maha export ID | head -1`): quiet,
+        # as `maha -p` (audit of hito 8).
+        cli.drop_output(sys.stdout)
+        return 1
+    return code
+
+
+def _dispatch(
+    options: argparse.Namespace,
+    settings: config.Settings,
+    catalog: ModelCatalog,
+    data: Path,
+) -> int:
+    """Run the command the line asks for; return its exit code."""
     if options.command == "eval":
-        return asyncio.run(_eval(settings, catalog, options))
+        try:
+            return asyncio.run(_eval(settings, catalog, options))
+        except KeyboardInterrupt:
+            # What finished is already in its runs.json (`_eval`).
+            return 130
     if options.command == "models":
         cli.models_report(
             catalog.models(),
@@ -217,6 +241,8 @@ async def _eval(
         return cli.fail(
             "--save keeps a baseline of the whole battery: drop --split and --only"
         )
+    # load() requires a model for the evals.
+    assert settings.model is not None
     suite = TomlEvalSuite(Path(options.tasks), keep=options.keep)
     try:
         tasks = choose(await suite.tasks(), options.split, options.only)
@@ -282,14 +308,26 @@ async def _eval(
         flush=True,
     )
     evaluator = Evaluator(suite, open_run, LocalCommandRunner(), env)
-    runs = await evaluator.run(
-        tasks,
-        models,
-        repeat=options.repeat,
-        jobs=options.jobs,
-        retry_errors=options.retry_errors,
-        on_run=lambda run: print(cli.run_line(run), flush=True),
-    )
+
+    def on_run(run: TaskRun) -> None:
+        print(cli.run_line(run), flush=True)
+
+    try:
+        runs = await evaluator.run(
+            tasks,
+            models,
+            repeat=options.repeat,
+            jobs=options.jobs,
+            retry_errors=options.retry_errors,
+            on_run=on_run,
+        )
+    except asyncio.CancelledError:
+        # What ended, with its paid calls (audit of hito 8).
+        done = evaluator.finished
+        await asyncio.to_thread(_write_runs, run_dir / "runs.json", done)
+        kept = f"{len(done)} run" + ("" if len(done) == 1 else "s")
+        print(f"\ninterrupted: {kept} kept in {run_dir}", file=sys.stderr, flush=True)
+        raise
     regressed = cli.eval_report(runs, baselines, sys.stdout)
     # Every run in full: the report shows one line of a failure.
     await asyncio.to_thread(_write_runs, run_dir / "runs.json", runs)
