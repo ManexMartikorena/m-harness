@@ -42,6 +42,10 @@ def mode(path: Path) -> int:
     return stat.S_IMODE(path.stat().st_mode)
 
 
+def set_mode(path: Path, bits: int) -> None:
+    path.chmod(bits)
+
+
 def exists(path: Path) -> bool:
     return path.exists()
 
@@ -437,4 +441,26 @@ async def test_sessions_lists_every_trace_and_nothing_else(folder: Path) -> None
 
 
 async def test_sessions_without_a_folder_is_none(folder: Path) -> None:
+    assert await JsonlTraceSink(folder).sessions() == []
+
+
+# Audit after hito 9, S6.
+
+
+async def test_an_unreadable_traces_folder_is_an_error(folder: Path) -> None:
+    # Path.glob in Python 3.14 swallows the error: maha stats showed
+    # nothing, and maha import could take an id with a trace.
+    log = await JsonlTraceSink(folder).open(SESSION)
+    await log.close()
+    set_mode(folder, 0o300)
+    try:
+        with pytest.raises(TraceError, match="cannot list the traces: "):
+            await JsonlTraceSink(folder).sessions()
+    finally:
+        set_mode(folder, 0o700)
+
+
+async def test_a_folder_named_as_a_trace_is_not_one(folder: Path) -> None:
+    (folder / f"{SESSION}.jsonl").mkdir(parents=True)
+
     assert await JsonlTraceSink(folder).sessions() == []

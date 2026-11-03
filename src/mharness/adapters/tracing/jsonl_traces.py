@@ -166,8 +166,19 @@ class JsonlTraceSink:
             os.close(fd)
 
     async def sessions(self) -> list[str]:
+        # os.scandir, not Path.glob: in Python 3.14 glob swallows an
+        # unreadable folder and gives none (audit after hito 9, S6).
         try:
-            names = [path.stem for path in self._folder.glob("*.jsonl")]
+            with os.scandir(self._folder) as entries:
+                names = [
+                    entry.name.removesuffix(".jsonl")
+                    for entry in entries
+                    # A folder or a link named so is not a trace.
+                    if entry.name.endswith(".jsonl")
+                    and entry.is_file(follow_symlinks=False)
+                ]
+        except FileNotFoundError:
+            return []
         except OSError as exc:
             raise TraceError(f"cannot list the traces: {exc.strerror}") from None
         # A file another program left there is not a trace.
