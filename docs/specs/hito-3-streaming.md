@@ -136,6 +136,9 @@ Corrige DESIGN §6 (anotado).
      quede sin despachar, se pierde. Si el último trozo del servidor (el del
      `finish_reason`) llega sin línea en blanco final, se pierde y el adaptador
      falla con `ModelResponseError` (§1.8). Mejor un error claro que adivinar.
+     *(Cambiado en la auditoría profunda tras el hito 9, I15, por decisión
+     del mantenedor del 2026-11-03: un stream que acaba sin terminar la
+     respuesta es `ModelUnavailableError`, del proveedor.)*
 - **BOM** (*byte order mark*: los bytes `EF BB BF` que algunos programas ponen
   al principio de un fichero UTF-8): el estándar manda quitarlo. **Lo hace
   solo el decodificador del adaptador, no `parse_sse`** (un único sitio).

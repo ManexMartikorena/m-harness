@@ -644,6 +644,11 @@ repeticiones, 4 a la vez, `--retry-errors`; unos 1,30 $ en total):
   en vez de `99.0`, o un `slugify` con guiones de más). En las 200 hubo 0
   reintentos, 0 respaldos, 0 turnos fallidos y 0 errores del proveedor, y
   con estos modelos la petición es la misma byte a byte (PR 1 y PR 2).
+  *(Corregido en la auditoría profunda tras el hito 9, I1: el `105.0` era
+  correcto; fallaba un test que el propio modelo había añadido, y la
+  comprobación lo ejecutaba. Las comprobaciones vuelven a poner ahora los
+  tests del fixture antes de mirar. La conclusión no cambia: la petición
+  era la misma.)*
 - **Decisión** (2026-11-03; el mantenedor pidió "lo mejor para el producto
   final" y el agente lo decidió con este motivo): se aceptan las ⚠ y el
   PR se integra. Es ruido del modelo: la petición no cambió. Repetir daría
