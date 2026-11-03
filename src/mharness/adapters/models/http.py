@@ -15,6 +15,14 @@ from typing import Any
 import httpx
 
 from mharness import __version__
+from mharness.domain.errors import (
+    ModelAuthError,
+    ModelError,
+    ModelRateLimitError,
+    ModelRequestError,
+    ModelResponseError,
+    ModelUnavailableError,
+)
 
 USER_AGENT = f"maha/{__version__} (+https://github.com/ManexMartikorena/m-harness)"
 # `read` is the longest silence between two chunks, not the time of the whole
@@ -120,3 +128,32 @@ def _amount(value: object) -> Decimal | None:
 def count(tokens: int | None) -> int:
     """A count the provider sent; missing, null or negative is 0."""
     return max(tokens or 0, 0)
+
+
+def status_error(response: httpx.Response, api_key: str | None) -> ModelError:
+    """The error of a response that is not a success: what to tell the
+    person, and whether and when it can be tried again."""
+    status = response.status_code
+    detail = safe(provider_message(response), api_key)
+    message = f"HTTP {status}: {detail}" if detail else f"HTTP {status}"
+    if status in (401, 403):
+        return ModelAuthError(message)
+    # When the provider can answer again; 429, 503 and 529 often say it.
+    wait = retry_after(response.headers.get("retry-after"), datetime.now(UTC))
+    if status == 429:
+        return ModelRateLimitError(message, retry_after=wait)
+    if status >= 500:
+        return ModelUnavailableError(message, retry_after=wait)
+    return ModelRequestError(message)
+
+
+async def check_streaming(response: httpx.Response, api_key: str | None) -> None:
+    """Fail if a 200 answer is not an event stream."""
+    content_type = response.headers.get("content-type", "").lower()
+    if content_type.startswith("text/event-stream"):
+        return
+    detail = None
+    if content_type.startswith("application/json"):
+        await response.aread()
+        detail = safe(provider_message(response), api_key)
+    raise ModelResponseError(detail or "the provider did not stream")

@@ -29,6 +29,8 @@ class _Rates(BaseModel, frozen=True):
     # None: billed as input.
     cache_read: Decimal | None = Field(default=None, ge=0)
     cache_write: Decimal | None = Field(default=None, ge=0)
+    # Writes to the one-hour cache; None: as the other writes.
+    cache_write_1h: Decimal | None = Field(default=None, ge=0)
 
 
 class Tier(_Rates, frozen=True):
@@ -90,12 +92,17 @@ def cost(usage: Usage, prices: Prices) -> Decimal:
             rates = tier
     cache_read = rates.cache_read if rates.cache_read is not None else rates.input
     cache_write = rates.cache_write if rates.cache_write is not None else rates.input
+    hour_write = (
+        rates.cache_write_1h if rates.cache_write_1h is not None else cache_write
+    )
     cached = usage.cache_read_tokens + usage.cache_write_tokens
     plain = max(usage.input_tokens - cached, 0)
+    hour = min(usage.cache_write_1h_tokens, usage.cache_write_tokens)
     total = (
         plain * rates.input
         + usage.cache_read_tokens * cache_read
-        + usage.cache_write_tokens * cache_write
+        + (usage.cache_write_tokens - hour) * cache_write
+        + hour * hour_write
         + usage.output_tokens * rates.output
     )
     return total / _MILLION

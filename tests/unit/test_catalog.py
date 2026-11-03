@@ -229,3 +229,34 @@ def test_an_api_is_a_lowercase_name(api: str) -> None:
 def test_the_longest_answer_is_positive() -> None:
     with pytest.raises(ValidationError):
         ModelInfo(provider="p", model="m", max_output=0)
+
+
+# Writes to the one-hour cache (spec hito 9, decision 9).
+
+
+def test_writes_to_the_hour_cache_go_at_their_own_price() -> None:
+    prices = PRICES.model_copy(update={"cache_write_1h": Decimal("0.30")})
+    usage = Usage(
+        input_tokens=1_000_000,
+        cache_write_tokens=600_000,
+        cache_write_1h_tokens=200_000,
+    )
+
+    # 400 000 plain at 0.15, 400 000 to 5 min at 0.20, 200 000 to 1 h at 0.30.
+    assert cost(usage, prices) == Decimal("0.200")
+
+
+def test_without_their_price_hour_writes_go_as_the_others() -> None:
+    usage = Usage(
+        input_tokens=1_000_000,
+        cache_write_tokens=600_000,
+        cache_write_1h_tokens=200_000,
+    )
+
+    assert cost(usage, PRICES) == Decimal("0.180")
+
+
+def test_usage_adds_the_hour_writes() -> None:
+    one = Usage(cache_write_tokens=10, cache_write_1h_tokens=4)
+
+    assert (one + one).cache_write_1h_tokens == 8

@@ -25,7 +25,7 @@ from mharness.adapters import cli
 from mharness.adapters.catalog import CatalogError, TomlCatalog
 from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.evals import TomlEvalSuite
-from mharness.adapters.models import OpenAIChatClient
+from mharness.adapters.models import AnthropicClient, OpenAIChatClient
 from mharness.adapters.storage import JsonlSessionStore
 from mharness.adapters.tools import (
     EditFile,
@@ -503,6 +503,17 @@ async def _client(
                     api_key=settings.api_key,
                     session_header=provider.session_header,
                     session_id=session,
+                )
+            )
+        if (url := provider.url("anthropic")) is not None:
+            clients["anthropic"] = await stack.enter_async_context(
+                AnthropicClient(
+                    base_url=url,
+                    api_key=settings.api_key,
+                    session_header=provider.session_header,
+                    session_id=session,
+                    version=provider.anthropic_version,
+                    cache_ttl=settings.cache_ttl,
                 )
             )
 

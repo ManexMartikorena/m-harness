@@ -70,6 +70,7 @@ class _Tier(BaseModel, extra="forbid"):
     output: _Price
     cache_read: _Price | None = None
     cache_write: _Price | None = None
+    cache_write_1h: _Price | None = None
 
 
 class _Model(BaseModel, extra="forbid"):
@@ -81,6 +82,7 @@ class _Model(BaseModel, extra="forbid"):
     output: _Price | None = None
     cache_read: _Price | None = None
     cache_write: _Price | None = None
+    cache_write_1h: _Price | None = None
     # Overrides the provider's date.
     checked: date | None = None
     tiers: list[_Tier] = []
@@ -189,6 +191,7 @@ def _prices(model: _Model, provider: _Provider | None) -> Prices | None:
         output=model.output,
         cache_read=model.cache_read,
         cache_write=model.cache_write,
+        cache_write_1h=model.cache_write_1h,
         checked=checked,
         tiers=tuple(_tier(index, tier) for index, tier in enumerate(model.tiers)),
     )

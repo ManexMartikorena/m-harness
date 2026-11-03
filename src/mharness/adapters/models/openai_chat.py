@@ -10,7 +10,6 @@ about the agent.
 import asyncio
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
-from datetime import UTC, datetime
 from decimal import Decimal
 from types import TracebackType
 from typing import Any, Self
@@ -22,20 +21,17 @@ from mharness.adapters.models.http import (
     STALL_SECONDS,
     TIMEOUT,
     USER_AGENT,
+    check_streaming,
     count,
     error_message,
     provider_cost,
-    provider_message,
-    retry_after,
     safe,
+    status_error,
     text,
 )
 from mharness.adapters.models.sse import parse_sse
 from mharness.domain.errors import (
-    ModelAuthError,
     ModelError,
-    ModelRateLimitError,
-    ModelRequestError,
     ModelResponseError,
     ModelUnavailableError,
 )
@@ -149,15 +145,7 @@ class OpenAIChatClient:
             ) from exc
 
     async def _check_streaming(self, response: httpx.Response) -> None:
-        """Fail if a 200 answer is not an event stream."""
-        content_type = response.headers.get("content-type", "").lower()
-        if content_type.startswith("text/event-stream"):
-            return
-        detail = None
-        if content_type.startswith("application/json"):
-            await response.aread()
-            detail = self._safe(provider_message(response))
-        raise ModelResponseError(detail or "the provider did not stream")
+        await check_streaming(response, self._api_key)
 
     async def _events(
         self, response: httpx.Response, request: ModelRequest
@@ -228,18 +216,7 @@ class OpenAIChatClient:
         return safe(detail, self._api_key)
 
     def _status_error(self, response: httpx.Response) -> ModelError:
-        status = response.status_code
-        detail = self._safe(provider_message(response))
-        message = f"HTTP {status}: {detail}" if detail else f"HTTP {status}"
-        if status in (401, 403):
-            return ModelAuthError(message)
-        # When the provider can answer again; 429 and 503 often say it.
-        wait = retry_after(response.headers.get("retry-after"), datetime.now(UTC))
-        if status == 429:
-            return ModelRateLimitError(message, retry_after=wait)
-        if status >= 500:
-            return ModelUnavailableError(message, retry_after=wait)
-        return ModelRequestError(message)
+        return status_error(response, self._api_key)
 
 
 def _to_openai(request: ModelRequest) -> dict[str, Any]:

@@ -65,6 +65,7 @@ shell.
 | Variable | Para qué | Si falta |
 | --- | --- | --- |
 | `OPENCODE_API_KEY` (hito 2) | Clave del proveedor de modelos (OpenCode Go o Zen) | `maha` no puede hablar con el modelo. Los tests no la necesitan |
+| `ANTHROPIC_API_KEY` (hito 9, opcional) | Clave de la API de Anthropic, creada en la Claude Console (`platform.claude.com/settings/keys`), para `provider = "anthropic"` | Solo falla `provider = "anthropic"`. Claude por OpenCode usa `OPENCODE_API_KEY`. Los tests no la necesitan |
 
 ## 3. Datos locales de `maha`
 

@@ -35,12 +35,16 @@ def test_has_every_model_of_each_provider(builtin: TomlCatalog) -> None:
 
     assert providers.count("opencode-go") == 30
     assert providers.count("opencode-zen") == 83
+    # Counted on Anthropic's pricing page, 2026-11-03 (spec hito 9, §3.3);
+    # without the models of limited access.
+    assert providers.count("anthropic") == 14
 
 
 def test_every_model_has_dated_prices(builtin: TomlCatalog) -> None:
+    checked = {"anthropic": date(2026, 11, 3)}
     for info in builtin.models():
         assert info.prices is not None, info.model
-        assert info.prices.checked == CHECKED
+        assert info.prices.checked == checked.get(info.provider, CHECKED)
 
 
 def test_a_model_as_the_docs_publish_it(builtin: TomlCatalog) -> None:
@@ -61,10 +65,33 @@ def test_a_model_as_the_docs_publish_it(builtin: TomlCatalog) -> None:
 def test_every_anthropic_model_knows_its_longest_answer(builtin: TomlCatalog) -> None:
     # The Messages API needs max_tokens, and one past the model's limit is a
     # 400 (spec hito 9, decision 5).
-    anthropic = [info for info in builtin.models() if info.api == "anthropic"]
+    anthropic = [
+        info
+        for info in builtin.models()
+        if info.api == "anthropic" or info.provider == "anthropic"
+    ]
 
-    assert len(anthropic) == 22
+    assert len(anthropic) == 22 + 14
     assert all(info.max_output for info in anthropic)
+
+
+def test_a_model_of_anthropic_as_its_pricing_page_publishes_it(
+    builtin: TomlCatalog,
+) -> None:
+    assert builtin.get("anthropic", "claude-opus-5-5") == ModelInfo(
+        provider="anthropic",
+        model="claude-opus-5-5",
+        context=1_000_000,
+        max_output=128_000,
+        prices=Prices(
+            input=Decimal("4.00"),
+            output=Decimal("20.00"),
+            cache_read=Decimal("0.20"),
+            cache_write=Decimal("5.00"),
+            cache_write_1h=Decimal("8.00"),
+            checked=date(2026, 11, 3),
+        ),
+    )
 
 
 def test_the_format_of_each_model_as_the_provider_serves_it(
@@ -212,6 +239,21 @@ def test_a_user_model_says_its_api_and_longest_answer(tmp_path: Path) -> None:
     assert info == ModelInfo(
         provider="local", model="claude-x", api="anthropic", max_output=64_000
     )
+
+
+def test_a_price_for_the_hour_cache(tmp_path: Path) -> None:
+    # Spec hito 9, decision 9.
+    path = write(
+        tmp_path,
+        '[models."local/m"]\ninput = 1\noutput = 5\ncache_write = 1.25\n'
+        "cache_write_1h = 2\nchecked = 2026-11-03\n",
+    )
+
+    info = TomlCatalog.load(path).get("local", "m")
+
+    assert info is not None
+    assert info.prices is not None
+    assert info.prices.cache_write_1h == Decimal(2)
 
 
 def test_a_model_id_may_hold_a_slash(tmp_path: Path) -> None:
