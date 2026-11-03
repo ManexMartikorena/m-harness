@@ -3026,3 +3026,11 @@ async def test_folders_count_for_the_walk_limit_and_its_yields(
 
     assert result == "… [stopped after 20 files and folders; narrow the path]"
     assert yields >= 3
+
+
+def test_a_folder_is_no_hard_link(root: Path) -> None:
+    # Deep audit after hito 9: every folder has two or more links ("." and
+    # its name), and the hard link warning of H5 took them for one.
+    (root / "src").mkdir()
+
+    assert Workspace(root).change_warning(root / "src", "src") is None

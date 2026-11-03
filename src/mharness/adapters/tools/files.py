@@ -128,11 +128,14 @@ class Workspace:
 
 
 def _names(path: Path) -> int:
-    """How many hard links the file `path` has; 0 if it is not there."""
+    """How many hard links the regular file `path` has; 0 if it is not
+    there or is not one: a folder always has two or more ("." and its
+    name), and is no hard link."""
     try:
-        return os.stat(path).st_nlink
+        info = os.stat(path)
     except OSError:
         return 0
+    return info.st_nlink if stat.S_ISREG(info.st_mode) else 0
 
 
 class _Asked:
