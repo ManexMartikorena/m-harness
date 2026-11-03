@@ -149,3 +149,16 @@ def test_a_hostile_rule_answers_at_once() -> None:
 
     assert not ignored
     assert time.monotonic() - started < 1.0
+
+
+def test_a_long_chain_of_folders_answers_at_once() -> None:
+    # Review of the deep audit: every "**/" stayed open on every character,
+    # 0.36 s a path with this rule; now a few operations on integers.
+    rules = GitIgnore()
+    rules.add(PurePath(), "**/" * 20_000 + "zz\n")
+    started = time.monotonic()
+
+    for n in range(20):
+        assert not rules.ignores(PurePath(f"src/pkg/m{n}/file.py"), is_dir=False)
+
+    assert time.monotonic() - started < 1.0
