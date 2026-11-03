@@ -15,6 +15,15 @@ from mharness.adapters.models.anthropic import (
     VERSION,
     AnthropicClient,
 )
+from mharness.domain.errors import (
+    ModelAuthError,
+    ModelError,
+    ModelRateLimitError,
+    ModelRequestError,
+    ModelResponseError,
+    ModelUnavailableError,
+    RetryableModelError,
+)
 from mharness.domain.messages import (
     Message,
     ReasoningBlock,
@@ -22,7 +31,7 @@ from mharness.domain.messages import (
     ToolCallBlock,
     ToolResultBlock,
 )
-from mharness.domain.model import ModelRequest, ToolSpec
+from mharness.domain.model import ModelRequest, ToolSpec, Usage
 from mharness.ports.model import ModelClient
 from tests.fakes.model import collect
 
@@ -295,3 +304,140 @@ async def test_without_key_there_is_no_authorization() -> None:
         await collect(subject.stream(ModelRequest(model=MODEL, messages=[user("a")])))
 
     assert "authorization" not in route.calls.last.request.headers
+
+
+# HTTP errors (spec hito 9, §1.9).
+
+
+def error(status: int, message: str, **headers: str) -> httpx.Response:
+    body = {"type": "error", "error": {"type": "x", "message": message}}
+    return httpx.Response(status, json=body, headers=headers)
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("status", "kind"),
+    [
+        (400, ModelRequestError),
+        (401, ModelAuthError),
+        (402, ModelRequestError),
+        (403, ModelAuthError),
+        (404, ModelRequestError),
+        (413, ModelRequestError),
+        (429, ModelRateLimitError),
+        (500, ModelUnavailableError),
+        (504, ModelUnavailableError),
+        (529, ModelUnavailableError),
+    ],
+)
+async def test_each_http_error(
+    client: AnthropicClient, status: int, kind: type[ModelError]
+) -> None:
+    respx.post(ENDPOINT).mock(return_value=error(status, f"mal: {API_KEY}"))
+    request = ModelRequest(model=MODEL, messages=[user("a")])
+
+    with pytest.raises(kind) as raised:
+        await collect(client.stream(request))
+
+    assert str(raised.value) == f"HTTP {status}: mal: [redacted]"
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [429, 529])
+async def test_retry_after_reaches_the_error(
+    client: AnthropicClient, status: int
+) -> None:
+    respx.post(ENDPOINT).mock(
+        return_value=error(status, "espera", **{"retry-after": "7"})
+    )
+
+    with pytest.raises(RetryableModelError) as raised:
+        await client.complete(ModelRequest(model=MODEL, messages=[user("a")]))
+
+    assert raised.value.retry_after == 7.0
+
+
+@respx.mock
+async def test_a_network_failure_is_unavailable(client: AnthropicClient) -> None:
+    respx.post(ENDPOINT).mock(side_effect=httpx.ConnectError(f"no {API_KEY}"))
+
+    with pytest.raises(ModelUnavailableError) as raised:
+        await collect(client.stream(ModelRequest(model=MODEL, messages=[user("a")])))
+
+    assert API_KEY not in str(raised.value)
+
+
+# complete() (spec hito 9, §1.10).
+
+
+@respx.mock
+async def test_complete_translates_the_whole_answer(client: AnthropicClient) -> None:
+    route = respx.post(ENDPOINT).respond(
+        json={
+            "id": "msg_01Fake",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-opus-5-5",
+            "content": [
+                {"type": "thinking", "thinking": "", "signature": "s"},
+                {"type": "text", "text": "Lo leo."},
+                {
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "read_file",
+                    "input": {"path": "ñ.txt"},
+                },
+            ],
+            "stop_reason": "tool_use",
+            "usage": {
+                "input_tokens": 3,
+                "output_tokens": 20,
+                "cache_read_input_tokens": 100,
+                "cache_creation_input_tokens": 0,
+            },
+        }
+    )
+
+    response = await client.complete(ModelRequest(model=MODEL, messages=[user("a")]))
+
+    assert "stream" not in sent(route)
+    assert response.message.blocks == [
+        ReasoningBlock(signature="s"),
+        TextBlock(text="Lo leo."),
+        ToolCallBlock(id="toolu_1", name="read_file", arguments='{"path": "ñ.txt"}'),
+    ]
+    assert (response.stop_reason, response.model) == ("tool_use", "claude-opus-5-5")
+    assert response.usage == Usage(
+        input_tokens=103, output_tokens=20, cache_read_tokens=100
+    )
+
+
+@respx.mock
+async def test_complete_with_a_refusal_says_why(client: AnthropicClient) -> None:
+    respx.post(ENDPOINT).respond(
+        json={
+            "model": MODEL,
+            "content": [],
+            "stop_reason": "refusal",
+            "stop_details": {"explanation": "No puedo."},
+            "usage": {},
+        }
+    )
+
+    response = await client.complete(ModelRequest(model=MODEL, messages=[user("a")]))
+
+    assert (response.message.text, response.stop_reason) == (
+        "No puedo.",
+        "content_filter",
+    )
+
+
+@respx.mock
+@pytest.mark.parametrize("body", [b"no es json", b"[]", b'{"content": "x"}'])
+async def test_complete_with_a_body_it_cannot_read(
+    client: AnthropicClient, body: bytes
+) -> None:
+    respx.post(ENDPOINT).respond(200, content=body)
+
+    with pytest.raises(ModelResponseError, match="could not be understood"):
+        await client.complete(ModelRequest(model=MODEL, messages=[user("a")]))
