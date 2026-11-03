@@ -3,7 +3,9 @@
 import asyncio
 import io
 import json
+from collections.abc import Sequence
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -16,7 +18,25 @@ from mharness.adapters.cli.subcommands import (
     show_stats,
     show_trace,
 )
-from mharness.domain.session import Session
+from mharness.adapters.storage import JsonlSessionStore
+from mharness.adapters.tracing import JsonlTraceSink
+from mharness.application.agent import Agent
+from mharness.application.sessions import Sessions
+from mharness.domain.messages import (
+    Message,
+    ReasoningBlock,
+    TextBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+)
+from mharness.domain.model import Usage
+from mharness.domain.session import (
+    MessageEntry,
+    Session,
+    SessionEntry,
+    SessionHeader,
+    UsageEntry,
+)
 from tests.adapters.test_print_mode import Terminal
 from tests.fakes.model import FakeModelClient, reply
 from tests.fakes.sessions import MemorySessionStore
@@ -306,3 +326,100 @@ async def test_trace_without_a_trace_names_no_file() -> None:
     assert await show_trace(world.sessions, new, out=out, err=err, home=HOME) == 0
 
     assert (out.getvalue(), err.getvalue()) == ("(no trace for this session)\n", "")
+
+
+# Export and import over the real store (audit after hito 9, S8).
+
+
+def no_agent(model: str, history: Sequence[Message]) -> Agent:
+    raise AssertionError("export and import build no agent")
+
+
+async def test_export_and_import_keep_every_field_over_the_real_store(
+    tmp_path: Path,
+) -> None:
+    store = JsonlSessionStore(tmp_path / "sessions")
+    sessions = Sessions(
+        store,
+        no_agent,
+        cwd="/home/ana/web",
+        provider="local",
+        model="llama",
+        version="0.9.0",
+        traces=JsonlTraceSink(tmp_path / "traces"),
+        now=lambda: NOW,
+        token=iter(["b01c"]).__next__,
+    )
+    header = SessionHeader(
+        id=FIRST,
+        created_at=NOW - timedelta(days=1),
+        cwd="/home/ana/proyecto",
+        provider="anthropic",
+        model="claude-x",
+        maha="0.9.0",
+    )
+    thought = Message(
+        role="assistant",
+        blocks=[
+            ReasoningBlock(text="Miro el fichero.", signature="c2lnbmF0dXJh"),
+            ReasoningBlock(redacted="b3BhY28="),
+            ToolCallBlock(id="toolu_1", name="read_file", arguments='{"path": "a"}'),
+        ],
+    )
+    entries: list[SessionEntry] = [
+        MessageEntry(message=Message(role="user", blocks=[TextBlock(text="Lee a")])),
+        MessageEntry(message=thought),
+        MessageEntry(
+            message=Message(
+                role="tool",
+                blocks=[ToolResultBlock(call_id="toolu_1", content="hola")],
+            )
+        ),
+        MessageEntry(
+            message=Message(
+                role="assistant",
+                blocks=[ReasoningBlock(signature="Zmlu"), TextBlock(text="Dice hola.")],
+            )
+        ),
+        UsageEntry(
+            usage=Usage(
+                input_tokens=1200,
+                output_tokens=80,
+                cache_read_tokens=300,
+                cache_write_tokens=500,
+                cache_write_1h_tokens=200,
+                reasoning_tokens=40,
+            ),
+            cost=Decimal("0.000123456789"),
+        ),
+        UsageEntry(usage=Usage(input_tokens=10, output_tokens=2)),
+        UsageEntry(usage=Usage(), turns=2),
+    ]
+    log = await store.create(header)
+    await log.append(entries)
+    await log.close()
+    out = io.StringIO()
+    assert (
+        await export_session(
+            sessions, FIRST, output_format="json", out=out, err=io.StringIO()
+        )
+        == 0
+    )
+    file = tmp_path / "s.json"
+    await asyncio.to_thread(file.write_text, out.getvalue(), "utf-8")
+
+    assert (
+        await import_session(sessions, file, out=io.StringIO(), err=io.StringIO()) == 0
+    )
+
+    original = await store.read(FIRST)
+    new = await store.read("20261026-091502-b01c")
+    assert new.messages == original.messages
+    assert new.messages[1].blocks[:2] == thought.blocks[:2]
+    assert new.usage == original.usage
+    assert new.usage.cache_write_1h_tokens == 200
+    assert (new.cost, new.uncosted_turns) == (Decimal("0.000123456789"), 3)
+    assert (new.cost, new.uncosted_turns) == (original.cost, original.uncosted_turns)
+    assert (new.model, new.header.provider) == ("claude-x", "anthropic")
+    # What is the new session's own: its id, when and where it was made.
+    assert (new.header.cwd, new.header.created_at) == ("/home/ana/web", NOW)
