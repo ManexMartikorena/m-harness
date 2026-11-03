@@ -197,6 +197,7 @@ class Agent:
                 "timeout",
                 # The call cut while it answered did not end.
                 steps=turn.step - 1 if turn.streaming else turn.step,
+                answering=turn.streaming,
             )
         except BaseException as exc:
             # A failed call to the model, Ctrl+C or any error nobody expected
@@ -599,13 +600,16 @@ class _Turn:
     # once an answer begins.
     failing: list[RetryableModelError] = field(default_factory=list)
 
-    def finished(self, reason: TurnEnd, *, steps: int) -> TurnFinished:
+    def finished(
+        self, reason: TurnEnd, *, steps: int, answering: bool = False
+    ) -> TurnFinished:
         return TurnFinished(
             reason=reason,
             usage=self.usage,
             tool_calls=self.calls_run,
             steps=steps,
             cost=self.cost,
+            answering=answering,
         )
 
     def interrupted(self, cause: str) -> list[ToolResultBlock]:

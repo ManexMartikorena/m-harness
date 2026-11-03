@@ -23,6 +23,7 @@ from mharness.domain.approval import ApprovalRequest
 from mharness.domain.catalog import ModelInfo, Prices
 from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta
+from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import (
     Message,
     ReasoningBlock,
@@ -90,6 +91,7 @@ class World:
         retry: RetryPolicy = NO_RETRIES,
         fallback: str | None = None,
         effort: Effort | None = None,
+        limits: TurnLimits | None = None,
     ) -> None:
         self.gate = gate or FakeApproval()
         self.traces = traces or MemoryTraceSink()
@@ -111,6 +113,7 @@ class World:
                 retry=retry,
                 sleep=no_wait,
                 fallback=fallback,
+                limits=limits or TurnLimits(),
             )
 
         self.sessions = Sessions(

@@ -181,6 +181,11 @@ async def run_once(
                         tool_errors += 1
                 elif isinstance(event, TurnFinished):
                     reason = event.reason
+                    if event.answering:
+                        # The last step is the one cut: the text of the one
+                        # before ("let me read it") is no answer, as after a
+                        # failed call (review of the deep audit).
+                        answer = ""
     except ModelError as exc:
         error = str(exc)
         # The turn gave no final answer: the text of a step before ("let me

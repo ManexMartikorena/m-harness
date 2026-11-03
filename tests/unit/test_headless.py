@@ -17,6 +17,8 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
+from mharness.domain.events import TextDelta
+from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import (
     Block,
     Message,
@@ -27,7 +29,7 @@ from mharness.domain.messages import (
 from mharness.domain.model import ModelResponse, Usage
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
-from tests.fakes.model import FAKE_MODEL, FakeModelClient, reply, tool_calls
+from tests.fakes.model import FAKE_MODEL, HANG, FakeModelClient, reply, tool_calls
 from tests.fakes.sessions import MemorySessionStore
 from tests.fakes.tools import FakeTool
 from tests.unit.test_sessions import FIRST, World
@@ -99,6 +101,21 @@ async def test_the_text_blocks_of_the_answer_do_not_run_together() -> None:
     result = await run_once(conversation, "Hola")
 
     assert result.text == "Uno.\nDos."
+
+
+async def test_a_time_limit_while_the_model_answers_gives_no_answer() -> None:
+    # Review of the deep audit: the last step is the one cut, and the text
+    # of the one before ("Voy a mirar.") came out as the answer.
+    fake = FakeModelClient(
+        [tool_calls(call("c1"), text="Voy a mirar."), [TextDelta(text="Hay"), HANG]]
+    )
+    world = World(MemorySessionStore(), fake, limits=TurnLimits(timeout=0.2))
+    conversation = await world.sessions.start()
+
+    result = await run_once(conversation, "¿Qué hay?")
+
+    assert result.reason == "timeout"
+    assert result.text == ""
 
 
 async def test_a_denied_call_is_named_and_not_a_tool_error() -> None:

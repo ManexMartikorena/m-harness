@@ -131,6 +131,9 @@ class TurnFinished(BaseModel, frozen=True):
     steps: int
     # Summed over its calls; None if one of them has no price.
     cost: Usd | None
+    # Whether a time limit cut the model while it answered: the last step
+    # then left no text (review of the deep audit).
+    answering: bool = False
 
 
 type AgentEvent = (
