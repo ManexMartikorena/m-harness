@@ -2,6 +2,7 @@
 and the HTTP errors (spec hito 9, §1.3, §1.9 and §1.10)."""
 
 import json
+import re
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -441,3 +442,45 @@ async def test_complete_with_a_body_it_cannot_read(
 
     with pytest.raises(ModelResponseError, match="could not be understood"):
         await client.complete(ModelRequest(model=MODEL, messages=[user("a")]))
+
+
+@respx.mock
+async def test_ids_anthropic_would_refuse_go_remade_the_same_on_both_sides(
+    client: AnthropicClient,
+) -> None:
+    # Deep audit after hito 9 (M2): Anthropic asks ^[a-zA-Z0-9_-]+$ for a
+    # tool_use id; a call made by another server (functions.read_file:0)
+    # broke every request after /model.
+    odd = "functions.read_file:0"
+    other = "functions.read_file:1"
+    request = ModelRequest(
+        model=MODEL,
+        messages=[
+            user("Lee"),
+            Message(
+                role="assistant",
+                blocks=[
+                    ToolCallBlock(id=odd, name="read_file", arguments="{}"),
+                    ToolCallBlock(id=other, name="read_file", arguments="{}"),
+                    ToolCallBlock(id="toolu_ok-1", name="read_file", arguments="{}"),
+                ],
+            ),
+            Message(
+                role="tool",
+                blocks=[
+                    ToolResultBlock(call_id=odd, content="a"),
+                    ToolResultBlock(call_id=other, content="b"),
+                    ToolResultBlock(call_id="toolu_ok-1", content="c"),
+                ],
+            ),
+        ],
+    )
+
+    body = await ask(client, request)
+
+    uses = [b["id"] for b in body["messages"][1]["content"]]
+    results = [b["tool_use_id"] for b in body["messages"][2]["content"]]
+    assert uses == results
+    assert uses[2] == "toolu_ok-1"
+    assert len(set(uses)) == 3
+    assert all(re.fullmatch(r"[a-zA-Z0-9_-]+", id_) for id_ in uses)

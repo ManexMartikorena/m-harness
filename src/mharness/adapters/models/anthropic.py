@@ -7,7 +7,9 @@ and OpenCode on 2026-11-03 (spec, §1.0).
 """
 
 import asyncio
+import hashlib
 import json
+import re
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
 from decimal import Decimal
@@ -379,7 +381,7 @@ def _content(message: Message) -> list[dict[str, Any]]:
                 content.append(
                     {
                         "type": "tool_use",
-                        "id": block.id,
+                        "id": _tool_id(block.id),
                         "name": block.name,
                         "input": _input(block.arguments),
                     }
@@ -387,7 +389,7 @@ def _content(message: Message) -> list[dict[str, Any]]:
             case ToolResultBlock():
                 result: dict[str, Any] = {
                     "type": "tool_result",
-                    "tool_use_id": block.call_id,
+                    "tool_use_id": _tool_id(block.call_id),
                     "content": block.content,
                 }
                 if block.is_error:
@@ -396,6 +398,21 @@ def _content(message: Message) -> list[dict[str, Any]]:
     if message.interrupted:
         content.append({"type": "text", "text": INTERRUPTED_MARK})
     return content
+
+
+# What Anthropic accepts as a tool_use id.
+_TOOL_ID = re.compile(r"[a-zA-Z0-9_-]+")
+
+
+def _tool_id(call_id: str) -> str:
+    """An id Anthropic accepts: as it is, or, if another server made it
+    with other characters (`functions.read_file:0`), remade from it the
+    same way for the call and its result (deep audit after hito 9, M2)."""
+    if _TOOL_ID.fullmatch(call_id):
+        return call_id
+    digest = hashlib.sha256(call_id.encode("utf-8", "surrogatepass")).hexdigest()
+    readable = re.sub(r"[^a-zA-Z0-9_-]", "_", call_id)[:40]
+    return f"{readable}_{digest[:12]}"
 
 
 def _input(arguments: str) -> dict[str, Any]:
