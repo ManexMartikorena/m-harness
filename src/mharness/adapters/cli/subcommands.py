@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from mharness.adapters.cli.commands import session_lines, trace_lines
 from mharness.adapters.cli.export import markdown
 from mharness.adapters.cli.reports import stats_report
-from mharness.adapters.cli.text import clean, clean_line
+from mharness.adapters.cli.text import clean, clean_json, clean_line
 from mharness.application.sessions import Sessions
 from mharness.application.stats import daily
 from mharness.domain.session import Session, SessionError
@@ -101,8 +101,8 @@ async def export_session(
     except SessionError as exc:
         return _fail(exc, err)
     if output_format == "json":
-        # JSON escapes every control character: safe in a terminal too.
-        out.write(found.model_dump_json(indent=2) + "\n")
+        # Escaped also to a file: the same JSON wherever it goes.
+        out.write(clean_json(found.model_dump_json(indent=2)) + "\n")
     else:
         text = markdown(found)
         # As `maha -p`: clean to a terminal, as it is to a file.

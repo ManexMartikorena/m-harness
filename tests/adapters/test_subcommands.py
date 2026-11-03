@@ -148,6 +148,28 @@ async def test_export_in_json_is_the_session() -> None:
     assert exported == await world.sessions.read(FIRST)
 
 
+@pytest.mark.parametrize("terminal", [True, False])
+async def test_export_in_json_escapes_what_a_terminal_would_obey(
+    terminal: bool,
+) -> None:
+    # Audit after hito 9, S5: JSON escapes only U+0000-001F; DEL, the C1
+    # controls and the bidi ones went out raw. Escaped they are valid JSON
+    # and come back the same, to a file too.
+    world = await with_a_session("a\x7fb\x9b2Jc\u202ed\u2066e\x85f")
+    out = Terminal() if terminal else io.StringIO()
+
+    await export_session(
+        world.sessions, FIRST, output_format="json", out=out, err=io.StringIO()
+    )
+
+    text = out.getvalue()
+    for raw in ("\x7f", "\x9b", "\u202e", "\u2066", "\x85"):
+        assert raw not in text
+    assert "a\\u007fb\\u009b2Jc\\u202ed\\u2066e\\u0085f" in text
+    exported = Session.model_validate_json(text)
+    assert exported == await world.sessions.read(FIRST)
+
+
 async def test_export_of_a_session_open_in_another_maha() -> None:
     world = World(MemorySessionStore(), FakeModelClient([reply("Hola.")]))
     conversation = await world.sessions.start()
