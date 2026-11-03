@@ -1,7 +1,13 @@
 import pytest
 from pydantic import ValidationError
 
-from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
+from mharness.domain.messages import (
+    Message,
+    ReasoningBlock,
+    TextBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+)
 
 
 def test_text_joins_the_blocks() -> None:
@@ -99,3 +105,39 @@ def test_a_message_is_not_interrupted_unless_said() -> None:
     assert whole.interrupted is False
     assert Message.model_validate_json(cut.model_dump_json()) == cut
     assert Message.model_validate_json(whole.model_dump_json()).interrupted is False
+
+
+# The model's reasoning, kept to give it back intact (spec hito 9, §1.5).
+
+
+def test_a_reasoning_block_keeps_its_signature() -> None:
+    block = ReasoningBlock(signature="Eq…")
+
+    assert (block.type, block.text, block.signature, block.redacted) == (
+        "reasoning",
+        "",
+        "Eq…",
+        None,
+    )
+
+
+def test_a_message_reads_its_reasoning_back_from_json() -> None:
+    message = Message(
+        role="assistant",
+        blocks=[
+            ReasoningBlock(text="pienso", signature="s1"),
+            TextBlock(text="Hola."),
+            ReasoningBlock(redacted="cifrado"),
+        ],
+    )
+
+    assert Message.model_validate_json(message.model_dump_json()) == message
+
+
+def test_text_ignores_the_reasoning() -> None:
+    message = Message(
+        role="assistant",
+        blocks=[ReasoningBlock(text="pienso"), TextBlock(text="Hola.")],
+    )
+
+    assert message.text == "Hola."
