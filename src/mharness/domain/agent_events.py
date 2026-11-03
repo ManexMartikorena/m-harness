@@ -16,6 +16,18 @@ from mharness.domain.messages import ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
 from mharness.domain.money import Usd
 
+# How a turn ended (see `TurnFinished.reason`).
+TurnEnd = Literal[
+    "end_turn",
+    "max_steps",
+    "max_cost",
+    "max_tokens",
+    "timeout",
+    "denied",
+    "max_output",
+    "refused",
+]
+
 
 class TurnStarted(BaseModel, frozen=True):
     """The first event of every turn: what the user wrote."""
@@ -108,16 +120,7 @@ class TurnFinished(BaseModel, frozen=True):
     # Ctrl+C. `denied`: the user denied a call. `max_output`: the answer
     # was cut by the model's own output limit; `refused`: the model declined
     # (deep audit after hito 9, B1).
-    reason: Literal[
-        "end_turn",
-        "max_steps",
-        "max_cost",
-        "max_tokens",
-        "timeout",
-        "denied",
-        "max_output",
-        "refused",
-    ]
+    reason: TurnEnd
     # Summed over every call to the model in the turn.
     usage: Usage
     # Calls handled by the loop; not those skipped after a denial.
