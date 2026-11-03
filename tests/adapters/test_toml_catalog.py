@@ -48,6 +48,7 @@ def test_a_model_as_the_docs_publish_it(builtin: TomlCatalog) -> None:
         provider="opencode-go",
         model="glm-5.3-flash",
         context=1_000_000,
+        max_output=131_072,
         prices=Prices(
             input=Decimal("0.15"),
             output=Decimal("0.50"),
@@ -55,6 +56,32 @@ def test_a_model_as_the_docs_publish_it(builtin: TomlCatalog) -> None:
             checked=CHECKED,
         ),
     )
+
+
+def test_every_anthropic_model_knows_its_longest_answer(builtin: TomlCatalog) -> None:
+    # The Messages API needs max_tokens, and one past the model's limit is a
+    # 400 (spec hito 9, decision 5).
+    anthropic = [info for info in builtin.models() if info.api == "anthropic"]
+
+    assert len(anthropic) == 22
+    assert all(info.max_output for info in anthropic)
+
+
+def test_the_format_of_each_model_as_the_provider_serves_it(
+    builtin: TomlCatalog,
+) -> None:
+    # Checked on the providers' docs, 2026-11-03 (spec hito 9, §1.0).
+    def api(provider: str, model: str) -> str | None:
+        info = builtin.get(provider, model)
+        assert info is not None
+        return info.api
+
+    assert api("opencode-go", "claude-haiku-5-5") == "anthropic"
+    assert api("opencode-go", "minimax-m3") == "anthropic"
+    assert api("opencode-go", "gpt-6-luna") == "openai-responses"
+    assert api("opencode-go", "gemini-4-argon") == "google"
+    # The provider's own format is not written.
+    assert api("opencode-go", "glm-5.3-flash") is None
 
 
 def test_a_model_with_tiers(builtin: TomlCatalog) -> None:
