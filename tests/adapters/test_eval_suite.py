@@ -250,3 +250,18 @@ async def test_putting_back_does_not_follow_a_link_out_of_the_copy(
 
         assert list(outside.iterdir()) == []
         assert (copy / "tests" / "test_a.py").read_text() == "assert True\n"
+
+
+async def test_the_home_of_a_check_is_empty_out_of_the_copy_and_goes_with_it(
+    tmp_path: Path,
+) -> None:
+    # Deep audit (I5).
+    suite = TomlEvalSuite(battery(tmp_path))
+    [task] = await suite.tasks()
+
+    async with suite.workspace(task) as copy:
+        home = await suite.home(copy)
+        assert list(home.iterdir()) == []
+        assert not home.is_relative_to(copy)
+
+    assert not home.exists()

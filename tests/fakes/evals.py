@@ -28,12 +28,20 @@ class MemoryEvalSuite:
     @asynccontextmanager
     async def workspace(self, task: Task) -> AsyncIterator[Path]:
         with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder)
+            # The copy in a folder of its own, with room for its check's
+            # HOME next to it, as the real one.
+            path = Path(folder) / "repo"
+            path.mkdir()
             for name, text in self._fixtures.get(task.fixture, {}).items():
                 (path / name).parent.mkdir(parents=True, exist_ok=True)
                 (path / name).write_text(text, encoding="utf-8")
             self.workspaces.append(path)
             yield path
+
+    async def home(self, workspace: Path) -> Path:
+        home = workspace.parent / "home"
+        home.mkdir()
+        return home
 
     async def restore_tests(self, task: Task, workspace: Path) -> list[str]:
         restored = []

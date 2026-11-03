@@ -61,6 +61,14 @@ class TomlEvalSuite:
             if not self._keep:
                 await asyncio.to_thread(shutil.rmtree, folder, ignore_errors=True)
 
+    async def home(self, workspace: Path) -> Path:
+        # Next to the copy, in the run's temporary folder (`workspace()`).
+        def make() -> Path:
+            folder = Path(tempfile.mkdtemp(prefix="home-", dir=workspace.parent))
+            return folder.resolve()
+
+        return await asyncio.to_thread(make)
+
     async def restore_tests(self, task: Task, workspace: Path) -> list[str]:
         return await asyncio.to_thread(self._restore_tests, task, workspace)
 

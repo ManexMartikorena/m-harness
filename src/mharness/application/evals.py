@@ -17,7 +17,7 @@ from typing import Literal
 
 from mharness.application.headless import RunResult, TurnBroke, run_once
 from mharness.application.sessions import Conversation
-from mharness.domain.evals import EvalError, Outcome, Task, TaskRun
+from mharness.domain.evals import EvalError, Outcome, Task, TaskRun, check_env
 from mharness.ports.commands import CommandRunner
 from mharness.ports.evals import EvalSuite
 
@@ -60,7 +60,8 @@ class Evaluator:
         self._suite = suite
         self._open_run = open_run
         self._runner = runner
-        # The variables of the check command, as for any command of maha.
+        # The variables maha's commands get; a check keeps only a few of
+        # them (`check_env`, deep audit, I5).
         self._env = env
         # Each run as it ends, its last try: a retry replaces the error it
         # repeats (review of the audit of hito 8).
@@ -183,8 +184,14 @@ class Evaluator:
             if (why := check.file_fails(text)) is not None:
                 return why
         if check.command is not None:
+            # Code the model wrote: an empty HOME, and no XDG folder nor
+            # credential, until the sandbox of hito 15 (deep audit, I5).
+            home = await self._suite.home(path)
             done = await self._runner.run(
-                check.command, cwd=path, time_limit=CHECK_TIME_LIMIT, env=self._env
+                check.command,
+                cwd=path,
+                time_limit=CHECK_TIME_LIMIT,
+                env=check_env(self._env, str(home)),
             )
             if done.timed_out:
                 return f"the check took more than {CHECK_TIME_LIMIT:.0f} s"

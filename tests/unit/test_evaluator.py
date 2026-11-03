@@ -2,13 +2,14 @@
 failures apart (spec hito 8, §1.5 to §1.9), with fakes."""
 
 import asyncio
+import os
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
 
-from mharness.application.evals import Evaluator, choose
+from mharness.application.evals import CHECK_TIME_LIMIT, Evaluator, choose
 from mharness.application.sessions import Conversation
 from mharness.domain.commands import CommandResult
 from mharness.domain.errors import (
@@ -150,7 +151,7 @@ async def test_the_command_runs_in_the_copy_and_must_end_with_zero() -> None:
     assert [r.outcome for r in runs] == ["pass", "fail"]
     assert runs[1].detail == "the check exited with 1:\nFAILED (failures=1)"
     assert [r.cwd for r in runner.ran] == [path for *_, path in opened]
-    assert runner.ran[0].env == ENV
+    assert runner.ran[0].env["PATH"] == ENV["PATH"]
 
 
 async def test_a_provider_failure_is_an_error_and_is_not_checked() -> None:
@@ -410,3 +411,57 @@ async def test_a_test_the_agent_changed_is_put_back_and_said() -> None:
 
     assert seen == ["original\n"]
     assert (run.outcome, run.restored) == ("pass", ["tests/test_a.py"])
+
+
+async def test_the_check_runs_with_an_empty_home_and_no_credentials() -> None:
+    # Deep audit (I5): the check runs code the model wrote, on the host,
+    # and had the user's HOME and XDG folders. Until the sandbox of hito
+    # 15, an empty HOME of its own and only the variables it needs.
+    env = {
+        "PATH": "/usr/bin",
+        "LANG": "es_ES.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "TZ": "Europe/Madrid",
+        "HOME": "/home/someone",
+        "USER": "someone",
+        "XDG_CONFIG_HOME": "/home/someone/.config",
+        "XDG_DATA_HOME": "/home/someone/.local/share",
+        "SSH_AUTH_SOCK": "/tmp/ssh-agent",
+        "VIRTUAL_ENV": "/home/someone/venv",
+        "LC_MY_TOKEN": "secret",
+    }
+    check = Check(command="python3 -m unittest -q tests.test_a")
+    homes: list[list[str]] = []
+
+    class Seeing(FakeRunner):
+        async def run(
+            self, command: str, *, cwd: Path, time_limit: float, env: Mapping[str, str]
+        ) -> CommandResult:
+            homes.append(os.listdir(env["HOME"]))
+            return await super().run(command, cwd=cwd, time_limit=time_limit, env=env)
+
+    ok = CommandResult(exit_code=0, output="OK", truncated=False, timed_out=False)
+    runner = Seeing([ok])
+    opened: list[tuple[str, str, Path]] = []
+    suite = MemoryEvalSuite([task(check=check)], FIXTURES)
+    subject = Evaluator(suite, opener(says("Hecho."), opened), runner, env)  # type: ignore[arg-type]
+
+    [run] = await subject.run([task(check=check)], ["m"])
+
+    [ran] = runner.ran
+    home = ran.env["HOME"]
+    assert run.outcome == "pass"
+    assert ran.env == {
+        "PATH": "/usr/bin",
+        "LANG": "es_ES.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "TZ": "Europe/Madrid",
+        "HOME": home,
+        "TMPDIR": home,
+    }
+    # Empty, and not the copy nor in it: the check cannot read it back.
+    assert homes == [[]]
+    [(_, _, copy)] = opened
+    assert ran.cwd == copy
+    assert not Path(home).is_relative_to(copy)
+    assert ran.time_limit == CHECK_TIME_LIMIT

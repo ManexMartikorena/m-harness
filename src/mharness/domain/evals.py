@@ -6,7 +6,7 @@ belong to the adapters and the application.
 """
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 from pathlib import PurePosixPath
@@ -14,6 +14,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from mharness.domain.environment import CREDENTIAL_SUFFIXES
 from mharness.domain.limits import TurnLimits
 from mharness.domain.money import Usd
 
@@ -108,6 +109,26 @@ def is_test_file(path: str) -> bool:
         or name.endswith("_test.py")
         or name == "conftest.py"
     )
+
+
+# What a check command may see of maha's own variables: enough to find
+# python3 and speak the user's language, nothing of the user's home (deep
+# audit, I5). Until the sandbox of hito 15, a mitigation: the check runs
+# code the model wrote, on this machine.
+CHECK_VARIABLES = frozenset({"PATH", "LANG", "LANGUAGE", "TZ"})
+
+
+def check_env(env: Mapping[str, str], home: str) -> dict[str, str]:
+    """The variables of a check command: those of `CHECK_VARIABLES` and
+    `LC_*` that `env` has, with `home`, an empty folder of the run, as its
+    HOME and TMPDIR. No XDG folder, no credential, no SSH agent."""
+    kept = {
+        name: value
+        for name, value in env.items()
+        if (name in CHECK_VARIABLES or name.startswith("LC_"))
+        and not name.upper().endswith(CREDENTIAL_SUFFIXES)
+    }
+    return {**kept, "HOME": home, "TMPDIR": home}
 
 
 class Task(BaseModel, frozen=True, extra="forbid"):
