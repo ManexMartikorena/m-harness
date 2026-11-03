@@ -1246,3 +1246,39 @@ def test_a_retry_note_is_clean_and_rounded() -> None:
     )
 
     assert retry_note(event) == ("[m\\x1b[2J: HTTP 429\\n; retrying in 2.5 s (2/3)]")
+
+
+async def test_the_model_in_the_header_is_escaped() -> None:
+    # Deep audit after hito 9 (I3): a session imported with a model like
+    # this one wrote live escapes to the terminal when resumed.
+    evil = "glm\x1b]0;PWNED\x07\x1b[31mRED"
+    sessions = Sessions(
+        MemorySessionStore(),
+        lambda model, history: Agent(
+            FakeModelClient([]),
+            ToolRegistry(),
+            gate=FakeApproval(),
+            model=model,
+            catalog=MemoryCatalog(),
+            provider="opencode-go",
+            history=history,
+        ),
+        cwd="/home/ana/proyecto",
+        provider="opencode-go",
+        model=evil,
+        version="0.9.0",
+        traces=MemoryTraceSink(),
+    )
+    out = io.StringIO()
+
+    await converse(
+        sessions,
+        provider="opencode-go",
+        catalog=KNOWN,
+        read_line=ScriptedInput(),
+        out=out,
+        err=io.StringIO(),
+    )
+
+    assert "\x1b" not in out.getvalue()
+    assert "glm\\x1b]0;PWNED" in out.getvalue()

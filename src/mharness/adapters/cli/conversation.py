@@ -143,9 +143,11 @@ async def _turns(
     sigint: _Sigint,
     resumed: Resumed | None,
 ) -> int:
-    model = commands.conversation.model
+    # From the configuration or a resumed session: escaped as any other
+    # text that may come from a file (deep audit after hito 9, I3).
+    model = clean_line(commands.conversation.model)
     print(
-        f"maha {__version__} · {provider} · {model} · /help for commands",
+        f"maha {__version__} · {clean_line(provider)} · {model} · /help for commands",
         file=out,
     )
     if resumed is not None:
