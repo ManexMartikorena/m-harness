@@ -342,3 +342,14 @@ def test_which_files_of_a_fixture_are_tests(path: str, test: bool) -> None:
 def test_own_tests_must_be_tests() -> None:
     with pytest.raises(ValidationError, match="not a test file"):
         Check(command="true", own_tests=["inventory.py"])
+
+
+def test_a_task_added_after_the_baseline_is_said_to_be_left_out() -> None:
+    # Deep audit (I13): it was left out of the comparison in silence.
+    before = by_task(runs_of("01", 5))
+    now = runs_of("01", 5) + runs_of("21", 0, 5) + runs_of("22", 5)
+
+    found = compare(now, baseline(before))
+
+    assert regressions(found) == []
+    assert notes(found) == ["not in the baseline, not compared: 21, 22"]

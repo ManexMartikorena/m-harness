@@ -359,12 +359,22 @@ def compare(runs: Sequence[TaskRun], baseline: Baseline) -> list[Finding]:
       than the baseline's: a regression only if the lower bound of their
       95 % interval is over it too (`_lower_bound`);
     - a task where no run finished, and a cost that can no longer be
-      compared (audit of hito 8): regressions.
+      compared (audit of hito 8): regressions;
+    - the tasks the baseline does not have, named (deep audit, I13).
 
     Never re-runs anything. Empty if nothing changed for the worse."""
     current = by_task(runs)
     common = [task for task in current if task in baseline.tasks]
     found = []
+    # Said, not hidden: their runs are in the table, not in the gate (deep
+    # audit, I13).
+    if new := [task for task in current if task not in baseline.tasks]:
+        found.append(
+            Finding(
+                text=f"not in the baseline, not compared: {', '.join(new)}",
+                regression=False,
+            )
+        )
     for task in common:
         before, now = baseline.tasks[task], current[task]
         if before.finished and now.runs and not now.finished:
