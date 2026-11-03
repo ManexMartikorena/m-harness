@@ -615,6 +615,14 @@ Toca el bucle (acumulador, petición) y añade un formato. Antes del merge:
 
 El resultado se anota aquí al implementar.
 
+**PR 1 y PR 2** (2026-11-03): sin evals propias. Con los modelos de la
+batería (`openai-chat`), la petición sale igual byte a byte (sin `effort`
+ni `max_tokens` por defecto) y el mensaje que rehace el acumulador es el
+mismo (tests de `test_collect.py` y de `test_openai_chat.py`), como en el
+PR 3 del hito 8. El router solo elige el cliente que ya se usaba. Las
+evals de §5 van en el PR 3, que sí cambia lo que se ejecuta (un formato
+nuevo).
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit en verde. Tres PRs y el de cierre, en el milestone
