@@ -153,14 +153,26 @@ class _Asked:
         self._last: tuple[BaseModel, Path] | None = None
         # The bytes the question showed; None: the file did not exist.
         self.old: bytes | None = None
+        # Whether the question showed nothing of the file: what failed
+        # comes after the approval (deep audit after hito 9, H6).
+        self.blind = False
 
     def forget(self) -> None:
         self._last = None
         self.old = None
+        self.blind = False
 
-    def remember(self, params: BaseModel, path: Path, old: bytes | None = None) -> None:
+    def remember(
+        self,
+        params: BaseModel,
+        path: Path,
+        old: bytes | None = None,
+        *,
+        blind: bool = False,
+    ) -> None:
         self._last = (params, path)
         self.old = old
+        self.blind = blind
 
     def same(self, params: BaseModel, path: Path) -> bool:
         return self._last == (params, path)
@@ -1265,7 +1277,7 @@ def _as_shown(
         raise _changed(params.path)
     _check_target(workspace, path, params.path)
     data = _current_bytes(path, params.path, verb)
-    if data != asked.old:
+    if not asked.blind and data != asked.old:
         raise _changed(params.path)
     return path, data
 
@@ -1337,14 +1349,19 @@ class WriteFile:
         self._asked.forget()
         workspace = self._workspace
         path = workspace.resolve(params.path)
-        _check_target(workspace, path, params.path)
         try:
             params.content.encode("utf-8")
         except UnicodeEncodeError:
             raise ToolError("content is not valid UTF-8") from None
         warning = workspace.change_warning(path, params.path)
-        data = _current_bytes(path, params.path, "overwrite", warning=warning)
         shown = workspace.shown(path)
+        try:
+            _check_target(workspace, path, params.path)
+            data = _current_bytes(path, params.path, "overwrite", warning=warning)
+        except ToolError:
+            if warning is None:
+                raise
+            return self._blind(params, path, shown, warning, _preview(params.content))
         if data is None:
             lines = _count(len(_split(params.content)), "line")
             title = f"create {shown} ({lines})"
@@ -1369,6 +1386,13 @@ class WriteFile:
             warning=warning,
         )
 
+    def _blind(
+        self, params: WriteFileParams, path: Path, shown: str, warning: str, body: str
+    ) -> ApprovalRequest:
+        return _blind_question(
+            self.name, self._asked, params, path, shown, warning, body
+        )
+
     async def run(self, params: WriteFileParams) -> str:
         workspace = self._workspace
         path, data = _as_shown(workspace, self._asked, params, "overwrite")
@@ -1381,6 +1405,30 @@ class WriteFile:
     def summary(self, result: str) -> str:
         # "wrote notas.txt (3 lines)" → "3 lines".
         return result[result.rfind("(") + 1 : -1]
+
+
+def _blind_question(
+    tool: str,
+    asked: _Asked,
+    params: BaseModel,
+    path: Path,
+    shown: str,
+    warning: str,
+    body: str,
+) -> ApprovalRequest:
+    """The question about a file with a warning that could not be checked:
+    nothing of it is told before the approval; `run()` says what failed
+    (deep audit after hito 9, H6, a decision of the maintainer)."""
+    asked.remember(params, path, blind=True)
+    raw = getattr(params, "path", shown)
+    detail = body if raw == shown else f"(asked: {raw})\n{body}"
+    return ApprovalRequest(
+        tool=tool,
+        title=f"change {shown} (checked after your approval)",
+        detail=detail,
+        scope=None,
+        warning=warning,
+    )
 
 
 def _old_text(data: bytes, params: WriteFileParams) -> str:
@@ -1512,11 +1560,19 @@ class EditFile:
         _check_strings(params)
         workspace = self._workspace
         path = workspace.resolve(params.path)
-        _check_target(workspace, path, params.path)
         warning = workspace.change_warning(path, params.path)
-        data = _current_bytes(path, params.path, "edit", warning=warning)
-        if data is None:
-            raise ToolError(f"file not found: {params.path}")
+        try:
+            _check_target(workspace, path, params.path)
+            data = _current_bytes(path, params.path, "edit", warning=warning)
+            if data is None:
+                raise ToolError(f"file not found: {params.path}")
+        except ToolError:
+            if warning is None:
+                raise
+            shown = workspace.shown(path)
+            return _blind_question(
+                self.name, self._asked, params, path, shown, warning, _strings(params)
+            )
         try:
             old, new, _ = _edited(data, params)
             body = _diff(old, new)
@@ -1539,9 +1595,13 @@ class EditFile:
 
     async def run(self, params: EditFileParams) -> str:
         workspace = self._workspace
+        blind = self._asked.blind
         path, data = _as_shown(workspace, self._asked, params, "edit")
         if data is None:
-            # approval() refuses a missing file, so it appeared.
+            if blind:
+                # Told now, after the approval (H6).
+                raise ToolError(f"file not found: {params.path}")
+            # approval() refuses a missing file, so it went away.
             raise _changed(params.path)
         _, new, found = _edited(data, params)
         _write(workspace, path, new, data, parents=False)

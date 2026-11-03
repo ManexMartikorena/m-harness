@@ -1779,18 +1779,35 @@ async def test_a_valid_edit_with_a_warning_still_shows_the_diff(root: Path) -> N
     assert request.detail == "@@ -1 +1 @@\n-KEY=1\n+KEY=2"
 
 
-async def test_metadata_errors_with_a_warning_still_come_first(root: Path) -> None:
+async def test_with_a_warning_nothing_of_the_file_is_told_before_asking(
+    root: Path,
+) -> None:
+    # Deep audit after hito 9 (H6), decision of the maintainer: with a
+    # warning (a secret, outside, what runs code), the model learns nothing
+    # of the file before the person approves; the error comes after. Before,
+    # "file not found" or "is a directory" came first. Errors of the
+    # arguments say nothing of the file, and still come first.
     (root.parent / "dir").mkdir()
-    tool = edit_tool(root)
+    (root / "seguro.env").write_text("KEY=1\n")
+    (root / "seguro.env").chmod(0o400)
+    edit, write = edit_tool(root), write_tool(root)
 
-    with pytest.raises(ToolError, match=r"file not found: \.env"):
-        await tool.approval(edit_params(".env", "a", "b"))
-    with pytest.raises(ToolError, match=r"is a directory: \.\./dir"):
-        await tool.approval(edit_params("../dir", "a", "b"))
+    for tool, params, error in [
+        (edit, edit_params(".env", "a", "b"), r"file not found: \.env"),
+        (edit, edit_params("../dir", "a", "b"), r"is a directory: \.\./dir"),
+        (write, WriteFileParams(path="../dir", content="x"), r"is a directory"),
+        (write, WriteFileParams(path="seguro.env", content="x"), "read-only file"),
+    ]:
+        question = await tool.approval(params)  # type: ignore[attr-defined]
+        assert question is not None
+        assert question.warning is not None
+        with pytest.raises(ToolError, match=error):
+            await tool.run(params)  # type: ignore[attr-defined]
+
     with pytest.raises(ToolError, match="old_string is empty"):
-        await tool.approval(edit_params(".env", "", "b"))
+        await edit.approval(edit_params(".env", "", "b"))
     with pytest.raises(ToolError, match="content is not valid UTF-8"):
-        await write_tool(root).approval(WriteFileParams(path=".env", content="\ud800"))
+        await write.approval(WriteFileParams(path=".env", content="\ud800"))
 
 
 async def test_a_binary_file_outside_asks_before_read_file_says_so(
@@ -1816,15 +1833,22 @@ def big_file(root: Path, name: str) -> Path:
     return path
 
 
-@pytest.mark.parametrize(
-    ("name", "size"),
-    [
-        ("big.txt", "3.0 MiB, "),
-        # With a warning, refused before asking too, but without its size:
-        # it tells the model about a secret (audit of hito 9, H5).
-        (".env", ""),
-    ],
-)
+async def test_a_secret_too_large_asks_and_is_refused_after(root: Path) -> None:
+    # Deep audit after hito 9 (H5, then H6): with a warning, not even its
+    # size reaches the model before the approval.
+    big_file(root, ".env")
+    params = WriteFileParams(path=".env", content="x")
+    tool = write_tool(root)
+
+    question = await tool.approval(params)
+
+    assert question is not None
+    assert "MiB" not in question.title + question.detail
+    with pytest.raises(ToolError, match="file too large to overwrite"):
+        await tool.run(params)
+
+
+@pytest.mark.parametrize(("name", "size"), [("big.txt", "3.0 MiB, ")])
 async def test_a_file_too_large_is_refused_before_reading(
     root: Path, monkeypatch: pytest.MonkeyPatch, name: str, size: str
 ) -> None:
