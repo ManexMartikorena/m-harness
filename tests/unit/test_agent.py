@@ -1903,6 +1903,23 @@ async def test_a_call_cut_by_the_output_limit_is_told_what_happened() -> None:
     assert events[-1].reason == "end_turn"
 
 
+async def test_the_last_call_cut_by_the_output_limit_never_runs() -> None:
+    # Review of the deep audit: a call cut before any argument came arrives
+    # as "{}", whole as JSON, and ran with defaults the model never chose.
+    first = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    empty = ToolCallBlock(id="c2", name="echo", arguments="{}")
+    answer = tool_calls(first, empty).model_copy(update={"stop_reason": "max_tokens"})
+    tool = FakeTool()
+    subject = agent(FakeModelClient([answer, reply("Hecho.")]), tool)
+
+    events = await run(subject)
+
+    results = [e.result for e in events if isinstance(e, ToolFinished)]
+    assert [r.is_error for r in results] == [False, True]
+    assert "output limit" in results[1].content
+    assert len(tool.calls) == 1
+
+
 async def test_a_refusal_ends_the_turn_as_refused() -> None:
     subject = agent(FakeModelClient([reply("No puedo.", stop_reason="content_filter")]))
 

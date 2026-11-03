@@ -251,6 +251,8 @@ class Agent:
     ) -> AsyncGenerator[AgentEvent]:
         """The step's tool calls, one by one: proposed, asked about if they
         need it, run, and their results put in the turn."""
+        # The block the model was writing when an output limit cut it.
+        last = turn.messages[-1].blocks[-1]
         # In order, not in parallel, until hito 16 (spec hito 4, §1.7).
         for call in turn.calls:
             yield ToolCallProposed(call=call)
@@ -271,10 +273,12 @@ class Agent:
             # None: nobody was asked, or the answer was not valid.
             decision: Decision | None = None
             asked = False
-            if stop_reason == "max_tokens" and not _whole(call):
+            cut = call is last or not _whole(call)
+            if stop_reason == "max_tokens" and cut:
                 # Cut by the output limit: its error says so, or the
                 # model writes the same cut call again (deep audit
-                # after hito 9, B1).
+                # after hito 9, B1). The last one, also if its arguments
+                # look whole: "{}" may be all that came (review).
                 prepared: _Ready | _Outcome = _error(call, CUT_BY_OUTPUT)
             else:
                 prepared = await _within(self._prepare(call), turn.deadline)
