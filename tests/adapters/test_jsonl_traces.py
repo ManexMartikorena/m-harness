@@ -1,5 +1,6 @@
 """`JsonlTraceSink` over `tmp_path` (spec hito 7, §1.7 and §4.5)."""
 
+import fcntl
 import json
 import os
 import stat
@@ -11,7 +12,13 @@ import pytest
 from mharness.adapters.tracing import JsonlTraceSink
 from mharness.domain.agent_events import ToolFinished, TurnStarted
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
-from mharness.domain.trace import TraceError, TraceExists, TraceRecord, TurnFailed
+from mharness.domain.trace import (
+    TraceError,
+    TraceExists,
+    TraceInUse,
+    TraceRecord,
+    TurnFailed,
+)
 from mharness.ports.tracing import TraceSink
 
 SESSION = "20261027-091502-3fa2"
@@ -226,6 +233,59 @@ async def test_delete_removes_the_trace(folder: Path) -> None:
     await sink.delete(SESSION)
 
     assert not exists(file_of(folder))
+
+
+async def test_a_trace_being_written_is_not_deleted(folder: Path) -> None:
+    # Audit after hito 9, S3: another maha in its first turn has a trace
+    # and no session yet. Two sinks stand for two maha: flock locks open
+    # files, not processes.
+    log = await JsonlTraceSink(folder).open(SESSION, new=True)
+    await log.write(record())
+
+    with pytest.raises(TraceInUse, match=f"trace of {SESSION} is open in another"):
+        await JsonlTraceSink(folder).delete(SESSION)
+    assert exists(file_of(folder))
+    await log.write(record("Dos"))
+    await log.close()
+
+    await JsonlTraceSink(folder).delete(SESSION)
+    assert not exists(file_of(folder))
+
+
+async def test_a_trace_being_written_is_not_opened_twice(folder: Path) -> None:
+    log = await JsonlTraceSink(folder).open(SESSION)
+
+    with pytest.raises(TraceInUse):
+        await JsonlTraceSink(folder).open(SESSION)
+    await log.close()
+    again = await JsonlTraceSink(folder).open(SESSION)
+    await again.close()
+
+
+async def test_a_trace_deleted_while_opening_is_made_again(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Another maha deletes it between the open and the lock: the records
+    # never go to a file without a name.
+    sink = JsonlTraceSink(folder)
+    log = await sink.open(SESSION)
+    await log.write(record("Viejo"))
+    await log.close()
+    real_flock = fcntl.flock
+    deleted: list[bool] = []
+
+    def flock_after_a_delete(fd: int, operation: int) -> None:
+        if not deleted:
+            deleted.append(True)
+            file_of(folder).unlink()
+        real_flock(fd, operation)
+
+    monkeypatch.setattr(fcntl, "flock", flock_after_a_delete)
+    log = await sink.open(SESSION)
+    await log.write(record("Nuevo"))
+    await log.close()
+
+    assert await sink.read(SESSION) == [record("Nuevo")]
 
 
 async def test_deleting_a_session_without_trace_is_fine(folder: Path) -> None:

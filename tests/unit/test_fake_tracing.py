@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from mharness.domain.agent_events import TurnStarted
-from mharness.domain.trace import TraceError, TraceExists, TraceRecord
+from mharness.domain.trace import TraceError, TraceExists, TraceInUse, TraceRecord
 from mharness.ports.tracing import TraceSink
 from tests.fakes.tracing import MemoryTraceSink
 
@@ -52,6 +52,7 @@ async def test_delete_forgets_the_trace() -> None:
     sink = MemoryTraceSink()
     log = await sink.open(SESSION)
     await log.write(RECORD)
+    await log.close()
 
     await sink.delete(SESSION)
 
@@ -90,11 +91,15 @@ async def test_broken_lines_are_skipped_as_by_the_real_one() -> None:
     assert await sink.read(SESSION) == [RECORD]
 
 
-async def test_writing_after_a_delete_goes_nowhere() -> None:
+async def test_an_open_trace_is_neither_deleted_nor_opened_again() -> None:
+    # As the flock of the real one (audit after hito 9, S3).
     sink = MemoryTraceSink()
     log = await sink.open(SESSION)
+
+    with pytest.raises(TraceInUse):
+        await sink.delete(SESSION)
+    with pytest.raises(TraceInUse):
+        await sink.open(SESSION)
+    await log.close()
     await sink.delete(SESSION)
-
-    await log.write(RECORD)
-
     assert SESSION not in sink.traces

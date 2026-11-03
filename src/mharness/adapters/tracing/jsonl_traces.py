@@ -9,19 +9,22 @@ Disk calls are synchronous inside `async def`, as in the session store.
 """
 
 import contextlib
+import fcntl
 import json
 import logging
 import os
 from pathlib import Path
 
 from mharness.domain.session import is_session_id
-from mharness.domain.trace import TraceError, TraceExists, TraceRecord
+from mharness.domain.trace import TraceError, TraceExists, TraceInUse, TraceRecord
 
 # Read too: to see whether the file ends in a whole line.
 # Diagnosis only, never content (spec hito 7, §1.11).
 _log = logging.getLogger(__name__)
 
 _OPEN = os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW
+# Opens of a trace that another maha deletes each time, at most.
+_TRIES = 3
 
 
 class JsonlTraceLog:
@@ -96,18 +99,28 @@ class JsonlTraceSink:
             )
             _log.warning("%s", message)
             raise TraceError(message) from None
-        try:
-            fd = os.open(path, flags, 0o600)
-        except FileExistsError:
-            raise TraceExists(f"the trace of {session} already exists") from None
-        except OSError as exc:
-            raise _cannot_write(session, exc) from None
-        try:
-            os.fchmod(fd, 0o600)
-        except OSError as exc:
-            os.close(fd)
-            raise _cannot_write(session, exc) from None
-        return JsonlTraceLog(fd, session)
+        # Another maha may delete it between the open and the lock: then
+        # it is made again, a few times at most.
+        for _ in range(_TRIES):
+            try:
+                fd = os.open(path, flags, 0o600)
+            except FileExistsError:
+                raise TraceExists(f"the trace of {session} already exists") from None
+            except OSError as exc:
+                raise _cannot_write(session, exc) from None
+            try:
+                _lock(fd, session)
+                if not _still_named(fd, path):
+                    os.close(fd)
+                    continue
+                os.fchmod(fd, 0o600)
+            except BaseException as exc:
+                os.close(fd)
+                if isinstance(exc, OSError):
+                    raise _cannot_write(session, exc) from None
+                raise
+            return JsonlTraceLog(fd, session)
+        raise TraceError(f"cannot write the trace of {session}: deleted while opened")
 
     async def read(self, session: str) -> list[TraceRecord]:
         path = self._path(session)
@@ -130,13 +143,27 @@ class JsonlTraceSink:
         return records
 
     async def delete(self, session: str) -> None:
+        """Locked while it goes: a trace another maha is writing (its first
+        turn, before its session exists) stays (audit after hito 9, S3)."""
         path = self._path(session)
         try:
-            path.unlink(missing_ok=True)
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except FileNotFoundError:
+            return
         except OSError as exc:
             raise TraceError(
                 f"cannot delete the trace of {session}: {exc.strerror}"
             ) from None
+        try:
+            _lock(fd, session)
+            if _still_named(fd, path):
+                path.unlink()
+        except OSError as exc:
+            raise TraceError(
+                f"cannot delete the trace of {session}: {exc.strerror}"
+            ) from None
+        finally:
+            os.close(fd)
 
     async def sessions(self) -> list[str]:
         try:
@@ -154,6 +181,25 @@ class JsonlTraceSink:
         if not is_session_id(session):
             raise TraceError(f"no session {session}")
         return self._folder / f"{session}.jsonl"
+
+
+def _lock(fd: int, session: str) -> None:
+    """Lock the open trace, or raise `TraceInUse` at once. The lock goes
+    when the file is closed or maha dies."""
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise TraceInUse(f"the trace of {session} is open in another maha") from None
+
+
+def _still_named(fd: int, path: Path) -> bool:
+    """Whether `path` is still the file that `fd` locked."""
+    try:
+        named = path.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    held = os.fstat(fd)
+    return (named.st_dev, named.st_ino) == (held.st_dev, held.st_ino)
 
 
 def _end_line(fd: int) -> None:

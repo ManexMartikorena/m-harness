@@ -48,6 +48,7 @@ from mharness.domain.trace import (
     TraceError,
     TraceEvent,
     TraceExists,
+    TraceInUse,
     TraceRecord,
     TurnFailed,
     TurnInterrupted,
@@ -620,13 +621,24 @@ class Sessions:
         if _is_current(session, current):
             raise SessionError("this is the current session")
         traces = self._origin.traces
+        stored = True
         try:
             await self._store.delete(session)
         except SessionNotFound:
             if not await self._has_trace(session):
                 raise
+            stored = False
         try:
             await traces.delete(session)
+        except TraceInUse:
+            if stored:
+                raise SessionError(
+                    f"session {session} deleted, but not its trace: "
+                    "another maha writes it"
+                ) from None
+            # Another maha in its first turn: no file yet, but the session
+            # is that maha's (audit after hito 9, S3).
+            raise SessionInUse(f"session {session} is open in another maha") from None
         except TraceError as exc:
             raise SessionError(
                 f"session {session} deleted, but not its trace: {exc}"

@@ -32,6 +32,7 @@ async def sink(*records: TraceRecord) -> MemoryTraceSink:
     for record in records:
         log = await traces.open(record.session)
         await log.write(record)
+        await log.close()
     return traces
 
 

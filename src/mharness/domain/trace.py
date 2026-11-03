@@ -63,6 +63,11 @@ class TraceExists(TraceError):
     """A new session's trace would take an id already in use."""
 
 
+class TraceInUse(TraceError):
+    """Another maha is writing the trace: it is not deleted nor opened
+    under it (audit after hito 9, S3)."""
+
+
 class TurnFailed(BaseModel, frozen=True):
     """The turn ended with an exception: a failed call to the model, or a
     bug. There is no `AgentError` event: the trace notes it from outside

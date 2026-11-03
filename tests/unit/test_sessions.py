@@ -1339,6 +1339,8 @@ async def test_delete_removes_a_trace_left_without_its_session() -> None:
     traces = MemoryTraceSink()
     log = await traces.open(FIRST, new=True)
     await log.write(TraceRecord(at=NOW, session=FIRST, event=TurnStarted(text="A")))
+    # Its maha is gone.
+    await log.close()
     world = World(
         MemorySessionStore(), FakeModelClient([]), traces=traces, tokens=["b01c"]
     )
@@ -1347,6 +1349,26 @@ async def test_delete_removes_a_trace_left_without_its_session() -> None:
     await world.sessions.delete(FIRST, current=current)
 
     assert FIRST not in traces.traces
+
+
+async def test_a_session_in_its_first_turn_in_another_maha_is_not_deleted() -> None:
+    # Audit after hito 9, S3: it has a trace and no session file yet.
+    store = MemorySessionStore()
+    traces = MemoryTraceSink()
+    fake = FakeModelClient([[HANG]])
+    busy = World(store, fake, traces=traces)
+    conversation = await busy.sessions.start()
+    running = asyncio.create_task(turn(conversation, "A"))
+    await until(lambda: "turn_started" in traces.events(FIRST))
+    world = World(store, FakeModelClient([]), traces=traces, tokens=["b01c"])
+
+    with pytest.raises(SessionInUse, match=f"^session {FIRST} is open in another"):
+        await world.sessions.delete(FIRST)
+    assert "turn_started" in traces.events(FIRST)
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    await conversation.close()
 
 
 async def test_delete_of_an_id_with_nothing_is_not_found() -> None:
