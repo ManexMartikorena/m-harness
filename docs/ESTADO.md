@@ -1,8 +1,9 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-03, al cerrar el hito 9. **Hito 9 cerrado:
-`v0.9.0` — Adaptador de Anthropic. Siguiente: una auditoría profunda antes
-de la spec del hito 10 (decisión del mantenedor).**
+Última actualización: 2026-11-03, al cerrar la sesión. **Hito 9 cerrado:
+`v0.9.0` — Adaptador de Anthropic. En curso: la auditoría profunda antes
+de la spec del hito 10, con todos los arreglos hechos; faltan las evals
+finales y publicar `v0.9.1`.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -15,7 +16,8 @@ capas), una auditoría profunda. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.9.0` — Adaptador de Anthropic** (2026-11-03):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.9.0
-- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
+- Ramas abiertas: `fix/auditoria-hito-9` (la auditoría, sin PR todavía).
+  Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -47,22 +49,31 @@ spec, su nota de la guía y su release.
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente, con el mantenedor:** una **auditoría profunda** antes de la
-   spec del hito 10, para no dejar deuda técnica (decisión del mantenedor,
-   2026-11-03). Revisores independientes del código (lo del hito 9 y lo
-   acumulado), con cada fallo con su test y arreglado, como en las
-   auditorías de los hitos 7 y 8. Puntos ya conocidos para ella (spec 9,
-   §12.18):
-   - la puerta de las evals marca ⚠ con un solo fallo en 5 repeticiones, y
-     avisa de ruido como si fuera regresión;
-   - Zen tiene un modelo nuevo, `pulse-alpha-free`, sin catálogo;
-   - la API directa de Anthropic, sin probar con una llamada real (no hay
-     clave).
-   La spec del hito 10 no se empieza hasta cerrar la auditoría.
-   **En curso desde el 2026-11-03**, en la rama `fix/auditoria-hito-9`:
-   cinco revisores independientes (bucle, sesiones y trazas, modelos y
-   configuración, herramientas y seguridad, interfaz y evals). Hecho ya:
-   `pulse-alpha-free` en el catálogo.
+1. **Agente:** cerrar la **auditoría profunda** (rama
+   `fix/auditoria-hito-9`; seguimiento en
+   `docs/specs/mejora-2026-11-03-auditoria-profunda.md`). Hecho: los
+   arreglos de los cinco revisores, la refactorización de `Agent.run()` y
+   una revisión independiente de todo, con sus 15 hallazgos arreglados
+   (R1 a R15), cada uno con su test; 2125 tests en verde. Desde otro PC:
+   `git fetch && git switch fix/auditoria-hito-9 && git pull`, y `uv sync`.
+   Falta, en orden:
+   1. Las evals finales con líneas base nuevas, aprobadas por el
+      mantenedor (unos 1,30 $, 40-50 minutos):
+      `uv run --env-file .env maha eval --models
+      glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5 --repeat 5
+      --retry-errors --save --jobs 4`. El 2026-11-03 se pararon a mitad, a
+      petición del mantenedor; no se guardó nada. Si sale una regresión
+      clara (⚠), no se integra: se explica al mantenedor y decide él.
+   2. Anotar el resultado (fecha, modelos, métricas y comparación) en la
+      auditoría (I16) y commitear las líneas base nuevas.
+   3. Versión `0.9.1` en `pyproject.toml` y `uv.lock`; auditoría a
+      IMPLEMENTADA; ESTADO, HISTORIAL y MAPA al día.
+   4. Push, PR sin milestone, merge commit con el CI en verde, tag
+      `v0.9.1` y su release.
+   5. **Parar.** La spec del hito 10 no se empieza sin el OK del
+      mantenedor.
+   Sigue POR VERIFICAR: la API directa de Anthropic con una llamada real
+   (no hay clave).
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
@@ -90,7 +101,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.8.1`).
+   `maha 0.9.0`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para

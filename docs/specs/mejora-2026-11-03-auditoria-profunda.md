@@ -1,4 +1,7 @@
-Estado: EN CURSO (2026-11-03, rama `fix/auditoria-hito-9`)
+Estado: EN CURSO (2026-11-03, rama `fix/auditoria-hito-9`). Hechos: los
+arreglos de los cinco revisores y los de la revisión independiente (R1 a
+R15). Falta: las evals finales y las líneas base nuevas (I16), anotarlas
+aquí, `v0.9.1`, PR, merge y tag.
 
 # Auditoría profunda tras el hito 9
 
@@ -208,7 +211,9 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   las líneas base se midieron con otras reglas. DECISIÓN (nuevas líneas
   base, con llamadas reales). Decisión del mantenedor (2026-11-03): evals
   completas y líneas base nuevas de los tres modelos, al final de la
-  auditoría.
+  auditoría. Lanzadas el 2026-11-03 y paradas a petición del mantenedor
+  (fin de la jornada) tras 54 de 300 ejecuciones: no se guardó nada; se
+  lanzan de nuevo enteras.
 
 ## Otros
 
