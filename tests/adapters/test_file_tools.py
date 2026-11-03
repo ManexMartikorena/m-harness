@@ -410,13 +410,15 @@ async def test_glob_cuts_long_results(root: Path) -> None:
 async def test_glob_stops_on_huge_trees(
     root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(files, "WALK_MAX_FILES", 3)
+    monkeypatch.setattr(files, "WALK_MAX_ENTRIES", 3)
     for i in range(5):
         write(root, f"f{i}.txt", "")
 
     result = await glob(root, "*.txt")
 
-    assert result.splitlines()[-1] == "… [stopped after 3 files; narrow the path]"
+    assert result.splitlines()[-1] == (
+        "… [stopped after 3 files and folders; narrow the path]"
+    )
 
 
 @pytest.mark.parametrize("pattern", ["/etc/*", "../*.py", "src/../../*"])
@@ -2567,7 +2569,7 @@ async def test_ignored_files_count_for_the_walk_limit_and_its_yields(
 ) -> None:
     # Thousands of ignored *.o must not make the walk endless or deaf to
     # Ctrl+C (final audit, 2026-10-23).
-    monkeypatch.setattr(files, "WALK_MAX_FILES", 50)
+    monkeypatch.setattr(files, "WALK_MAX_ENTRIES", 50)
     monkeypatch.setattr(files, "WALK_YIELD_EVERY", 10)
     write(root, ".gitignore", "*.o\n")
     for n in range(200):
@@ -2583,7 +2585,7 @@ async def test_ignored_files_count_for_the_walk_limit_and_its_yields(
     monkeypatch.setattr(asyncio, "sleep", counting)
     result = await Glob(Workspace(root)).run(GlobParams(pattern="**/*"))
 
-    assert result.endswith("… [stopped after 50 files; narrow the path]")
+    assert result.endswith("… [stopped after 50 files and folders; narrow the path]")
     assert yields >= 5
 
 
@@ -2996,3 +2998,31 @@ async def test_a_file_with_one_name_is_for_the_session(root: Path) -> None:
     written = await ask_write(write_tool(root), "notes.txt", "dos\n")
 
     assert (written.scope, written.warning) == ("write_file", None)
+
+
+def empty_folders(root: Path, count: int) -> None:
+    for n in range(count):
+        (root / f"d{n:03}").mkdir()
+
+
+async def test_folders_count_for_the_walk_limit_and_its_yields(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Audit of hito 9, H5: a tree of empty folders was walked without limit
+    # and without yielding.
+    monkeypatch.setattr(files, "WALK_MAX_ENTRIES", 20)
+    monkeypatch.setattr(files, "WALK_YIELD_EVERY", 5)
+    empty_folders(root, 60)
+    yields = 0
+    real_sleep = asyncio.sleep
+
+    async def counting(delay: float) -> None:
+        nonlocal yields
+        yields += 1
+        await real_sleep(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", counting)
+    result = await Glob(Workspace(root)).run(GlobParams(pattern="**/*"))
+
+    assert result == "… [stopped after 20 files and folders; narrow the path]"
+    assert yields >= 3

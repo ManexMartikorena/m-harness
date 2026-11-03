@@ -446,9 +446,10 @@ def _check_dir(path: Path, raw: str) -> None:
         raise ToolError(f"not a directory, use read_file: {raw}")
 
 
-# Searching walks at most this many files; it yields control every few files,
-# so Ctrl+C can stop it.
-WALK_MAX_FILES = 20_000
+# Searching walks at most this many files and folders; it yields control
+# every few of them, so Ctrl+C can stop it. Folders count too: a tree of
+# empty ones was walked without either (audit of hito 9, H5).
+WALK_MAX_ENTRIES = 20_000
 WALK_YIELD_EVERY = 100
 
 
@@ -495,6 +496,9 @@ class _Walk:
         workspace = self._workspace
         rules = self._rules_above()
         for dirpath, dirnames, filenames in os.walk(self._base):
+            seen += 1
+            if await self._stop(seen):
+                return
             directory = Path(dirpath)
             here = PurePath(directory.relative_to(self._limit))
             _add_rules(rules, here, directory / ".gitignore")
@@ -510,11 +514,8 @@ class _Walk:
                 # Every file counts, also the ones skipped below: the walk
                 # stays bounded and keeps yielding (final audit, 2026-10-23).
                 seen += 1
-                if seen > WALK_MAX_FILES:
-                    self.stopped_early = True
+                if await self._stop(seen):
                     return
-                if seen % WALK_YIELD_EVERY == 0:
-                    await asyncio.sleep(0)
                 if rules.ignores(here / name, is_dir=False):
                     continue
                 path = directory / name
@@ -525,6 +526,21 @@ class _Walk:
                     continue
                 in_base = PurePath(path.relative_to(self._base))
                 yield _Found(real, self._shown(path), in_base)
+
+    async def _stop(self, seen: int) -> bool:
+        """Whether the walk stops after `seen` files and folders; it yields
+        control every few of them."""
+        if seen > WALK_MAX_ENTRIES:
+            self.stopped_early = True
+            return True
+        if seen % WALK_YIELD_EVERY == 0:
+            await asyncio.sleep(0)
+        return False
+
+
+def _walk_stopped() -> str:
+    """The note of a walk stopped at its limit."""
+    return f"… [stopped after {WALK_MAX_ENTRIES} files and folders; narrow the path]"
 
 
 # A larger .gitignore is not read.
@@ -611,7 +627,7 @@ class Glob:
                 f"… [truncated: {GLOB_MAX_RESULTS} of {len(found)} files shown]"
             )
         if walk.stopped_early:
-            lines.append(f"… [stopped after {WALK_MAX_FILES} files; narrow the path]")
+            lines.append(_walk_stopped())
         return "\n".join(lines) if lines else "(no files match)"
 
     def summary(self, result: str) -> str:
@@ -862,7 +878,7 @@ def _grep_result(matches: list[str], *, stopped_early: bool) -> str:
     if len(matches) > GREP_MAX_MATCHES:
         lines.append(f"… [stopped at {GREP_MAX_MATCHES} matches; narrow the search]")
     if stopped_early:
-        lines.append(f"… [stopped after {WALK_MAX_FILES} files; narrow the path]")
+        lines.append(_walk_stopped())
     return "\n".join(lines) if lines else "(no matches)"
 
 
