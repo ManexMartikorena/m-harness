@@ -59,6 +59,10 @@ tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
    - la API directa de Anthropic, sin probar con una llamada real (no hay
      clave).
    La spec del hito 10 no se empieza hasta cerrar la auditoría.
+   **En curso desde el 2026-11-03**, en la rama `fix/auditoria-hito-9`:
+   cinco revisores independientes (bucle, sesiones y trazas, modelos y
+   configuración, herramientas y seguridad, interfaz y evals). Hecho ya:
+   `pulse-alpha-free` en el catálogo.
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
