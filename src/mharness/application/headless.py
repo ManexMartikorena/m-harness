@@ -58,8 +58,10 @@ class RunResult(BaseModel, frozen=True):
     error: str | None
 
 
-# The closing tag of the block, in any case and with spaces.
-_CLOSING = re.compile(r"</\s*(stdin\s*>)", re.IGNORECASE)
+# What could pass for the closing tag of the block: any case, spaces, what
+# follows the name, and the full-width "<" and "/" (review of the audit of
+# hito 8).
+_CLOSING = re.compile(r"[<\uff1c]\s*[/\uff0f]\s*(stdin)", re.IGNORECASE)
 
 
 def instruction(text: str, piped: str | None) -> str:
