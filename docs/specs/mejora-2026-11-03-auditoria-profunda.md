@@ -48,7 +48,9 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   la salida máxima acaba como `end_turn`, y una llamada cortada se repite
   hasta `max_steps`. POR ARREGLAR.
 - **B2.** Cortar el turno justo en `ModelCallFinished` pierde una
-  respuesta que la persona ya vio. POR ARREGLAR.
+  respuesta que la persona ya vio. ARREGLADO (`cabd2d8`), con un fallo que
+  el propio arreglo traía (las llamadas nuevas heredaban los resultados del
+  paso anterior), encontrado con su test.
 - **B3.** El acumulador junta dos llamadas distintas que comparten índice.
   POR ARREGLAR.
 - **B4.** El tiempo límite del turno cuenta lo que la persona tarda en
@@ -83,12 +85,63 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 
 ## Herramientas y seguridad (H)
 
-(Pendiente del revisor.)
+- **H1.** Un patrón de `glob` o una regla de `.gitignore` con muchos `*`
+  tarda un tiempo exponencial en el proceso principal y congela `maha`
+  (37 s con 8 estrellas y 60 caracteres); Ctrl+C no lo para. Un repositorio
+  clonado puede traer la regla. POR ARREGLAR.
+- **H2.** Un nombre de fichero que no es UTF-8 llega al resultado con
+  sustitutos y rompe la petición al modelo, y la sesión ya no avanza. POR
+  ARREGLAR.
+- **H3.** "Siempre en esta sesión" para `write_file` cubre ficheros que
+  ejecutan código solos: `.venv/…/x.pth` (Python lo ejecuta al arrancar,
+  también el proceso de búsqueda de `maha`, con la clave en el entorno),
+  `node_modules`, `.mcp.json`, `.cursor/`, `.zed/`, `.nvim.lua`, `.exrc`,
+  `.cargo/config.toml`… POR ARREGLAR.
+- **H4.** Si el shell del comando pasa a ser de root (`sudo -n` sin
+  contraseña), el tiempo límite no se cumple: la espera tras matar no tiene
+  tope. POR ARREGLAR.
+- **H5.** Menores: con el directorio de trabajo dentro de una carpeta de
+  secretos (`~/.aws`, `~/.ssh`), sus ficheros se leen sin preguntar; el
+  tamaño de un secreto se dice antes de preguntar; un enlace duro hacia
+  `.git/hooks` se escribe en el sitio; un NUL en un comando sale como error
+  interno; el recorrido solo cuenta ficheros, no carpetas. POR ARREGLAR.
 
 ## Interfaz y evals (I)
 
-(Pendiente del revisor.) Ya conocido: la puerta de las evals marca ⚠ con
-un solo fallo en 5 repeticiones (spec 9, §12.18).
+- **I1.** Las comprobaciones de las tareas 06, 08, 12, 14, 15, 19 y 20
+  ejecutan los tests de la copia del agente, también los que él añade o
+  cambia: suspenden código correcto (el "105.0 en vez de 99.0" de GLM en la
+  spec 9, §5, era correcto: el test que fallaba lo había escrito el modelo)
+  y aprueban trampas (un `return 80` con el otro assert cambiado por
+  `pass`). POR ARREGLAR.
+- **I2.** Todo `ModelError` cuenta como "error del proveedor" y sale del
+  éxito, también un 4xx por una petición rota de `maha` o una respuesta que
+  no se entiende: una regresión de `maha` se esconde. POR ARREGLAR.
+- **I3.** El modelo de una sesión retomada sale sin escapar en la cabecera
+  de la conversación (inyección de escapes de terminal con `maha import`).
+  POR ARREGLAR.
+- **I4.** La puerta de las evals es sobre todo ruido: con 17-20 tareas a
+  5/5, la probabilidad de al menos un ⚠ sin cambiar nada es del 57-95 %, y
+  el total marca cualquier bajada. DECISIÓN (la regla nueva).
+- **I5.** Las comprobaciones ejecutan en el puesto, sin aislar, código que
+  escribió el modelo. DECISIÓN.
+- **I6.** `maha eval` no trata SIGTERM ni SIGHUP, y `maha eval | head`
+  pierde `runs.json`. POR ARREGLAR.
+- **I7.** Con `--effort` se compara con una línea base de otro effort. POR
+  ARREGLAR.
+- **I8.** "in all" no cuenta lo pagado por las ejecuciones con error. POR
+  ARREGLAR.
+- **I9.** Mensajes que engañan: "the check exited with None" (un
+  comprobador matado), la línea de una ejecución sin el porqué,
+  "provider errors" que incluye los internos, `--keep` sin decir dónde.
+  POR ARREGLAR.
+- **I10.** Comprobaciones flojas en las tareas 03, 09 y 13. POR ARREGLAR.
+- **I11.** Si una llamada falla a mitad de turno, `-p` da como respuesta
+  el texto del paso anterior. POR ARREGLAR.
+- **I12.** Con denegaciones mezcladas, `-p` da la pista equivocada. POR
+  ARREGLAR.
+- **I13.** Deuda: una tarea nueva tras la línea base queda fuera sin aviso;
+  `--save` acepta errores y `--repeat 1`. POR ARREGLAR.
 
 ## Otros
 
