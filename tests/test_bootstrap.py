@@ -9,6 +9,7 @@ import os
 import re
 import signal
 import stat
+import sys
 import tempfile
 from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
@@ -1508,3 +1509,71 @@ def test_eval_keeps_no_baseline_with_runs_that_ended_in_an_error(
     # What ran is kept all the same.
     [folder] = (workspace / "state" / "maha" / "evals").iterdir()
     assert len(json.loads((folder / "runs.json").read_text())) == 5
+
+
+@pytest.mark.parametrize(
+    ("number", "code"), [(signal.SIGTERM, 143), (signal.SIGHUP, 129)]
+)
+def test_closing_signals_in_eval_keep_the_runs_and_clean_up(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    number: signal.Signals,
+    code: int,
+) -> None:
+    # Deep audit (I6): `kill` or closing the window lost runs.json and left
+    # the copies behind; only Ctrl+C was handled.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    (workspace / "tmp").mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(workspace / "tmp"))
+    evals = battery(workspace / "evals")
+    calls = 0
+
+    def answer(request: httpx.Request) -> respx.MockResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            os.kill(os.getpid(), number)
+        return sse_response(streamed("Es la 1.4.2.", 1000, 10))
+
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(side_effect=answer)
+
+        result = main(["eval", "--tasks", str(evals), "--repeat", "2", "--jobs", "1"])
+
+    assert result == code
+    assert "interrupted: 1 run kept in " in capsys.readouterr().err
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    [kept] = json.loads((folder / "runs.json").read_text())
+    assert (kept["attempt"], kept["outcome"]) == (1, "pass")
+    assert list((workspace / "tmp").iterdir()) == []
+    # The handlers go with the battery: the next signal is not caught.
+    assert signal.getsignal(number) in (signal.SIG_DFL, signal.default_int_handler)
+
+
+class ClosedPipe(io.StringIO):
+    """A stdout nobody reads any more, as `maha eval | head` after head ends."""
+
+    def write(self, text: str) -> int:
+        raise BrokenPipeError(32, "Broken pipe")
+
+
+@respx.mock
+def test_eval_into_a_closed_pipe_still_keeps_every_run(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Deep audit (I6): the broken pipe escaped from the line of the first
+    # run, and runs.json was lost.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Es la 1.4.2.", 10, 5))
+    )
+    monkeypatch.setattr(sys, "stdout", ClosedPipe())
+
+    main(["eval", "--tasks", str(evals), "--repeat", "2", "--jobs", "1"])
+
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    assert len(json.loads((folder / "runs.json").read_text())) == 2
