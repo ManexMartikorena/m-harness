@@ -150,7 +150,11 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   test (spec 8, §12.56; decisión del mantenedor, 2026-11-03).
 - **Hito 21:** lo que se teclea mientras gira el spinner y el eco de `^C`
   se mezclan con la salida (spec 3, §12.10; spec 4, §12.13); ver el texto
-  del razonamiento (spec 7).
+  del razonamiento (spec 7); con el selector de modelo, que un id que no
+  está en el catálogo (`-m kimi`, `model = "kimi"`) sugiera los parecidos
+  y que el error del proveedor diga qué hacer (`/model`, `maha models`):
+  hoy da solo `HTTP 400 … Model is unavailable` (prueba del mantenedor,
+  2026-11-03).
 - **Mejora posible:** refrescar los precios desde models.dev a una caché, a
   petición, si mantener a mano 113 modelos pesa (spec 7, §11). Hoy, con
   OpenCode Go, el coste que vale es el del proveedor.
