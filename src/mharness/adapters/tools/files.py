@@ -510,21 +510,27 @@ class _Walk:
         seen = 0
         workspace = self._workspace
         rules = self._rules_above()
+        # The base; every other folder counts when it is checked, below.
+        seen += 1
         for dirpath, dirnames, filenames in os.walk(self._base):
-            seen += 1
-            if await self._stop(seen):
-                return
             directory = Path(dirpath)
             here = PurePath(directory.relative_to(self._limit))
             _add_rules(rules, here, directory / ".gitignore")
+            kept: list[str] = []
+            for name in sorted(dirnames):
+                # Also the pruned ones: a folder of many folders must not
+                # hold the walk without yielding (review of the deep audit).
+                seen += 1
+                if await self._stop(seen):
+                    return
+                if (
+                    name not in SKIPPED_DIRS
+                    and not workspace.secret(directory / name)
+                    and not rules.ignores(here / name, is_dir=True)
+                ):
+                    kept.append(name)
             # Pruned in place, so os.walk does not go into them.
-            dirnames[:] = sorted(
-                name
-                for name in dirnames
-                if name not in SKIPPED_DIRS
-                and not workspace.secret(directory / name)
-                and not rules.ignores(here / name, is_dir=True)
-            )
+            dirnames[:] = kept
             for name in sorted(filenames):
                 # Every file counts, also the ones skipped below: the walk
                 # stays bounded and keeps yielding (final audit, 2026-10-23).

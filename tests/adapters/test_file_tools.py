@@ -3052,6 +3052,20 @@ async def test_folders_count_for_the_walk_limit_and_its_yields(
     assert yields >= 3
 
 
+async def test_pruned_folders_count_for_the_walk_limit(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review of the deep audit: the folders of one listing were checked
+    # against the rules without counting and without yielding.
+    monkeypatch.setattr(files, "WALK_MAX_ENTRIES", 20)
+    write(root, ".gitignore", "d*/\n")
+    empty_folders(root, 60)
+
+    result = await Glob(Workspace(root)).run(GlobParams(pattern="**/*"))
+
+    assert result.endswith("… [stopped after 20 files and folders; narrow the path]")
+
+
 def test_a_folder_is_no_hard_link(root: Path) -> None:
     # Deep audit after hito 9: every folder has two or more links ("." and
     # its name), and the hard link warning of H5 took them for one.
