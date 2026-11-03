@@ -1,8 +1,9 @@
 # Estado del proyecto
 
 Última actualización: 2026-11-03, al publicar la auditoría del hito 8.
-**Hito 8 cerrado y auditado: `v0.8.1`. Siguiente: la spec del hito 9,
-cuando el mantenedor dé el visto bueno. Cero deuda conocida.**
+**Hito 8 cerrado y auditado: `v0.8.1`. La spec del hito 9 está
+PROPUESTA en la rama `docs/spec-hito-9-anthropic`, con nueve dudas para el
+mantenedor. Cero deuda conocida.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -46,13 +47,11 @@ spec, su nota de la guía y su release.
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente, con el visto bueno del mantenedor:** proponer la spec del
-   hito 9, adaptador de Anthropic
-   (DESIGN §14, punto 9; `docs/specs/PLANTILLA.md`), en su propio PR
-   (`docs/spec-hito-9-<slug>`, milestone "Hito 9"), con sus dudas para el
-   mantenedor. Antes, comprobar contra la documentación oficial de
-   Anthropic el formato de Messages, el streaming y las herramientas, y
-   anotarlo con la fecha.
+1. **Humano:** revisar la spec del hito 9
+   (`docs/specs/hito-9-anthropic.md`, rama `docs/spec-hito-9-anthropic`,
+   todavía sin push) y contestar sus nueve dudas (§11). Después, el agente
+   la ajusta y la sube en su PR (milestone "Hito 9"); integrarlo es la
+   aprobación.
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
