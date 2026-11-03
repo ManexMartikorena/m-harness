@@ -97,7 +97,7 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 
 - **S9.** Un proveedor que mande un número absurdo de tokens daría un coste
   calculado por encima del tope de `Usd` y el turno fallaría al validarlo
-  (del arreglo de S4). POR ARREGLAR.
+  (del arreglo de S4). ARREGLADO (`65808ee`).
 
 ## Herramientas y seguridad (H)
 
@@ -130,7 +130,12 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 
 - **H6.** Con un fichero secreto, `_check_target` dice antes de preguntar si
   es una carpeta, si no es un fichero normal o si es de solo lectura (del
-  agente que arregló H). POR ARREGLAR.
+  agente que arregló H). DECISIÓN: choca con una decisión anterior, fijada
+  en `test_metadata_errors_with_a_warning_still_come_first` ("no hacer una
+  pregunta que solo puede fallar").
+- **H8.** El aviso de enlace duro de H5 tomaba cada carpeta por un fichero
+  con enlaces duros (toda carpeta tiene dos o más). ARREGLADO (`fa51c36`),
+  encontrado al revisar H6.
 - **H7.** El directorio de trabajo, en la pregunta de `run_command`, no pasa
   por `printable()`. POR ARREGLAR.
 
@@ -141,10 +146,14 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   cambia: suspenden código correcto (el "105.0 en vez de 99.0" de GLM en la
   spec 9, §5, era correcto: el test que fallaba lo había escrito el modelo)
   y aprueban trampas (un `return 80` con el otro assert cambiado por
-  `pass`). POR ARREGLAR.
+  `pass`). ARREGLADO: antes de comprobar se vuelven a poner los tests del fixture,
+  byte a byte; `own_tests` para las tareas cuyo trabajo es un test (07 y
+  20).
 - **I2.** Todo `ModelError` cuenta como "error del proveedor" y sale del
   éxito, también un 4xx por una petición rota de `maha` o una respuesta que
-  no se entiende: una regresión de `maha` se esconde. POR ARREGLAR.
+  no se entiende: una regresión de `maha` se esconde. ARREGLADO: `failure` dice de quién es el fallo; una petición rota o una
+  respuesta ilegible cuentan como fallo, y `--retry-errors` solo repite lo
+  del proveedor.
 - **I3.** El modelo de una sesión retomada sale sin escapar en la cabecera
   de la conversación (inyección de escapes de terminal con `maha import`).
   ARREGLADO (`b713e3d`).
@@ -153,30 +162,41 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   el total marca cualquier bajada. DECISIÓN del mantenedor (2026-11-03):
   prueba estadística (Fisher exacto por tarea, dos proporciones en el
   total, p < 0,05; coste y pasos con un +20 % sobre el límite bajo de su
-  intervalo), con la p en el informe y sin repeticiones automáticas. POR
-  ARREGLAR.
+  intervalo), con la p en el informe y sin repeticiones automáticas. ARREGLADO: Fisher exacto a mano con `math.comb`, ⚠ para regresión y · para
+  lo que explica el ruido, con su p.
 - **I5.** Las comprobaciones ejecutan en el puesto, sin aislar, código que
   escribió el modelo. DECISIÓN del mantenedor (2026-11-03): mitigar ya (un
   HOME temporal vacío, sin XDG ni credenciales) y aislar del todo con el
-  sandbox del hito 15. POR ARREGLAR.
+  sandbox del hito 15. ARREGLADO: `check_env()` y un HOME vacío fuera de la copia.
 - **I6.** `maha eval` no trata SIGTERM ni SIGHUP, y `maha eval | head`
-  pierde `runs.json`. POR ARREGLAR.
-- **I7.** Con `--effort` se compara con una línea base de otro effort. POR
-  ARREGLAR.
-- **I8.** "in all" no cuenta lo pagado por las ejecuciones con error. POR
-  ARREGLAR.
+  pierde `runs.json`. ARREGLADO: SIGTERM y SIGHUP como Ctrl+C; con la tubería cerrada,
+  `runs.json` se escribe igual.
+- **I7.** Con `--effort` se compara con una línea base de otro effort. ARREGLADO: con otro effort, las diferencias se enseñan sin juzgar.
+- **I8.** "in all" no cuenta lo pagado por las ejecuciones con error. ARREGLADO.
 - **I9.** Mensajes que engañan: "the check exited with None" (un
   comprobador matado), la línea de una ejecución sin el porqué,
   "provider errors" que incluye los internos, `--keep` sin decir dónde.
-  POR ARREGLAR.
-- **I10.** Comprobaciones flojas en las tareas 03, 09 y 13. POR ARREGLAR.
+  ARREGLADO: "the check was killed", la línea útil de cada fallo, los
+  errores por su origen y dónde quedan las copias de `--keep`.
+- **I10.** Comprobaciones flojas en las tareas 03, 09 y 13. ARREGLADO.
 - **I11.** Si una llamada falla a mitad de turno, `-p` da como respuesta
   el texto del paso anterior. ARREGLADO (`2a44bc4`).
 - **I12.** Con denegaciones mezcladas, `-p` da la pista equivocada. NO ES
   FALLO: tras la primera denegación el bucle salta las llamadas que quedan
   y termina el turno, así que en un turno no hay dos denegaciones.
 - **I13.** Deuda: una tarea nueva tras la línea base queda fuera sin aviso;
-  `--save` acepta errores y `--repeat 1`. POR ARREGLAR.
+  `--save` acepta errores y `--repeat 1`. ARREGLADO: las tareas nuevas se nombran; `--save` pide 5 repeticiones y
+  ningún error.
+
+- **I14.** Un agente podría dejar en su copia un módulo que tapa uno de la
+  biblioteca estándar (`unittest.py`) y engañar a la comprobación. Del
+  agente que arregló I. DECISIÓN (el aislamiento completo es el hito 15).
+- **I15.** "stream ended before the answer was complete" es un
+  `ModelResponseError` y, tras I2, cuenta como fallo de `maha`; un corte de
+  red o del servidor saldría como fallo. DECISIÓN.
+- **I16.** Las comprobaciones cambiaron (I1, I10) y la puerta también (I4):
+  las líneas base se midieron con otras reglas. DECISIÓN (nuevas líneas
+  base, con llamadas reales).
 
 ## Otros
 
