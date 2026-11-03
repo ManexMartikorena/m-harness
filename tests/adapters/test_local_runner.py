@@ -4,6 +4,7 @@ harmless."""
 import ast
 import asyncio
 import contextlib
+import errno
 import os
 import pty
 import select
@@ -14,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from mharness.adapters.commands import LocalCommandRunner
+from mharness.adapters.commands import LocalCommandRunner, local
 from mharness.domain.commands import OUTPUT_MAX_CHARS, CommandResult
 from mharness.domain.environment import command_env
 from mharness.ports.commands import CommandRunner
@@ -335,3 +336,39 @@ async def test_commands_at_the_same_time_do_not_kill_each_other(
 
     assert (done_first.exit_code, done_first.output) == (0, "first\n")
     assert (done_later.exit_code, done_later.output) == (0, "later\n")
+
+
+async def test_a_command_that_cannot_be_killed_does_not_hold_the_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Audit of hito 9, H4: a shell that became another user's (`exec sudo
+    # …`) cannot be killed; waiting for its end held the time limit forever.
+    real_killpg = os.killpg
+
+    def refused(pid: int, signal_number: int) -> None:
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(local, "KILL_WAIT_SECONDS", 0.3)
+    monkeypatch.setattr(os, "killpg", refused)
+    pidfile = tmp_path / "pid"
+    command = f"printf 'antes\\n'; echo $$ > {pidfile}; exec sleep 30"
+    started = time.monotonic()
+    try:
+        result = await asyncio.wait_for(run(command, tmp_path, 0.3), 10)
+    finally:
+        monkeypatch.undo()
+        if (pid := read_pid(pidfile)) is not None:
+            with contextlib.suppress(ProcessLookupError):
+                real_killpg(pid, signal.SIGKILL)
+            # Reaped, and its pipe closed, before the loop ends.
+            assert await gone(pid)
+            await asyncio.sleep(0.1)
+
+    assert time.monotonic() - started < 5
+    assert result == CommandResult(
+        exit_code=None,
+        output="antes\n",
+        truncated=False,
+        timed_out=True,
+        still_running=True,
+    )

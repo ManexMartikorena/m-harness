@@ -90,6 +90,8 @@ def _text(result: CommandResult, timeout: int) -> str:
         notes.append(f"… [output cut at {OUTPUT_MAX_CHARS} characters]")
     if result.timed_out:
         notes.append(f"[timed out after {timeout} s]")
+    if result.still_running:
+        notes.append("[it could not be stopped: it may still be running]")
     if notes:
         text = text.removesuffix("\n") + "\n" + "\n".join(notes)
     return text

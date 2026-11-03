@@ -11,3 +11,5 @@ class CommandResult(BaseModel, frozen=True):
     output: str  # stdout and stderr, interleaved, maybe cut
     truncated: bool
     timed_out: bool
+    # Past the limit, it could not be killed (audit of hito 9, H4).
+    still_running: bool = False

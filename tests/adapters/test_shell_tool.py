@@ -114,3 +114,19 @@ async def test_a_cut_and_a_timeout_are_told(tmp_path: Path) -> None:
     )
     assert subject.summary(cut) == "timed out (cut)"
     assert empty == "exit code: 0\n(no output)"
+
+
+async def test_a_command_that_could_not_be_stopped_is_told(tmp_path: Path) -> None:
+    # Audit of hito 9, H4.
+    stuck = CommandResult(
+        exit_code=None, output="", truncated=False, timed_out=True, still_running=True
+    )
+    subject, _ = tool(tmp_path, stuck)
+
+    text = await subject.run(RunCommandParams(command="sudo -n sleep 99", timeout=5))
+
+    assert text == (
+        "killed\n(no output)\n[timed out after 5 s]\n"
+        "[it could not be stopped: it may still be running]"
+    )
+    assert subject.summary(text) == "timed out"
