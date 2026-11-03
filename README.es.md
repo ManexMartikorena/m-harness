@@ -11,7 +11,7 @@
 hacerlo, **preguntándote antes de cada cambio**. Funciona con el proveedor y
 el modelo que elijas, y te dice en cada turno lo que ha costado.
 
-> 🚧 **En desarrollo: `v0.8.0`.** Ya es usable para trabajar en un
+> 🚧 **En desarrollo: `v0.8.1`.** Ya es usable para trabajar en un
 > proyecto: conversar, leer y cambiar ficheros, ejecutar comandos, guardar y
 > retomar sesiones y ver el coste; y en scripts, con `maha -p`. Lo que
 > viene, en la [hoja de ruta](#hoja-de-ruta).
@@ -102,7 +102,7 @@ Necesitas [uv](https://docs.astral.sh/uv/) (instala también Python 3.14 si
 falta).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.8.0
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.8.1
 ```
 
 Después, elige proveedor y modelo:
