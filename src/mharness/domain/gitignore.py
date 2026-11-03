@@ -4,9 +4,9 @@
 Each `.gitignore` applies to its folder and below. Its patterns become
 wildcard tokens over the path relative to that folder, matched in linear
 time: a regular expression could freeze maha on a hostile rule (deep audit
-after hito 9, H1); character classes alone are small regular expressions. The last rule
-that matches decides; a deeper file is added later, so it wins. Case
-matters, as in git on Linux.
+after hito 9, H1); character classes alone are small regular expressions.
+The last rule that matches decides, and a deeper file wins. Case matters,
+as in git on Linux.
 """
 
 import re
@@ -24,7 +24,6 @@ from mharness.domain.wildcard import (
     matches,
 )
 
-# Any number of folders, also none: "**/" at the start or "/**/" inside.
 # The POSIX classes of "[[:name:]]", in ASCII, as git's wildmatch.
 _POSIX = {
     "alnum": "a-zA-Z0-9",
@@ -53,19 +52,22 @@ class GitIgnore:
     """The rules of every `.gitignore` read so far."""
 
     def __init__(self) -> None:
-        self._sets: list[tuple[PurePath, tuple[_Rule, ...]]] = []
+        # By folder: a path looks only at the files of the folders above it,
+        # not at every file read so far (review of the deep audit).
+        self._sets: dict[PurePath, tuple[_Rule, ...]] = {}
 
     def add(self, base: PurePath, text: str) -> None:
-        """The rules of the `.gitignore` of folder `base`; added after the
-        files of the folders above it."""
+        """The rules of the `.gitignore` of folder `base`."""
         rules = tuple(rule for line in text.splitlines() if (rule := _parse(line)))
         if rules:
-            self._sets.append((base, rules))
+            self._sets[base] = self._sets.get(base, ()) + rules
 
     def ignores(self, path: PurePath, *, is_dir: bool) -> bool:
         ignored = False
-        for base, rules in self._sets:
-            if path == base or not path.is_relative_to(base):
+        # From the top folder down: a deeper file wins.
+        for base in reversed(path.parents):
+            rules = self._sets.get(base)
+            if rules is None:
                 continue
             relative = path.relative_to(base).as_posix()
             for rule in rules:

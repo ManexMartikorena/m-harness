@@ -162,3 +162,17 @@ def test_a_long_chain_of_folders_answers_at_once() -> None:
         assert not rules.ignores(PurePath(f"src/pkg/m{n}/file.py"), is_dir=False)
 
     assert time.monotonic() - started < 1.0
+
+
+def test_a_path_looks_only_at_the_files_above_it() -> None:
+    # Review of the deep audit: every .gitignore read was looked at for
+    # every path, and a tree of many of them took minutes.
+    rules = GitIgnore()
+    for n in range(2_000):
+        rules.add(PurePath(f"d{n}"), "*.o\n")
+    started = time.monotonic()
+
+    for n in range(2_000):
+        assert rules.ignores(PurePath(f"d{n}/x.o"), is_dir=False)
+
+    assert time.monotonic() - started < 1.0
