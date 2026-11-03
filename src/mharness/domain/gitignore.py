@@ -2,7 +2,9 @@
 (spec mejora-2026-10-23-deuda-hito-5, E6).
 
 Each `.gitignore` applies to its folder and below. Its patterns become
-regular expressions over the path relative to that folder. The last rule
+wildcard tokens over the path relative to that folder, matched in linear
+time: a regular expression could freeze maha on a hostile rule (deep audit
+after hito 9, H1); character classes alone are small regular expressions. The last rule
 that matches decides; a deeper file is added later, so it wins. Case
 matters, as in git on Linux.
 """
@@ -11,8 +13,18 @@ import re
 from dataclasses import dataclass
 from pathlib import PurePath
 
+from mharness.domain.wildcard import (
+    AnyChars,
+    AnyFolders,
+    CharClass,
+    Literal,
+    OneChar,
+    Star,
+    Token,
+    matches,
+)
+
 # Any number of folders, also none: "**/" at the start or "/**/" inside.
-_ANY_FOLDERS = "(?:.*/)?"
 # The POSIX classes of "[[:name:]]", in ASCII, as git's wildmatch.
 _POSIX = {
     "alnum": "a-zA-Z0-9",
@@ -32,7 +44,7 @@ _POSIX = {
 
 @dataclass(frozen=True)
 class _Rule:
-    regex: re.Pattern[str]
+    tokens: tuple[Token, ...]
     negated: bool
     dir_only: bool
 
@@ -59,7 +71,7 @@ class GitIgnore:
             for rule in rules:
                 if rule.dir_only and not is_dir:
                     continue
-                if rule.regex.fullmatch(relative):
+                if matches(rule.tokens, relative):
                     ignored = not rule.negated
         return ignored
 
@@ -86,8 +98,8 @@ def _parse(line: str) -> _Rule | None:
     if body is None:
         # git matches nothing with it.
         return None
-    regex = body if anchored else _ANY_FOLDERS + body
-    return _Rule(re.compile(regex, re.DOTALL), negated, dir_only)
+    tokens = body if anchored else (AnyFolders(), *body)
+    return _Rule(tokens, negated, dir_only)
 
 
 def _trim(line: str) -> str:
@@ -107,45 +119,45 @@ def _trim(line: str) -> str:
     return line[:kept]
 
 
-def _translate(pattern: str) -> str | None:
-    """The regular expression of a pattern: "*", "?", "[...]", "**" and "\\".
+def _translate(pattern: str) -> tuple[Token, ...] | None:
+    """The tokens of a pattern: "*", "?", "[...]", "**" and "\\".
     None if git matches nothing with it: a "[" that never closes, or a "\\"
     at the end (B7)."""
-    out = []
+    out: list[Token] = []
     i = 0
     while i < len(pattern):
         char = pattern[i]
         if pattern.startswith("**", i) and (i == 0 or pattern[i - 1] == "/"):
             if pattern[i + 2 : i + 3] == "/":
-                out.append(_ANY_FOLDERS)
+                out.append(AnyFolders())
                 i += 3
                 continue
             if i + 2 == len(pattern):
-                out.append(".*")
+                out.append(AnyChars())
                 i += 2
                 continue
         if char == "*":
-            out.append("[^/]*")
+            out.append(Star())
             # Any other "**" is a "*".
             while pattern.startswith("*", i + 1):
                 i += 1
         elif char == "?":
-            out.append("[^/]")
+            out.append(OneChar())
         elif char == "[":
             found = _class(pattern, i)
             if found is None:
                 return None
             regex, i = found
-            out.append(regex)
+            out.append(CharClass(re.compile(regex, re.DOTALL)))
         elif char == "\\":
             if i + 1 == len(pattern):
                 return None
             i += 1
-            out.append(re.escape(pattern[i]))
+            out.append(Literal(pattern[i]))
         else:
-            out.append(re.escape(char))
+            out.append(Literal(char))
         i += 1
-    return "".join(out)
+    return tuple(out)
 
 
 def _class(pattern: str, start: int) -> tuple[str, int] | None:

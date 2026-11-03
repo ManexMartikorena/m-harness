@@ -40,6 +40,7 @@ from mharness.domain.paths import (
     read_warning,
 )
 from mharness.domain.tools import Permission, ToolError
+from mharness.domain.wildcard import glob_matches
 
 # Diagnosis only, never content (spec hito 7, §1.11).
 _log = logging.getLogger(__name__)
@@ -583,7 +584,7 @@ class Glob:
         found = [
             file.shown
             async for file in walk.files()
-            if file.in_base.full_match(params.pattern)
+            if glob_matches(params.pattern, file.in_base)
         ]
         lines = found[:GLOB_MAX_RESULTS]
         if len(found) > GLOB_MAX_RESULTS:
@@ -720,7 +721,7 @@ def _glob_matches(in_base: PurePath, pattern: str) -> bool:
     # Without "/", by file name, as ripgrep does: "*.py" anywhere.
     if "/" not in pattern:
         return fnmatchcase(in_base.name, pattern)
-    return in_base.full_match(pattern)
+    return glob_matches(pattern, in_base)
 
 
 def _search(

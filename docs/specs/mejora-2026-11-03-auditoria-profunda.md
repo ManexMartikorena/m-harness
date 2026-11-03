@@ -92,7 +92,8 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 - **H1.** Un patrón de `glob` o una regla de `.gitignore` con muchos `*`
   tarda un tiempo exponencial en el proceso principal y congela `maha`
   (37 s con 8 estrellas y 60 caracteres); Ctrl+C no lo para. Un repositorio
-  clonado puede traer la regla. POR ARREGLAR.
+  clonado puede traer la regla. ARREGLADO: `domain/wildcard.py`, comodines
+  en tiempo lineal para `glob` y `.gitignore`.
 - **H2.** Un nombre de fichero que no es UTF-8 llega al resultado con
   sustitutos y rompe la petición al modelo, y la sesión ya no avanza. POR
   ARREGLAR.

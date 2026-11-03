@@ -1,6 +1,7 @@
 """`.gitignore` rules, as gitignore(5) describes them (spec
 mejora-2026-10-23-deuda-hito-5, E6), without the disk."""
 
+import time
 from pathlib import PurePath
 
 import pytest
@@ -134,3 +135,17 @@ def test_crlf_files_are_read() -> None:
 )
 def test_like_git(pattern: str, path: str, ignored: bool) -> None:
     assert ignores(pattern, path) is ignored
+
+
+# No pattern can freeze maha (deep audit after hito 9, H1).
+
+
+def test_a_hostile_rule_answers_at_once() -> None:
+    rules = GitIgnore()
+    rules.add(PurePath(), "*a*a*a*a*a*a*a*a*a*a*a*a*b\n**/x*a*a*a*a*a*a*a*a*b\n")
+    started = time.monotonic()
+
+    ignored = rules.ignores(PurePath("a" * 250), is_dir=False)
+
+    assert not ignored
+    assert time.monotonic() - started < 1.0

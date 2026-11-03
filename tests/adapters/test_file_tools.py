@@ -7,6 +7,7 @@ import errno
 import os
 import stat
 import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -2831,3 +2832,40 @@ async def test_what_asks_every_time_is_denied_without_a_person(tmp_path: Path) -
     )
     assert plain is not None
     assert await gate.decide(plain) == "once"
+
+
+async def test_a_hostile_glob_answers_at_once(root: Path) -> None:
+    # Deep audit after hito 9 (H1): full_match took exponential time with
+    # many "*" in the main process, and Ctrl+C could not stop it.
+    write(root, "a" * 200, "")
+    write(root, "src/" + "a" * 200, "")
+    started = time.monotonic()
+
+    found = await glob(root, "**/*a*a*a*a*a*a*a*a*a*a*a*a*b")
+    grepped = await Grep(Workspace(root)).run(
+        GrepParams(pattern="x", glob="src/*a*a*a*a*a*a*a*a*a*a*a*b")
+    )
+
+    assert (found, grepped) == ("(no files match)", "(no matches)")
+    assert time.monotonic() - started < 2.0
+
+
+@pytest.mark.parametrize(
+    ("pattern", "found"),
+    [
+        ("**/*.py", "main.py\nsrc/app.py\nsrc/sub/util.py"),
+        ("src/**/*.py", "src/app.py\nsrc/sub/util.py"),
+        ("src/*/*.py", "src/sub/util.py"),
+        ("**/sub/*.py", "src/sub/util.py"),
+        ("src/**", "src/app.py\nsrc/notes.md\nsrc/sub/util.py"),
+        ("*.p?", "main.py"),
+        ("src/[an]*", "src/app.py\nsrc/notes.md"),
+    ],
+)
+async def test_glob_patterns_with_folders(root: Path, pattern: str, found: str) -> None:
+    write(root, "main.py", "")
+    write(root, "src/app.py", "")
+    write(root, "src/sub/util.py", "")
+    write(root, "src/notes.md", "")
+
+    assert await glob(root, pattern) == found
