@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.commands import OUTPUT_MAX_CHARS, CommandResult
-from mharness.domain.tools import Permission
+from mharness.domain.tools import Permission, ToolError
 from mharness.ports.commands import CommandRunner
 
 DEFAULT_TIMEOUT = 120
@@ -50,6 +50,7 @@ class RunCommand:
         self._env = dict(env)
 
     async def approval(self, params: RunCommandParams) -> ApprovalRequest:
+        _check_command(params.command)
         lines = [f"in {self._root}"]
         if params.timeout != DEFAULT_TIMEOUT:
             lines.append(f"time limit: {params.timeout} s")
@@ -64,6 +65,7 @@ class RunCommand:
         )
 
     async def run(self, params: RunCommandParams) -> str:
+        _check_command(params.command)
         result = await self._runner.run(
             params.command,
             cwd=self._root,
@@ -78,6 +80,13 @@ class RunCommand:
         status = status.replace("exit code: ", "exit code ")
         cut = " (cut)" if "\n… [output cut at " in result else ""
         return status + cut
+
+
+def _check_command(command: str) -> None:
+    """What no shell can run, found before asking: a NUL ends the command
+    line, and the system refuses it (audit of hito 9, H5)."""
+    if "\0" in command:
+        raise ToolError("the command has a NUL character")
 
 
 def _text(result: CommandResult, timeout: int) -> str:

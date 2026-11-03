@@ -9,6 +9,7 @@ from mharness.adapters.tools import RunCommand
 from mharness.adapters.tools.shell import RunCommandParams
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.commands import CommandResult
+from mharness.domain.tools import ToolError
 from mharness.ports.tools import Tool
 from tests.fakes.commands import FakeRunner, Ran
 
@@ -130,3 +131,15 @@ async def test_a_command_that_could_not_be_stopped_is_told(tmp_path: Path) -> No
         "[it could not be stopped: it may still be running]"
     )
     assert subject.summary(text) == "timed out"
+
+
+async def test_a_nul_in_the_command_is_a_clean_error(tmp_path: Path) -> None:
+    # Audit of hito 9, H5: it reached the loop as an internal ValueError.
+    subject, runner = tool(tmp_path, result("x"))
+    params = RunCommandParams(command="echo a\0b")
+
+    with pytest.raises(ToolError, match=r"^the command has a NUL character$"):
+        await subject.approval(params)
+    with pytest.raises(ToolError, match=r"^the command has a NUL character$"):
+        await subject.run(params)
+    assert runner.ran == []
