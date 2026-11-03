@@ -424,7 +424,9 @@ class TraceReport:
     """What /trace shows: the summary, and where the whole trace is."""
 
     summary: TraceSummary
-    location: str
+    # None without a trace: an imported session, one of hito 6, or one
+    # before its first turn (audit of hito 8).
+    location: str | None
 
 
 class Sessions:
@@ -638,7 +640,8 @@ class Sessions:
             and not await self._store.exists(session)
         ):
             raise TraceError(f"no session {session}")
-        return TraceReport(summarize(target, records), traces.location(target))
+        location = traces.location(target) if records else None
+        return TraceReport(summarize(target, records), location)
 
     async def _has_trace(self, session: str) -> bool:
         try:

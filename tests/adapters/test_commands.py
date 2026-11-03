@@ -512,7 +512,9 @@ async def test_trace_without_any_price_says_the_cost_is_unknown() -> None:
 async def test_trace_before_any_turn_says_so() -> None:
     _, out, _ = await Maha(MemorySessionStore(), []).run("/trace", "/exit")
 
-    assert "  (no turns in the trace)\n" in out
+    # Nor a file that does not exist yet (audit of hito 8).
+    assert "  (no trace for this session)\n" in out
+    assert "[trace:" not in out
 
 
 async def test_trace_of_an_id_with_nothing_is_an_error() -> None:

@@ -19,7 +19,7 @@ from mharness.domain.session import Session
 from tests.adapters.test_print_mode import Terminal
 from tests.fakes.model import FakeModelClient, reply
 from tests.fakes.sessions import MemorySessionStore
-from tests.unit.test_sessions import FIRST, NOW, World, turn
+from tests.unit.test_sessions import FIRST, NOW, World, exported, turn
 
 HOME = Path("/home/ana")
 
@@ -252,3 +252,14 @@ async def test_stats_with_more_days_than_the_calendar_has_is_every_day() -> None
 
     assert (code, err.getvalue()) == (0, "")
     assert "fake-model" in out.getvalue()
+
+
+async def test_trace_without_a_trace_names_no_file() -> None:
+    # Audit of hito 8: an imported session has no trace.
+    world = World(MemorySessionStore(), FakeModelClient([]), tokens=["9abc"])
+    new = await world.sessions.import_session(await exported("Hola."))
+    out, err = io.StringIO(), io.StringIO()
+
+    assert await show_trace(world.sessions, new, out=out, err=err, home=HOME) == 0
+
+    assert (out.getvalue(), err.getvalue()) == ("(no trace for this session)\n", "")

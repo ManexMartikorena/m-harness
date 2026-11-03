@@ -1512,3 +1512,14 @@ async def test_an_import_with_more_unpriced_turns_than_turns_is_refused() -> Non
         await World(store, FakeModelClient([])).sessions.import_session(session)
 
     assert store.sessions == {}
+
+
+async def test_trace_of_an_imported_session_names_no_file() -> None:
+    # Audit of hito 8: the import creates no trace, and /trace named a
+    # file that did not exist.
+    world = World(MemorySessionStore(), FakeModelClient([]), tokens=["9abc"])
+    new = await world.sessions.import_session(await exported("Uno."))
+
+    report = await world.sessions.trace(new)
+
+    assert (report.summary.turns, report.location) == ([], None)
