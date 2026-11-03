@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 Última actualización: 2026-11-03, al publicar la auditoría del hito 8.
-**Hito 8 cerrado y auditado: `v0.8.1`. La spec del hito 9 está
-PROPUESTA, con sus dudas decididas, en su PR. Cero deuda conocida.**
+**Hito 8 cerrado y auditado: `v0.8.1`. En curso: el hito 9
+(adaptador de Anthropic), con su spec APROBADA. Cero deuda conocida.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -46,10 +46,9 @@ spec, su nota de la guía y su release.
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Humano:** revisar e integrar el PR de la spec del hito 9
-   (`docs/specs/hito-9-anthropic.md`, rama `docs/spec-hito-9-anthropic`);
-   integrarlo es la aprobación. Las nueve dudas ya están decididas (§11).
-   Después, el agente empieza el PR 1 (`feature/hito-9-formatos`, §6).
+1. **Agente:** el PR 1 del hito 9, `feature/hito-9-formatos` (spec
+   `docs/specs/hito-9-anthropic.md`, §6): el formato de cada modelo en el
+   catálogo, los proveedores con varios formatos y `ModelRouter`.
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.

@@ -1,4 +1,5 @@
-Estado: PROPUESTA (2026-11-03)
+Estado: PROPUESTA (2026-11-03) → APROBADA (2026-11-03, por el humano: "el
+camino más profesional y robusto para el producto" en cada duda, §11)
 
 # Spec — Hito 9: Adaptador de Anthropic
 
