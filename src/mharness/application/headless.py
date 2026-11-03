@@ -29,7 +29,15 @@ from mharness.domain.money import Usd
 
 # How the run ended: as `TurnFinished` says, or `error` if the model failed.
 type Reason = Literal[
-    "end_turn", "max_steps", "max_cost", "max_tokens", "timeout", "denied", "error"
+    "end_turn",
+    "max_steps",
+    "max_cost",
+    "max_tokens",
+    "timeout",
+    "denied",
+    "max_output",
+    "refused",
+    "error",
 ]
 
 

@@ -36,7 +36,13 @@ from mharness.domain.errors import RetryableModelError
 from mharness.domain.events import ModelEvent, TextDelta
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
-from mharness.domain.model import Effort, ModelRequest, ModelResponse, Usage
+from mharness.domain.model import (
+    Effort,
+    ModelRequest,
+    ModelResponse,
+    StopReason,
+    Usage,
+)
 from mharness.domain.retry import RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
@@ -202,7 +208,7 @@ class Agent:
                     self._messages.extend(turn)
                     kept = True
                     yield TurnFinished(
-                        reason="end_turn",
+                        reason=_ending(response.stop_reason),
                         usage=usage,
                         tool_calls=calls_run,
                         steps=step,
@@ -229,7 +235,13 @@ class Agent:
                     # None: nobody was asked, or the answer was not valid.
                     decision: Decision | None = None
                     asked = False
-                    prepared = await _within(self._prepare(call), deadline)
+                    if response.stop_reason == "max_tokens" and not _whole(call):
+                        # Cut by the output limit: its error says so, or the
+                        # model writes the same cut call again (deep audit
+                        # after hito 9, B1).
+                        prepared: _Ready | _Outcome = _error(call, CUT_BY_OUTPUT)
+                    else:
+                        prepared = await _within(self._prepare(call), deadline)
                     if isinstance(prepared, _Outcome):
                         outcome = prepared
                     else:
@@ -534,6 +546,30 @@ class _Outcome:
     result: ToolResultBlock
     summary: str
     internal_error: str | None = None
+
+
+CUT_BY_OUTPUT = (
+    "your answer reached your output limit before this call was complete, "
+    "so it was not run; write it again in smaller parts"
+)
+
+
+def _ending(stop_reason: StopReason) -> Literal["end_turn", "max_output", "refused"]:
+    """How a turn that ends on an answer without calls ended."""
+    if stop_reason == "max_tokens":
+        return "max_output"
+    if stop_reason == "content_filter":
+        return "refused"
+    return "end_turn"
+
+
+def _whole(call: ToolCallBlock) -> bool:
+    """Whether its arguments are a whole JSON object (or none at all)."""
+    try:
+        value = json.loads(call.arguments.strip() or "{}")
+    except ValueError, RecursionError:
+        return False
+    return isinstance(value, dict)
 
 
 def _error(

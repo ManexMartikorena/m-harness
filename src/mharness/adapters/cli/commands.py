@@ -407,6 +407,8 @@ _ENDINGS = {
     "max_tokens": "token limit",
     "timeout": "time limit",
     "denied": "denied",
+    "max_output": "answer cut",
+    "refused": "declined",
     "error": "error",
     "interrupted": "interrupted",
     "unfinished": "unfinished",

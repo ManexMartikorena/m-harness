@@ -264,11 +264,11 @@ def exit_code(result: RunResult) -> int:
     match result.reason:
         case "end_turn":
             return EXIT_OK
-        case "error":
+        case "error" | "refused":
             return EXIT_ERROR
         case "denied":
             return EXIT_DENIED
-        case "max_steps" | "max_cost" | "max_tokens" | "timeout":
+        case "max_steps" | "max_cost" | "max_tokens" | "timeout" | "max_output":
             return EXIT_LIMIT
 
 

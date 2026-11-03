@@ -692,3 +692,14 @@ async def test_new_before_any_turn_leaves_nothing_behind() -> None:
 
     assert "  [new session]\n" in out
     assert store.sessions == {}
+
+
+def test_every_way_a_turn_ends_has_a_name_in_trace() -> None:
+    # Deep audit after hito 9 (B1): a new ending without its name would
+    # break /trace with a KeyError.
+    from typing import get_args
+
+    from mharness.adapters.cli.commands import _ENDINGS
+    from mharness.application.traces import Ending
+
+    assert set(_ENDINGS) | {"end_turn"} == set(get_args(Ending.__value__))

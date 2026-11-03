@@ -328,6 +328,10 @@ def turn_note(turn: TurnFinished) -> str | None:
         return f"[token limit reached: {tokens} tokens]"
     if turn.reason == "timeout":
         return "[time limit reached]"
+    if turn.reason == "max_output":
+        return "[the answer was cut: the model reached its output limit]"
+    if turn.reason == "refused":
+        return "[the model declined to answer]"
     if turn.reason == "max_cost":
         if turn.cost is None:
             return "[cost limit: the cost of a call is not known]"

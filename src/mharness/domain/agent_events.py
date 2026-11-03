@@ -105,9 +105,18 @@ class TurnFinished(BaseModel, frozen=True):
     # `end_turn`: the model answered without calls. `max_steps`,
     # `max_cost`, `max_tokens`: a limit of the turn (spec hito 8, §1.1).
     # `timeout`: the time limit passed; the turn keeps what ran, as after
-    # Ctrl+C. `denied`: the user denied a call.
+    # Ctrl+C. `denied`: the user denied a call. `max_output`: the answer
+    # was cut by the model's own output limit; `refused`: the model declined
+    # (deep audit after hito 9, B1).
     reason: Literal[
-        "end_turn", "max_steps", "max_cost", "max_tokens", "timeout", "denied"
+        "end_turn",
+        "max_steps",
+        "max_cost",
+        "max_tokens",
+        "timeout",
+        "denied",
+        "max_output",
+        "refused",
     ]
     # Summed over every call to the model in the turn.
     usage: Usage

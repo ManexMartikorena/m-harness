@@ -1870,3 +1870,46 @@ async def test_a_gate_that_breaks_never_runs_the_call() -> None:
 
     assert write.calls == []
     assert subject.messages == ()
+
+
+# Why the model stopped (deep audit after hito 9, B1).
+
+
+async def test_an_answer_cut_by_the_output_limit_says_so() -> None:
+    subject = agent(
+        FakeModelClient([reply("La mitad de una resp", stop_reason="max_tokens")])
+    )
+
+    events = await run(subject)
+
+    assert isinstance(events[-1], TurnFinished)
+    assert events[-1].reason == "max_output"
+    assert subject.messages[-1].text == "La mitad de una resp"
+
+
+async def test_a_call_cut_by_the_output_limit_is_told_what_happened() -> None:
+    # Its error said "not a valid JSON object", and the model wrote the same
+    # cut call again until the step limit.
+    whole = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    cut = ToolCallBlock(id="c2", name="echo", arguments='{"text": "ab')
+    answer = tool_calls(whole, cut).model_copy(update={"stop_reason": "max_tokens"})
+    tool = FakeTool()
+    subject = agent(FakeModelClient([answer, reply("Hecho.")]), tool)
+
+    events = await run(subject)
+
+    results = [e.result for e in events if isinstance(e, ToolFinished)]
+    assert [r.is_error for r in results] == [False, True]
+    assert "output limit" in results[1].content
+    assert len(tool.calls) == 1
+    assert isinstance(events[-1], TurnFinished)
+    assert events[-1].reason == "end_turn"
+
+
+async def test_a_refusal_ends_the_turn_as_refused() -> None:
+    subject = agent(FakeModelClient([reply("No puedo.", stop_reason="content_filter")]))
+
+    events = await run(subject)
+
+    assert isinstance(events[-1], TurnFinished)
+    assert events[-1].reason == "refused"

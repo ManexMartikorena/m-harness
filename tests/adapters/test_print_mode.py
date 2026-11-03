@@ -509,6 +509,9 @@ def ended(reason: Reason) -> RunResult:
         ("max_tokens", 3),
         ("timeout", 3),
         ("denied", 4),
+        # Deep audit after hito 9 (B1).
+        ("max_output", 3),
+        ("refused", 1),
     ],
 )
 def test_each_way_a_turn_ends_has_its_code(reason: Reason, code: int) -> None:
@@ -516,7 +519,7 @@ def test_each_way_a_turn_ends_has_its_code(reason: Reason, code: int) -> None:
 
 
 def test_every_way_a_turn_ends_is_in_the_table_above() -> None:
-    assert len(get_args(Reason.__value__)) == 7
+    assert len(get_args(Reason.__value__)) == 9
 
 
 class ClosedPipe(io.StringIO):

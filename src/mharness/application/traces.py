@@ -30,6 +30,8 @@ type Ending = Literal[
     "max_tokens",
     "timeout",
     "denied",
+    "max_output",
+    "refused",
     "error",
     "interrupted",
     "unfinished",
