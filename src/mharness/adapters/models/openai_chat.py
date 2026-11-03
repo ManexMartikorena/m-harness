@@ -251,6 +251,10 @@ def _to_openai(request: ModelRequest) -> dict[str, Any]:
     for message in request.messages:
         messages.extend(_message_to_openai(message))
     body: dict[str, Any] = {"model": request.model, "messages": messages}
+    if request.effort is not None:
+        # Its name in this format (spec hito 9, §1.7). `max_tokens` is not
+        # sent: compatible servers have their own limit (§1.6).
+        body["reasoning_effort"] = request.effort
     if request.tools:
         # No `tool_choice` (the default, "auto", is what is wanted) and no
         # `parallel_tool_calls` (OpenCode ignores it) (spec hito 4, §1.4).
