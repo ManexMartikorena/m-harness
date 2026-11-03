@@ -55,13 +55,15 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   el propio arreglo traía (las llamadas nuevas heredaban los resultados del
   paso anterior), encontrado con su test.
 - **B3.** El acumulador junta dos llamadas distintas que comparten índice.
-  POR ARREGLAR.
+  ARREGLADO (`0bc1d18`): un id nuevo en un índice usado empieza otra llamada.
 - **B4.** El tiempo límite del turno cuenta lo que la persona tarda en
   leer una petición de permiso. DECISIÓN del mantenedor (2026-11-03): no
   se cuenta la espera a la persona. POR ARREGLAR.
 - **B5.** El escape del delimitador `<stdin>` es una lista negra con
-  huecos. POR ARREGLAR (delimitador con un valor al azar por ejecución).
-- **B6.** Un `ApprovalGate` que lanza una excepción, sin test. POR ARREGLAR.
+  huecos. ARREGLADO (`2145262`): la etiqueta lleva un valor al azar de
+  cada ejecución, y la lista negra desaparece.
+- **B6.** Un `ApprovalGate` que lanza una excepción, sin test. ARREGLADO
+  (`d4fe0f7`): ya fallaba cerrado; ahora un test lo fija.
 - **B7.** `ModelClient.complete()` no tiene quien la llame en `src`.
   NO ES FALLO: el mantenedor decidió conservarla (spec 3, §1.2).
 - **B8.** Deuda: `Agent.run()` es una función de unas 230 líneas con siete
@@ -69,7 +71,7 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   `events.py`; los nombres de herramienta no se comprueban contra las
   reglas de los proveedores. POR ARREGLAR, también la refactorización de
   `Agent.run()`: el agente la hace al final de la auditoría, protegida por
-  los tests y con evals antes del merge.
+  los tests y con evals antes del merge. Lo demás, ARREGLADO (`ab348ed`).
 
 ## Sesiones y trazas (S)
 
@@ -125,7 +127,7 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   no se entiende: una regresión de `maha` se esconde. POR ARREGLAR.
 - **I3.** El modelo de una sesión retomada sale sin escapar en la cabecera
   de la conversación (inyección de escapes de terminal con `maha import`).
-  POR ARREGLAR.
+  ARREGLADO (`b713e3d`).
 - **I4.** La puerta de las evals es sobre todo ruido: con 17-20 tareas a
   5/5, la probabilidad de al menos un ⚠ sin cambiar nada es del 57-95 %, y
   el total marca cualquier bajada. DECISIÓN del mantenedor (2026-11-03):
@@ -149,9 +151,10 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   POR ARREGLAR.
 - **I10.** Comprobaciones flojas en las tareas 03, 09 y 13. POR ARREGLAR.
 - **I11.** Si una llamada falla a mitad de turno, `-p` da como respuesta
-  el texto del paso anterior. POR ARREGLAR.
-- **I12.** Con denegaciones mezcladas, `-p` da la pista equivocada. POR
-  ARREGLAR.
+  el texto del paso anterior. ARREGLADO (`2a44bc4`).
+- **I12.** Con denegaciones mezcladas, `-p` da la pista equivocada. NO ES
+  FALLO: tras la primera denegación el bucle salta las llamadas que quedan
+  y termina el turno, así que en un turno no hay dos denegaciones.
 - **I13.** Deuda: una tarea nueva tras la línea base queda fuera sin aviso;
   `--save` acepta errores y `--repeat 1`. POR ARREGLAR.
 
