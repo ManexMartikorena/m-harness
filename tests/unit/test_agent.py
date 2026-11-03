@@ -1850,3 +1850,23 @@ async def test_a_cut_right_after_new_calls_gives_them_their_own_results() -> Non
         "c2",
         "c3",
     ]
+
+
+class BrokenGate:
+    """A gate that fails while it decides."""
+
+    async def decide(self, request: ApprovalRequest) -> Decision:
+        raise RuntimeError("the terminal broke")
+
+
+async def test_a_gate_that_breaks_never_runs_the_call() -> None:
+    # Deep audit after hito 9 (B6): it fails closed, now with a test.
+    write = FakeTool("write", permission="effect", requests=[ask(tool="write")])
+    call = ToolCallBlock(id="c1", name="write", arguments='{"text": "x"}')
+    subject = agent(FakeModelClient([tool_calls(call)]), write, gate=BrokenGate())
+
+    with pytest.raises(RuntimeError, match="the terminal broke"):
+        await run(subject)
+
+    assert write.calls == []
+    assert subject.messages == ()
