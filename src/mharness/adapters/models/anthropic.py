@@ -221,7 +221,7 @@ class _Stream:
             case "message_start":
                 message = _dict(event.get("message"))
                 self.model = _str(message.get("model")) or self.model
-                self.usage |= _dict(message.get("usage"))
+                self._count(message.get("usage"))
             case "content_block_start":
                 return self._start(_index(event), _dict(event.get("content_block")))
             case "content_block_delta":
@@ -236,11 +236,18 @@ class _Stream:
                 self.stop_reason = _str(delta.get("stop_reason")) or self.stop_reason
                 self.stop_details = delta.get("stop_details") or self.stop_details
                 # Cumulative: the last one says it all.
-                self.usage |= _dict(event.get("usage"))
+                self._count(event.get("usage"))
             case "message_stop":
                 self.stopped = True
         # Unknown events are ignored, as the versioning policy asks.
         return []
+
+    def _count(self, usage: Any) -> None:
+        """Take the counts that came; a null is no count, not zero (deep
+        audit after hito 9): it must not wipe what came before."""
+        self.usage |= {
+            key: value for key, value in _dict(usage).items() if value is not None
+        }
 
     def _start(self, index: int, block: dict[str, Any]) -> list[ModelEvent]:
         self._last = max(self._last, index)
