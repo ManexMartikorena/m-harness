@@ -9,10 +9,25 @@ Para cada hito, además: su spec en `docs/specs/` (decisiones, verificación
 a mano y "Aprendido al implementar"), su nota en `docs/guia/` y su release
 en GitHub.
 
-## Hito 8 (2026-10-27 a 2026-10-30)
+## Hito 8 (2026-10-27 a 2026-11-03)
 
 Lo más reciente primero.
 
+- **Auditoría del hito 8, 2026-10-30 y 2026-11-03: `v0.8.1`** (rama
+  `fix/auditoria-hito-8`). El mantenedor pidió dejar el hito sin deuda
+  antes del hito 9. Dos revisiones independientes del diff
+  `v0.7.1..v0.8.0` (19 hallazgos) y una tercera de los propios arreglos
+  (un fallo nuevo y 6 huecos), todo arreglado con su test; además, el
+  `Retry-After` de más de 60 s ya no se reintenta (decisión del
+  mantenedor), los comandos sin modelo no piden `model`, `trace_id` en el
+  JSON de `-p` y un ejemplo real nuevo en los README. El 2026-10-30 el WSL
+  se cerró tres veces: un test con `10**8` se lanzó sin el arreglo y agotó
+  la memoria (spec §12.53). Evals: `glm-5.3-flash` 97/100 (base 94) y
+  `kimi-k2.7-code` 98/100 (base 99), con tres ⚠ que el mantenedor aceptó:
+  el código nuevo no actuó (spec §5). Límites aceptados: un error de uso
+  no escribe JSON; el `BrokenPipeError` que no es de stdout, al hito 17.
+  1747 tests, mypy, ruff e import-linter en verde. Lo aprendido, en la
+  spec §12.50–58.
 - **Hito 8 cerrado, 2026-10-30: `v0.8.0` — Evals y modo no interactivo.**
   Spec IMPLEMENTADA con la verificación a mano (los once puntos de §7, en
   verde) y la nota 08 de la guía. PRs: #90 (spec), #91, #92, #93 y #94

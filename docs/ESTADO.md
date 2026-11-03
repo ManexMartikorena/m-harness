@@ -1,8 +1,9 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-30, al cerrar el hito 8. **Hito 8 cerrado:
-`v0.8.0` — Evals y modo no interactivo. Siguiente: la spec del hito 9.
-Cero deuda conocida.**
+Última actualización: 2026-11-03, al terminar la auditoría del hito 8.
+**Hito 8 cerrado (`v0.8.0`) y auditado: `v0.8.1` lista en la rama
+`fix/auditoria-hito-8`, pendiente de PR, merge y tag. Después, la spec del
+hito 9. Cero deuda conocida.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -15,7 +16,8 @@ Anthropic), sin spec todavía. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.8.0` — Evals y modo no interactivo** (2026-10-30):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.8.0
-- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
+- Ramas abiertas: `fix/auditoria-hito-8` (la auditoría, `v0.8.1`). Las
+  integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -39,20 +41,24 @@ spec, su nota de la guía y su release.
 | 5 | Permisos y herramientas con efecto | `v0.5.0` (2026-10-23), `v0.5.1`, `v0.5.2` (cero deuda) |
 | 6 | Sesiones e historial | `v0.6.0` (2026-10-26), `v0.6.1` |
 | 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
-| 8 | Evals (20 tareas, dos modelos, línea base), `maha -p`, reintentos con respaldo y comandos de línea | `v0.8.0` (2026-10-30) |
+| 8 | Evals (20 tareas, dos modelos, línea base), `maha -p`, reintentos con respaldo y comandos de línea; auditoría con tres revisiones independientes | `v0.8.0` (2026-10-30), `v0.8.1` |
 
 ## Siguiente paso
 
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** proponer la spec del hito 9, adaptador de Anthropic
+1. **Humano (o agente, si se lo pide):** push de `fix/auditoria-hito-8`,
+   PR sin milestone (es un arreglo entre hitos), merge con el CI en verde
+   y tag `v0.8.1` sobre ese merge. Antes, revisar el log y el diff de la
+   rama (spec 8, §12.50 a §12.58).
+2. **Agente:** proponer la spec del hito 9, adaptador de Anthropic
    (DESIGN §14, punto 9; `docs/specs/PLANTILLA.md`), en su propio PR
    (`docs/spec-hito-9-<slug>`, milestone "Hito 9"), con sus dudas para el
    mantenedor. Antes, comprobar contra la documentación oficial de
    Anthropic el formato de Messages, el streaming y las herramientas, y
    anotarlo con la fecha.
-2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -79,7 +85,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.8.0`).
+   `maha 0.8.1`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -144,6 +150,9 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 - **Hito 16:** llamadas a herramientas en paralelo (spec 4, §11); comandos
   que esperan entrada, con los comandos en segundo plano (spec 5, §10);
   varios comandos a la vez, hoy uno a uno por el subreaper (spec 8, §12.10).
+- **Hito 17:** que `main()` no calle un `BrokenPipeError` que no sea de
+  stdout: los procesos hijo de MCP tratan sus propias tuberías, con su
+  test (spec 8, §12.56; decisión del mantenedor, 2026-11-03).
 - **Hito 21:** lo que se teclea mientras gira el spinner y el eco de `^C`
   se mezclan con la salida (spec 3, §12.10; spec 4, §12.13); ver el texto
   del razonamiento (spec 7).
@@ -165,12 +174,15 @@ código y los tests cubren los dos casos):
   8, §12.9).
 
 **Límites aceptados por el mantenedor** (cada uno, con su decisión en su
-spec; los cuatro, confirmados de nuevo el 2026-10-27):
+spec; los cuatro primeros, confirmados de nuevo el 2026-10-27):
 - los secretos con otro nombre no se detectan hasta el hito 15 (mejora
   `2026-10-23`, E5);
 - D7 y D14 de `write_file`/`edit_file` (mejora `2026-10-23`);
 - la rotación de `maha.log` no se coordina entre varios `maha` a la vez
-  (spec 7, §12.48).
+  (spec 7, §12.48);
+- un error de uso de la línea (código 2) en `-p` con JSON no escribe
+  `result`: argparse falla antes de saber el formato (spec 8, §12.56;
+  2026-11-03).
 
 Los comandos interactivos (un editor, `git commit` sin `-m`) figuraban aquí
 como "terminan o llegan al tiempo límite: es el diseño (spec 5, §10)", pero
@@ -198,7 +210,8 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
   (2026-10-27)
 - [x] 7. Trazas y coste. `v0.7.0` (2026-10-27) y el arreglo `v0.7.1`
   (2026-10-27)
-- [x] 8. Evals y modo no interactivo. `v0.8.0` (2026-10-30)
+- [x] 8. Evals y modo no interactivo. `v0.8.0` (2026-10-30) y el arreglo
+  `v0.8.1` (la auditoría)
 - [ ] 9. Adaptador de Anthropic. `v0.9.0`
 - [ ] 10. System prompt por capas. `v0.10.0`
 - [ ] 11. Gestión del contexto. `v0.11.0`

@@ -605,6 +605,31 @@ de lo que la batería ejecuta: son comandos de `maha` sobre sesiones y
 trazas, fuera del turno. Las evals no usan `/new`, `/export` ni los
 subcomandos; `Sessions.start(model)` sin modelo hace lo mismo que antes.
 
+**Auditoría** (`v0.8.1`, 2026-11-03, commit `f4f676a`, OpenCode Go; 20
+tareas, 5 repeticiones, 4 a la vez, `--retry-errors`; comparado con la
+línea base del 2026-10-27; unos 0,68 $). Toca el bucle (reintentos, tiempo
+límite, permisos y pasos), así que se compara (§12.50 a §12.58):
+
+| Modelo | Éxito | Base | train | validation | Coste total |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 97/100 | 94/100 | 78/80 | 19/20 | 0,07 $ |
+| `kimi-k2.7-code` | 98/100 | 99/100 | 79/80 | 19/20 | 0,62 $ |
+
+- **El código nuevo no actuó:** en las 200 ejecuciones hubo 0
+  `model_retry`, 0 `model_fallback`, 0 `turn_failed`, 0 errores del
+  proveedor y 0 internos (contado en las trazas y en `runs.json`).
+- **Tres ⚠ en `kimi-k2.7-code`:** las tareas 08 (4/5) y 14 (4/5), que en
+  la base pasaban siempre, y el éxito total (99 → 98). Las dos son
+  errores de lógica del modelo que el test de la tarea detecta: un
+  `slugify` que da `version-20` en vez de `version-2-0`, y un descuento
+  de 67.5 en vez de 52.5. `glm-5.3-flash` sube de 94 a 97; fallan las de
+  siempre (12, 13 y 18, una vez cada una).
+- **Decisión del mantenedor** (2026-11-03): se aceptan las tres ⚠ y la
+  auditoría se integra. Motivo: el código nuevo no actuó en ninguna
+  ejecución, así que el modelo recibió las mismas peticiones que antes;
+  las diferencias son ruido del modelo. La línea base sigue siendo la del
+  2026-10-27.
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit en verde. Seis PRs, en el milestone "Hito 8".
