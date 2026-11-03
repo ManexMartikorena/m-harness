@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from mharness.domain.evals import Baseline, Task
+from mharness.domain.evals import Baseline, Task, is_test_file
 
 
 class MemoryEvalSuite:
@@ -34,6 +34,19 @@ class MemoryEvalSuite:
                 (path / name).write_text(text, encoding="utf-8")
             self.workspaces.append(path)
             yield path
+
+    async def restore_tests(self, task: Task, workspace: Path) -> list[str]:
+        restored = []
+        for name, text in self._fixtures.get(task.fixture, {}).items():
+            if name in task.check.own_tests or not is_test_file(name):
+                continue
+            target = workspace / name
+            if target.is_file() and target.read_text(encoding="utf-8") == text:
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+            restored.append(name)
+        return restored
 
     async def read(self, workspace: Path, path: str) -> str | None:
         try:

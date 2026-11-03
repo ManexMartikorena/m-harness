@@ -4,6 +4,9 @@ fixture = "inventario"
 allow = ["write_file", "edit_file"]
 
 [check]
+# El agente escribe el test: la comprobación ve el suyo, y solo corre
+# ese (auditoría profunda, I1).
+own_tests = ["test_inventory.py"]
 command = '''python3 -m unittest -q test_inventory.TestInventory.test_total_value && python3 -c "
 from inventory import Inventory
 stock = Inventory()

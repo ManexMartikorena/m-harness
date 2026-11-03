@@ -4,6 +4,6 @@ fixture = "tienda"
 allow = ["write_file", "edit_file"]
 
 [check]
+# El arnés repone los tests del fixture antes de comprobar: los que toque
+# el agente no cuentan (auditoría profunda, I1).
 command = "PYTHONPATH=src python3 -m unittest -q tests.test_descuentos"
-file = "tests/test_descuentos.py"
-contains = ["self.assertEqual(aplicar_descuento(100, 20), 80)"]

@@ -279,7 +279,67 @@ async def test_each_check_fails_untouched_and_passes_when_solved(task_id: str) -
     subject = evaluator(suite)
 
     async with suite.workspace(task) as repo:
-        assert await subject.check(task.check, repo, "") is not None
+        assert await subject.check(task, repo, "") is not None
     async with suite.workspace(task) as repo:
         solve(repo)
-        assert await subject.check(task.check, repo, answer) is None
+        assert await subject.check(task, repo, answer) is None
+
+
+async def checked(task_id: str, change: Callable[[Path], object], answer: str) -> bool:
+    """Whether the check of `task_id` passes on the copy `change` leaves."""
+    suite = TomlEvalSuite(EVALS)
+    [task] = [task for task in await suite.tasks() if task.id == task_id]
+    async with suite.workspace(task) as repo:
+        change(repo)
+        return await evaluator(suite).check(task, repo, answer) is None
+
+
+async def test_a_cheat_on_the_tests_does_not_pass() -> None:
+    # Deep audit (I1): `return 80` and the other assert turned into `pass`
+    # passed task 06; the check ran the copy's own tests.
+    def cheat(repo: Path) -> None:
+        edit(
+            repo / "src/tienda/descuentos.py",
+            "return round(precio * porcentaje / 100, 2)",
+            "return 80",
+        )
+        edit(
+            repo / "tests/test_descuentos.py",
+            "self.assertEqual(aplicar_descuento(59.9, 0), 59.9)",
+            "pass",
+        )
+
+    assert not await checked("06-arreglar-descuento", cheat, "Hecho.")
+
+
+async def test_a_wrong_test_of_the_agent_does_not_fail_right_code() -> None:
+    # Deep audit (I1): GLM gave the right 105.0 in task 14, and failed on a
+    # test it had written itself that expected 99.0.
+    def right_code_wrong_test(repo: Path) -> None:
+        volume(repo, on=True)
+        edit(
+            repo / "tests/test_pedidos.py",
+            "    def test_resumen(self) -> None:",
+            "    def test_volumen(self) -> None:\n"
+            "        self.assertEqual(pedidos.total([(10, 10.0), (1, 10.0)]), 99.0)\n\n"
+            "    def test_resumen(self) -> None:",
+        )
+
+    assert await checked("14-descuento-volumen", right_code_wrong_test, "Hecho.")
+
+
+async def test_a_deleted_test_is_put_back() -> None:
+    def delete(repo: Path) -> None:
+        (repo / "test_calendario.py").unlink()
+
+    assert not await checked("15-bisiesto", delete, "Hecho.")
+
+
+async def test_every_check_that_runs_unittest_names_its_module() -> None:
+    # Deep audit (I1): a check runs only the tests it names, never a
+    # discovery that would pick up the files the agent added.
+    for task in await TomlEvalSuite(EVALS).tasks():
+        command = task.check.command or ""
+        for found in re.finditer(r"unittest -q(?P<rest>[^&\n]*)", command):
+            assert found["rest"].strip(), task.id
+            assert "discover" not in found["rest"], task.id

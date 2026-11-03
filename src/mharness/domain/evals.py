@@ -9,6 +9,7 @@ import re
 from collections.abc import Iterable, Sequence
 from datetime import date
 from decimal import Decimal
+from pathlib import PurePosixPath
 from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
@@ -46,6 +47,11 @@ class Check(BaseModel, frozen=True, extra="forbid"):
     answer_matches: list[str] = []
     # Texts the final answer must not hold.
     answer_absent: list[str] = []
+    # The test files of the fixture the task asks the agent to write or
+    # change: the check sees the agent's version. Every other test file is
+    # put back as the fixture has it before the check, so a test the agent
+    # changed neither fails right code nor passes a cheat (deep audit, I1).
+    own_tests: list[str] = []
 
     @model_validator(mode="after")
     def _something(self) -> Self:
@@ -56,6 +62,9 @@ class Check(BaseModel, frozen=True, extra="forbid"):
         answer = self.answer_contains or self.answer_matches or self.answer_absent
         if not (self.command or self.file or answer):
             raise ValueError("a check needs a command, a file or an answer")
+        for name in self.own_tests:
+            if not is_test_file(name):
+                raise ValueError(f"own_tests: {name!r} is not a test file")
         for pattern in self.answer_matches:
             try:
                 re.compile(pattern)
@@ -85,6 +94,20 @@ class Check(BaseModel, frozen=True, extra="forbid"):
             if unwanted in text:
                 return f"{self.file} still contains {unwanted!r}"
         return None
+
+
+def is_test_file(path: str) -> bool:
+    """Whether a file of a fixture, by its path from the fixture's root, is
+    a test: under `tests/` or `test/`, `test_*.py`, `*_test.py` or
+    `conftest.py` (deep audit, I1)."""
+    parts = PurePosixPath(path).parts
+    name = parts[-1] if parts else ""
+    return (
+        any(part in ("tests", "test") for part in parts[:-1])
+        or (name.startswith("test_") and name.endswith(".py"))
+        or name.endswith("_test.py")
+        or name == "conftest.py"
+    )
 
 
 class Task(BaseModel, frozen=True, extra="forbid"):
@@ -119,6 +142,9 @@ class TaskRun(BaseModel, frozen=True):
     duration: float
     # Why it failed, or the provider's error.
     detail: str | None = None
+    # The test files of the fixture the run had changed, and its check saw
+    # as the fixture has them (deep audit, I1).
+    restored: list[str] = []
 
 
 class Stats(BaseModel, frozen=True):

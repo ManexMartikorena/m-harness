@@ -18,6 +18,7 @@ from mharness.domain.evals import (
     by_task,
     combine,
     compare,
+    is_test_file,
     stats,
 )
 
@@ -232,3 +233,28 @@ def test_a_cost_that_cannot_be_compared_is_said() -> None:
     assert compare(now, baseline(before)) == [
         "cost per run: unknown now (a run had no price), $0.0010 in the baseline"
     ]
+
+
+# The fixture's tests (deep audit, I1).
+
+
+@pytest.mark.parametrize(
+    ("path", "test"),
+    [
+        ("tests/test_pedidos.py", True),
+        ("tests/__init__.py", True),
+        ("test_texto.py", True),
+        ("pkg/thing_test.py", True),
+        ("conftest.py", True),
+        ("src/tienda/pedidos.py", False),
+        ("testing.py", False),
+        ("README.md", False),
+    ],
+)
+def test_which_files_of_a_fixture_are_tests(path: str, test: bool) -> None:
+    assert is_test_file(path) is test
+
+
+def test_own_tests_must_be_tests() -> None:
+    with pytest.raises(ValidationError, match="not a test file"):
+        Check(command="true", own_tests=["inventory.py"])

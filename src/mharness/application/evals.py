@@ -17,7 +17,7 @@ from typing import Literal
 
 from mharness.application.headless import RunResult, TurnBroke, run_once
 from mharness.application.sessions import Conversation
-from mharness.domain.evals import Check, EvalError, Outcome, Task, TaskRun
+from mharness.domain.evals import EvalError, Outcome, Task, TaskRun
 from mharness.ports.commands import CommandRunner
 from mharness.ports.evals import EvalSuite
 
@@ -151,7 +151,8 @@ class Evaluator:
             if result.reason == "error":
                 return _failed(task, model, attempt, result)
             try:
-                detail = await self.check(task.check, path, result.text)
+                restored = await self._suite.restore_tests(task, path)
+                detail = await self._checked(task, path, result.text)
             except Exception as exc:
                 # With what the run spent, already paid (review of the
                 # audit of hito 8).
@@ -160,11 +161,19 @@ class Evaluator:
                     task, model, attempt, result, "error", broke, reason="internal"
                 )
         outcome: Outcome = "pass" if detail is None else "fail"
-        return _run(task, model, attempt, result, outcome, detail)
+        run = _run(task, model, attempt, result, outcome, detail)
+        return run.model_copy(update={"restored": restored})
 
-    async def check(self, check: Check, path: Path, answer: str) -> str | None:
-        """Why a run, with the copy at `path` and its final `answer`, does
-        not pass `check`; None if it passes."""
+    async def check(self, task: Task, path: Path, answer: str) -> str | None:
+        """Why a run of `task`, with the copy at `path` and its final
+        `answer`, does not pass its check; None if it passes. The test
+        files of the fixture are put back first: the check runs the
+        fixture's tests, not the agent's (deep audit, I1)."""
+        await self._suite.restore_tests(task, path)
+        return await self._checked(task, path, answer)
+
+    async def _checked(self, task: Task, path: Path, answer: str) -> str | None:
+        check = task.check
         if (why := check.answer_fails(answer)) is not None:
             return why
         if check.file is not None:

@@ -23,7 +23,13 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from mharness.domain.evals import TASK_LIMITS, Baseline, EvalError, Task
+from mharness.domain.evals import (
+    TASK_LIMITS,
+    Baseline,
+    EvalError,
+    Task,
+    is_test_file,
+)
 from mharness.domain.limits import TurnLimits
 
 
@@ -55,6 +61,9 @@ class TomlEvalSuite:
             if not self._keep:
                 await asyncio.to_thread(shutil.rmtree, folder, ignore_errors=True)
 
+    async def restore_tests(self, task: Task, workspace: Path) -> list[str]:
+        return await asyncio.to_thread(self._restore_tests, task, workspace)
+
     async def read(self, workspace: Path, path: str) -> str | None:
         def read() -> str | None:
             try:
@@ -69,6 +78,21 @@ class TomlEvalSuite:
 
     async def save(self, baseline: Baseline) -> str:
         return await asyncio.to_thread(self._save, baseline)
+
+    def _restore_tests(self, task: Task, workspace: Path) -> list[str]:
+        fixture = self._root / "fixtures" / task.fixture
+        own = set(task.check.own_tests)
+        restored = []
+        for source in sorted(fixture.rglob("*")):
+            name = source.relative_to(fixture).as_posix()
+            if source.is_symlink() or not source.is_file():
+                continue
+            if name in own or not is_test_file(name):
+                continue
+            original = source.read_bytes()
+            if _put_back(workspace, name, original):
+                restored.append(name)
+        return restored
 
     def _tasks(self) -> list[Task]:
         folder = self._root / "tasks"
@@ -123,6 +147,27 @@ class TomlEvalSuite:
             return str(path.relative_to(Path.cwd()))
         except ValueError:
             return str(path)
+
+
+def _put_back(workspace: Path, name: str, original: bytes) -> bool:
+    """Write `original` at `name` in the copy, unless it is there as it
+    is; True if it was not. A link or a file where a folder should be is
+    taken away first: nothing is written out of the copy."""
+    target = workspace
+    for part in Path(name).parts[:-1]:
+        target = target / part
+        if target.is_symlink() or (target.exists() and not target.is_dir()):
+            target.unlink()
+        target.mkdir(exist_ok=True)
+    target = target / Path(name).name
+    if target.is_symlink():
+        target.unlink()
+    elif target.is_dir():
+        shutil.rmtree(target)
+    elif target.is_file() and target.read_bytes() == original:
+        return False
+    target.write_bytes(original)
+    return True
 
 
 def _stem(baseline: Baseline) -> str:

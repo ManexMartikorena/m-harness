@@ -5,6 +5,9 @@ split = "validation"
 allow = ["write_file", "edit_file"]
 
 [check]
+# El agente cambia también los tests de pedidos: la comprobación ve los
+# suyos; los demás tests se reponen (auditoría profunda, I1).
+own_tests = ["tests/test_pedidos.py"]
 # Los tests pasan, importe_total existe y no queda ninguna llamada a total(.
 command = '''
 PYTHONPATH=src python3 -m unittest -q tests.test_pedidos && PYTHONPATH=src python3 -c "

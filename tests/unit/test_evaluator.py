@@ -2,7 +2,7 @@
 failures apart (spec hito 8, §1.5 to §1.9), with fakes."""
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -376,3 +376,37 @@ async def test_only_what_the_provider_may_fix_is_run_again(
 
     assert (run.outcome, run.reason) == ("error", reason)
     assert len(seen) == (2 if retried else 1)
+
+
+async def test_a_test_the_agent_changed_is_put_back_and_said() -> None:
+    # Deep audit (I1): the check runs the fixture's tests, not the agent's.
+    fixtures = {"tienda": {"tests/test_a.py": "original\n", "src/a.py": "x\n"}}
+    check = Check(command="python3 -m unittest -q tests.test_a")
+    seen: list[str] = []
+
+    class Seeing(FakeRunner):
+        async def run(
+            self, command: str, *, cwd: Path, time_limit: float, env: Mapping[str, str]
+        ) -> CommandResult:
+            seen.append((cwd / "tests/test_a.py").read_text())
+            return await super().run(command, cwd=cwd, time_limit=time_limit, env=env)
+
+    @asynccontextmanager
+    async def open_run(t: Task, model: str, path: Path) -> AsyncIterator[Conversation]:
+        # As an agent that rewrote the test.
+        (path / "tests/test_a.py").write_text("pass\n")
+        world = World(MemorySessionStore(), FakeModelClient([reply("Hecho.")]))
+        conversation = await world.sessions.start()
+        try:
+            yield conversation
+        finally:
+            await conversation.close()
+
+    ok = CommandResult(exit_code=0, output="OK", truncated=False, timed_out=False)
+    suite = MemoryEvalSuite([task(check=check)], fixtures)
+    subject = Evaluator(suite, open_run, Seeing([ok]), ENV)
+
+    [run] = await subject.run([task(check=check)], ["m"])
+
+    assert seen == ["original\n"]
+    assert (run.outcome, run.restored) == ("pass", ["tests/test_a.py"])

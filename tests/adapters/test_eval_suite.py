@@ -178,3 +178,75 @@ async def test_of_two_baselines_of_one_day_the_last_saved_wins(
 
     assert latest is not None
     assert latest.commit == "third"
+
+
+def with_tests(root: Path) -> None:
+    fixture = root / "fixtures" / "tienda"
+    (fixture / "tests").mkdir()
+    (fixture / "tests" / "test_a.py").write_text("assert True\n")
+    (fixture / "test_b.py").write_text("assert True\n")
+    (fixture / "c_test.py").write_text("assert True\n")
+
+
+async def test_the_fixtures_tests_are_put_back_before_the_check(tmp_path: Path) -> None:
+    # Deep audit (I1): the check ran the tests the agent had changed.
+    root = battery(tmp_path)
+    with_tests(root)
+    suite = TomlEvalSuite(root)
+    [task] = await suite.tasks()
+
+    async with suite.workspace(task) as copy:
+        (copy / "tests" / "test_a.py").write_text("pass\n")
+        (copy / "test_b.py").unlink()
+        (copy / "c_test.py").unlink()
+        (copy / "c_test.py").symlink_to(copy / "pyproject.toml")
+        (copy / "src" / "a.py").write_text("x = 2\n")
+
+        restored = await suite.restore_tests(task, copy)
+
+        assert sorted(restored) == ["c_test.py", "test_b.py", "tests/test_a.py"]
+        for name in restored:
+            assert not (copy / name).is_symlink()
+            assert (copy / name).read_text() == "assert True\n"
+        # Not a test: what the agent did stays.
+        assert (copy / "src" / "a.py").read_text() == "x = 2\n"
+        assert (copy / "pyproject.toml").read_text() == 'version = "1.4.2"\n'
+
+
+async def test_a_test_the_task_asks_to_change_is_left_as_the_agent_left_it(
+    tmp_path: Path,
+) -> None:
+    root = battery(tmp_path)
+    with_tests(root)
+    own = TASK_TOML + 'own_tests = ["test_b.py"]\n'
+    (root / "tasks" / "01-version" / "task.toml").write_text(own, encoding="utf-8")
+    suite = TomlEvalSuite(root)
+    [task] = await suite.tasks()
+
+    async with suite.workspace(task) as copy:
+        (copy / "test_b.py").write_text("def test_new(): pass\n")
+
+        assert await suite.restore_tests(task, copy) == []
+        assert (copy / "test_b.py").read_text() == "def test_new(): pass\n"
+
+
+async def test_putting_back_does_not_follow_a_link_out_of_the_copy(
+    tmp_path: Path,
+) -> None:
+    root = battery(tmp_path / "evals")
+    with_tests(root)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    suite = TomlEvalSuite(root)
+    [task] = await suite.tasks()
+
+    async with suite.workspace(task) as copy:
+        for file in (copy / "tests").iterdir():
+            file.unlink()
+        (copy / "tests").rmdir()
+        (copy / "tests").symlink_to(outside, target_is_directory=True)
+
+        await suite.restore_tests(task, copy)
+
+        assert list(outside.iterdir()) == []
+        assert (copy / "tests" / "test_a.py").read_text() == "assert True\n"
