@@ -16,15 +16,22 @@ Start-up plumbing: only `mharness.bootstrap` uses it, once, before the core.
 
 import tomllib
 from collections.abc import Mapping
-from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    StrictFloat,
+    StrictInt,
+    ValidationError,
+    model_validator,
+)
 
 from mharness.domain.catalog import SpokenApi
 from mharness.domain.limits import TurnLimits
 from mharness.domain.model import Effort
+from mharness.domain.money import Usd
 
 PROJECT_FILE = Path(".maha") / "config.toml"
 DEFAULT_PROVIDER = "opencode-go"
@@ -118,10 +125,13 @@ class Settings(BaseModel, frozen=True):
 class _Limits(BaseModel, extra="forbid"):
     """`[limits]`: each one, if the file sets it."""
 
-    max_steps: int | None = Field(default=None, ge=1)
-    max_cost: Decimal | None = Field(default=None, ge=0)
-    max_tokens: int | None = Field(default=None, ge=1)
-    timeout: float | None = Field(default=None, gt=0)
+    # Strict: `true` is not 1 step nor 1 second; the cost within the bounds
+    # of an amount in USD, or the turn could not check it (review of the
+    # deep audit).
+    max_steps: StrictInt | None = Field(default=None, ge=1)
+    max_cost: Usd | None = None
+    max_tokens: StrictInt | None = Field(default=None, ge=1)
+    timeout: StrictFloat | None = Field(default=None, gt=0)
 
 
 class _ProjectFile(BaseModel, extra="forbid"):

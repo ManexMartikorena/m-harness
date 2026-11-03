@@ -343,6 +343,31 @@ def test_a_wrong_limit_is_an_error(home: Path, project: Path) -> None:
     assert "limits.max_turns: unknown field" in str(raised.value)
 
 
+@pytest.mark.parametrize(
+    "line",
+    ["max_steps = true", "timeout = true", "max_cost = 1e-13", "max_cost = 5e12"],
+)
+def test_a_limit_out_of_what_it_can_be_is_an_error(
+    home: Path, project: Path, line: str
+) -> None:
+    # Review of the deep audit: `true` was 1 step or 1 second, and a cost
+    # out of the bounds of Usd ended in a Python traceback, also from a
+    # project's file.
+    write_user(home, 'model = "m"\n')
+    write_project(project, f"[limits]\n{line}\n")
+
+    with pytest.raises(ConfigError, match="invalid configuration") as raised:
+        load(home, project)
+
+    assert f"limits.{line.split()[0]}" in str(raised.value)
+
+
+def test_a_timeout_in_whole_seconds_is_taken(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\n[limits]\ntimeout = 30\n')
+
+    assert load(home, project).limits.timeout == 30
+
+
 def test_unknown_provider(home: Path, project: Path) -> None:
     write_user(home, 'provider = "nope"\nmodel = "m"\n')
 
