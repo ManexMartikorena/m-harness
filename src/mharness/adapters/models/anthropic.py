@@ -438,7 +438,7 @@ def _to_domain(body: dict[str, Any], request: ModelRequest) -> ModelResponse:
                 blocks.append(
                     ReasoningBlock(
                         text=_str(block.get("thinking")) or "",
-                        signature=_str(block.get("signature")),
+                        signature=_str(block.get("signature")) or None,
                     )
                 )
             case "redacted_thinking":

@@ -513,3 +513,24 @@ async def test_text_of_only_spaces_stays_out(client: AnthropicClient) -> None:
         "role": "assistant",
         "content": [{"type": "text", "text": "[interrupted by the user]"}],
     }
+
+
+@respx.mock
+async def test_complete_keeps_no_empty_signature(client: AnthropicClient) -> None:
+    # Deep audit after hito 9 (M10): the stream drops "", complete() kept it
+    # and would send it back.
+    respx.post(ENDPOINT).respond(
+        json={
+            "model": MODEL,
+            "content": [
+                {"type": "thinking", "thinking": "", "signature": ""},
+                {"type": "text", "text": "Hola."},
+            ],
+            "stop_reason": "end_turn",
+            "usage": {},
+        }
+    )
+
+    response = await client.complete(ModelRequest(model=MODEL, messages=[user("a")]))
+
+    assert response.message.blocks[0] == ReasoningBlock(signature=None)

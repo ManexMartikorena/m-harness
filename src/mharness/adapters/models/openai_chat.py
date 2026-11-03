@@ -31,7 +31,6 @@ from mharness.adapters.models.http import (
 )
 from mharness.adapters.models.sse import parse_sse
 from mharness.domain.errors import (
-    ModelError,
     ModelRateLimitError,
     ModelResponseError,
     ModelUnavailableError,
@@ -107,7 +106,7 @@ class OpenAIChatClient:
             reason = self._safe(str(exc)) or type(exc).__name__
             raise ModelUnavailableError(f"cannot reach the provider: {reason}") from exc
         if not response.is_success:
-            raise self._status_error(response)
+            raise status_error(response, self._api_key)
         try:
             completion = _Completion.model_validate_json(response.content)
         except ValidationError:
@@ -131,8 +130,8 @@ class OpenAIChatClient:
             ) as response:
                 if not response.is_success:
                     await response.aread()
-                    raise self._status_error(response)
-                await self._check_streaming(response)
+                    raise status_error(response, self._api_key)
+                await check_streaming(response, self._api_key)
                 async for event in self._events(response, request):
                     yield event
         except httpx.TimeoutException as exc:
@@ -144,9 +143,6 @@ class OpenAIChatClient:
             raise ModelUnavailableError(
                 f"the connection to the provider failed: {reason}"
             ) from exc
-
-    async def _check_streaming(self, response: httpx.Response) -> None:
-        await check_streaming(response, self._api_key)
 
     async def _events(
         self, response: httpx.Response, request: ModelRequest
@@ -217,9 +213,6 @@ class OpenAIChatClient:
     def _safe(self, detail: str | None) -> str | None:
         """A provider's text, ready to show: without the key, and cut."""
         return safe(detail, self._api_key)
-
-    def _status_error(self, response: httpx.Response) -> ModelError:
-        return status_error(response, self._api_key)
 
 
 def _to_openai(request: ModelRequest) -> dict[str, Any]:
