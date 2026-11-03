@@ -43,7 +43,7 @@ def test_one_line_per_run_as_it_ends() -> None:
     )
     failed = run("06-bug", "fail", detail="the check exited with 1:\nFAILED\nmore")
     assert run_line(failed) == (
-        "  ✗ 06-bug · glm-5.3-flash #1 · the check exited with 1:"
+        "  ✗ 06-bug · glm-5.3-flash #1 · the check exited with 1: more"
     )
     broken = run("03", "error", detail="429 Too Many Requests", cost=None)
     assert (
@@ -130,4 +130,60 @@ def test_an_internal_error_is_not_said_to_be_the_provider() -> None:
 
     assert run_line(crashed) == (
         "  ! 02 · m #1 · internal: PermissionError: cannot read the fixture"
+    )
+
+
+def errored(reason: str, detail: str) -> TaskRun:
+    return run("02", "error", detail=detail, cost=None).model_copy(
+        update={"reason": reason}
+    )
+
+
+def test_a_failed_check_shows_its_most_useful_line() -> None:
+    # Deep audit (I9): the line showed only "the check exited with 1:".
+    output = (
+        "the check exited with 1:\n"
+        "F.\n"
+        "Traceback (most recent call last):\n"
+        '  File "tests/test_pedidos.py", line 9, in test_volumen\n'
+        "AssertionError: 99.0 != 105.0\n"
+        "\n"
+        "Ran 2 tests in 0.001s\n"
+        "\n"
+        "FAILED (failures=1)"
+    )
+    plain = "the check exited with 2:\nusage: notas.py [-h]\nnotas.py: bad option\n"
+
+    assert run_line(run("14", "fail", detail=output)) == (
+        "  ✗ 14 · glm-5.3-flash #1 · the check exited with 1: "
+        "AssertionError: 99.0 != 105.0"
+    )
+    assert run_line(run("16", "fail", detail=plain)) == (
+        "  ✗ 16 · glm-5.3-flash #1 · the check exited with 2: notas.py: bad option"
+    )
+
+
+def test_each_kind_of_error_says_whose_it_is() -> None:
+    assert run_line(errored("credentials", "401 Unauthorized")) == (
+        "  ! 02 · glm-5.3-flash #1 · credentials: 401 Unauthorized"
+    )
+    runs = [
+        run(),
+        errored("provider", "429"),
+        errored("provider", "503"),
+        errored("credentials", "401"),
+        errored("internal", "OSError: disk full"),
+    ]
+    out = io.StringIO()
+
+    eval_report(runs, {"glm-5.3-flash": None}, out)
+
+    text = out.getvalue()
+    # Deep audit (I9): "provider errors" counted the internal ones too.
+    assert "  provider errors: 2, not counted (--retry-errors runs them again)\n" in (
+        text
+    )
+    assert "  credential errors: 1, not counted (check the key)\n" in text
+    assert "  internal errors: 1, not counted (a bug of maha: see runs.json)\n" in (
+        text
     )
