@@ -22,7 +22,12 @@ from mharness.domain.agent_events import (
     TurnFinished,
 )
 from mharness.domain.catalog import add_cost
-from mharness.domain.errors import ModelError
+from mharness.domain.errors import (
+    ModelAuthError,
+    ModelError,
+    ModelRequestError,
+    RetryableModelError,
+)
 from mharness.domain.events import TextDelta
 from mharness.domain.model import Usage
 from mharness.domain.money import Usd
@@ -39,6 +44,12 @@ type Reason = Literal[
     "refused",
     "error",
 ]
+# Whose the model's failure is: `provider`, one that may pass if repeated
+# (429, 5xx, network); `credentials`, a rejected key; `request`, a request
+# the provider rejected (another 4xx: maha built it wrong, or the model is
+# unknown); `response`, an answer maha cannot read. The evals count the
+# last two as failures: they may be a bug of maha (deep audit, I2).
+type Failure = Literal["provider", "credentials", "request", "response"]
 
 
 class RunResult(BaseModel, frozen=True):
@@ -68,6 +79,8 @@ class RunResult(BaseModel, frozen=True):
     model: str
     # What the model's failure said, if it failed.
     error: str | None
+    # Whose that failure is, if it failed.
+    failure: Failure | None = None
 
 
 def instruction(text: str, piped: str | None, *, tag: str | None = None) -> str:
@@ -120,6 +133,8 @@ async def run_once(
     reason: Reason = "error"
     error: str | None = None
 
+    failure: Failure | None = None
+
     def summed(reason: Reason, error: str | None) -> RunResult:
         return RunResult(
             session=conversation.id if conversation.stored else None,
@@ -135,6 +150,7 @@ async def run_once(
             duration=time.monotonic() - started,
             model=model,
             error=error,
+            failure=failure,
         )
 
     try:
@@ -166,6 +182,20 @@ async def run_once(
         # The turn gave no final answer: the text of a step before ("let me
         # read it") is not one (deep audit after hito 9, I11).
         answer = ""
+        failure = failure_of(exc)
     except Exception as exc:
         raise TurnBroke(summed("error", f"{type(exc).__name__}: {exc}")) from exc
     return summed(reason, error)
+
+
+def failure_of(error: ModelError) -> Failure:
+    """Whose a failed call is (deep audit, I2). One of no known kind is
+    taken as maha's answer problem, not the provider's: an eval must not
+    hide it."""
+    if isinstance(error, RetryableModelError):
+        return "provider"
+    if isinstance(error, ModelAuthError):
+        return "credentials"
+    if isinstance(error, ModelRequestError):
+        return "request"
+    return "response"

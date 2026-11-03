@@ -6,10 +6,19 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import pytest
+
 from mharness.application.evals import Evaluator, choose
 from mharness.application.sessions import Conversation
 from mharness.domain.commands import CommandResult
-from mharness.domain.errors import ModelRateLimitError
+from mharness.domain.errors import (
+    ModelAuthError,
+    ModelError,
+    ModelRateLimitError,
+    ModelRequestError,
+    ModelResponseError,
+    ModelUnavailableError,
+)
 from mharness.domain.evals import Check, Task, TaskRun
 from mharness.domain.model import Usage
 from tests.adapters.test_print_mode import crashing_second
@@ -324,3 +333,46 @@ async def test_a_run_that_breaks_mid_turn_keeps_what_it_spent() -> None:
         1,
     )
     assert run.detail == "RuntimeError: boom"
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (ModelRequestError("400 tools.0: invalid schema"), "request"),
+        (ModelResponseError("a stream line is too long"), "response"),
+    ],
+)
+async def test_a_broken_request_or_answer_of_maha_is_a_failure(
+    error: ModelError, reason: str
+) -> None:
+    # Deep audit (I2): a 4xx for a request maha broke, or an answer maha
+    # cannot read, left the success rate as "provider errors": a
+    # regression of maha hid.
+    subject, _ = evaluator(lambda t, m: [error], task())
+
+    [run] = await subject.run([task()], ["m"], retry_errors=True)
+
+    assert (run.outcome, run.reason) == ("fail", reason)
+    assert str(error) in (run.detail or "")
+
+
+@pytest.mark.parametrize(
+    ("error", "reason", "retried"),
+    [
+        (ModelRateLimitError("429 Too Many Requests"), "provider", True),
+        (ModelUnavailableError("503 Service Unavailable"), "provider", True),
+        (ModelAuthError("401 Unauthorized"), "credentials", False),
+    ],
+)
+async def test_only_what_the_provider_may_fix_is_run_again(
+    error: ModelError, reason: str, retried: bool
+) -> None:
+    # Deep audit (I2): --retry-errors says it retries the provider's errors
+    # (429, 5xx, network); a rejected key fails the same way again.
+    seen: list[TaskRun] = []
+    subject, _ = evaluator(lambda t, m: [error], task())
+
+    [run] = await subject.run([task()], ["m"], retry_errors=True, on_run=seen.append)
+
+    assert (run.outcome, run.reason) == ("error", reason)
+    assert len(seen) == (2 if retried else 1)

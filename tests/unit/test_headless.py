@@ -9,7 +9,14 @@ import pytest
 from mharness.application.headless import RunResult, instruction, run_once
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.catalog import ModelInfo, Prices
-from mharness.domain.errors import ModelUnavailableError
+from mharness.domain.errors import (
+    ModelAuthError,
+    ModelError,
+    ModelRateLimitError,
+    ModelRequestError,
+    ModelResponseError,
+    ModelUnavailableError,
+)
 from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import Usage
 from tests.fakes.approval import FakeApproval
@@ -99,6 +106,26 @@ async def test_a_failed_model_call_is_an_error_result() -> None:
 
     assert (result.reason, result.error) == ("error", "503 Service Unavailable")
     assert result.text == ""
+    assert result.failure == "provider"
+
+
+@pytest.mark.parametrize(
+    ("error", "failure"),
+    [
+        (ModelRateLimitError("429"), "provider"),
+        (ModelAuthError("401"), "credentials"),
+        (ModelRequestError("400"), "request"),
+        (ModelResponseError("bad stream"), "response"),
+        (ModelError("unknown"), "response"),
+    ],
+)
+async def test_a_failed_call_says_whose_it_is(error: ModelError, failure: str) -> None:
+    # Deep audit (I2): the evals tell the provider's failures from maha's.
+    world = World(MemorySessionStore(), FakeModelClient([error]))
+
+    result = await run_once(await world.sessions.start(), "Hola")
+
+    assert result.failure == failure
 
 
 async def test_the_calls_that_ran_count_even_if_the_model_fails_later() -> None:
