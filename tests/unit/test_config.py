@@ -211,6 +211,24 @@ def test_an_unknown_cache_ttl_is_an_error(home: Path, project: Path) -> None:
         load(home, project)
 
 
+def test_what_the_project_chooses_is_known(home: Path, project: Path) -> None:
+    # Deep audit after hito 9 (M4), decision of the maintainer: maha says it
+    # at start, so a foreign repository cannot raise the cost unseen.
+    write_user(home, 'model = "m"\neffort = "low"\n')
+    assert load(home, project).from_project == {}
+
+    write_project(
+        project,
+        'model = "caro"\neffort = "max"\ncache_ttl = "1h"\nfallback_model = "x"\n',
+    )
+    assert load(home, project).from_project == {
+        "model": "caro",
+        "fallback_model": "x",
+        "effort": "max",
+        "cache_ttl": "1h",
+    }
+
+
 # The effort (spec hito 9, §1.7).
 
 

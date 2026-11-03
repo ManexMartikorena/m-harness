@@ -1577,3 +1577,24 @@ def test_eval_into_a_closed_pipe_still_keeps_every_run(
 
     [folder] = (workspace / "state" / "maha" / "evals").iterdir()
     assert len(json.loads((folder / "runs.json").read_text())) == 2
+
+
+@respx.mock
+def test_p_says_what_the_project_configuration_chose(
+    workspace: Path, stdin: Callable[[str], None], capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Deep audit after hito 9 (M4): a .maha/config.toml can raise the cost
+    # (effort, cache, fallback); maha says it at start.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    (Path.cwd() / ".maha").mkdir()
+    (Path.cwd() / ".maha" / "config.toml").write_text(
+        'effort = "max"\ncache_ttl = "1h"\n'
+    )
+    respx.post(GO_ENDPOINT).mock(return_value=sse_response(streamed("Hola.", 1, 1)))
+    stdin("")
+
+    main(["-p", "Hola"])
+
+    assert (
+        "  [from .maha/config.toml: effort max, cache 1h]\n" in capsys.readouterr().err
+    )

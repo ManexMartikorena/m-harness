@@ -491,6 +491,13 @@ def _commit() -> str | None:
     return done.stdout.strip() or None
 
 
+def _notes(settings: config.Settings) -> list[str]:
+    """What to say at start: what the project's file chose (deep audit
+    after hito 9, M4)."""
+    note = cli.project_note(settings.from_project)
+    return [] if note is None else [note]
+
+
 def _gate(lines: cli.StdinLines) -> ApprovalGate:
     """Asks in the terminal; without one (`maha < notes.txt`), denies all:
     the next line of the file could "approve" (spec hito 5, §1.10)."""
@@ -645,6 +652,7 @@ async def _print(
             provider=settings.provider_name,
             output_format=options.output_format,
             start=start,
+            notes=_notes(settings),
         )
 
 
@@ -667,4 +675,5 @@ async def _converse(
             # Only a terminal has typed-ahead input to drop.
             discard=lines.discard if os.isatty(0) else None,
             start=start,
+            notes=_notes(settings),
         )

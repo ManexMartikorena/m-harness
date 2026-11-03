@@ -9,6 +9,7 @@ import json
 import logging
 import signal
 import sys
+from collections.abc import Sequence
 from contextlib import aclosing
 from pathlib import Path
 from typing import TextIO
@@ -70,6 +71,7 @@ async def converse(
     err: TextIO | None = None,
     home: Path | None = None,
     start: Start | None = None,
+    notes: Sequence[str] = (),
 ) -> int:
     """Run the conversation until /exit, Ctrl+D or Ctrl+C; return the exit code.
 
@@ -114,7 +116,9 @@ async def converse(
     for number in CLOSING:
         loop.add_signal_handler(number, on_closing, number)
     try:
-        return await _turns(commands, provider, read, out, err, sigint, opened.resumed)
+        return await _turns(
+            commands, provider, read, out, err, sigint, opened.resumed, notes
+        )
     except asyncio.CancelledError:
         if sigint.closing is not None:
             task.uncancel()
@@ -142,6 +146,7 @@ async def _turns(
     err: TextIO,
     sigint: _Sigint,
     resumed: Resumed | None,
+    notes: Sequence[str],
 ) -> int:
     # From the configuration or a resumed session: escaped as any other
     # text that may come from a file (deep audit after hito 9, I3).
@@ -154,6 +159,8 @@ async def _turns(
         commands.tell_resumed(resumed)
     else:
         commands.note_model()
+    for note in notes:
+        print(f"  {note}", file=out, flush=True)
     while True:
         print("> ", end="", file=out, flush=True)
         try:

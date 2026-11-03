@@ -21,7 +21,7 @@ import json
 import os
 import signal
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, TextIO
@@ -83,6 +83,7 @@ async def print_mode(
     out: TextIO | None = None,
     err: TextIO | None = None,
     home: Path | None = None,
+    notes: Sequence[str] = (),
 ) -> int:
     """Run `prompt`, with what `read_all` gives below it, in a new session
     or the one `start` resumes, and write the result in `output_format`;
@@ -107,7 +108,7 @@ async def print_mode(
         loop.add_signal_handler(number, on_signal, number)
     try:
         return await _print(
-            sessions, prompt, read_all, catalog, provider, start, out, shown
+            sessions, prompt, read_all, catalog, provider, start, out, shown, notes
         )
     except asyncio.CancelledError:
         if not received:
@@ -146,6 +147,7 @@ async def _print(
     start: Start | None,
     out: TextIO,
     shown: _Shown,
+    notes: Sequence[str],
 ) -> int:
     err = shown.err
     try:
@@ -175,6 +177,8 @@ async def _print(
         note = model_note(catalog, provider, conversation.model)
         if note is not None:
             shown.note(note)
+        for line in notes:
+            shown.note(line)
         result = await run_once(
             conversation, text, _watch(shown.output_format, conversation, out, err)
         )

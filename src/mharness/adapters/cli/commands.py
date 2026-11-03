@@ -3,6 +3,7 @@
 
 import asyncio
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import TextIO
@@ -325,6 +326,25 @@ def shown_dir(cwd: str, home: Path) -> str:
         relative = path.relative_to(home)
         return clean_line("~" if relative == PurePath() else f"~/{relative}")
     return clean_line(cwd)
+
+
+# How each choice of a project's file is named at start.
+_CHOICES = {
+    "provider": "provider",
+    "model": "model",
+    "fallback_model": "fallback",
+    "effort": "effort",
+    "cache_ttl": "cache",
+}
+
+
+def project_note(chosen: Mapping[str, str]) -> str | None:
+    """What the project's `.maha/config.toml` chose, said at start (deep
+    audit after hito 9, M4); None if it chose nothing."""
+    if not chosen:
+        return None
+    said = ", ".join(f"{_CHOICES[name]} {value}" for name, value in chosen.items())
+    return clean_line(f"[from .maha/config.toml: {said}]")
 
 
 def model_note(catalog: ModelCatalog, provider: str, model: str) -> str | None:

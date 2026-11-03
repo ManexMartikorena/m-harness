@@ -109,6 +109,10 @@ class Settings(BaseModel, frozen=True):
     limits: TurnLimits = TurnLimits()
     # Kept out of repr, so it never lands in a log or a traceback.
     api_key: str | None = Field(default=None, repr=False)
+    # What the project's file chose, by name: maha says it at start, so a
+    # foreign repository cannot raise the cost unseen (deep audit after
+    # hito 9, M4, a decision of the maintainer).
+    from_project: dict[str, str] = {}
 
 
 class _Limits(BaseModel, extra="forbid"):
@@ -213,6 +217,11 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
         cache_ttl=project.cache_ttl or user.cache_ttl or "5m",
         limits=_stricter(user.limits, project.limits),
         api_key=_api_key(provider_name, provider, env, need=calls_model),
+        from_project={
+            name: value
+            for name in ("provider", "model", "fallback_model", "effort", "cache_ttl")
+            if (value := getattr(project, name)) is not None
+        },
     )
 
 
