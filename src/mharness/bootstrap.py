@@ -354,7 +354,7 @@ async def _eval(
         if options.keep:
             print(f"copies of the repositories: {copies}", file=sys.stderr, flush=True)
         raise
-    regressed = cli.eval_report(runs, baselines, sys.stdout)
+    regressed = cli.eval_report(runs, baselines, sys.stdout, effort=effort)
     # Every run in full: the report shows one line of a failure.
     await asyncio.to_thread(_write_runs, run_dir / "runs.json", runs)
     if options.save:

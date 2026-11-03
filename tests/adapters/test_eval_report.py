@@ -232,3 +232,33 @@ def test_in_all_is_a_minimum_if_a_run_with_an_error_has_no_cost() -> None:
     )
 
     assert "  total        1/1   100%   ≥$0.0004 in all\n" in out.getvalue()
+
+
+def test_with_an_effort_the_baseline_is_shown_but_not_judged() -> None:
+    # Deep audit (I7): with --effort, the baseline is of the model's own
+    # effort, and hito 9 got a +22 % cost "regression" from it.
+    before = by_task([run()] * 5)
+    baseline = Baseline(
+        date=date(2026, 10, 27),
+        maha="0.7.1",
+        commit="a3eb2c7",
+        provider="opencode-go",
+        model="glm-5.3-flash",
+        repeat=5,
+        tasks=before,
+        total=combine(list(before.values())),
+    )
+    # 5/5 -> 0/5: p = 0.004, a regression at the same effort.
+    now = [run("01-version", "fail", attempt=n) for n in range(1, 6)]
+    out = io.StringIO()
+
+    regressed = eval_report(now, {"glm-5.3-flash": baseline}, out, effort="high")
+
+    assert not regressed
+    text = out.getvalue()
+    assert "⚠" not in text
+    assert "  · 01-version: 5/5 in the baseline, now 0/5 (p = 0.004)" in text
+    assert (
+        "  · effort high: the baseline ran at the model's own effort, "
+        "so the differences are shown, not judged\n"
+    ) in text

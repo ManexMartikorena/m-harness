@@ -1444,3 +1444,30 @@ def test_eval_with_keep_says_where_the_copies_are(
     assert where.parent == workspace / "tmp"
     [copy] = where.glob("01-version-*/tienda")
     assert (copy / "pyproject.toml").read_text() == 'version = "1.4.2"\n'
+
+
+def test_eval_with_an_effort_does_not_judge_against_the_baseline(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Deep audit (I7): the baseline is of the model's own effort.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(
+            return_value=sse_response(streamed("Es la 1.4.2.", 10, 5))
+        )
+        assert main(["eval", "--tasks", str(evals), "--repeat", "5", "--save"]) == 0
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(
+            return_value=sse_response(streamed("No lo sé.", 10, 5))
+        )
+        args = ["eval", "--tasks", str(evals), "--repeat", "5", "--effort", "high"]
+
+        assert main(args) == 0
+
+    out = capsys.readouterr().out
+    assert "  · 01-version: 5/5 in the baseline, now 0/5 (p = 0.004)" in out
+    assert "  · effort high: the baseline ran at the model's own effort" in out

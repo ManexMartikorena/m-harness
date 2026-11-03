@@ -49,10 +49,16 @@ def _why(detail: str) -> str:
 
 
 def eval_report(
-    runs: Sequence[TaskRun], baselines: Mapping[str, Baseline | None], out: TextIO
+    runs: Sequence[TaskRun],
+    baselines: Mapping[str, Baseline | None],
+    out: TextIO,
+    *,
+    effort: str | None = None,
 ) -> bool:
     """A table per model, its totals and its regressions against its
-    baseline; True if there is any regression."""
+    baseline; True if there is any regression. With an `effort`, the
+    differences are shown but none is a regression: a baseline is always
+    of the model's own effort (spec hito 9, §5; deep audit, I7)."""
     regressed = False
     for model, baseline in baselines.items():
         mine = [run for run in runs if run.model == model]
@@ -94,9 +100,15 @@ def eval_report(
             # ⚠ a regression; · a difference within the noise (deep audit,
             # I4), with its p: the maintainer reads both.
             for found in compare(mine, baseline):
-                regressed = regressed or found.regression
-                mark = "⚠" if found.regression else "·"
-                print(f"  {mark} {found.text}", file=out)
+                judged = found.regression and effort is None
+                regressed = regressed or judged
+                print(f"  {'⚠' if judged else '·'} {found.text}", file=out)
+            if effort is not None:
+                print(
+                    f"  · effort {clean_line(effort)}: the baseline ran at the "
+                    "model's own effort, so the differences are shown, not judged",
+                    file=out,
+                )
     return regressed
 
 
