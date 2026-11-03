@@ -6,14 +6,17 @@ import sys
 from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 from mharness import __version__
 from mharness.adapters.cli.headless import failure_object
 from mharness.adapters.cli.text import clean
+from mharness.domain.model import Effort
 
 # How `-p` writes its result (spec hito 8, §1.11).
 OUTPUT_FORMATS = ("text", "json", "stream-json")
+# The levels of effort (spec hito 9, §1.7).
+EFFORTS = get_args(Effort.__value__)
 # The options of a conversation, and how each one is named in an error.
 _CONVERSATION = {
     "prompt": "-p",
@@ -21,6 +24,7 @@ _CONVERSATION = {
     "session": "-r",
     "model": "-m",
     "fallback_model": "--fallback-model",
+    "effort": "--effort",
     "output_format": "--output-format",
     "allow": "--allow",
     "max_steps": "--max-steps",
@@ -100,6 +104,12 @@ def _conversation_options(
         help="the model that answers when the retries of the main one run out",
     )
     parser.add_argument(
+        "--effort",
+        choices=EFFORTS,
+        help="how hard the model works: low, medium, high, xhigh or max "
+        "(default: the model's own)",
+    )
+    parser.add_argument(
         "--output-format",
         choices=OUTPUT_FORMATS,
         help="with -p: only the answer (text, default), one JSON object "
@@ -162,6 +172,13 @@ def _eval_parser(commands: Any) -> None:
     )
     evals.add_argument(
         "--keep", action="store_true", help="keep each run's copy of its repository"
+    )
+    evals.add_argument(
+        "--effort",
+        dest="eval_effort",
+        choices=EFFORTS,
+        help="how hard the model works (default: the configured effort, or "
+        "the model's own)",
     )
     evals.add_argument(
         "--retry-errors",

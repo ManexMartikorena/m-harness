@@ -302,6 +302,9 @@ def test_continue_and_the_limits_go_with_the_conversation() -> None:
         (["-m", " "], "empty"),
         (["--fallback-model", ""], "empty"),
         (["--fallback-model", "x", "eval"], "eval does not take --fallback-model"),
+        (["--effort", "extreme"], "invalid choice: 'extreme'"),
+        (["--effort", "high", "eval"], "eval does not take --effort"),
+        (["eval", "--effort", "none"], "invalid choice: 'none'"),
         (["-r", " "], "-r needs the id of a session"),
         (["-c", "eval"], "eval does not take -c"),
         (["-m", "x", "--timeout", "5", "eval"], "eval does not take -m, --timeout"),
@@ -314,6 +317,22 @@ def test_options_that_do_not_go_together_are_a_usage_error(
 ) -> None:
     assert parse(args) == 2
     assert says in capsys.readouterr().err
+
+
+def test_the_effort_goes_with_the_conversation_and_with_eval() -> None:
+    # Spec hito 9, §1.7 and §5.
+    conversation = parse(["--effort", "low"])
+    printed = parse(["-p", "x", "--effort", "max"])
+    evals = parse(["eval", "--effort", "high"])
+
+    assert isinstance(conversation, argparse.Namespace)
+    assert isinstance(printed, argparse.Namespace)
+    assert isinstance(evals, argparse.Namespace)
+    assert (conversation.effort, printed.effort, evals.eval_effort) == (
+        "low",
+        "max",
+        "high",
+    )
 
 
 def test_help_names_the_tools_allow_takes(capsys: pytest.CaptureFixture[str]) -> None:

@@ -169,6 +169,30 @@ def test_a_provider_speaks_only_what_maha_speaks(
         load(home, project)
 
 
+# The effort (spec hito 9, §1.7).
+
+
+def test_without_effort_the_models_own(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\n')
+
+    assert load(home, project).effort is None
+
+
+def test_the_user_and_the_project_set_the_effort(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\neffort = "low"\n')
+    assert load(home, project).effort == "low"
+
+    write_project(project, 'effort = "xhigh"\n')
+    assert load(home, project).effort == "xhigh"
+
+
+def test_an_unknown_effort_is_an_error(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\neffort = "extreme"\n')
+
+    with pytest.raises(ConfigError, match="effort"):
+        load(home, project)
+
+
 def test_without_model_says_what_to_write(home: Path, project: Path) -> None:
     with pytest.raises(ConfigError) as raised:
         load(home, project)
