@@ -130,13 +130,17 @@ def _translate(pattern: str) -> tuple[Token, ...] | None:
     while i < len(pattern):
         char = pattern[i]
         if pattern.startswith("**", i) and (i == 0 or pattern[i - 1] == "/"):
-            if pattern[i + 2 : i + 3] == "/":
+            # Two stars or more, as git's wildmatch: "***/" is "**/".
+            end = i
+            while pattern.startswith("*", end):
+                end += 1
+            if pattern[end : end + 1] == "/":
                 out.append(AnyFolders())
-                i += 3
+                i = end + 1
                 continue
-            if i + 2 == len(pattern):
+            if end == len(pattern):
                 out.append(AnyChars())
-                i += 2
+                i = end
                 continue
         if char == "*":
             out.append(Star())

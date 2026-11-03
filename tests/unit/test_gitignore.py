@@ -131,6 +131,10 @@ def test_crlf_files_are_read() -> None:
         ("[a-]", "a", True),
         ("[a-]", "-", True),
         ("[a-]", "b", False),
+        # Three stars at the start of a folder are "**", as in git's
+        # wildmatch (review of the deep audit).
+        ("***/b", "b", True),
+        ("***/b", "a/x/b", True),
     ],
 )
 def test_like_git(pattern: str, path: str, ignored: bool) -> None:
