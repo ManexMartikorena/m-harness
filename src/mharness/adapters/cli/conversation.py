@@ -191,6 +191,9 @@ async def _answer(
     """
     # True while the cursor is after text, not at the start of a line.
     wrote = False
+    # The block of that text: another one starts on a new line, as the
+    # session keeps it (review of the deep audit).
+    block: int | None = None
     # True while a question waits after "Allow? …:" (spec
     # mejora-2026-10-26-deuda-pre-hito-6, B8).
     asking = False
@@ -203,6 +206,10 @@ async def _answer(
                 match event:
                     case TextDelta(text=text):
                         await spinner.stop()
+                        other = event.block is not None and block is not None
+                        if wrote and other and event.block != block:
+                            out.write("\n")
+                        block = event.block
                         out.write(clean(text))
                         out.flush()
                         wrote = True

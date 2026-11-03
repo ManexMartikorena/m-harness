@@ -27,7 +27,14 @@ from mharness.domain.catalog import ModelInfo
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.limits import TurnLimits
-from mharness.domain.messages import Message, ToolCallBlock, ToolResultBlock
+from mharness.domain.messages import (
+    Block,
+    Message,
+    ReasoningBlock,
+    TextBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+)
 from mharness.domain.model import ModelResponse, Usage
 from mharness.domain.retry import NO_RETRIES, RetryPolicy
 from mharness.domain.tools import ToolError
@@ -110,6 +117,25 @@ async def test_shows_the_answer_and_the_tokens() -> None:
         "  [tokens: 31 in · 5 out]\n"
         "> "
     )
+
+
+async def test_each_text_block_starts_on_a_new_line() -> None:
+    # Review of the deep audit: text, thinking, text ran together.
+    blocks: list[Block] = [
+        TextBlock(text="Uno."),
+        ReasoningBlock(text="pienso", signature="firma"),
+        TextBlock(text="Dos."),
+    ]
+    response = ModelResponse(
+        message=Message(role="assistant", blocks=blocks),
+        stop_reason="end_turn",
+        usage=Usage(),
+        model="glm-5.3-flash",
+    )
+
+    _, out, _ = await run(FakeModelClient([response]), "Hola", "/exit")
+
+    assert out == f"{HEADER}\n> Uno.\nDos.\n> "
 
 
 async def test_exit_command_ends_with_zero() -> None:

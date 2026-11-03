@@ -17,8 +17,14 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
-from mharness.domain.messages import ToolCallBlock
-from mharness.domain.model import Usage
+from mharness.domain.messages import (
+    Block,
+    Message,
+    ReasoningBlock,
+    TextBlock,
+    ToolCallBlock,
+)
+from mharness.domain.model import ModelResponse, Usage
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FAKE_MODEL, FakeModelClient, reply, tool_calls
@@ -70,6 +76,29 @@ async def test_the_result_has_the_final_answer_and_the_counts() -> None:
         error=None,
     ).model_dump(exclude={"duration"})
     assert result.duration >= 0
+
+
+async def test_the_text_blocks_of_the_answer_do_not_run_together() -> None:
+    # Review of the deep audit: Anthropic's text, thinking, text gave
+    # "Uno.Dos." in -p, while the session kept "Uno.\nDos.".
+    blocks: list[Block] = [
+        TextBlock(text="Uno."),
+        ReasoningBlock(text="pienso", signature="firma"),
+        TextBlock(text="Dos."),
+    ]
+    response = ModelResponse(
+        message=Message(role="assistant", blocks=blocks),
+        stop_reason="end_turn",
+        usage=Usage(),
+        model=FAKE_MODEL,
+    )
+    conversation = await World(
+        MemorySessionStore(), FakeModelClient([response])
+    ).sessions.start()
+
+    result = await run_once(conversation, "Hola")
+
+    assert result.text == "Uno.\nDos."
 
 
 async def test_a_denied_call_is_named_and_not_a_tool_error() -> None:

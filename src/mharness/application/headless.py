@@ -13,6 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from mharness.application.collect import Accumulator
 from mharness.application.sessions import Conversation
 from mharness.domain.agent_events import (
     AgentEvent,
@@ -119,8 +120,10 @@ async def run_once(
     result, with what the turn kept saved; anything else that fails is a
     bug, and goes up as `TurnBroke`, with what the turn spent."""
     started = time.monotonic()
-    # The text of the call in progress, and of the last one that ended.
-    current: list[str] = []
+    # The text of the call in progress, and of the last one that ended;
+    # joined by blocks as the session keeps it, so that two paragraphs do
+    # not run together (review of the deep audit).
+    current = Accumulator()
     answer = ""
     steps = 0
     usage = Usage()
@@ -159,9 +162,9 @@ async def run_once(
                 if on_event is not None:
                     on_event(event)
                 if isinstance(event, TextDelta):
-                    current.append(event.text)
+                    current.add(event)
                 elif isinstance(event, ModelCallFinished):
-                    answer, current = "".join(current), []
+                    answer, current = current.text, Accumulator()
                     steps += 1
                     usage += event.usage
                     cost = add_cost(cost, event.cost)
