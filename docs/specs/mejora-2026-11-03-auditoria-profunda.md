@@ -22,19 +22,19 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 - **M2.** Ids de llamada que Anthropic rechaza (`^[a-zA-Z0-9_-]+$`) tras
   un `/model` desde otro formato. En las 6.498 llamadas de las evals no
   aparece ninguno (OpenCode los normaliza), pero un servidor declarado por
-  la persona puede mandarlos. POR ARREGLAR.
-- **M3.** Texto solo de espacios mandado a Anthropic. POR ARREGLAR.
+  la persona puede mandarlos. ARREGLADO (`2f8bbe6`).
+- **M3.** Texto solo de espacios mandado a Anthropic. ARREGLADO (`11fd3eb`).
 - **M4.** Un `.maha/config.toml` puede subir el coste: `effort`,
   `cache_ttl` y `fallback_model`. DECISIÓN del mantenedor (2026-11-03):
   se mantiene lo que el proyecto puede elegir, pero `maha` lo dice al
   arrancar. POR ARREGLAR.
 - **M5.** OpenAI: un contador raro en el uso (`10.5`, `choices: null`)
-  pierde la respuesta entera. POR ARREGLAR.
+  pierde la respuesta entera. ARREGLADO (`4c22614`).
 - **M6.** OpenAI: un `rate_limit_error` a mitad de stream sale como "no
-  disponible". POR ARREGLAR.
+  disponible". ARREGLADO (`4c22614`).
 - **M7.** Una clave con caracteres no ASCII acaba con una traza de Python.
-  POR ARREGLAR.
-- **M8.** HTTP 408 no se reintenta. POR ARREGLAR.
+  ARREGLADO (`ef41778`).
+- **M8.** HTTP 408 no se reintenta. ARREGLADO (`ee35652`).
 - **M9.** Datos del catálogo. NO ES FALLO: Sonnet 4.6 tiene 128K de
   salida en la documentación oficial; los precios y formatos de Zen son
   los de OpenCode (`qwen3.8-max` y `minimax-m3` van por OpenAI en Zen).
@@ -42,7 +42,8 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   `endpoints` para el propio formato, ignorado sin aviso; el docstring de
   `config.py` sin `cache_ttl`; envoltorios sobrantes en `openai_chat.py`;
   `complete()` de Anthropic puede guardar una firma vacía; ningún test de
-  `anthropic_version` de punta a punta. POR ARREGLAR.
+  `anthropic_version` de punta a punta. ARREGLADO (`1dd9df1`, `1f287b8`),
+  salvo el test de punta a punta, POR ARREGLAR.
 
 ## Bucle y núcleo (B)
 
