@@ -1,5 +1,6 @@
 """`run_command` (spec hito 5, §1.9 and §4.5.6), with `FakeRunner`."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -143,3 +144,18 @@ async def test_a_nul_in_the_command_is_a_clean_error(tmp_path: Path) -> None:
     with pytest.raises(ToolError, match=r"^the command has a NUL character$"):
         await subject.run(params)
     assert runner.ran == []
+
+
+async def test_a_working_directory_that_is_not_utf8_is_shown_valid(
+    tmp_path: Path,
+) -> None:
+    # Deep audit after hito 9 (H7): its surrogates would break the trace and
+    # any JSON the question goes to.
+    root = Path(os.fsdecode(bytes(tmp_path) + b"/caf\xe9"))
+    os.mkdir(root)
+    tool = RunCommand(root, FakeRunner(), {})
+
+    question = await tool.approval(RunCommandParams(command="ls"))
+
+    question.detail.encode("utf-8")
+    assert "caf\\xe9" in question.detail

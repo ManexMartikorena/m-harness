@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.commands import OUTPUT_MAX_CHARS, CommandResult
+from mharness.domain.paths import printable
 from mharness.domain.tools import Permission, ToolError
 from mharness.ports.commands import CommandRunner
 
@@ -51,7 +52,8 @@ class RunCommand:
 
     async def approval(self, params: RunCommandParams) -> ApprovalRequest:
         _check_command(params.command)
-        lines = [f"in {self._root}"]
+        # Valid UTF-8 whatever its name (deep audit after hito 9, H7).
+        lines = [f"in {printable(str(self._root))}"]
         if params.timeout != DEFAULT_TIMEOUT:
             lines.append(f"time limit: {params.timeout} s")
         # No perimeter until the sandbox (hito 15): the question says so.
