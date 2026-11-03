@@ -304,7 +304,9 @@ class _Stream:
 
     def finish(self) -> list[ModelEvent]:
         if not self.stopped or self.stop_reason is None:
-            raise ModelResponseError("stream ended before the answer was complete")
+            # The server or the network cut it: the provider's, as any other
+            # cut (deep audit after hito 9, I15, a decision of the maintainer).
+            raise ModelUnavailableError("stream ended before the answer was complete")
         events: list[ModelEvent] = []
         explanation = _refusal(self.stop_reason, self.stop_details, self._text)
         if explanation:

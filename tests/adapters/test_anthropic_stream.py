@@ -287,7 +287,7 @@ async def test_a_stream_that_does_not_finish_fails(
 ) -> None:
     respx.post(ENDPOINT).mock(return_value=stream_of(*parts))
 
-    with pytest.raises(ModelResponseError, match="before the answer was complete"):
+    with pytest.raises(ModelUnavailableError, match="before the answer was complete"):
         await events(client)
 
 

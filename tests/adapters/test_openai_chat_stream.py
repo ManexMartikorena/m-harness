@@ -246,7 +246,7 @@ async def test_bom_and_split_characters(client: OpenAIChatClient) -> None:
 async def test_done_without_finish_reason_fails(client: OpenAIChatClient) -> None:
     serve(sse(chunk("Hola"), usage_chunk(), "[DONE]"))
 
-    with pytest.raises(ModelResponseError, match="before the answer was complete"):
+    with pytest.raises(ModelUnavailableError, match="before the answer was complete"):
         await events(client)
 
 
@@ -254,7 +254,7 @@ async def test_done_without_finish_reason_fails(client: OpenAIChatClient) -> Non
 async def test_clean_end_without_finish_reason_fails(client: OpenAIChatClient) -> None:
     serve(sse(chunk("Hola")))
 
-    with pytest.raises(ModelResponseError, match="before the answer was complete"):
+    with pytest.raises(ModelUnavailableError, match="before the answer was complete"):
         await events(client)
 
 

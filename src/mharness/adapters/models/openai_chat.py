@@ -202,7 +202,9 @@ class OpenAIChatClient:
                 )
             finish_reason = choice.finish_reason or finish_reason
         if finish_reason is None:
-            raise ModelResponseError("stream ended before the answer was complete")
+            # The server or the network cut it: the provider's, as any other
+            # cut (deep audit after hito 9, I15, a decision of the maintainer).
+            raise ModelUnavailableError("stream ended before the answer was complete")
         yield MessageEnd(
             stop_reason=STOP_REASONS.get(finish_reason, "other"),
             usage=_usage(usage),
