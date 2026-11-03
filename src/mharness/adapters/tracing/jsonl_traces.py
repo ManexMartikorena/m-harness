@@ -125,13 +125,22 @@ class JsonlTraceSink:
     async def read(self, session: str) -> list[TraceRecord]:
         path = self._path(session)
         try:
-            data = path.read_bytes()
+            # Not through a link, as open() (audit after hito 9, S7).
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
         except FileNotFoundError:
             return []
         except OSError as exc:
             raise TraceError(
                 f"cannot read the trace of {session}: {exc.strerror}"
             ) from None
+        try:
+            data = _read(fd)
+        except OSError as exc:
+            raise TraceError(
+                f"cannot read the trace of {session}: {exc.strerror}"
+            ) from None
+        finally:
+            os.close(fd)
         records = []
         # The last piece has no "\n": empty, or a line cut by a crash.
         for line in data.split(b"\n")[:-1]:
@@ -219,6 +228,13 @@ def _end_line(fd: int) -> None:
     size = os.fstat(fd).st_size
     if size and os.pread(fd, 1, size - 1) != b"\n":
         _write_all(fd, b"\n")
+
+
+def _read(fd: int) -> bytes:
+    chunks = []
+    while chunk := os.read(fd, 1024 * 1024):
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _write_all(fd: int, data: bytes) -> None:

@@ -464,3 +464,18 @@ async def test_a_folder_named_as_a_trace_is_not_one(folder: Path) -> None:
     (folder / f"{SESSION}.jsonl").mkdir(parents=True)
 
     assert await JsonlTraceSink(folder).sessions() == []
+
+
+def link_to_a_trace(folder: Path, elsewhere: Path) -> None:
+    """The trace of SESSION as a link to a trace somewhere else."""
+    elsewhere.write_text(record().model_dump_json() + "\n", encoding="utf-8")
+    folder.mkdir()
+    file_of(folder).symlink_to(elsewhere)
+
+
+async def test_read_does_not_follow_a_link(folder: Path, tmp_path: Path) -> None:
+    # Audit after hito 9, S7: as open() and the session store, O_NOFOLLOW.
+    link_to_a_trace(folder, tmp_path / "otro.jsonl")
+
+    with pytest.raises(TraceError, match=f"cannot read the trace of {SESSION}"):
+        await JsonlTraceSink(folder).read(SESSION)
