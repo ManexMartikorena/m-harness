@@ -19,6 +19,12 @@ PATTERNS = [
     "[ab]*/x",
     "src/[!n]*",
     "**/a/**/b",
+    # Cleaned as `full_match` cleans them (review of the deep audit).
+    "./src/*.py",
+    "src//*.py",
+    "src/./app.py",
+    "src/**/",
+    "**/",
 ]
 PATHS = [
     "main.py",
@@ -31,6 +37,7 @@ PATHS = [
     "a/b",
     "a/c/d/b",
     "x/a/b",
+    "src",
 ]
 
 

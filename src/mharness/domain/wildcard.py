@@ -153,14 +153,21 @@ def glob_matches(pattern: str, path: PurePath) -> bool:
     """`PurePath.full_match` without its regular expression: segment by
     segment with `fnmatchcase`, which does not backtrack, and a `**`
     segment for any folders, also none."""
-    parts = pattern.split("/")
+    # Without empty parts and ".", as `full_match` cleans the pattern:
+    # "./src//*.py" is "src/*.py" (review of the deep audit).
+    parts = [part for part in pattern.split("/") if part not in ("", ".")]
     names = path.parts
     # reachable[j]: the first j names are matched by the parts so far.
     reachable = [True] + [False] * len(names)
-    for part in parts:
+    for at, part in enumerate(parts):
         if part == "**":
-            for j in range(1, len(names) + 1):
-                reachable[j] = reachable[j] or reachable[j - 1]
+            # Any folders; at the end, a name at least, as in `full_match`.
+            empty = at < len(parts) - 1
+            before = False
+            for j in range(len(names) + 1):
+                here = reachable[j]
+                reachable[j] = before or (empty and here)
+                before = before or here
             continue
         reachable = [False] + [
             reachable[j - 1] and fnmatchcase(names[j - 1], part)
