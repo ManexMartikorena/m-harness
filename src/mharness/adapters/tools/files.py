@@ -999,12 +999,16 @@ def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
             return
 
 
-def _current_bytes(path: Path, raw: str, verb: str) -> bytes | None:
+def _current_bytes(
+    path: Path, raw: str, verb: str, *, warning: str | None = None
+) -> bytes | None:
     """The bytes of the file to `verb`, or None if it does not exist.
 
     Bytes, not text: a question about a secret or a file outside must not
     tell the model whether it is text before the user approves (review of
     PR 2, fix 1); the bytes still let `run()` see a change (decision W6).
+    Nor its size: with a `warning`, a file too large is refused without it
+    (audit of hito 9, H5).
     """
     if not path.exists():
         return None
@@ -1015,8 +1019,9 @@ def _current_bytes(path: Path, raw: str, verb: str) -> bytes | None:
         with file:
             size = os.fstat(file.fileno()).st_size
             if size > CHANGE_MAX_FILE_BYTES:
+                told = "" if warning else f"{size / MIB:.1f} MiB, "
                 raise ToolError(
-                    f"file too large to {verb} ({size / MIB:.1f} MiB, "
+                    f"file too large to {verb} ({told}"
                     f"max {CHANGE_MAX_FILE_BYTES // MIB} MiB); use run_command"
                 )
             return file.read()
@@ -1305,7 +1310,7 @@ class WriteFile:
         except UnicodeEncodeError:
             raise ToolError("content is not valid UTF-8") from None
         warning = workspace.change_warning(path, params.path)
-        data = _current_bytes(path, params.path, "overwrite")
+        data = _current_bytes(path, params.path, "overwrite", warning=warning)
         shown = workspace.shown(path)
         if data is None:
             lines = _count(len(_split(params.content)), "line")
@@ -1475,10 +1480,10 @@ class EditFile:
         workspace = self._workspace
         path = workspace.resolve(params.path)
         _check_target(workspace, path, params.path)
-        data = _current_bytes(path, params.path, "edit")
+        warning = workspace.change_warning(path, params.path)
+        data = _current_bytes(path, params.path, "edit", warning=warning)
         if data is None:
             raise ToolError(f"file not found: {params.path}")
-        warning = workspace.change_warning(path, params.path)
         try:
             old, new, _ = _edited(data, params)
             body = _diff(old, new)

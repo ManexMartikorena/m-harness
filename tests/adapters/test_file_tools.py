@@ -1814,11 +1814,18 @@ def big_file(root: Path, name: str) -> Path:
     return path
 
 
-@pytest.mark.parametrize("name", ["big.txt", ".env"])
+@pytest.mark.parametrize(
+    ("name", "size"),
+    [
+        ("big.txt", "3.0 MiB, "),
+        # With a warning, refused before asking too, but without its size:
+        # it tells the model about a secret (audit of hito 9, H5).
+        (".env", ""),
+    ],
+)
 async def test_a_file_too_large_is_refused_before_reading(
-    root: Path, monkeypatch: pytest.MonkeyPatch, name: str
+    root: Path, monkeypatch: pytest.MonkeyPatch, name: str, size: str
 ) -> None:
-    # The size is metadata: also with a warning, before asking.
     big_file(root, name)
 
     def no_reading(*args: object) -> bytes:
@@ -1831,10 +1838,10 @@ async def test_a_file_too_large_is_refused_before_reading(
         await write_tool(root).approval(WriteFileParams(path=name, content="x"))
 
     assert str(edited.value) == (
-        "file too large to edit (3.0 MiB, max 2 MiB); use run_command"
+        f"file too large to edit ({size}max 2 MiB); use run_command"
     )
     assert str(written.value) == (
-        "file too large to overwrite (3.0 MiB, max 2 MiB); use run_command"
+        f"file too large to overwrite ({size}max 2 MiB); use run_command"
     )
 
 
