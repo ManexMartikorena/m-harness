@@ -759,3 +759,26 @@ recomendaciones (2, 5 y 9):
    modelos de formato `anthropic`.
 5. **`maha models`** enseña el formato con un asterisco en los que `maha`
    aún no habla (`openai-responses*`, `google*`), y una nota debajo.
+
+### PR 2 (`feature/hito-9-nucleo`, 2026-11-03)
+
+6. **El orden de los bloques es el de su índice.** Con OpenAI, el texto
+   (sin índice) va primero y las llamadas por su índice: el mismo mensaje
+   de antes, también con llamadas que llegan desordenadas. Con Anthropic,
+   el índice es el del bloque en la respuesta, así que sale tal cual.
+7. **El razonamiento no sale del bucle:** el `Agent` solo deja pasar los
+   `TextDelta`, así que no llega a la terminal ni a la traza, sin código
+   nuevo.
+8. **El test de "solo crece por el final" ya pasa:** la regla se cumple
+   hoy. Queda como guarda para los hitos 10 y 11.
+9. **El effort es de este `maha`, no de la sesión:** vive en `Sessions`,
+   que se lo pone a cada agente que crea; dura tras `/new` y `/resume`,
+   como el modelo de `/model`, y no se guarda en la sesión (como los
+   topes).
+10. **Una línea base no dice su effort.** `maha eval --effort` mide, pero
+    `--save` solo se acepta con el effort del modelo: si no, las
+    siguientes ejecuciones se compararían con otra cosa sin saberlo. La
+    cabecera de `maha eval` dice el effort.
+11. **El modelo falso de los tests** manda el razonamiento como Anthropic,
+    cada bloque con su índice, para probar la sesión de punta a punta.
+
