@@ -179,7 +179,7 @@ Fuentes: https://opencode.ai/docs/tools/, https://code.claude.com/docs/en/tools-
 |---|---|---|---|---|
 | Leer, listar, buscar ficheros y texto | sí | sí | ✓ | — |
 | Escribir y editar | sí | sí | ✓ | — |
-| Parche de varios ficheros | `apply_patch` | — | — | h9 o después |
+| Parche de varios ficheros | `apply_patch` | — | — | después de la 1.0, con la API Responses *(decidido el 03/11/2026, spec del hito 9, decisión 7)* |
 | Ejecutar comandos | `bash` | `Bash` | ✓ `run_command` | — |
 | Comandos en segundo plano | V2 | `Monitor`, `ctrl+b` | — | h16 (P11) |
 | Leer y buscar en la web | `webfetch`, `websearch` | `WebFetch`, `WebSearch` | — | h19 |

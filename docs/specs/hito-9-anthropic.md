@@ -70,7 +70,7 @@ Dentro de alcance:
   proveedores; el de servidor es solo de la API directa de Anthropic.
 - **`apply_patch`:** `docs/COMPARATIVA.md` lo dejaba "h9 o después"; es la
   herramienta de edición de los modelos de OpenAI con la API Responses
-  (duda 7).
+  (decisión 7).
 
 ## 1. Decisiones de fondo
 
@@ -268,8 +268,10 @@ Del `ModelRequest` al JSON de Anthropic (`adapters/models/anthropic.py`):
 ```
 
 - **Cabeceras:** `Authorization: Bearer <clave>` (la forma actual; funciona
-  en la API directa y en OpenCode, §1.0), `anthropic-version: 2023-06-01`
-  (duda 2),
+  en la API directa y en OpenCode, §1.0), `anthropic-version: 2026-10-21`
+  (la más reciente, que Anthropic recomienda; cada proveedor puede fijar
+  otra con `anthropic_version`, para servidores que solo conozcan
+  `2023-06-01`; decisión 2),
   `content-type`, el `User-Agent` de `maha` y la cabecera de sesión del
   proveedor si la declara (OpenCode la exige, §1.0).
 - **Mensajes `tool`:** pasan a `user` con un `tool_result` por resultado,
@@ -394,8 +396,12 @@ aplazaba al hito 11):
 
 - `ModelRequest.max_tokens: int | None`. El bucle pone el `max_output` del
   catálogo; sin él, `None`.
-- `AnthropicClient` manda ese valor, o **32.000** si es `None` (duda 5). Es
-  un techo, no un gasto: se paga lo que se genera.
+- **Todo modelo de formato `anthropic` del catálogo de serie lleva
+  `max_output`**, y un test lo exige (decisión 5).
+- `AnthropicClient` manda ese valor. Solo si es `None` (un modelo que añadió
+  la persona sin `max_output`) manda **32.000**; si el modelo admite menos,
+  el error del proveedor lo dice y se corrige en `models.toml`. Es un techo,
+  no un gasto: se paga lo que se genera.
 - `OpenAIChatClient` no lo manda, como hoy: los servidores compatibles
   tienen su propio tope, y cambiarlo ahora sería un cambio de
   comportamiento sin necesidad.
@@ -407,7 +413,9 @@ aplazaba al hito 11):
   en `config.toml`, del usuario o del proyecto (como `model`); `--effort` en
   la línea de comandos; y `/effort [NIVEL]` en la conversación (sin nivel,
   enseña el actual; `/effort default` vuelve al del modelo). Sin valor
-  (por defecto), no se manda nada: el modelo usa el suyo (duda 4).
+  (por defecto), no se manda nada: el modelo usa el suyo, el que su
+  proveedor calibra para él (decisión 4). Las evals miden si otro defecto
+  mejora (§5).
 - **En el dominio:** `ModelRequest.effort`. Anthropic lo manda como
   `output_config.effort`; OpenAI, como `reasoning_effort`.
 - Son los cinco niveles que admiten los dos formatos (§1.0). Un modelo que
@@ -418,7 +426,12 @@ aplazaba al hito 11):
 ### 1.8 Caché del prompt
 
 - **Anthropic:** `cache_control: {"type": "ephemeral"}` arriba de cada
-  petición (caché automática, TTL de 5 minutos; duda 9). El punto de caché
+  petición (caché automática).
+- **Duración (`cache_ttl`):** `5m` por defecto, o `1h` en la configuración
+  (decisión 9). Con `5m`, escribir cuesta 1,25 × y la caché aguanta entre
+  pasos del agente, pero caduca si la persona se para más de 5 minutos; con
+  `1h`, escribir cuesta 2 × y aguanta las pausas de una conversación. La
+  guía y el README lo explican con números. El punto de caché
   avanza solo con la conversación: cada paso lee lo que escribió el
   anterior. Comprobado por OpenCode (§1.0). Como la petición solo crece por
   el final (§1.5), la caché se aprovecha entera.
@@ -490,7 +503,7 @@ mismas reglas de bloques, uso, coste y parada.
 | `adapters/catalog/models.toml` | adapters | `api` y `max_output`; proveedor `anthropic` |
 | `adapters/catalog/toml_catalog.py` | adapters | leer `api` y `max_output` |
 | `adapters/cli/*` | adapters | `--effort`, `/effort`, ayuda |
-| `config.py` | — | `ProviderSettings.api` y `endpoints`; `effort`; proveedor `anthropic` |
+| `config.py` | — | `ProviderSettings.api`, `endpoints` y `anthropic_version`; `effort` y `cache_ttl`; proveedor `anthropic` |
 | `bootstrap.py` | — | un cliente por formato y el router |
 
 ### 3.2 Configuración nueva
@@ -498,11 +511,13 @@ mismas reglas de bloques, uso, coste y parada.
 ```toml
 # ~/.config/maha/config.toml o .maha/config.toml
 effort = "high"   # low | medium | high | xhigh | max; sin él, el del modelo
+cache_ttl = "1h"  # 5m (por defecto) | 1h: caché del prompt de Anthropic
 
 # solo en el del usuario
 [providers.mio]
 api = "anthropic"            # openai-chat (por defecto) | anthropic
 base_url = "https://…/v1"
+anthropic_version = "2023-06-01"  # opcional; por defecto, 2026-10-21
 [providers.mio.endpoints]    # opcional: otra URL para otro formato
 openai-chat = "https://…/openai/v1"
 ```
@@ -535,8 +550,9 @@ source = "https://platform.claude.com/docs/en/about-claude/pricing"
 
 Todo con fakes y respuestas HTTP simuladas (respx); ninguna llamada real.
 
-1. **Catálogo y configuración:** `api` y `max_output` leídos; un modelo sin
-   `api` toma el del proveedor; `endpoints` en el usuario sí y en el
+1. **Catálogo y configuración:** `api` y `max_output` leídos; todo modelo
+   `anthropic` del catálogo de serie tiene `max_output`; un modelo sin
+   `api` toma el del proveedor; `cache_ttl` y `anthropic_version`; `endpoints` en el usuario sí y en el
    proyecto no; `effort` válido e inválido; el proveedor `anthropic` de
    serie pide `ANTHROPIC_API_KEY`.
 2. **`ModelRouter`:** cada petición va al cliente de su formato; un cambio
@@ -550,7 +566,8 @@ Todo con fakes y respuestas HTTP simuladas (respx); ninguna llamada real.
    persona en un solo `user`, resultados primero; argumentos inválidos como
    `{}`; razonamiento en su sitio y sin el que no tiene firma; texto vacío
    fuera; marca de interrupción; `max_tokens` del catálogo o 32.000;
-   `effort`; `cache_control`; cabeceras (clave, versión, sesión).
+   `effort`; `cache_control` con su TTL; cabeceras (Bearer, versión por
+   defecto y la del proveedor, sesión).
 5. **Stream de Anthropic** (SSE simulado, con eventos copiados de la
    documentación y de las llamadas reales de §1.0): texto, llamada con
    argumentos en trozos, llamada sin argumentos, razonamiento con firma,
@@ -587,9 +604,13 @@ Toca el bucle (acumulador, petición) y añade un formato. Antes del merge:
   que se espera lo mismo.
 - **Comparar proveedores:** la batería con `claude-haiku-5-5` (OpenCode Go,
   formato `anthropic`), 5 repeticiones, y su primera línea base
-  (`--save`), duda 8. Se miran éxito, pasos, coste por ejecución y tokens
-  de caché leídos.
-- Coste estimado: unos 0,80 $ en total.
+  (`--save`), decisión 8. Se miran éxito, pasos, coste por ejecución y
+  tokens de caché leídos.
+- **Effort con datos** (decisión 4): la misma batería con
+  `claude-haiku-5-5` y `--effort high`, comparada con su defecto. Si `high`
+  mejora el éxito sin disparar el coste, se propone al mantenedor como
+  defecto para ese modelo.
+- Coste estimado: unos 0,90 $ en total.
 
 El resultado se anota aquí al implementar.
 
@@ -645,7 +666,7 @@ Con OpenCode Go, en un directorio desechable:
 6. `maha -m minimax-m3` (formato `anthropic`, no Claude).
 7. `maha -m gpt-6-luna`: el error claro de §1.2.
 8. `/trace` y `maha stats`: el coste cuadra con el de OpenCode.
-9. Si hay `ANTHROPIC_API_KEY` (duda 1): un turno con el proveedor
+9. Si hay `ANTHROPIC_API_KEY` (decisión 1): un turno con el proveedor
    `anthropic`.
 
 ## 8. Lo que no viaja por git y lo que necesita la release
@@ -684,34 +705,36 @@ Nota 09: **"Dos formatos para hablar con un modelo"**.
   tres veces y falla igual (unos 7 s de espera). Aceptable; el mensaje del
   proveedor lo explica.
 
-## 11. Dudas para el mantenedor
+## 11. Decisiones
 
-1. **Clave directa de Anthropic.** ¿Tienes `ANTHROPIC_API_KEY`? El
-   proveedor `anthropic` se prueba con respx igualmente. *Recomendación:*
-   incluirlo de serie; la verificación real, con OpenCode Go
-   (`claude-haiku-5-5`), y la de la API directa queda POR VERIFICAR si no
-   hay clave.
-2. **Versión de la API: `2023-06-01` o `2026-10-21`.** Las dos funcionan por
-   OpenCode, y `maha` no usa nada que cambie entre ellas. *Recomendación:*
-   `2023-06-01`, la que conocen todos los servidores compatibles con el
-   formato (los Qwen y MiniMax de OpenCode, pasarelas, servidores locales).
-3. **`/effort` en la conversación**, además de la configuración y
-   `--effort`. *Recomendación:* sí, es como `/model` y cuesta poco.
-4. **Effort por defecto.** *Recomendación:* ninguno, el del modelo; cada
-   modelo tiene el suyo calibrado.
-5. **`max_tokens` sin dato en el catálogo.** *Recomendación:* 32.000, un
-   techo que admiten los modelos actuales y no corta respuestas normales.
-6. **Ver el razonamiento.** *Recomendación:* en el hito 21, como está
-   asignado; aquí se guarda pero no se pide su resumen (`display`).
-7. **`apply_patch`** (COMPARATIVA, "h9 o después"). *Recomendación:* sacarlo
-   de este hito y llevarlo con la API Responses de OpenAI, después de la
-   1.0: sus modelos son los que lo usan.
-8. **Línea base de `claude-haiku-5-5`.** *Recomendación:* sí, guardarla:
-   es la forma de comparar proveedores que pide el hito, y cuesta unos
-   0,10 $.
-9. **TTL de la caché: 5 minutos o 1 hora.** *Recomendación:* 5 minutos. Los
-   pasos de un agente van seguidos, y escribir a 1 hora cuesta el doble
-   (2 × frente a 1,25 ×).
+Del humano (2026-11-03): "lo que estamos construyendo es un producto
+robusto, serio y competitivo": en cada duda, el camino más profesional y
+robusto para el producto. Con ese criterio, el agente cambió tres de sus
+recomendaciones (2, 5 y 9):
+
+1. **Proveedor `anthropic` de serie**, aunque no haya clave para probarlo
+   ahora: se prueba con respx, la verificación real va por OpenCode Go
+   (`claude-haiku-5-5`) y la de la API directa queda POR VERIFICAR hasta
+   que haya clave.
+2. **Versión `2026-10-21`** por defecto (la recomendada), con
+   `anthropic_version` por proveedor para servidores que solo conozcan
+   `2023-06-01`. *(Antes se proponía `2023-06-01` por compatibilidad: era
+   lo cómodo, no lo robusto.)*
+3. **`/effort` en la conversación**, además de `effort` y `--effort`.
+4. **Effort por defecto: el de cada modelo**, calibrado por su proveedor;
+   forzar uno global rompe los modelos que no lo admiten. Las evals miden
+   `high` frente al defecto en `claude-haiku-5-5` (§5).
+5. **`max_output` obligatorio** en los modelos `anthropic` del catálogo de
+   serie, con su test; 32.000 solo para modelos añadidos por la persona.
+   *(Antes: 32.000 para cualquier modelo sin dato.)*
+6. **Ver el razonamiento, en el hito 21.** Pedir su resumen ahora
+   (`display`) enciende el razonamiento en Opus 4.7 y 4.8 y da error en
+   Haiku 4.5; se decide con la pantalla que lo enseña.
+7. **`apply_patch` fuera de este hito:** va con la API Responses de OpenAI,
+   después de la 1.0 (`docs/COMPARATIVA.md`, corregido en este PR).
+8. **Línea base de `claude-haiku-5-5`**, para comparar proveedores.
+9. **`cache_ttl` configurable**, `5m` por defecto y `1h` para
+   conversaciones con pausas largas. *(Antes: 5 minutos fijos.)*
 
 ## 12. Aprendido al implementar
 
