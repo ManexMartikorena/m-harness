@@ -11,7 +11,8 @@ import signal
 import stat
 import sys
 import tempfile
-from collections.abc import AsyncIterator, Callable, Iterator
+import time
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from pathlib import Path
 
 import httpx
@@ -21,6 +22,7 @@ import respx
 from mharness import bootstrap
 from mharness.adapters.cli import StdinLines
 from mharness.bootstrap import main
+from mharness.domain.evals import TaskRun
 from mharness.domain.limits import TurnLimits
 
 KEY = "sk-test-0000000000000000"
@@ -1550,6 +1552,44 @@ def test_closing_signals_in_eval_keep_the_runs_and_clean_up(
     assert list((workspace / "tmp").iterdir()) == []
     # The handlers go with the battery: the next signal is not caught.
     assert signal.getsignal(number) in (signal.SIG_DFL, signal.default_int_handler)
+
+
+def test_a_second_signal_while_the_runs_are_written_does_not_cut_them(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Review of the deep audit: it cancelled the writing of runs.json, and
+    # maha ended in a traceback.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    calls = 0
+    write_runs = bootstrap._write_runs
+
+    def answer(request: httpx.Request) -> respx.MockResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            os.kill(os.getpid(), signal.SIGTERM)
+        return sse_response(streamed("Es la 1.4.2.", 1000, 10))
+
+    def writing(path: Path, runs: Sequence[TaskRun]) -> None:
+        os.kill(os.getpid(), signal.SIGTERM)
+        # Long enough for the loop to handle the signal meanwhile.
+        time.sleep(0.2)
+        write_runs(path, runs)
+
+    monkeypatch.setattr(bootstrap, "_write_runs", writing)
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(side_effect=answer)
+
+        result = main(["eval", "--tasks", str(evals), "--repeat", "2", "--jobs", "1"])
+
+    assert result == 143
+    assert "interrupted: 1 run kept in " in capsys.readouterr().err
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    assert len(json.loads((folder / "runs.json").read_text())) == 1
 
 
 class ClosedPipe(io.StringIO):

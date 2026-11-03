@@ -364,7 +364,10 @@ async def _eval(
 
     def on_signal(number: int) -> None:
         received.append(number)
-        current.cancel()
+        # Only the first: another one while what finished is written would
+        # cut the writing, and end in a traceback (review of the deep audit).
+        if len(received) == 1:
+            current.cancel()
 
     for number in _CLOSING:
         loop.add_signal_handler(number, on_signal, number)
