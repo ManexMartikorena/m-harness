@@ -465,3 +465,20 @@ async def test_the_check_runs_with_an_empty_home_and_no_credentials() -> None:
     assert ran.cwd == copy
     assert not Path(home).is_relative_to(copy)
     assert ran.time_limit == CHECK_TIME_LIMIT
+
+
+async def test_a_killed_check_says_so() -> None:
+    # Deep audit (I9): it said "the check exited with None".
+    check = Check(command="python3 -m unittest -q tests.test_a")
+    killed = CommandResult(
+        exit_code=None, output="Killed", truncated=False, timed_out=False
+    )
+    runner = FakeRunner([killed])
+    subject, _ = evaluator(says("Hecho."), task(check=check), runner=runner)
+
+    [run] = await subject.run([task(check=check)], ["m"])
+
+    assert (run.outcome, run.detail) == (
+        "fail",
+        "the check was killed before it ended:\nKilled",
+    )

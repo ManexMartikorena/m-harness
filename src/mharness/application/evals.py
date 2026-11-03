@@ -195,8 +195,11 @@ class Evaluator:
             )
             if done.timed_out:
                 return f"the check took more than {CHECK_TIME_LIMIT:.0f} s"
+            output = done.output.strip()[-CHECK_OUTPUT_CHARS:]
+            if done.exit_code is None:
+                # Killed by a signal, not by its time limit (deep audit, I9).
+                return f"the check was killed before it ended:\n{output}"
             if done.exit_code != 0:
-                output = done.output.strip()[-CHECK_OUTPUT_CHARS:]
                 return f"the check exited with {done.exit_code}:\n{output}"
         return None
 
