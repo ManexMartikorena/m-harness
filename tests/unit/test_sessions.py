@@ -1427,7 +1427,7 @@ async def test_an_import_never_takes_an_id_in_use() -> None:
 
 
 async def test_an_import_keeps_the_turns_without_a_price() -> None:
-    session = (await exported("Uno.")).model_copy(update={"uncosted_turns": 2})
+    session = (await exported("Uno.", "Dos.")).model_copy(update={"uncosted_turns": 2})
     store = MemorySessionStore()
     world = World(store, FakeModelClient([]), tokens=["9abc"])
 
@@ -1499,3 +1499,16 @@ async def test_a_trace_without_a_session_nor_a_conversation_is_an_error() -> Non
 
     with pytest.raises(TraceError, match="which session"):
         await world.sessions.trace(None)
+
+
+async def test_an_import_with_more_unpriced_turns_than_turns_is_refused() -> None:
+    # Audit of hito 8: a crafted export with uncosted_turns = 10**8 wrote
+    # that many lines. One turn more than it has is enough to tell, and
+    # safe to run without the fix: 10**8 took the whole memory of WSL.
+    session = (await exported("Uno.")).model_copy(update={"uncosted_turns": 2})
+    store = MemorySessionStore()
+
+    with pytest.raises(SessionCorrupt, match="uncosted_turns"):
+        await World(store, FakeModelClient([])).sessions.import_session(session)
+
+    assert store.sessions == {}
