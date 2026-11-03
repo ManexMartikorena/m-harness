@@ -58,7 +58,7 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   ARREGLADO (`0bc1d18`): un id nuevo en un índice usado empieza otra llamada.
 - **B4.** El tiempo límite del turno cuenta lo que la persona tarda en
   leer una petición de permiso. DECISIÓN del mantenedor (2026-11-03): no
-  se cuenta la espera a la persona. POR ARREGLAR.
+  se cuenta la espera a la persona. ARREGLADO (`55f92b6`).
 - **B5.** El escape del delimitador `<stdin>` es una lista negra con
   huecos. ARREGLADO (`2145262`): la etiqueta lleva un valor al azar de
   cada ejecución, y la lista negra desaparece.
@@ -76,19 +76,28 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 ## Sesiones y trazas (S)
 
 - **S1.** Un corte a mitad de guardar un turno puede dejar la sesión sin
-  poder retomarse. POR ARREGLAR.
+  poder retomarse. ARREGLADO: `whole_turns()` quita el turno a medias del final y `open()`
+  recorta el fichero.
 - **S2.** Retomar una sesión de otro proveedor con `-m` o `/model` apunta
-  el modelo ajeno en el fichero del proveedor original. POR ARREGLAR.
+  el modelo ajeno en el fichero del proveedor original. ARREGLADO: `ModelEntry` lleva su proveedor; cada proveedor retoma su
+  último modelo. `maha export --format json` gana el campo `models`.
 - **S3.** Borrar desde otro `maha` una sesión en su primer turno borra su
-  traza sin avisar. POR ARREGLAR.
-- **S4.** `maha import` acepta costes con exponentes enormes. POR ARREGLAR.
+  traza sin avisar. ARREGLADO: la traza abierta tiene un cerrojo (`flock`) y borrarla desde
+  otro `maha` dice que está en uso.
+- **S4.** `maha import` acepta costes con exponentes enormes. ARREGLADO: `Usd` acepta 0 o de 1E-12 a 1E+12; los precios del catálogo,
+  de 1E-6 a 1E+6; un coste del proveedor por debajo de 1E-12 es 0.
 - **S5.** `maha export --format json` saca caracteres de control (DEL, C1,
-  bidi) tal cual a la terminal. POR ARREGLAR.
+  bidi) tal cual a la terminal. ARREGLADO: `clean_json()`.
 - **S6.** Una carpeta de trazas ilegible no da error (Python 3.14 calla el
-  error de `glob`). POR ARREGLAR.
-- **S7.** `JsonlTraceSink.read()` sigue enlaces simbólicos. POR ARREGLAR.
+  error de `glob`). ARREGLADO: `os.scandir`, con error y sin carpetas ni enlaces.
+- **S7.** `JsonlTraceSink.read()` sigue enlaces simbólicos. ARREGLADO: `O_NOFOLLOW`.
 - **S8.** Deuda: un comentario desplazado; ningún test de ida y vuelta
-  export → import con el almacén real. POR ARREGLAR.
+  export → import con el almacén real. ARREGLADO: el comentario en su sitio y la prueba de ida y vuelta con el
+  almacén real.
+
+- **S9.** Un proveedor que mande un número absurdo de tokens daría un coste
+  calculado por encima del tope de `Usd` y el turno fallaría al validarlo
+  (del arreglo de S4). POR ARREGLAR.
 
 ## Herramientas y seguridad (H)
 
@@ -98,21 +107,32 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   clonado puede traer la regla. ARREGLADO: `domain/wildcard.py`, comodines
   en tiempo lineal para `glob` y `.gitignore`.
 - **H2.** Un nombre de fichero que no es UTF-8 llega al resultado con
-  sustitutos y rompe la petición al modelo, y la sesión ya no avanza. POR
-  ARREGLAR.
+  sustitutos y rompe la petición al modelo, y la sesión ya no avanza. ARREGLADO (`printable()` en `domain/paths.py`): el byte que no es UTF-8 se
+  enseña como `\xe9`.
 - **H3.** "Siempre en esta sesión" para `write_file` cubre ficheros que
   ejecutan código solos: `.venv/…/x.pth` (Python lo ejecuta al arrancar,
   también el proceso de búsqueda de `maha`, con la clave en el entorno),
   `node_modules`, `.mcp.json`, `.cursor/`, `.zed/`, `.nvim.lua`, `.exrc`,
-  `.cargo/config.toml`… POR ARREGLAR.
+  `.cargo/config.toml`… ARREGLADO: `.venv`, `venv`, `node_modules`, `.cursor`, `.zed`, `.mcp.json`,
+  `.nvim.lua`, `.exrc`, `.cargo/config(.toml)` y cualquier `*.pth` preguntan
+  siempre, con el aviso de que ejecutan código.
 - **H4.** Si el shell del comando pasa a ser de root (`sudo -n` sin
   contraseña), el tiempo límite no se cumple: la espera tras matar no tiene
-  tope. POR ARREGLAR.
+  tope. ARREGLADO: la espera tras matar tiene un tope de 3 s, y el modelo sabe
+  que el comando puede seguir en marcha.
 - **H5.** Menores: con el directorio de trabajo dentro de una carpeta de
   secretos (`~/.aws`, `~/.ssh`), sus ficheros se leen sin preguntar; el
   tamaño de un secreto se dice antes de preguntar; un enlace duro hacia
   `.git/hooks` se escribe en el sitio; un NUL en un comando sale como error
-  interno; el recorrido solo cuenta ficheros, no carpetas. POR ARREGLAR.
+  interno; el recorrido solo cuenta ficheros, no carpetas. ARREGLADOS los cinco: secretos también por la ruta absoluta; sin tamaño
+  antes de preguntar; NUL como error limpio; un fichero con más de un enlace
+  duro pregunta siempre; las carpetas cuentan en el recorrido.
+
+- **H6.** Con un fichero secreto, `_check_target` dice antes de preguntar si
+  es una carpeta, si no es un fichero normal o si es de solo lectura (del
+  agente que arregló H). POR ARREGLAR.
+- **H7.** El directorio de trabajo, en la pregunta de `run_command`, no pasa
+  por `printable()`. POR ARREGLAR.
 
 ## Interfaz y evals (I)
 
