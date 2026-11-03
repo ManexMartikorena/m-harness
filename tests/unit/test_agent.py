@@ -1937,3 +1937,17 @@ async def test_the_turn_clock_stops_while_the_person_decides() -> None:
     assert isinstance(events[-1], TurnFinished)
     assert events[-1].reason == "end_turn"
     assert len(write.calls) == 1
+
+
+async def test_an_absurd_count_of_tokens_gives_an_unknown_cost() -> None:
+    # Deep audit after hito 9 (S9): a provider that reports 10**19 tokens
+    # gave a cost past what Usd takes, and the turn failed validating it.
+    # Plain integers: nothing is allocated.
+    absurd = Usage(input_tokens=10**19)
+    catalog = MemoryCatalog([priced(FAKE_MODEL, "1", "1")])
+    subject = agent(FakeModelClient([reply("Hola.", usage=absurd)]), catalog=catalog)
+
+    events = await run(subject)
+
+    assert isinstance(events[-1], TurnFinished)
+    assert (events[-1].reason, events[-1].cost) == ("end_turn", None)

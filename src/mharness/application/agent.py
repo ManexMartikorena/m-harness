@@ -43,6 +43,7 @@ from mharness.domain.model import (
     StopReason,
     Usage,
 )
+from mharness.domain.money import LARGEST
 from mharness.domain.retry import RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
@@ -435,7 +436,11 @@ class Agent:
         for name in (response.model, model):
             info = self._catalog.get(self._provider, name)
             if info is not None and info.prices is not None:
-                return cost(response.usage, info.prices)
+                amount = cost(response.usage, info.prices)
+                # Past what an amount in USD can be, the counts are a
+                # provider's bug: unknown, never a broken turn (deep audit
+                # after hito 9, S9).
+                return amount if amount <= LARGEST else None
         return None
 
     def _request(self, turn: list[Message], model: str) -> ModelRequest:
