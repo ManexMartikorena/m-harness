@@ -25,6 +25,7 @@ from mharness.domain.session import (
     replay,
     session_id,
     summarize,
+    whole_turns,
 )
 
 ENTRY: TypeAdapter[SessionEntry] = TypeAdapter(SessionEntry)
@@ -205,6 +206,33 @@ def test_replay_refuses_a_broken_history() -> None:
         replay(
             HEADER, [MessageEntry(message=user()), MessageEntry(message=calls("c1"))]
         )
+
+
+def messages_of(*messages: Message) -> list[SessionEntry]:
+    return [MessageEntry(message=m) for m in messages]
+
+
+@pytest.mark.parametrize(
+    ("entries", "keep"),
+    [
+        ([], 0),
+        (messages_of(user(), answer()), 2),
+        (messages_of(user(), calls("c1"), results("c1")), 3),
+        # A crash cut the turn after the call: the whole turn goes.
+        (messages_of(user(), answer(), user("Sigue"), calls("c1")), 2),
+        (messages_of(user(), calls("c1"), results("c1"), calls("c2")), 0),
+        # Without a user message, only the call.
+        (messages_of(calls("c1")), 0),
+        (messages_of(answer(), calls("c1")), 1),
+        # Something written after the call: not a cut turn, left as it is.
+        ([*messages_of(user(), calls("c1")), UsageEntry(usage=Usage())], 3),
+        (messages_of(user(), calls("c1"), answer()), 3),
+    ],
+)
+def test_whole_turns_leaves_out_a_turn_cut_after_a_call(
+    entries: list[SessionEntry], keep: int
+) -> None:
+    assert whole_turns(entries) == keep
 
 
 def test_the_summary_has_the_first_line_of_the_first_user_message() -> None:

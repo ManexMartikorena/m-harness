@@ -32,6 +32,7 @@ from mharness.domain.session import (
     is_session_id,
     replay,
     summarize,
+    whole_turns,
 )
 
 VERSION = 1
@@ -152,13 +153,14 @@ class JsonlSessionStore:
             if not _still_named(fd, path):
                 raise _not_found(session_id)
             data = _read(fd)
-            whole = _whole_lines(data)
-            header, entries = _parse(data[:whole], session_id)
+            header, entries, kept = _load(data, session_id)
             session = replay(header, entries)
-            if whole < len(data):
-                # A line cut by a crash: dropped, so the next append does not
-                # leave it in the middle (spec hito 6, §1.3).
-                os.ftruncate(fd, whole)
+            if kept < len(data):
+                # A line, or a turn, cut by a crash: dropped, so the next
+                # append does not leave it in the middle (spec hito 6, §1.3;
+                # audit after hito 9, S1).
+                _log.warning("session %s: dropped what a crash cut", session_id)
+                os.ftruncate(fd, kept)
         except BaseException as exc:
             await log.close()
             if isinstance(exc, OSError):
@@ -186,8 +188,8 @@ class JsonlSessionStore:
             ) from None
         finally:
             os.close(fd)
-        # A line being written, or cut by a crash, is left out.
-        header, entries = _parse(data[: _whole_lines(data)], session_id)
+        # A line or a turn being written, or cut by a crash, is left out.
+        header, entries, _ = _load(data, session_id)
         return replay(header, entries)
 
     async def exists(self, session_id: str) -> bool:
@@ -248,7 +250,7 @@ class JsonlSessionStore:
         try:
             data = _read(fd)
             updated = datetime.fromtimestamp(os.fstat(fd).st_mtime, UTC)
-            header, entries = _parse(data[: _whole_lines(data)], session_id)
+            header, entries, _ = _load(data, session_id)
         except OSError, SessionError:
             return None
         finally:
@@ -323,6 +325,20 @@ def _whole_lines(data: bytes) -> int:
     """How many bytes of `data` are whole lines: a last line without its
     "\n" was cut by a crash, because each write ends in one."""
     return data.rfind(b"\n") + 1
+
+
+def _load(
+    data: bytes, session_id: str
+) -> tuple[SessionHeader, list[SessionEntry], int]:
+    """The header and the entries of `data` that a crash did not cut, and
+    how many bytes they take: a last line without its "\n", and a turn
+    whose calls lost their results (`whole_turns`), are left out."""
+    lines = data[: _whole_lines(data)]
+    header, entries = _parse(lines, session_id)
+    keep = whole_turns(entries)
+    # Each entry is one line, after the header's.
+    kept = sum(len(line) + 1 for line in lines.split(b"\n")[: keep + 1])
+    return header, entries[:keep], kept
 
 
 def _parse(data: bytes, session_id: str) -> tuple[SessionHeader, list[SessionEntry]]:

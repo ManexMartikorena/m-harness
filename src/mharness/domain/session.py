@@ -7,6 +7,7 @@ changes. Reading it back gives a `Session`.
 """
 
 import re
+from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -154,6 +155,32 @@ def check_history(messages: list[Message]) -> None:
             waiting = [b.id for b in message.blocks if isinstance(b, ToolCallBlock)]
     if waiting:
         raise _broken(f"call {waiting[0]} has no result")
+
+
+def whole_turns(entries: Sequence[SessionEntry]) -> int:
+    """How many of `entries`, from the start, to keep: all of them, unless
+    a crash cut the last turn between two of its lines and left an
+    assistant's calls without their results (audit after hito 9, S1).
+    Then that turn goes, from its user message on: the agent keeps whole
+    turns, and a call never comes without its result. Damage anywhere
+    else is left for `replay` to find."""
+    last = entries[-1] if entries else None
+    if not isinstance(last, MessageEntry) or not _calls(last.message):
+        # A turn is written messages first: anything after its last
+        # message means the messages were all written.
+        return len(entries)
+    for index in range(len(entries) - 2, -1, -1):
+        entry = entries[index]
+        if isinstance(entry, MessageEntry) and entry.message.role == "user":
+            return index
+    return len(entries) - 1
+
+
+def _calls(message: Message) -> bool:
+    """Whether `message` is the assistant's and calls tools."""
+    return message.role == "assistant" and any(
+        isinstance(block, ToolCallBlock) for block in message.blocks
+    )
 
 
 def _broken(problem: str) -> SessionCorrupt:
