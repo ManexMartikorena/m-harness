@@ -343,3 +343,25 @@ async def test_every_check_that_runs_unittest_names_its_module() -> None:
         for found in re.finditer(r"unittest -q(?P<rest>[^&\n]*)", command):
             assert found["rest"].strip(), task.id
             assert "discover" not in found["rest"], task.id
+
+
+@pytest.mark.parametrize(
+    ("task_id", "answer"),
+    [
+        # Deep audit (I10): `total` has its test, and was not ruled out.
+        ("13-funciones-sin-test", "calcular_iva\ntotal"),
+        # `\b6\b` took any answer that mentions a 6.
+        ("03-contar-ficheros", "Hay 5 ficheros; 6 si cuento __init__.py dos veces."),
+        ("03-contar-ficheros", "1 2 3 4 5 6"),
+    ],
+)
+async def test_a_wrong_answer_does_not_pass(task_id: str, answer: str) -> None:
+    assert not await checked(task_id, lambda repo: None, answer)
+
+
+async def test_the_typo_is_fixed_without_losing_the_readme() -> None:
+    # Deep audit (I10): a README replaced by "receive" passed task 09.
+    def replace(repo: Path) -> None:
+        (repo / "README.md").write_text("receive\n", encoding="utf-8")
+
+    assert not await checked("09-typo", replace, "Fixed.")

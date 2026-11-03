@@ -3,4 +3,6 @@ instruction = "¿Cuántos ficheros .py hay dentro de src/, contando las subcarpe
 fixture = "tienda"
 
 [check]
-answer_matches = ['\b6\b']
+# El 6 tiene que ser el único número de la respuesta: un 6 cualquiera no
+# vale (auditoría profunda, I10).
+answer_matches = ['^\D*6\D*$']
