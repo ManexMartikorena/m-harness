@@ -77,7 +77,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         catalog = TomlCatalog.load(config.user_catalog_path(os.environ))
         data = config.data_dir(os.environ)
     except (config.ConfigError, CatalogError) as exc:
-        return cli.fail(str(exc))
+        json_result = options.prompt is not None and options.output_format != "text"
+        return cli.fail(str(exc), result=json_result)
     try:
         code = _dispatch(options, settings, catalog, data)
         # Inside: Python's own last flush would print "Exception ignored".

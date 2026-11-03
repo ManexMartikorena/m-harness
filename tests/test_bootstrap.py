@@ -1265,3 +1265,37 @@ def test_ctrl_c_in_eval_keeps_the_runs_that_finished(
     [folder] = (workspace / "state" / "maha" / "evals").iterdir()
     [kept] = json.loads((folder / "runs.json").read_text())
     assert (kept["attempt"], kept["outcome"]) == (1, "pass")
+
+
+@pytest.mark.parametrize("output_format", ["json", "stream-json"])
+def test_p_in_json_without_key_still_writes_a_result(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    output_format: str,
+) -> None:
+    # Review of the audit of hito 8: an error of the configuration left
+    # `| jq .result` with nothing to read.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.delenv("OPENCODE_API_KEY")
+
+    code = main(["-p", "hola", "--output-format", output_format])
+
+    out, err = capsys.readouterr()
+    result = json.loads(out)
+    assert code == 1
+    assert (result["type"], result["is_error"]) == ("result", True)
+    assert "OPENCODE_API_KEY is not set" in result["error"]
+    assert "OPENCODE_API_KEY is not set" in err
+
+
+def test_p_in_text_without_key_writes_nothing_on_stdout(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.delenv("OPENCODE_API_KEY")
+
+    assert main(["-p", "hola"]) == 1
+    assert capsys.readouterr().out == ""
