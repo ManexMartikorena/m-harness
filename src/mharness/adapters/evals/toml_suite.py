@@ -34,9 +34,10 @@ from mharness.domain.limits import TurnLimits
 
 
 class TomlEvalSuite:
-    def __init__(self, root: Path, *, keep: bool = False) -> None:
+    def __init__(self, root: Path, *, keep: Path | None = None) -> None:
         self._root = root
-        # Keep the copies after each run, to look at them.
+        # Where to keep the copies after each run, to look at them; None to
+        # remove them (deep audit, I9: `--keep` said nowhere where they were).
         self._keep = keep
 
     async def tasks(self) -> list[Task]:
@@ -45,9 +46,16 @@ class TomlEvalSuite:
     @asynccontextmanager
     async def workspace(self, task: Task) -> AsyncIterator[Path]:
         # Resolved: the tools and the session name it the same way.
-        folder = await asyncio.to_thread(
-            lambda: Path(tempfile.mkdtemp(prefix="maha-eval-")).resolve()
-        )
+        def make() -> Path:
+            if self._keep is None:
+                return Path(tempfile.mkdtemp(prefix="maha-eval-")).resolve()
+            # Named by its task, to find it among the others.
+            self._keep.mkdir(parents=True, exist_ok=True)
+            return Path(
+                tempfile.mkdtemp(prefix=f"{task.id}-", dir=self._keep)
+            ).resolve()
+
+        folder = await asyncio.to_thread(make)
         copy = folder / task.fixture
         try:
             await asyncio.to_thread(
@@ -58,7 +66,7 @@ class TomlEvalSuite:
             )
             yield copy
         finally:
-            if not self._keep:
+            if self._keep is None:
                 await asyncio.to_thread(shutil.rmtree, folder, ignore_errors=True)
 
     async def home(self, workspace: Path) -> Path:

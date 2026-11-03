@@ -13,6 +13,7 @@ import os
 import secrets
 import subprocess
 import sys
+import tempfile
 import uuid
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -262,7 +263,14 @@ async def _eval(
         )
     # load() requires a model for the evals.
     assert settings.model is not None
-    suite = TomlEvalSuite(Path(options.tasks), keep=options.keep)
+    # Each run's sessions and traces, apart from the user's; the suffix
+    # keeps two `maha eval` of the same second apart.
+    stamp = f"{datetime.now():%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
+    run_dir = config.state_dir(os.environ) / "evals" / stamp
+    # With --keep, the copies of this battery, together and said at the end
+    # (deep audit, I9).
+    copies = Path(tempfile.gettempdir()) / f"maha-eval-{stamp}"
+    suite = TomlEvalSuite(Path(options.tasks), keep=copies if options.keep else None)
     try:
         tasks = choose(await suite.tasks(), options.split, options.only)
         models: list[str] = options.models or [settings.model]
@@ -276,10 +284,6 @@ async def _eval(
     drop = [provider.api_key_env] if provider.api_key_env else []
     env = command_env(os.environ, drop=drop)
     masked = known_secrets(os.environ, also=[settings.api_key])
-    # Each run's sessions and traces, apart from the user's; the suffix
-    # keeps two `maha eval` of the same second apart.
-    stamp = f"{datetime.now():%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
-    run_dir = config.state_dir(os.environ) / "evals" / stamp
 
     @asynccontextmanager
     async def open_run(
@@ -347,6 +351,8 @@ async def _eval(
         await asyncio.to_thread(_write_runs, run_dir / "runs.json", done)
         kept = f"{len(done)} run" + ("" if len(done) == 1 else "s")
         print(f"\ninterrupted: {kept} kept in {run_dir}", file=sys.stderr, flush=True)
+        if options.keep:
+            print(f"copies of the repositories: {copies}", file=sys.stderr, flush=True)
         raise
     regressed = cli.eval_report(runs, baselines, sys.stdout)
     # Every run in full: the report shows one line of a failure.
@@ -369,6 +375,8 @@ async def _eval(
             )
             print(f"\nsaved: {where}")
     print(f"\nsessions and traces of these runs: {run_dir}")
+    if options.keep:
+        print(f"copies of the repositories: {copies}")
     return 1 if regressed else 0
 
 

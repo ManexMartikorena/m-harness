@@ -130,13 +130,17 @@ async def test_each_run_works_on_its_own_copy(tmp_path: Path) -> None:
 
 
 async def test_with_keep_the_copies_stay(tmp_path: Path) -> None:
-    suite = TomlEvalSuite(battery(tmp_path), keep=True)
+    kept = tmp_path / "kept"
+    suite = TomlEvalSuite(battery(tmp_path / "evals"), keep=kept)
     [task] = await suite.tasks()
 
     async with suite.workspace(task) as copy:
         pass
 
     assert (copy / "pyproject.toml").exists()
+    # In the folder given, named by its task (deep audit, I9).
+    assert copy.parent.parent == kept.resolve()
+    assert copy.parent.name.startswith("01-version-")
 
 
 async def test_baselines_are_saved_and_the_latest_of_the_model_found(

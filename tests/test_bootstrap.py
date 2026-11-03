@@ -9,6 +9,7 @@ import os
 import re
 import signal
 import stat
+import tempfile
 from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
 
@@ -1417,3 +1418,29 @@ def test_each_model_goes_to_the_url_of_its_format(
     assert "x-opencode-session" in request.headers
     assert (body["model"], body["max_tokens"]) == ("claude-haiku-5-5", 128_000)
     assert body["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+
+
+@respx.mock
+def test_eval_with_keep_says_where_the_copies_are(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Deep audit (I9): --keep kept the copies and never said where.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    (workspace / "tmp").mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(workspace / "tmp"))
+    evals = battery(workspace / "evals")
+    respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Es la 1.4.2.", 10, 5))
+    )
+
+    assert main(["eval", "--tasks", str(evals), "--keep"]) == 0
+
+    out = capsys.readouterr().out
+    [line] = [x for x in out.splitlines() if x.startswith("copies of the repos")]
+    where = Path(line.removeprefix("copies of the repositories: "))
+    assert where.parent == workspace / "tmp"
+    [copy] = where.glob("01-version-*/tienda")
+    assert (copy / "pyproject.toml").read_text() == 'version = "1.4.2"\n'
