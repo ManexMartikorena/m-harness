@@ -2,6 +2,7 @@
 
 import asyncio
 import io
+import json
 from datetime import timedelta
 from pathlib import Path
 
@@ -225,6 +226,26 @@ async def test_import_of_what_is_not_a_session_fails(
     assert code == 1
     assert says in err.getvalue()
     assert await world.sessions.summaries() == []
+
+
+@pytest.mark.parametrize("amount", ["1E+50", "1E-50"])
+async def test_import_of_an_absurd_cost_fails(tmp_path: Path, amount: str) -> None:
+    # Audit after hito 9, S4: never written out digit by digit.
+    world = await with_a_session("Hola.")
+    out = io.StringIO()
+    await export_session(
+        world.sessions, FIRST, output_format="json", out=out, err=io.StringIO()
+    )
+    data = json.loads(out.getvalue()) | {"cost": amount}
+    file = tmp_path / "s.json"
+    await asyncio.to_thread(file.write_text, json.dumps(data), "utf-8")
+    err = io.StringIO()
+
+    code = await import_session(world.sessions, file, out=io.StringIO(), err=err)
+
+    assert code == 1
+    assert "is not a session of maha export: cost: " in err.getvalue()
+    assert [s.id for s in await world.sessions.summaries()] == [FIRST]
 
 
 async def test_import_of_a_file_that_does_not_exist(tmp_path: Path) -> None:

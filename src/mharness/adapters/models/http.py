@@ -23,6 +23,7 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
+from mharness.domain.money import SMALLEST
 
 USER_AGENT = f"maha/{__version__} (+https://github.com/ManexMartikorena/m-harness)"
 # `read` is the longest silence between two chunks, not the time of the whole
@@ -122,7 +123,8 @@ def _amount(value: object) -> Decimal | None:
         return None
     if not amount.is_finite() or not 0 <= amount <= _MAX_CALL_COST:
         return None
-    return amount
+    # Less than any amount (audit after hito 9, S4): free.
+    return Decimal(0) if amount < SMALLEST else amount
 
 
 def count(tokens: int | None) -> int:
