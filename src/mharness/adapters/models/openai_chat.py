@@ -32,6 +32,7 @@ from mharness.adapters.models.http import (
 from mharness.adapters.models.sse import parse_sse
 from mharness.domain.errors import (
     ModelError,
+    ModelRateLimitError,
     ModelResponseError,
     ModelUnavailableError,
 )
@@ -178,9 +179,11 @@ class OpenAIChatClient:
             if chunk.error is not None:
                 detail = self._safe(error_message(chunk.error))
                 message = "the provider failed while answering"
-                raise ModelUnavailableError(
-                    f"{message}: {detail}" if detail else message
-                )
+                message = f"{message}: {detail}" if detail else message
+                if _rate_limited(chunk.error):
+                    # As in Anthropic's format (deep audit after hito 9, M6).
+                    raise ModelRateLimitError(message)
+                raise ModelUnavailableError(message)
             model = chunk.model or model
             usage = chunk.usage or usage
             if not chunk.choices:
@@ -312,21 +315,25 @@ class _Choice(BaseModel):
     finish_reason: str | None = None
 
 
+# Counters as they come: an odd value counts as 0, never a reason to lose
+# the answer (deep audit after hito 9, M5).
+
+
 class _PromptTokensDetails(BaseModel):
-    cached_tokens: int | None = None
+    cached_tokens: Any = None
     # OpenCode sends it (measured with kimi-k3 on 2026-10-27).
-    cache_write_tokens: int | None = None
+    cache_write_tokens: Any = None
 
 
 class _CompletionTokensDetails(BaseModel):
-    reasoning_tokens: int | None = None
+    reasoning_tokens: Any = None
 
 
 class _Usage(BaseModel):
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    prompt_tokens_details: _PromptTokensDetails | None = None
-    completion_tokens_details: _CompletionTokensDetails | None = None
+    prompt_tokens: Any = None
+    completion_tokens: Any = None
+    prompt_tokens_details: Any = None
+    completion_tokens_details: Any = None
     # The cost, as OpenRouter and others give it. Read as it comes: an odd
     # value is ignored, never a reason to lose the answer.
     cost: Any = None
@@ -390,7 +397,8 @@ class _ChunkChoice(BaseModel):
 
 class _Chunk(BaseModel):
     model: str | None = None
-    choices: list[_ChunkChoice] = []
+    # Null on some usage chunks: as empty.
+    choices: list[_ChunkChoice] | None = None
     usage: _Usage | None = None
     # Format not documented by OpenCode (spec hito 3, §10): read defensively.
     error: Any = None
@@ -399,14 +407,34 @@ class _Chunk(BaseModel):
 def _usage(usage: _Usage | None) -> Usage:
     if usage is None:
         return Usage()
-    prompt = usage.prompt_tokens_details
-    completion = usage.completion_tokens_details
+    prompt = _details(_PromptTokensDetails, usage.prompt_tokens_details)
+    completion = _details(_CompletionTokensDetails, usage.completion_tokens_details)
     return Usage(
-        input_tokens=count(usage.prompt_tokens),
-        output_tokens=count(usage.completion_tokens),
-        cache_read_tokens=count(prompt.cached_tokens if prompt else None),
-        cache_write_tokens=count(prompt.cache_write_tokens if prompt else None),
-        reasoning_tokens=count(completion.reasoning_tokens if completion else None),
+        input_tokens=count(_int(usage.prompt_tokens)),
+        output_tokens=count(_int(usage.completion_tokens)),
+        cache_read_tokens=count(_int(prompt.cached_tokens)),
+        cache_write_tokens=count(_int(prompt.cache_write_tokens)),
+        reasoning_tokens=count(_int(completion.reasoning_tokens)),
+    )
+
+
+def _details[T: BaseModel](kind: type[T], value: Any) -> T:
+    """A details object, or an empty one if it is not an object."""
+    return kind.model_validate(value) if isinstance(value, dict) else kind()
+
+
+def _int(value: Any) -> int | None:
+    """A whole number of tokens; anything else is not one."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _rate_limited(error: Any) -> bool:
+    """Whether an error in the stream says a rate limit was reached."""
+    if not isinstance(error, dict):
+        return False
+    return any(
+        isinstance(value, str) and "rate_limit" in value
+        for value in (error.get("type"), error.get("code"))
     )
 
 
