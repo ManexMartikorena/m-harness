@@ -1,9 +1,8 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-03, al terminar la auditoría del hito 8.
-**Hito 8 cerrado (`v0.8.0`) y auditado: `v0.8.1` lista en la rama
-`fix/auditoria-hito-8`, pendiente de PR, merge y tag. Después, la spec del
-hito 9. Cero deuda conocida.**
+Última actualización: 2026-11-03, al publicar la auditoría del hito 8.
+**Hito 8 cerrado y auditado: `v0.8.1`. Siguiente: la spec del hito 9,
+cuando el mantenedor dé el visto bueno. Cero deuda conocida.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -14,10 +13,9 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 Anthropic), sin spec todavía. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.8.0` — Evals y modo no interactivo** (2026-10-30):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.8.0
-- Ramas abiertas: `fix/auditoria-hito-8` (la auditoría, `v0.8.1`). Las
-  integradas se conservan en GitHub.
+- Última versión: **`v0.8.1` — Auditoría del hito 8** (2026-11-03):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.8.1
+- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -41,24 +39,21 @@ spec, su nota de la guía y su release.
 | 5 | Permisos y herramientas con efecto | `v0.5.0` (2026-10-23), `v0.5.1`, `v0.5.2` (cero deuda) |
 | 6 | Sesiones e historial | `v0.6.0` (2026-10-26), `v0.6.1` |
 | 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
-| 8 | Evals (20 tareas, dos modelos, línea base), `maha -p`, reintentos con respaldo y comandos de línea; auditoría con tres revisiones independientes | `v0.8.0` (2026-10-30), `v0.8.1` |
+| 8 | Evals (20 tareas, dos modelos, línea base), `maha -p`, reintentos con respaldo y comandos de línea; auditoría con tres revisiones independientes | `v0.8.0` (2026-10-30), `v0.8.1` (2026-11-03) |
 
 ## Siguiente paso
 
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Humano (o agente, si se lo pide):** push de `fix/auditoria-hito-8`,
-   PR sin milestone (es un arreglo entre hitos), merge con el CI en verde
-   y tag `v0.8.1` sobre ese merge. Antes, revisar el log y el diff de la
-   rama (spec 8, §12.50 a §12.58).
-2. **Agente:** proponer la spec del hito 9, adaptador de Anthropic
+1. **Agente, con el visto bueno del mantenedor:** proponer la spec del
+   hito 9, adaptador de Anthropic
    (DESIGN §14, punto 9; `docs/specs/PLANTILLA.md`), en su propio PR
    (`docs/spec-hito-9-<slug>`, milestone "Hito 9"), con sus dudas para el
    mantenedor. Antes, comprobar contra la documentación oficial de
    Anthropic el formato de Messages, el streaming y las herramientas, y
    anotarlo con la fecha.
-3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -211,7 +206,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 7. Trazas y coste. `v0.7.0` (2026-10-27) y el arreglo `v0.7.1`
   (2026-10-27)
 - [x] 8. Evals y modo no interactivo. `v0.8.0` (2026-10-30) y el arreglo
-  `v0.8.1` (la auditoría)
+  `v0.8.1` (2026-11-03, la auditoría)
 - [ ] 9. Adaptador de Anthropic. `v0.9.0`
 - [ ] 10. System prompt por capas. `v0.10.0`
 - [ ] 11. Gestión del contexto. `v0.11.0`
