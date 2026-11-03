@@ -9,11 +9,18 @@ from collections.abc import Iterator, Sequence
 from decimal import Decimal
 from importlib.metadata import version
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
 from mharness.adapters.cli.approval import TerminalApproval
-from mharness.adapters.cli.conversation import EXIT_INTERRUPTED, converse, retry_note
+from mharness.adapters.cli.commands import _ENDINGS
+from mharness.adapters.cli.conversation import (
+    EXIT_INTERRUPTED,
+    converse,
+    retry_note,
+    turn_note,
+)
 from mharness.adapters.cli.input import InputTooLarge, StdinLines
 from mharness.adapters.cli.spinner import CLEAR_LINE
 from mharness.adapters.commands import LocalCommandRunner
@@ -21,7 +28,8 @@ from mharness.adapters.tools import RunCommand
 from mharness.application.agent import Agent
 from mharness.application.sessions import Sessions, Start
 from mharness.application.tools import ToolRegistry
-from mharness.domain.agent_events import ModelRetry
+from mharness.application.traces import Ending
+from mharness.domain.agent_events import ModelRetry, TurnEnd, TurnFinished
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import ModelInfo
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
@@ -1308,3 +1316,25 @@ async def test_the_model_in_the_header_is_escaped() -> None:
 
     assert "\x1b" not in out.getvalue()
     assert "glm\\x1b]0;PWNED" in out.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("reason", "note"),
+    [
+        ("max_output", "[the answer was cut: the model reached its output limit]"),
+        ("refused", "[the model declined to answer]"),
+        (
+            "context_full",
+            "[the conversation filled the model's context window: /new starts another]",
+        ),
+    ],
+)
+def test_how_the_model_stopped_is_told(reason: TurnEnd, note: str) -> None:
+    turn = TurnFinished(reason=reason, usage=Usage(), tool_calls=0, steps=1, cost=None)
+
+    assert turn_note(turn) == note
+
+
+def test_every_way_a_turn_ends_has_its_name_in_the_trace() -> None:
+    # Review of the deep audit: /trace showed a raw key for a new reason.
+    assert set(get_args(Ending.__value__)) - {"end_turn"} == set(_ENDINGS)

@@ -57,6 +57,7 @@ NOT_RUN_DENIED = "not run: a previous call was denied"
 CANCELLED = "cancelled by the user"
 INTERRUPTED = "interrupted by an internal error"
 TIMED_OUT = "stopped by the time limit"
+CONTEXT_FULL = "not run: the conversation filled your context window"
 
 # The only answers that run a call that asked, or deny it.
 DECISIONS: tuple[Decision, ...] = ("once", "session", "deny")
@@ -154,6 +155,16 @@ class Agent:
                 yield ModelCallFinished(
                     usage=response.usage, model=response.model, cost=call_cost
                 )
+                if response.stop_reason == "context_full":
+                    # Calling the model again cannot fit either: the turn
+                    # ends, and a call it was writing never runs (review of
+                    # the deep audit).
+                    if turn.calls:
+                        blocks = turn.interrupted(CONTEXT_FULL)
+                        turn.messages.append(Message(role="tool", blocks=[*blocks]))
+                    self._keep(turn)
+                    yield turn.finished("context_full", steps=turn.step)
+                    return
                 if not turn.calls:
                     self._keep(turn)
                     yield turn.finished(_ending(response.stop_reason), steps=turn.step)

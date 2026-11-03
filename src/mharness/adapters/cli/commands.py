@@ -429,6 +429,7 @@ _ENDINGS = {
     "denied": "denied",
     "max_output": "answer cut",
     "refused": "declined",
+    "context_full": "context full",
     "error": "error",
     "interrupted": "interrupted",
     "unfinished": "unfinished",

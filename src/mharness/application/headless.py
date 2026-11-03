@@ -43,6 +43,7 @@ type Reason = Literal[
     "denied",
     "max_output",
     "refused",
+    "context_full",
     "error",
 ]
 # Whose the model's failure is: `provider`, one that may pass if repeated

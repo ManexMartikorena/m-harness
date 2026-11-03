@@ -272,7 +272,14 @@ def exit_code(result: RunResult) -> int:
             return EXIT_ERROR
         case "denied":
             return EXIT_DENIED
-        case "max_steps" | "max_cost" | "max_tokens" | "timeout" | "max_output":
+        case (
+            "max_steps"
+            | "max_cost"
+            | "max_tokens"
+            | "timeout"
+            | "max_output"
+            | "context_full"
+        ):
             return EXIT_LIMIT
 
 

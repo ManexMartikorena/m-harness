@@ -8,8 +8,10 @@ from mharness.domain.messages import Message
 from mharness.domain.money import Usd
 
 # Why the model stopped. Each adapter maps its provider's reasons to these.
+# `context_full`: the context window filled while the model answered
+# (review of the deep audit).
 type StopReason = Literal[
-    "end_turn", "max_tokens", "tool_use", "content_filter", "other"
+    "end_turn", "max_tokens", "tool_use", "content_filter", "context_full", "other"
 ]
 
 

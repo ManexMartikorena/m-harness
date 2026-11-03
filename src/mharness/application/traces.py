@@ -32,6 +32,7 @@ type Ending = Literal[
     "denied",
     "max_output",
     "refused",
+    "context_full",
     "error",
     "interrupted",
     "unfinished",

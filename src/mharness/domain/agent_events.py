@@ -26,6 +26,7 @@ TurnEnd = Literal[
     "denied",
     "max_output",
     "refused",
+    "context_full",
 ]
 
 
@@ -119,7 +120,8 @@ class TurnFinished(BaseModel, frozen=True):
     # `timeout`: the time limit passed; the turn keeps what ran, as after
     # Ctrl+C. `denied`: the user denied a call. `max_output`: the answer
     # was cut by the model's own output limit; `refused`: the model declined
-    # (deep audit after hito 9, B1).
+    # (deep audit after hito 9, B1). `context_full`: the conversation filled
+    # the model's context window (review of the deep audit).
     reason: TurnEnd
     # Summed over every call to the model in the turn.
     usage: Usage

@@ -346,6 +346,10 @@ def turn_note(turn: TurnFinished) -> str | None:
         return "[the answer was cut: the model reached its output limit]"
     if turn.reason == "refused":
         return "[the model declined to answer]"
+    if turn.reason == "context_full":
+        return (
+            "[the conversation filled the model's context window: /new starts another]"
+        )
     if turn.reason == "max_cost":
         if turn.cost is None:
             return "[cost limit: the cost of a call is not known]"

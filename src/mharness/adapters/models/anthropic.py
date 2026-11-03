@@ -66,7 +66,7 @@ STOP_REASONS: dict[str, StopReason] = {
     "end_turn": "end_turn",
     "tool_use": "tool_use",
     "max_tokens": "max_tokens",
-    "model_context_window_exceeded": "max_tokens",
+    "model_context_window_exceeded": "context_full",
     "refusal": "content_filter",
 }
 # Added to an answer cut by Ctrl+C (spec hito 6, §1.7), as in OpenAI.

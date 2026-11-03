@@ -1920,6 +1920,25 @@ async def test_the_last_call_cut_by_the_output_limit_never_runs() -> None:
     assert len(tool.calls) == 1
 
 
+async def test_a_full_context_window_ends_the_turn_without_running_calls() -> None:
+    # Review of the deep audit: taken for the output limit, the model was
+    # told to write the call again in parts, which cannot fit either.
+    cut = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    answer = tool_calls(cut).model_copy(update={"stop_reason": "context_full"})
+    tool = FakeTool()
+    subject = agent(FakeModelClient([answer]), tool)
+
+    events = await run(subject)
+
+    assert isinstance(events[-1], TurnFinished)
+    assert events[-1].reason == "context_full"
+    assert tool.calls == []
+    [result] = subject.messages[-1].blocks
+    assert isinstance(result, ToolResultBlock)
+    assert result.is_error
+    assert "context window" in result.content
+
+
 async def test_a_refusal_ends_the_turn_as_refused() -> None:
     subject = agent(FakeModelClient([reply("No puedo.", stop_reason="content_filter")]))
 

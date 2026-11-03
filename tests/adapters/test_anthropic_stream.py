@@ -163,7 +163,7 @@ async def test_the_cost_opencode_reports_wins(client: AnthropicClient) -> None:
         ("end_turn", "end_turn"),
         ("tool_use", "tool_use"),
         ("max_tokens", "max_tokens"),
-        ("model_context_window_exceeded", "max_tokens"),
+        ("model_context_window_exceeded", "context_full"),
         ("refusal", "content_filter"),
         ("stop_sequence", "other"),
         ("pause_turn", "other"),
