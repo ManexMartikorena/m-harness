@@ -325,6 +325,9 @@ def test_an_unreadable_user_file_is_an_error(tmp_path: Path) -> None:
         ),
         ('[models."ollama/x"]\napi = "Anthropic"\n', r'models\."ollama/x"\.api'),
         ('[models."ollama/x"]\nmax_output = 0\n', "greater than 0"),
+        # Deep audit after hito 9 (M10): true was taken as 1.
+        ('[models."ollama/x"]\ncontext = true\n', r'models\."ollama/x"\.context'),
+        ('[models."ollama/x"]\nmax_output = true\n', r'models\."ollama/x"\.max_output'),
         ('[models." ollama/x"]\n', "no spaces"),
         ('[models."ollama/qwen local"]\n', "no spaces"),
     ],

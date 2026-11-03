@@ -158,6 +158,8 @@ def test_opencode_serves_both_formats() -> None:
         'api = "google"\nbase_url = "http://x"\n',
         'base_url = "http://x"\n[providers.local.endpoints]\ngoogle = "http://y"\n',
         'base_url = "http://x"\n[providers.local.endpoints]\nanthropic = ""\n',
+        # Deep audit after hito 9 (M10): ignored without a word.
+        'base_url = "http://x"\n[providers.local.endpoints]\nopenai-chat = "http://y"\n',
     ],
 )
 def test_a_provider_speaks_only_what_maha_speaks(

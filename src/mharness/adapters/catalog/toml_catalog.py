@@ -37,7 +37,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Annotated, Any
 
-from pydantic import BaseModel, BeforeValidator, ValidationError
+from pydantic import BaseModel, BeforeValidator, StrictInt, ValidationError
 
 from mharness.domain.catalog import ModelInfo, Prices, Tier
 
@@ -65,7 +65,7 @@ class _Provider(BaseModel, extra="forbid"):
 
 
 class _Tier(BaseModel, extra="forbid"):
-    above: int
+    above: StrictInt
     input: _Price
     output: _Price
     cache_read: _Price | None = None
@@ -74,9 +74,10 @@ class _Tier(BaseModel, extra="forbid"):
 
 
 class _Model(BaseModel, extra="forbid"):
-    context: int | None = None
+    # Strict: `true` is not 1 (deep audit after hito 9, M10).
+    context: StrictInt | None = None
     api: str | None = None
-    max_output: int | None = None
+    max_output: StrictInt | None = None
     # Both or neither: a model without prices is known, but has no cost.
     input: _Price | None = None
     output: _Price | None = None

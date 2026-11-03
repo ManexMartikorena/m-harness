@@ -1,8 +1,8 @@
 """Load and validate the configuration (spec hito 2, §1.10).
 
 Three levels, the later one winning for `provider`, `model`,
-`fallback_model` and `effort`; of each limit of the turn, the stricter one wins (spec
-hito 8, §3.2):
+`fallback_model`, `effort` and `cache_ttl`; of each limit of the turn, the
+stricter one wins (spec hito 8, §3.2):
 
 1. built-in providers, in this module;
 2. the user's file, `$XDG_CONFIG_HOME/maha/config.toml`;
@@ -20,7 +20,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from mharness.domain.catalog import SpokenApi
 from mharness.domain.limits import TurnLimits
@@ -53,6 +53,16 @@ class ProviderSettings(BaseModel, frozen=True, extra="forbid"):
     # The version of Anthropic's API it is asked for; the latest by default
     # (spec hito 9, decision 2).
     anthropic_version: str = Field(default="2026-10-21", min_length=1)
+
+    @model_validator(mode="after")
+    def _endpoints_are_other_formats(self) -> ProviderSettings:
+        # Its own format is spoken at `base_url`: an endpoint for it would
+        # be ignored without a word (deep audit after hito 9, M10).
+        if self.api in self.endpoints:
+            raise ValueError(
+                f"endpoints.{self.api} is this provider's own format: use base_url"
+            )
+        return self
 
     def url(self, api: str) -> str | None:
         """Where this provider speaks `api`; None if it does not."""
