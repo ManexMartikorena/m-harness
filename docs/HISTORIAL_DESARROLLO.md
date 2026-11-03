@@ -9,6 +9,35 @@ Para cada hito, además: su spec en `docs/specs/` (decisiones, verificación
 a mano y "Aprendido al implementar"), su nota en `docs/guia/` y su release
 en GitHub.
 
+## Hito 9 (2026-11-03)
+
+Lo más reciente primero.
+
+- **Hito 9 cerrado, 2026-11-03: `v0.9.0` — Adaptador de Anthropic.** Spec
+  IMPLEMENTADA, nota 09 de la guía y los dos README con un ejemplo real de
+  Claude Haiku 5.5. PRs: #100 (spec), #101, #102, #103 y el de cierre. El
+  mantenedor pidió una auditoría profunda antes de la spec del hito 10.
+- **PR 3, el adaptador** (#103): `AnthropicClient` a mano (petición,
+  stream, `complete()` y errores), el proveedor `anthropic` de serie con
+  14 modelos y sus precios oficiales, la caché de una hora a su precio, y
+  el cableado. Evals: Haiku 5.5 100/100 (línea base nueva); las ⚠ de GLM
+  (93) y Kimi (98) son errores del modelo con la misma petición de antes,
+  aceptadas; con `--effort high`, Haiku cuesta un 22 % más sin mejorar, y
+  el defecto sigue siendo el de cada modelo. Verificado por OpenCode Go con
+  Claude, MiniMax M3 y Qwen 3.8; GLM respeta el effort.
+- **PR 2, el núcleo** (#102): razonamiento guardado y devuelto intacto,
+  bloques en su orden, `max_tokens` por llamada, el test de "solo crece
+  por el final" y el effort (`effort`, `--effort`, `maha eval --effort` y
+  `/effort`).
+- **PR 1, el formato de cada modelo** (#101): `api` y `max_output` en el
+  catálogo, proveedores con varios formatos, `ModelRouter` y el error claro
+  con los formatos que `maha` no habla.
+- **Spec, 2026-11-03** (#100): hechos comprobados en la documentación de
+  Anthropic, OpenAI y OpenCode y con llamadas reales; el mantenedor pidió
+  en cada duda "el camino más profesional y robusto para el producto", y
+  cambiaron tres recomendaciones (versión de la API, `max_output`
+  obligatorio y `cache_ttl`).
+
 ## Hito 8 (2026-10-27 a 2026-11-03)
 
 Lo más reciente primero.

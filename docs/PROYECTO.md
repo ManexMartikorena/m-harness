@@ -103,7 +103,7 @@ debe. El detalle: [`DESIGN.md`](DESIGN.md); dónde está cada fichero:
 | 6 | Sesiones e historial | ✅ `v0.6.0` (y `v0.6.1`) |
 | 7 | Trazas y coste | ✅ `v0.7.0` |
 | 8 | Evals y modo no interactivo | ✅ `v0.8.0` |
-| 9 | Adaptador de Anthropic | ⬜ |
+| 9 | Adaptador de Anthropic | ✅ `v0.9.0` |
 | 10 | System prompt por capas | ⬜ |
 | 11 | Gestión del contexto | ⬜ |
 | 12 | Deshacer y puntos de control | ⬜ |

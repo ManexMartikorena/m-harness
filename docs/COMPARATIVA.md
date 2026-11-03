@@ -113,7 +113,7 @@ Fuentes: https://opencode.ai/docs/tui/, https://code.claude.com/docs/en/commands
 | Coste y uso | `opencode stats` | `/usage` | ✓ `/trace` (por sesión) | h8: `stats` acumulado |
 | Gestionar permisos | paleta (modo auto) | `/permissions` | — | h15 (P9) |
 | Modo plan | Tab | `/plan`, `shift+tab` | — | h15 (P9) |
-| Esfuerzo de razonamiento | `ctrl+t` (variantes) | `/effort` | — | h9 |
+| Esfuerzo de razonamiento | `ctrl+t` (variantes) | `/effort` | ✓ `/effort`, `--effort` (h9) | — |
 | MCP | — | `/mcp` | — | h17 |
 | Skills y agentes | — | `/skills`, `/agents` | — | h13, h16 |
 | Pregunta aparte que no entra en el historial | V2 `/btw` | `/btw` | — | después de la 1.0 |
@@ -241,7 +241,7 @@ Fuentes: https://opencode.ai/docs/rules/, https://code.claude.com/docs/en/memory
 | Compactación automática y manual | sí | sí | h11 | — |
 | Qué sobrevive a la compactación | `prune` | lista documentada | — | h11 |
 | Ver qué ocupa el contexto | — | `/context` | — | h11 |
-| Caché del prompt del proveedor | V2 *warming* | documentada | — | h9 y h11 |
+| Caché del prompt del proveedor | V2 *warming* | documentada | ✓ automática (h9) | h11 |
 | Memoria entre sesiones | plugin de la comunidad | memoria automática | h14 | — |
 | Skills | `SKILL.md` | `SKILL.md` | h13 | — |
 
@@ -270,11 +270,11 @@ https://code.claude.com/docs/en/model-config.md *(sin comprobar del todo)*.
 | Capacidad | OpenCode | Claude Code | `maha` | Propuesta |
 |---|---|---|---|---|
 | Formato de OpenAI (Chat Completions) | sí | — | ✓ | — |
-| Formato de Anthropic | sí | propio | h9 | — |
+| Formato de Anthropic | sí | propio | ✓ (h9) | — |
 | Responses de OpenAI y API de Google | sí | — | — | después de la 1.0 (decisión pendiente) |
 | Proveedores compatibles propios | sí | pasarelas | ✓ (configuración) | — |
 | Modelos locales (Ollama, LM Studio) | sí | — | ✓ (compatibles con OpenAI) | documentar en h23 |
-| Esfuerzo o variantes de razonamiento | variantes | `/effort` | — | h9 (P3) |
+| Esfuerzo o variantes de razonamiento | variantes | `/effort` | ✓ (h9) | — |
 | Modelo de respaldo | — | `--fallback-model` | — | h8 (P3) |
 | Modelo pequeño para títulos | `small_model` | — | — | h10 |
 | Iniciar sesión (OAuth, clave guardada) | `/connect` | `/login` | — | h23 |
