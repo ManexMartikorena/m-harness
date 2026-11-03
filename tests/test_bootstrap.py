@@ -1598,3 +1598,35 @@ def test_p_says_what_the_project_configuration_chose(
     assert (
         "  [from .maha/config.toml: effort max, cache 1h]\n" in capsys.readouterr().err
     )
+
+
+@respx.mock
+def test_a_provider_of_anthropics_format_with_its_own_version(
+    workspace: Path, stdin: Callable[[str], None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Deep audit after hito 9 (M10): anthropic_version and cache_ttl reach
+    # the wire through bootstrap, not only the adapter.
+    monkeypatch.setenv("LOCAL_KEY", KEY)
+    write_user_config(
+        workspace,
+        'provider = "local"\nmodel = "claude-x"\n'
+        "[providers.local]\n"
+        'api = "anthropic"\nbase_url = "https://claude.example.test/v1"\n'
+        'api_key_env = "LOCAL_KEY"\nanthropic_version = "2023-06-01"\n',
+    )
+    route = respx.post("https://claude.example.test/v1/messages").mock(
+        return_value=httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                Path(__file__).parent / "fixtures" / "anthropic" / "hello.sse"
+            ).read_bytes(),
+        )
+    )
+    stdin("")
+
+    assert main(["-p", "Hola"]) == 0
+
+    request = route.calls.last.request
+    assert request.headers["anthropic-version"] == "2023-06-01"
+    assert json.loads(request.content)["cache_control"] == {"type": "ephemeral"}
