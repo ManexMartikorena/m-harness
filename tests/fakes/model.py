@@ -5,8 +5,20 @@ from collections.abc import AsyncGenerator, AsyncIterable, Iterable
 
 from mharness.application.collect import Accumulator
 from mharness.domain.errors import ModelError
-from mharness.domain.events import MessageEnd, ModelEvent, TextDelta, ToolCallDelta
-from mharness.domain.messages import Block, Message, TextBlock, ToolCallBlock
+from mharness.domain.events import (
+    MessageEnd,
+    ModelEvent,
+    ReasoningDelta,
+    TextDelta,
+    ToolCallDelta,
+)
+from mharness.domain.messages import (
+    Block,
+    Message,
+    ReasoningBlock,
+    TextBlock,
+    ToolCallBlock,
+)
 from mharness.domain.model import ModelRequest, ModelResponse, StopReason, Usage
 
 FAKE_MODEL = "fake-model"
@@ -123,6 +135,8 @@ class FakeModelClient:
 
 
 def _as_events(response: ModelResponse) -> list[StreamItem]:
+    if any(isinstance(b, ReasoningBlock) for b in response.message.blocks):
+        return _as_indexed_events(response)
     text = response.message.text
     half = (len(text) + 1) // 2
     deltas: list[StreamItem] = [
@@ -140,6 +154,39 @@ def _as_events(response: ModelResponse) -> list[StreamItem]:
         cost=response.cost,
     )
     return [*deltas, end]
+
+
+def _as_indexed_events(response: ModelResponse) -> list[StreamItem]:
+    """With reasoning, as Anthropic sends it: each block with its index, in
+    the order of the message (spec hito 9, §1.5)."""
+    items: list[StreamItem] = []
+    for index, block in enumerate(response.message.blocks):
+        match block:
+            case ReasoningBlock():
+                items.append(ReasoningDelta(index=index, text=block.text))
+                items.append(
+                    ReasoningDelta(
+                        index=index, signature=block.signature, redacted=block.redacted
+                    )
+                )
+            case TextBlock(text=text):
+                items.append(TextDelta(text=text, block=index))
+            case ToolCallBlock():
+                items.append(
+                    ToolCallDelta(
+                        index=index,
+                        id=block.id,
+                        name=block.name,
+                        arguments=block.arguments,
+                    )
+                )
+    end = MessageEnd(
+        stop_reason=response.stop_reason,
+        usage=response.usage,
+        model=response.model,
+        cost=response.cost,
+    )
+    return [*items, end]
 
 
 async def _play(items: list[StreamItem]) -> AsyncGenerator[ModelEvent]:

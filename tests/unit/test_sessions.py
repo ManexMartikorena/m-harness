@@ -25,11 +25,12 @@ from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import (
     Message,
+    ReasoningBlock,
     TextBlock,
     ToolCallBlock,
     ToolResultBlock,
 )
-from mharness.domain.model import Effort, Usage
+from mharness.domain.model import Effort, ModelResponse, Usage
 from mharness.domain.retry import NO_RETRIES, RetryPolicy
 from mharness.domain.session import (
     MessageEntry,
@@ -1603,3 +1604,25 @@ async def test_a_change_of_effort_lasts_for_the_next_conversations() -> None:
     await turn(await world.sessions.start(), "B")
 
     assert [r.effort for r in fake.requests] == ["low", "low"]
+
+
+async def test_the_reasoning_is_saved_and_given_back_on_resume() -> None:
+    # Spec hito 9, §1.5: given back intact, also after resuming.
+    thought = Message(
+        role="assistant",
+        blocks=[ReasoningBlock(text="", signature="firma"), TextBlock(text="Uno.")],
+    )
+    answer = ModelResponse(
+        message=thought, stop_reason="end_turn", usage=Usage(), model="m"
+    )
+    store = MemorySessionStore()
+    fake = FakeModelClient([answer, reply("Dos.")])
+    world = World(store, fake)
+    first = await world.sessions.start()
+    await turn(first, "A")
+    await first.close()
+
+    resumed = await world.sessions.resume(FIRST, current=await world.sessions.start())
+    await turn(resumed.conversation, "B")
+
+    assert fake.requests[1].messages[1] == thought

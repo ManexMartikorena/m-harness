@@ -4,10 +4,18 @@ import pytest
 
 from mharness.domain.errors import ModelRateLimitError, ModelUnavailableError
 from mharness.domain.events import MessageEnd, ModelEvent, TextDelta
-from mharness.domain.messages import Message, TextBlock
-from mharness.domain.model import ModelRequest, Usage
+from mharness.domain.messages import Message, ReasoningBlock, TextBlock, ToolCallBlock
+from mharness.domain.model import ModelRequest, ModelResponse, Usage
 from mharness.ports.model import ModelClient
-from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply
+from tests.fakes.model import (
+    END,
+    FAKE_MODEL,
+    HANG,
+    FakeModelClient,
+    Gate,
+    collect,
+    reply,
+)
 
 REQUEST = ModelRequest(
     model="fake-model",
@@ -139,3 +147,23 @@ async def test_stream_keeps_the_requests_and_fails_when_exhausted() -> None:
     with pytest.raises(AssertionError, match="script exhausted at call 2"):
         await play(fake)
     assert fake.requests == [REQUEST, REQUEST]
+
+
+async def test_a_reply_with_reasoning_streams_each_block_in_its_place() -> None:
+    # Spec hito 9, §1.5.
+    message = Message(
+        role="assistant",
+        blocks=[
+            ReasoningBlock(text="pienso", signature="s"),
+            TextBlock(text="Hola."),
+            ToolCallBlock(id="c1", name="echo", arguments="{}"),
+        ],
+    )
+    answer = ModelResponse(
+        message=message, stop_reason="tool_use", usage=Usage(), model=FAKE_MODEL
+    )
+    fake = FakeModelClient([answer])
+
+    got = await collect(fake.stream(ModelRequest(model="m", messages=[])))
+
+    assert got.message == message
