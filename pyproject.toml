@@ -9,7 +9,7 @@ authors = [{ name = "Manex Martikorena" }]
 requires-python = ">=3.14"
 dependencies = [
     "httpx>=0.28.1",
-    "pydantic>=2.14.1",
+    "pydantic>=2.14.2",
 ]
 
 [project.scripts]
@@ -28,12 +28,12 @@ module-name = "mharness"
 [dependency-groups]
 dev = [
     "import-linter>=2.15",
-    "mypy>=2.4.0",
+    "mypy>=2.4.1",
     "pre-commit>=4.7.0",
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.1",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1.post1",
     "respx>=0.23.1",
-    "ruff>=0.17.2",
+    "ruff>=0.17.3",
 ]
 
 [tool.ruff]
@@ -90,3 +90,6 @@ testpaths = ["tests"]
 addopts = ["--strict-markers", "--strict-config"]
 filterwarnings = ["error"]
 asyncio_mode = "auto"
+# Explicit since pytest-asyncio warns when unset (with pytest 9.2); "function"
+# is what every fixture here already gets, and its future default.
+asyncio_default_fixture_loop_scope = "function"
