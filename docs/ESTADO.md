@@ -49,8 +49,10 @@ spec, su nota de la guía y su release.
 
 ## Siguiente paso
 
-Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
-tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
+Al abrir: trabajar en la rama en curso (`feature/hito-10-capas`, ver
+"Ramas abiertas"), no en `main`: `git fetch && git switch
+feature/hito-10-capas && git pull`, `uv sync` y comprobar los tests, mypy y
+lint-imports en verde (2238 tests); después, el primer punto sin hacer.
 
 1. **Agente:** terminar el PR 1 del hito 10 (rama `feature/hito-10-capas`,
    ya en GitHub; spec `docs/specs/hito-10-system-prompt.md`, APROBADA).
@@ -59,14 +61,21 @@ tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
    ("Resultados (PR 1)"): pasada 1, el arreglo de la base (`d9367e7`) y
    la decisión de no añadir capas de familia por ahora. Falta, en orden:
    1. **La pasada 2 de confirmación** (§5): se lanzó el 2026-11-04 a las
-      18:47 en el WSL, pero la sesión se cerró antes de que terminara. En
-      el WSL, si `~/.local/state/maha/evals/` tiene un directorio de esa
-      hora con `runs.json` de 330 ejecuciones, vale; si no (o desde otro
-      PC), lanzarla de nuevo (unos 1,4 $ y 50 minutos):
+      18:49 en el WSL, con `d9367e7`, y seguía en marcha al cerrar la
+      sesión. Su resultado, en el WSL:
+      `~/.local/state/maha/evals/20261104-184916-c436/`. Vale **solo si**
+      ahí hay un `report.txt` (el informe que `maha eval` escribe en
+      pantalla, copiado al terminar) que acaba con los tres bloques de
+      modelo, y un `runs.json` con 330 ejecuciones (`python3 -c "import
+      json; print(len(json.load(open('runs.json'))))"`). `maha eval` no
+      guarda su informe y no hay comando que lo rehaga desde `runs.json`.
+      Si falta alguno de los dos, o si se trabaja desde otro PC, lanzarla
+      de nuevo (unos 1,4 $ y 50 minutos), guardando lo que escribe:
       `uv run --env-file .env maha eval --models
       glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5 --repeat 5
-      --retry-errors --jobs 4`. Sin `--save`: las líneas base nuevas van
-      al cierre del hito, con 23 tareas.
+      --retry-errors --jobs 4 2>&1 | tee pasada2.txt` (fuera del repo, o
+      borrarlo después). Sin `--save`: las líneas base nuevas van al
+      cierre del hito, con 23 tareas.
    2. Anotarla en la spec §5 (sustituir "Pendiente de anotar"), con la
       comparación con la línea base: éxito sin ⚠; pasos y coste,
       comparados también con la pasada 1. Si queda una ⚠ de coste o de
@@ -77,6 +86,10 @@ tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
       commit con el CI en verde.
    6. Seguir con el PR 2 (`feature/hito-10-herramientas`: `todo_write`,
       `ask_user` y la tarea 23) y el PR 3 (`/init`, títulos, `/rename`).
+   Pendiente de decidir con el mantenedor: que `maha eval` guarde su
+   informe junto a `runs.json` (hoy solo sale por pantalla; hizo falta un
+   apaño para no perder el de la pasada 2). Propuesta del agente: sí, un
+   commit pequeño en el PR 1, con su test.
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.

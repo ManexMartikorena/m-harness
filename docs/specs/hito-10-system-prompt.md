@@ -575,8 +575,9 @@ respuesta equivocada en la 13; Haiku, ninguno en train). El único patrón
 era de la base, y se arregló en la base. Sin un fallo que corregir, ninguna
 capa: el mecanismo queda listo y sin ficheros (§1.3).
 
-**Pasada 2 (confirmación)**: lanzada el 2026-11-04 a las 18:47, con
-`d9367e7`, la batería completa y 5 repeticiones. *Pendiente de anotar.*
+**Pasada 2 (confirmación)**: lanzada el 2026-11-04 a las 18:49, con
+`d9367e7`, la batería completa y 5 repeticiones (en el WSL,
+`~/.local/state/maha/evals/20261104-184916-c436`). *Pendiente de anotar.*
 
 ## 6. Orden de piezas para el implementador
 
