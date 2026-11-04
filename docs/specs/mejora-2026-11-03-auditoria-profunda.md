@@ -1,7 +1,7 @@
-Estado: EN CURSO (2026-11-03, rama `fix/auditoria-hito-9`). Hechos: los
-arreglos de los cinco revisores y los de la revisión independiente (R1 a
-R15). Falta: las evals finales y las líneas base nuevas (I16), anotarlas
-aquí, `v0.9.1`, PR, merge y tag.
+Estado: EN CURSO (2026-11-04, rama `fix/auditoria-hito-9`). Hechos: los
+arreglos de los cinco revisores, los de la revisión independiente (R1 a
+R15) y las evals finales con sus líneas base nuevas (I16). Falta:
+`v0.9.1`, PR, merge y tag.
 
 # Auditoría profunda tras el hito 9
 
@@ -213,7 +213,31 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   completas y líneas base nuevas de los tres modelos, al final de la
   auditoría. Lanzadas el 2026-11-03 y paradas a petición del mantenedor
   (fin de la jornada) tras 54 de 300 ejecuciones: no se guardó nada; se
-  lanzan de nuevo enteras.
+  lanzan de nuevo enteras. HECHO (2026-11-04), líneas base nuevas en
+  `evals/baselines/2026-11-04-*`:
+  - Pasada completa (`12f1133`; `--models
+    glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5 --repeat 5
+    --retry-errors --save --jobs 4`, OpenCode Go): un ⚠ en GLM, la tarea
+    03 de 5/5 a 1/5 (p = 0,024). No era el modelo: las cuatro respuestas
+    suspendidas decían "**6** ficheros" con una lista numerada debajo, y
+    la regla de I10 (`^\D*6\D*$`) pedía que el 6 fuera el único número.
+    ARREGLADO (`89644ea`): el 6 tiene que ser el primer número; con su
+    test, las respuestas reales de GLM. La regla nueva acepta las 15
+    respuestas de la 03 de la pasada; la anterior, solo 11.
+  - GLM, medido de nuevo entero tras el arreglo (`89644ea`). Kimi y Haiku
+    no: pasaron la 03 5/5 con la regla estricta, la nueva acepta todo lo
+    que aceptaba aquella y el resto de comprobaciones no cambió.
+  - Cada fallo que queda se miró en su sesión: todos son del modelo
+    (código que no pasa, un test propio que falla, `resumen` nombrado en
+    la 13, o la explicación de más que la 13 castiga a propósito).
+
+  | Modelo | Línea base anterior | Ahora | Coste de la pasada | Comparación |
+  |---|---|---|---|---|
+  | `glm-5.3-flash` | 94 % (2026-10-27) | 96/100 (train 77/80, validación 19/20) | 0,065 $ | sin ⚠; · 20-total-value 5/5 → 2/5 (p = 0,083, dentro del ruido) |
+  | `kimi-k2.7-code` | 99 % (2026-10-27) | 97/100 (79/80, 18/20) | 0,553 $ | sin ⚠; · 13, 14 y 18 de 5/5 a 4/5 (p = 0,5); total p = 0,31 |
+  | `claude-haiku-5-5` | 100 % (2026-11-03) | 100/100 (80/80, 20/20) | 0,287 $ | igual |
+
+  Sin regresión: la auditoría se puede integrar.
 
 ## Otros
 
