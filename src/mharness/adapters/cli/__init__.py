@@ -3,6 +3,7 @@ questions before a tool call."""
 
 from mharness.adapters.cli.app import fail, parse
 from mharness.adapters.cli.approval import DenyAll, TerminalApproval
+from mharness.adapters.cli.commands import project_note
 from mharness.adapters.cli.conversation import converse
 from mharness.adapters.cli.headless import drop_output, print_mode
 from mharness.adapters.cli.input import StdinLines
@@ -32,6 +33,7 @@ __all__ = [
     "models_report",
     "parse",
     "print_mode",
+    "project_note",
     "run_line",
     "show_stats",
     "show_trace",

@@ -158,6 +158,8 @@ def test_opencode_serves_both_formats() -> None:
         'api = "google"\nbase_url = "http://x"\n',
         'base_url = "http://x"\n[providers.local.endpoints]\ngoogle = "http://y"\n',
         'base_url = "http://x"\n[providers.local.endpoints]\nanthropic = ""\n',
+        # Deep audit after hito 9 (M10): ignored without a word.
+        'base_url = "http://x"\n[providers.local.endpoints]\nopenai-chat = "http://y"\n',
     ],
 )
 def test_a_provider_speaks_only_what_maha_speaks(
@@ -207,6 +209,24 @@ def test_an_unknown_cache_ttl_is_an_error(home: Path, project: Path) -> None:
 
     with pytest.raises(ConfigError, match="cache_ttl"):
         load(home, project)
+
+
+def test_what_the_project_chooses_is_known(home: Path, project: Path) -> None:
+    # Deep audit after hito 9 (M4), decision of the maintainer: maha says it
+    # at start, so a foreign repository cannot raise the cost unseen.
+    write_user(home, 'model = "m"\neffort = "low"\n')
+    assert load(home, project).from_project == {}
+
+    write_project(
+        project,
+        'model = "caro"\neffort = "max"\ncache_ttl = "1h"\nfallback_model = "x"\n',
+    )
+    assert load(home, project).from_project == {
+        "model": "caro",
+        "fallback_model": "x",
+        "effort": "max",
+        "cache_ttl": "1h",
+    }
 
 
 # The effort (spec hito 9, §1.7).
@@ -323,6 +343,31 @@ def test_a_wrong_limit_is_an_error(home: Path, project: Path) -> None:
     assert "limits.max_turns: unknown field" in str(raised.value)
 
 
+@pytest.mark.parametrize(
+    "line",
+    ["max_steps = true", "timeout = true", "max_cost = 1e-13", "max_cost = 5e12"],
+)
+def test_a_limit_out_of_what_it_can_be_is_an_error(
+    home: Path, project: Path, line: str
+) -> None:
+    # Review of the deep audit: `true` was 1 step or 1 second, and a cost
+    # out of the bounds of Usd ended in a Python traceback, also from a
+    # project's file.
+    write_user(home, 'model = "m"\n')
+    write_project(project, f"[limits]\n{line}\n")
+
+    with pytest.raises(ConfigError, match="invalid configuration") as raised:
+        load(home, project)
+
+    assert f"limits.{line.split()[0]}" in str(raised.value)
+
+
+def test_a_timeout_in_whole_seconds_is_taken(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\n[limits]\ntimeout = 30\n')
+
+    assert load(home, project).limits.timeout == 30
+
+
 def test_unknown_provider(home: Path, project: Path) -> None:
     write_user(home, 'provider = "nope"\nmodel = "m"\n')
 
@@ -406,6 +451,20 @@ def test_missing_key_names_the_variable(
         config.load(cwd=project, env=env)
 
 
+@pytest.mark.parametrize("key", ["clé-0000", "sk test", "sk-\x07"])
+def test_a_key_a_header_cannot_carry_says_so(
+    home: Path, project: Path, key: str
+) -> None:
+    # Deep audit after hito 9 (M7): it ended with a Python traceback when
+    # the HTTP client was built, and broke the JSON of -p.
+    write_user(home, 'model = "m"\n')
+
+    with pytest.raises(ConfigError, match="OPENCODE_API_KEY has characters") as raised:
+        load(home, project, OPENCODE_API_KEY=key)
+
+    assert key not in str(raised.value)
+
+
 def test_key_is_not_in_the_repr(home: Path, project: Path) -> None:
     write_user(home, 'model = "glm-5.3-flash"\n')
 
@@ -476,6 +535,19 @@ def test_without_calling_the_model_its_key_is_not_needed(
     settings = config.load(
         cwd=project, env={"XDG_CONFIG_HOME": str(home)}, calls_model=False
     )
+
+    assert settings.api_key is None
+
+
+def test_without_calling_the_model_a_bad_key_is_not_an_error(
+    home: Path, project: Path
+) -> None:
+    # Review of the deep audit: `maha sessions` failed over a key it does
+    # not use.
+    write_user(home, 'model = "glm-5.3-flash"\n')
+    env = {"XDG_CONFIG_HOME": str(home), "OPENCODE_API_KEY": "sk test"}
+
+    settings = config.load(cwd=project, env=env, calls_model=False)
 
     assert settings.api_key is None
 

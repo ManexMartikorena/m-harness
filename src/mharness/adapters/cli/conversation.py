@@ -9,6 +9,7 @@ import json
 import logging
 import signal
 import sys
+from collections.abc import Sequence
 from contextlib import aclosing
 from pathlib import Path
 from typing import TextIO
@@ -70,6 +71,7 @@ async def converse(
     err: TextIO | None = None,
     home: Path | None = None,
     start: Start | None = None,
+    notes: Sequence[str] = (),
 ) -> int:
     """Run the conversation until /exit, Ctrl+D or Ctrl+C; return the exit code.
 
@@ -114,7 +116,9 @@ async def converse(
     for number in CLOSING:
         loop.add_signal_handler(number, on_closing, number)
     try:
-        return await _turns(commands, provider, read, out, err, sigint, opened.resumed)
+        return await _turns(
+            commands, provider, read, out, err, sigint, opened.resumed, notes
+        )
     except asyncio.CancelledError:
         if sigint.closing is not None:
             task.uncancel()
@@ -142,16 +146,21 @@ async def _turns(
     err: TextIO,
     sigint: _Sigint,
     resumed: Resumed | None,
+    notes: Sequence[str],
 ) -> int:
-    model = commands.conversation.model
+    # From the configuration or a resumed session: escaped as any other
+    # text that may come from a file (deep audit after hito 9, I3).
+    model = clean_line(commands.conversation.model)
     print(
-        f"maha {__version__} · {provider} · {model} · /help for commands",
+        f"maha {__version__} · {clean_line(provider)} · {model} · /help for commands",
         file=out,
     )
     if resumed is not None:
         commands.tell_resumed(resumed)
     else:
         commands.note_model()
+    for note in notes:
+        print(f"  {note}", file=out, flush=True)
     while True:
         print("> ", end="", file=out, flush=True)
         try:
@@ -182,6 +191,9 @@ async def _answer(
     """
     # True while the cursor is after text, not at the start of a line.
     wrote = False
+    # The block of that text: another one starts on a new line, as the
+    # session keeps it (review of the deep audit).
+    block: int | None = None
     # True while a question waits after "Allow? …:" (spec
     # mejora-2026-10-26-deuda-pre-hito-6, B8).
     asking = False
@@ -194,6 +206,10 @@ async def _answer(
                 match event:
                     case TextDelta(text=text):
                         await spinner.stop()
+                        other = event.block is not None and block is not None
+                        if wrote and other and event.block != block:
+                            out.write("\n")
+                        block = event.block
                         out.write(clean(text))
                         out.flush()
                         wrote = True
@@ -326,6 +342,14 @@ def turn_note(turn: TurnFinished) -> str | None:
         return f"[token limit reached: {tokens} tokens]"
     if turn.reason == "timeout":
         return "[time limit reached]"
+    if turn.reason == "max_output":
+        return "[the answer was cut: the model reached its output limit]"
+    if turn.reason == "refused":
+        return "[the model declined to answer]"
+    if turn.reason == "context_full":
+        return (
+            "[the conversation filled the model's context window: /new starts another]"
+        )
     if turn.reason == "max_cost":
         if turn.cost is None:
             return "[cost limit: the cost of a call is not known]"

@@ -1,8 +1,8 @@
 """Load and validate the configuration (spec hito 2, §1.10).
 
 Three levels, the later one winning for `provider`, `model`,
-`fallback_model` and `effort`; of each limit of the turn, the stricter one wins (spec
-hito 8, §3.2):
+`fallback_model`, `effort` and `cache_ttl`; of each limit of the turn, the
+stricter one wins (spec hito 8, §3.2):
 
 1. built-in providers, in this module;
 2. the user's file, `$XDG_CONFIG_HOME/maha/config.toml`;
@@ -16,15 +16,22 @@ Start-up plumbing: only `mharness.bootstrap` uses it, once, before the core.
 
 import tomllib
 from collections.abc import Mapping
-from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import (
+    BaseModel,
+    Field,
+    StrictFloat,
+    StrictInt,
+    ValidationError,
+    model_validator,
+)
 
 from mharness.domain.catalog import SpokenApi
 from mharness.domain.limits import TurnLimits
 from mharness.domain.model import Effort
+from mharness.domain.money import Usd
 
 PROJECT_FILE = Path(".maha") / "config.toml"
 DEFAULT_PROVIDER = "opencode-go"
@@ -53,6 +60,16 @@ class ProviderSettings(BaseModel, frozen=True, extra="forbid"):
     # The version of Anthropic's API it is asked for; the latest by default
     # (spec hito 9, decision 2).
     anthropic_version: str = Field(default="2026-10-21", min_length=1)
+
+    @model_validator(mode="after")
+    def _endpoints_are_other_formats(self) -> ProviderSettings:
+        # Its own format is spoken at `base_url`: an endpoint for it would
+        # be ignored without a word (deep audit after hito 9, M10).
+        if self.api in self.endpoints:
+            raise ValueError(
+                f"endpoints.{self.api} is this provider's own format: use base_url"
+            )
+        return self
 
     def url(self, api: str) -> str | None:
         """Where this provider speaks `api`; None if it does not."""
@@ -99,15 +116,22 @@ class Settings(BaseModel, frozen=True):
     limits: TurnLimits = TurnLimits()
     # Kept out of repr, so it never lands in a log or a traceback.
     api_key: str | None = Field(default=None, repr=False)
+    # What the project's file chose, by name: maha says it at start, so a
+    # foreign repository cannot raise the cost unseen (deep audit after
+    # hito 9, M4, a decision of the maintainer).
+    from_project: dict[str, str] = {}
 
 
 class _Limits(BaseModel, extra="forbid"):
     """`[limits]`: each one, if the file sets it."""
 
-    max_steps: int | None = Field(default=None, ge=1)
-    max_cost: Decimal | None = Field(default=None, ge=0)
-    max_tokens: int | None = Field(default=None, ge=1)
-    timeout: float | None = Field(default=None, gt=0)
+    # Strict: `true` is not 1 step nor 1 second; the cost within the bounds
+    # of an amount in USD, or the turn could not check it (review of the
+    # deep audit).
+    max_steps: StrictInt | None = Field(default=None, ge=1)
+    max_cost: Usd | None = None
+    max_tokens: StrictInt | None = Field(default=None, ge=1)
+    timeout: StrictFloat | None = Field(default=None, gt=0)
 
 
 class _ProjectFile(BaseModel, extra="forbid"):
@@ -203,6 +227,11 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
         cache_ttl=project.cache_ttl or user.cache_ttl or "5m",
         limits=_stricter(user.limits, project.limits),
         api_key=_api_key(provider_name, provider, env, need=calls_model),
+        from_project={
+            name: value
+            for name in ("provider", "model", "fallback_model", "effort", "cache_ttl")
+            if (value := getattr(project, name)) is not None
+        },
     )
 
 
@@ -270,11 +299,20 @@ def _api_key(
     if provider.api_key_env is None:
         return None
     key = env.get(provider.api_key_env, "").strip()
-    if not key and not need:
+    valid = key.isascii() and key.isprintable() and " " not in key
+    if not need and not (key and valid):
+        # A command that does not call the model must not fail over a key
+        # it does not use (review of the deep audit).
         return None
     if not key:
         raise ConfigError(
             f"{provider.api_key_env} is not set: it holds the key for provider "
             f"{name!r}. In development: uv run --env-file .env maha"
+        )
+    if not valid:
+        # It goes in an HTTP header; never echoed (deep audit after hito 9).
+        raise ConfigError(
+            f"{provider.api_key_env} has characters a key cannot have (spaces, "
+            "accents or control characters): copy it again from the console"
         )
     return key

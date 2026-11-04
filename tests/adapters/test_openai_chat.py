@@ -393,6 +393,9 @@ async def test_the_cost_opencode_counts_against_the_limit(
         # An absurd amount is not believed either.
         ({"cost": 1e30}, None),
         ({"cost": "1e300"}, None),
+        # Less than an amount can be (audit after hito 9, S4): nothing.
+        ({"cost": "1e-50"}, "0"),
+        ({"cost": 1e-13}, "0"),
     ],
 )
 @respx.mock

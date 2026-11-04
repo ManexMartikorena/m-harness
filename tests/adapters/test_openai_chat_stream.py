@@ -24,6 +24,7 @@ from mharness.domain.errors import (
 from mharness.domain.events import MessageEnd, ModelEvent, TextDelta, ToolCallDelta
 from mharness.domain.messages import Message, TextBlock
 from mharness.domain.model import ModelRequest, StopReason, ToolSpec, Usage
+from tests.fakes.model import collect
 
 BASE_URL = "https://models.example.test/v1"
 ENDPOINT = f"{BASE_URL}/chat/completions"
@@ -245,7 +246,7 @@ async def test_bom_and_split_characters(client: OpenAIChatClient) -> None:
 async def test_done_without_finish_reason_fails(client: OpenAIChatClient) -> None:
     serve(sse(chunk("Hola"), usage_chunk(), "[DONE]"))
 
-    with pytest.raises(ModelResponseError, match="before the answer was complete"):
+    with pytest.raises(ModelUnavailableError, match="before the answer was complete"):
         await events(client)
 
 
@@ -253,7 +254,7 @@ async def test_done_without_finish_reason_fails(client: OpenAIChatClient) -> Non
 async def test_clean_end_without_finish_reason_fails(client: OpenAIChatClient) -> None:
     serve(sse(chunk("Hola")))
 
-    with pytest.raises(ModelResponseError, match="before the answer was complete"):
+    with pytest.raises(ModelUnavailableError, match="before the answer was complete"):
         await events(client)
 
 
@@ -662,3 +663,44 @@ async def test_a_slow_stream_that_keeps_sending_data_is_not_cut(
     got = await events(client)
 
     assert [e for e in got if isinstance(e, TextDelta)] == [TextDelta(text="a")] * 5
+
+
+@respx.mock
+async def test_odd_counters_and_null_choices_do_not_lose_the_answer(
+    client: OpenAIChatClient,
+) -> None:
+    # Deep audit after hito 9 (M5): an odd value was "a chunk that could not
+    # be understood", after the text was already shown.
+    odd = {
+        "model": MODEL,
+        "choices": None,
+        "usage": {
+            "prompt_tokens": 10.5,
+            "completion_tokens": "7",
+            "prompt_tokens_details": {"cached_tokens": True},
+            "completion_tokens_details": None,
+        },
+    }
+    serve(sse(chunk("Hola."), chunk(finish_reason="stop"), odd, "[DONE]"))
+
+    response = await collect(client.stream(REQUEST))
+
+    assert response.message.text == "Hola."
+    assert response.usage == Usage()
+
+
+@respx.mock
+async def test_a_rate_limit_in_the_middle_is_a_rate_limit(
+    client: OpenAIChatClient,
+) -> None:
+    # Deep audit after hito 9 (M6): it came out as "unavailable", unlike in
+    # Anthropic's format.
+    serve(
+        sse(
+            chunk("Ho"),
+            {"error": {"type": "rate_limit_error", "code": "rate_limit_exceeded"}},
+        )
+    )
+
+    with pytest.raises(ModelRateLimitError):
+        await collect(client.stream(REQUEST))

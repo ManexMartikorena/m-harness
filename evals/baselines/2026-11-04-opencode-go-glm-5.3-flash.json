@@ -1,0 +1,220 @@
+{
+  "date": "2026-11-04",
+  "maha": "0.9.0",
+  "commit": "v0.9.0-91-g89644ea",
+  "provider": "opencode-go",
+  "model": "glm-5.3-flash",
+  "repeat": 5,
+  "tasks": {
+    "01-version": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 2.4,
+      "tool_errors": 0.0,
+      "tokens": 2804.2,
+      "cost": "0.000156568",
+      "duration": 4.195595016800008
+    },
+    "02-buscar-funcion": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 2.0,
+      "tool_errors": 0.0,
+      "tokens": 2336.2,
+      "cost": "0.000136842",
+      "duration": 4.622230967999985
+    },
+    "03-contar-ficheros": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 2.2,
+      "tool_errors": 0.0,
+      "tokens": 2600.2,
+      "cost": "0.00015103",
+      "duration": 4.339057309000009
+    },
+    "04-gitignore": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 2.6,
+      "tool_errors": 0.0,
+      "tokens": 3125.2,
+      "cost": "0.000180774",
+      "duration": 5.4550753609999445
+    },
+    "05-puerto": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 4.4,
+      "tool_errors": 0.0,
+      "tokens": 5483.2,
+      "cost": "0.000357804",
+      "duration": 8.37401395820002
+    },
+    "06-arreglar-descuento": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 6.2,
+      "tool_errors": 0.0,
+      "tokens": 8969.8,
+      "cost": "0.00073879",
+      "duration": 12.498404435599923
+    },
+    "07-renombrar": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 5.6,
+      "tool_errors": 0.0,
+      "tokens": 10491.8,
+      "cost": "0.00104829",
+      "duration": 16.64696588259999
+    },
+    "08-slugify": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 3.6,
+      "tool_errors": 0.0,
+      "tokens": 5969.2,
+      "cost": "0.000694866",
+      "duration": 12.08413912119995
+    },
+    "09-typo": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 3.6,
+      "tool_errors": 0.0,
+      "tokens": 4422.2,
+      "cost": "0.000337732",
+      "duration": 5.48836115920003
+    },
+    "10-is-even": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 3.2,
+      "tool_errors": 0.0,
+      "tokens": 4167.6,
+      "cost": "0.00030745",
+      "duration": 7.42485677539994
+    },
+    "11-puerto-entorno": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 5.8,
+      "tool_errors": 0.0,
+      "tokens": 8650.2,
+      "cost": "0.000746224",
+      "duration": 13.94135460840007
+    },
+    "12-iva-reducido": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 10.0,
+      "tool_errors": 0.2,
+      "tokens": 23975.2,
+      "cost": "0.002465992",
+      "duration": 34.24351539240001
+    },
+    "13-funciones-sin-test": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 4.2,
+      "tool_errors": 0.0,
+      "tokens": 6004.0,
+      "cost": "0.000403208",
+      "duration": 8.196141988599994
+    },
+    "14-descuento-volumen": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 6.8,
+      "tool_errors": 0.2,
+      "tokens": 11794.2,
+      "cost": "0.001170212",
+      "duration": 19.90323915700001
+    },
+    "15-bisiesto": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 4.0,
+      "tool_errors": 0.0,
+      "tokens": 6300.8,
+      "cost": "0.000616922",
+      "duration": 11.813019607999923
+    },
+    "16-notas-ordenar": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 5.2,
+      "tool_errors": 0.4,
+      "tokens": 8237.4,
+      "cost": "0.000727708",
+      "duration": 12.651020720799988
+    },
+    "17-notas-json": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 3.2,
+      "tool_errors": 0.0,
+      "tokens": 5655.8,
+      "cost": "0.00067964",
+      "duration": 12.71761993959999
+    },
+    "18-parse-duration": {
+      "runs": 5,
+      "passes": 4,
+      "errors": 0,
+      "steps": 4.6,
+      "tool_errors": 0.0,
+      "tokens": 7288.2,
+      "cost": "0.000770906",
+      "duration": 13.868105325400029
+    },
+    "19-inventory-fix": {
+      "runs": 5,
+      "passes": 5,
+      "errors": 0,
+      "steps": 4.0,
+      "tool_errors": 0.0,
+      "tokens": 6406.4,
+      "cost": "0.000608122",
+      "duration": 9.877352780799947
+    },
+    "20-total-value": {
+      "runs": 5,
+      "passes": 2,
+      "errors": 0,
+      "steps": 3.8,
+      "tool_errors": 0.0,
+      "tokens": 7033.6,
+      "cost": "0.000743644",
+      "duration": 8.530230105800001
+    }
+  },
+  "total": {
+    "runs": 100,
+    "passes": 96,
+    "errors": 0,
+    "steps": 4.37,
+    "tool_errors": 0.04,
+    "tokens": 7085.77,
+    "cost": "0.0006521362",
+    "duration": 11.343514980689989
+  }
+}

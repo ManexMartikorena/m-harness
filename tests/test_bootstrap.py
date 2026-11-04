@@ -6,9 +6,13 @@ import io
 import json
 import logging
 import os
+import re
 import signal
 import stat
-from collections.abc import AsyncIterator, Callable, Iterator
+import sys
+import tempfile
+import time
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from pathlib import Path
 
 import httpx
@@ -18,6 +22,7 @@ import respx
 from mharness import bootstrap
 from mharness.adapters.cli import StdinLines
 from mharness.bootstrap import main
+from mharness.domain.evals import TaskRun
 from mharness.domain.limits import TurnLimits
 
 KEY = "sk-test-0000000000000000"
@@ -617,40 +622,40 @@ def test_eval_saves_a_baseline_and_then_marks_a_regression(
             return_value=sse_response(streamed("Es la 1.4.2.", 1000, 10))
         )
 
-        assert main(["eval", "--tasks", str(evals), "--repeat", "2", "--save"]) == 0
+        assert main(["eval", "--tasks", str(evals), "--repeat", "5", "--save"]) == 0
 
     out = capsys.readouterr().out
     assert "  ✓ 01-version · glm-5.3-flash #1 · 1 step ·" in out
     assert "glm-5.3-flash · no baseline yet\n" in out
-    # 2 * (1000 * 0.15 + 10 * 0.50) per million, exact before rounding.
-    assert "  total        2/2   100%   $0.0003 in all\n" in out
+    # 5 * (1000 * 0.15 + 10 * 0.50) per million, rounded.
+    assert "  total        5/5   100%   $0.0008 in all\n" in out
     [saved] = (evals / "baselines").glob("*.json")
     baseline = json.loads(saved.read_text())
-    assert (baseline["model"], baseline["repeat"]) == ("glm-5.3-flash", 2)
-    assert baseline["tasks"]["01-version"]["passes"] == 2
+    assert (baseline["model"], baseline["repeat"]) == ("glm-5.3-flash", 5)
+    assert baseline["tasks"]["01-version"]["passes"] == 5
     # Only numbers: never what the model said.
     assert "1.4.2." not in saved.read_text()
     # The runs' sessions and traces, apart from the user's.
     runs = list((workspace / "state" / "maha" / "evals").glob("*/sessions/*.jsonl"))
-    assert len(runs) == 2
+    assert len(runs) == 5
 
     with respx.mock:
         respx.post(GO_ENDPOINT).mock(
             return_value=sse_response(streamed("No lo sé.", 1000, 10))
         )
 
-        assert main(["eval", "--tasks", str(evals)]) == 1
+        assert main(["eval", "--tasks", str(evals), "--repeat", "5"]) == 1
 
     out = capsys.readouterr().out
     assert (
         "  ✗ 01-version · glm-5.3-flash #1 · the answer does not contain '1.4.2'" in out
     )
-    assert "  ⚠ 01-version: passed every time in the baseline, now 0/1" in out
+    assert "  ⚠ 01-version: 5/5 in the baseline, now 0/5 (p = 0.004)" in out
     # Every run in full, to look at a failure: the report shows one line.
     # By content: two `maha eval` of the same second do not sort by time.
     folders = (workspace / "state" / "maha" / "evals").iterdir()
     every = [run for f in folders for run in json.loads((f / "runs.json").read_text())]
-    [failed] = [run for run in every if run["outcome"] == "fail"]
+    failed = next(run for run in every if run["outcome"] == "fail")
     assert (failed["outcome"], failed["detail"]) == (
         "fail",
         "the answer does not contain '1.4.2'",
@@ -745,12 +750,11 @@ def test_print_answers_on_stdout_and_saves_the_session(
     assert (code, captured.out) == (0, "Dos palabras.\n")
     assert captured.err == "  [tokens: 12 in · 3 out · <$0.0001 · session <$0.0001]\n"
     messages = json.loads(route.calls.last.request.content)["messages"]
-    assert messages == [
-        {
-            "role": "user",
-            "content": "cuenta las palabras\n\n<stdin>\nuno dos\n</stdin>",
-        }
-    ]
+    [message] = messages
+    assert message["role"] == "user"
+    assert re.fullmatch(
+        r"cuenta las palabras\n\n<(stdin-\w+)>\nuno dos\n</\1>", message["content"]
+    )
     assert len(list((data_home / "maha" / "sessions").glob("*.jsonl"))) == 1
 
 
@@ -1417,3 +1421,252 @@ def test_each_model_goes_to_the_url_of_its_format(
     assert "x-opencode-session" in request.headers
     assert (body["model"], body["max_tokens"]) == ("claude-haiku-5-5", 128_000)
     assert body["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+
+
+@respx.mock
+def test_eval_with_keep_says_where_the_copies_are(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Deep audit (I9): --keep kept the copies and never said where.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    (workspace / "tmp").mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(workspace / "tmp"))
+    evals = battery(workspace / "evals")
+    respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Es la 1.4.2.", 10, 5))
+    )
+
+    assert main(["eval", "--tasks", str(evals), "--keep"]) == 0
+
+    out = capsys.readouterr().out
+    [line] = [x for x in out.splitlines() if x.startswith("copies of the repos")]
+    where = Path(line.removeprefix("copies of the repositories: "))
+    assert where.parent == workspace / "tmp"
+    [copy] = where.glob("01-version-*/tienda")
+    assert (copy / "pyproject.toml").read_text() == 'version = "1.4.2"\n'
+
+
+def test_eval_with_an_effort_does_not_judge_against_the_baseline(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Deep audit (I7): the baseline is of the model's own effort.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(
+            return_value=sse_response(streamed("Es la 1.4.2.", 10, 5))
+        )
+        assert main(["eval", "--tasks", str(evals), "--repeat", "5", "--save"]) == 0
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(
+            return_value=sse_response(streamed("No lo sé.", 10, 5))
+        )
+        args = ["eval", "--tasks", str(evals), "--repeat", "5", "--effort", "high"]
+
+        assert main(args) == 0
+
+    out = capsys.readouterr().out
+    assert "  · 01-version: 5/5 in the baseline, now 0/5 (p = 0.004)" in out
+    assert "  · effort high: the baseline ran at the model's own effort" in out
+
+
+def test_eval_keeps_a_baseline_only_of_five_runs_or_more(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Deep audit (I13): spec hito 8, decision 3, asks 5 runs of each task.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    evals = battery(workspace / "evals")
+
+    assert main(["eval", "--tasks", str(evals), "--save", "--repeat", "4"]) == 1
+
+    assert "--save keeps a baseline of 5 runs of each task or more" in (
+        capsys.readouterr().err
+    )
+    assert not (evals / "baselines").exists()
+
+
+@respx.mock
+def test_eval_keeps_no_baseline_with_runs_that_ended_in_an_error(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Deep audit (I13): the runs that did not finish would be missing from it.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    respx.post(GO_ENDPOINT).mock(return_value=httpx.Response(401))
+
+    assert main(["eval", "--tasks", str(evals), "--save", "--repeat", "5"]) == 1
+
+    captured = capsys.readouterr()
+    assert "not saved: 5 runs of glm-5.3-flash ended in an error" in captured.err
+    assert not (evals / "baselines").exists()
+    # What ran is kept all the same.
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    assert len(json.loads((folder / "runs.json").read_text())) == 5
+
+
+@pytest.mark.parametrize(
+    ("number", "code"), [(signal.SIGTERM, 143), (signal.SIGHUP, 129)]
+)
+def test_closing_signals_in_eval_keep_the_runs_and_clean_up(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    number: signal.Signals,
+    code: int,
+) -> None:
+    # Deep audit (I6): `kill` or closing the window lost runs.json and left
+    # the copies behind; only Ctrl+C was handled.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    (workspace / "tmp").mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(workspace / "tmp"))
+    evals = battery(workspace / "evals")
+    calls = 0
+
+    def answer(request: httpx.Request) -> respx.MockResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            os.kill(os.getpid(), number)
+        return sse_response(streamed("Es la 1.4.2.", 1000, 10))
+
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(side_effect=answer)
+
+        result = main(["eval", "--tasks", str(evals), "--repeat", "2", "--jobs", "1"])
+
+    assert result == code
+    assert "interrupted: 1 run kept in " in capsys.readouterr().err
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    [kept] = json.loads((folder / "runs.json").read_text())
+    assert (kept["attempt"], kept["outcome"]) == (1, "pass")
+    assert list((workspace / "tmp").iterdir()) == []
+    # The handlers go with the battery: the next signal is not caught.
+    assert signal.getsignal(number) in (signal.SIG_DFL, signal.default_int_handler)
+
+
+def test_a_second_signal_while_the_runs_are_written_does_not_cut_them(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Review of the deep audit: it cancelled the writing of runs.json, and
+    # maha ended in a traceback.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    calls = 0
+    write_runs = bootstrap._write_runs
+
+    def answer(request: httpx.Request) -> respx.MockResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            os.kill(os.getpid(), signal.SIGTERM)
+        return sse_response(streamed("Es la 1.4.2.", 1000, 10))
+
+    def writing(path: Path, runs: Sequence[TaskRun]) -> None:
+        os.kill(os.getpid(), signal.SIGTERM)
+        # Long enough for the loop to handle the signal meanwhile.
+        time.sleep(0.2)
+        write_runs(path, runs)
+
+    monkeypatch.setattr(bootstrap, "_write_runs", writing)
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(side_effect=answer)
+
+        result = main(["eval", "--tasks", str(evals), "--repeat", "2", "--jobs", "1"])
+
+    assert result == 143
+    assert "interrupted: 1 run kept in " in capsys.readouterr().err
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    assert len(json.loads((folder / "runs.json").read_text())) == 1
+
+
+class ClosedPipe(io.StringIO):
+    """A stdout nobody reads any more, as `maha eval | head` after head ends."""
+
+    def write(self, text: str) -> int:
+        raise BrokenPipeError(32, "Broken pipe")
+
+
+@respx.mock
+def test_eval_into_a_closed_pipe_still_keeps_every_run(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Deep audit (I6): the broken pipe escaped from the line of the first
+    # run, and runs.json was lost.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Es la 1.4.2.", 10, 5))
+    )
+    monkeypatch.setattr(sys, "stdout", ClosedPipe())
+
+    main(["eval", "--tasks", str(evals), "--repeat", "2", "--jobs", "1"])
+
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    assert len(json.loads((folder / "runs.json").read_text())) == 2
+
+
+@respx.mock
+def test_p_says_what_the_project_configuration_chose(
+    workspace: Path, stdin: Callable[[str], None], capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Deep audit after hito 9 (M4): a .maha/config.toml can raise the cost
+    # (effort, cache, fallback); maha says it at start.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    (Path.cwd() / ".maha").mkdir()
+    (Path.cwd() / ".maha" / "config.toml").write_text(
+        'effort = "max"\ncache_ttl = "1h"\n'
+    )
+    respx.post(GO_ENDPOINT).mock(return_value=sse_response(streamed("Hola.", 1, 1)))
+    stdin("")
+
+    main(["-p", "Hola"])
+
+    assert (
+        "  [from .maha/config.toml: effort max, cache 1h]\n" in capsys.readouterr().err
+    )
+
+
+@respx.mock
+def test_a_provider_of_anthropics_format_with_its_own_version(
+    workspace: Path, stdin: Callable[[str], None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Deep audit after hito 9 (M10): anthropic_version and cache_ttl reach
+    # the wire through bootstrap, not only the adapter.
+    monkeypatch.setenv("LOCAL_KEY", KEY)
+    write_user_config(
+        workspace,
+        'provider = "local"\nmodel = "claude-x"\n'
+        "[providers.local]\n"
+        'api = "anthropic"\nbase_url = "https://claude.example.test/v1"\n'
+        'api_key_env = "LOCAL_KEY"\nanthropic_version = "2023-06-01"\n',
+    )
+    route = respx.post("https://claude.example.test/v1/messages").mock(
+        return_value=httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                Path(__file__).parent / "fixtures" / "anthropic" / "hello.sse"
+            ).read_bytes(),
+        )
+    )
+    stdin("")
+
+    assert main(["-p", "Hola"]) == 0
+
+    request = route.calls.last.request
+    assert request.headers["anthropic-version"] == "2023-06-01"
+    assert json.loads(request.content)["cache_control"] == {"type": "ephemeral"}

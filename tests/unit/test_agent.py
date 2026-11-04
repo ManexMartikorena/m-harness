@@ -1262,7 +1262,12 @@ async def test_the_time_limit_while_the_model_answers_keeps_nothing_new() -> Non
     # No call to the model ended: 0 steps, as `run_once()` and /trace count
     # them (audit of hito 8).
     assert events[-1] == TurnFinished(
-        reason="timeout", usage=Usage(), tool_calls=0, steps=0, cost=Decimal(0)
+        reason="timeout",
+        usage=Usage(),
+        tool_calls=0,
+        steps=0,
+        cost=Decimal(0),
+        answering=True,
     )
     # Nothing ran: the user writes again, as after Ctrl+C. The half answer
     # is not kept: its mark would say the user cut it.
@@ -1286,24 +1291,21 @@ async def test_the_time_limit_while_a_tool_runs_keeps_the_turn() -> None:
     ]
 
 
-async def test_the_time_limit_while_asking_after_a_run_keeps_the_turn() -> None:
-    fake = FakeModelClient([tool_calls(call("c1")), tool_calls(call("c2"), call("c3"))])
-    # The first call is approved once, the second waits forever.
+async def test_the_time_limit_waits_while_the_person_is_asked() -> None:
+    # Deep audit after hito 9 (B4), decision of the maintainer: the turn's
+    # clock stops while the person decides. Before, it ended the turn with
+    # "timeout" at the question.
+    fake = FakeModelClient([tool_calls(call("c1")), tool_calls(call("c2"))])
+    # The first call is approved once, the second waits for the person.
     effect = FakeTool(permission="effect", requests=[ask(), ask()])
     gate = OnceThenHang()
-
     subject = agent(fake, effect, gate=gate, limits=LIMIT)
-    events = await run(subject)
 
-    turn = events[-1]
-    assert isinstance(turn, TurnFinished)
-    assert (turn.reason, turn.tool_calls, turn.steps) == ("timeout", 1, 2)
+    with pytest.raises(TimeoutError):
+        # Six times the limit, and still waiting for the answer.
+        await asyncio.wait_for(run(subject), 0.3)
+
     assert len(gate.requests) == 2
-    *_, results = subject.messages
-    assert [b.content for b in results.blocks] == [  # type: ignore[union-attr]
-        "error: stopped by the time limit",
-        "error: not run",
-    ]
 
 
 class OnceThenHang(HangingApproval):
@@ -1793,3 +1795,216 @@ async def test_a_denied_call_keeps_the_history_growing_at_the_end() -> None:
     await run(subject, "Déjalo")
 
     assert_only_grows(fake.requests)
+
+
+async def test_a_turn_cut_once_its_answer_is_complete_keeps_it() -> None:
+    # Deep audit after hito 9: closed at ModelCallFinished, the turn lost an
+    # answer the person had already seen, while a half one was kept.
+    subject = agent(FakeModelClient([reply("La respuesta entera.")]))
+
+    async with aclosing(subject.run("Hola")) as events:
+        async for event in events:
+            if isinstance(event, ModelCallFinished):
+                break
+
+    assert subject.messages == (
+        user("Hola"),
+        Message(role="assistant", blocks=[TextBlock(text="La respuesta entera.")]),
+    )
+
+
+async def test_a_turn_cut_after_a_tool_keeps_the_next_answer_too() -> None:
+    echo = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    subject = agent(FakeModelClient([tool_calls(echo), reply("Hecho.")]), FakeTool())
+    finished = 0
+
+    async with aclosing(subject.run("Hola")) as events:
+        async for event in events:
+            if isinstance(event, ModelCallFinished):
+                finished += 1
+                if finished == 2:
+                    break
+
+    assert subject.messages[-1] == Message(
+        role="assistant", blocks=[TextBlock(text="Hecho.")]
+    )
+
+
+async def test_a_cut_right_after_new_calls_gives_them_their_own_results() -> None:
+    first = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    second = ToolCallBlock(id="c2", name="echo", arguments='{"text": "y"}')
+    third = ToolCallBlock(id="c3", name="echo", arguments='{"text": "z"}')
+    subject = agent(
+        FakeModelClient([tool_calls(first), tool_calls(second, third)]), FakeTool()
+    )
+    finished = 0
+
+    async with aclosing(subject.run("Hola")) as events:
+        async for event in events:
+            if isinstance(event, ModelCallFinished):
+                finished += 1
+                if finished == 2:
+                    break
+
+    last = subject.messages[-1]
+    assert last.role == "tool"
+    assert [b.call_id for b in last.blocks if isinstance(b, ToolResultBlock)] == [
+        "c2",
+        "c3",
+    ]
+
+
+class BrokenGate:
+    """A gate that fails while it decides."""
+
+    async def decide(self, request: ApprovalRequest) -> Decision:
+        raise RuntimeError("the terminal broke")
+
+
+async def test_a_gate_that_breaks_never_runs_the_call() -> None:
+    # Deep audit after hito 9 (B6): it fails closed, now with a test.
+    write = FakeTool("write", permission="effect", requests=[ask(tool="write")])
+    call = ToolCallBlock(id="c1", name="write", arguments='{"text": "x"}')
+    subject = agent(FakeModelClient([tool_calls(call)]), write, gate=BrokenGate())
+
+    with pytest.raises(RuntimeError, match="the terminal broke"):
+        await run(subject)
+
+    assert write.calls == []
+    assert subject.messages == ()
+
+
+# Why the model stopped (deep audit after hito 9, B1).
+
+
+async def test_an_answer_cut_by_the_output_limit_says_so() -> None:
+    subject = agent(
+        FakeModelClient([reply("La mitad de una resp", stop_reason="max_tokens")])
+    )
+
+    events = await run(subject)
+
+    assert isinstance(events[-1], TurnFinished)
+    assert events[-1].reason == "max_output"
+    assert subject.messages[-1].text == "La mitad de una resp"
+
+
+async def test_a_call_cut_by_the_output_limit_is_told_what_happened() -> None:
+    # Its error said "not a valid JSON object", and the model wrote the same
+    # cut call again until the step limit.
+    whole = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    cut = ToolCallBlock(id="c2", name="echo", arguments='{"text": "ab')
+    answer = tool_calls(whole, cut).model_copy(update={"stop_reason": "max_tokens"})
+    tool = FakeTool()
+    subject = agent(FakeModelClient([answer, reply("Hecho.")]), tool)
+
+    events = await run(subject)
+
+    results = [e.result for e in events if isinstance(e, ToolFinished)]
+    assert [r.is_error for r in results] == [False, True]
+    assert "output limit" in results[1].content
+    assert len(tool.calls) == 1
+    assert isinstance(events[-1], TurnFinished)
+    assert events[-1].reason == "end_turn"
+
+
+async def test_the_last_call_cut_by_the_output_limit_never_runs() -> None:
+    # Review of the deep audit: a call cut before any argument came arrives
+    # as "{}", whole as JSON, and ran with defaults the model never chose.
+    first = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    empty = ToolCallBlock(id="c2", name="echo", arguments="{}")
+    answer = tool_calls(first, empty).model_copy(update={"stop_reason": "max_tokens"})
+    tool = FakeTool()
+    subject = agent(FakeModelClient([answer, reply("Hecho.")]), tool)
+
+    events = await run(subject)
+
+    results = [e.result for e in events if isinstance(e, ToolFinished)]
+    assert [r.is_error for r in results] == [False, True]
+    assert "output limit" in results[1].content
+    assert len(tool.calls) == 1
+
+
+async def test_a_full_context_window_ends_the_turn_without_running_calls() -> None:
+    # Review of the deep audit: taken for the output limit, the model was
+    # told to write the call again in parts, which cannot fit either.
+    cut = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    answer = tool_calls(cut).model_copy(update={"stop_reason": "context_full"})
+    tool = FakeTool()
+    subject = agent(FakeModelClient([answer]), tool)
+
+    events = await run(subject)
+
+    assert isinstance(events[-1], TurnFinished)
+    assert events[-1].reason == "context_full"
+    assert tool.calls == []
+    [result] = subject.messages[-1].blocks
+    assert isinstance(result, ToolResultBlock)
+    assert result.is_error
+    assert "context window" in result.content
+
+
+async def test_a_refusal_ends_the_turn_as_refused() -> None:
+    subject = agent(FakeModelClient([reply("No puedo.", stop_reason="content_filter")]))
+
+    events = await run(subject)
+
+    assert isinstance(events[-1], TurnFinished)
+    assert events[-1].reason == "refused"
+
+
+class SlowPerson:
+    """A person who takes a while to read the question, then allows it."""
+
+    async def decide(self, request: ApprovalRequest) -> Decision:
+        await asyncio.sleep(0.5)
+        return "once"
+
+
+async def test_the_turn_clock_stops_while_the_person_decides() -> None:
+    # Deep audit after hito 9 (B4), decision of the maintainer: reading a
+    # long diff must not cost the turn.
+    write = FakeTool("write", permission="effect", requests=[ask(tool="write")])
+    call = ToolCallBlock(id="c1", name="write", arguments='{"text": "x"}')
+    subject = agent(
+        FakeModelClient([tool_calls(call), reply("Hecho.")]),
+        write,
+        gate=SlowPerson(),
+        limits=TurnLimits(timeout=0.2),
+    )
+
+    events = await run(subject)
+
+    assert isinstance(events[-1], TurnFinished)
+    assert events[-1].reason == "end_turn"
+    assert len(write.calls) == 1
+
+
+async def test_an_absurd_count_of_tokens_gives_an_unknown_cost() -> None:
+    # Deep audit after hito 9 (S9): a provider that reports 10**19 tokens
+    # gave a cost past what Usd takes, and the turn failed validating it.
+    # Plain integers: nothing is allocated.
+    absurd = Usage(input_tokens=10**19)
+    catalog = MemoryCatalog([priced(FAKE_MODEL, "1", "1")])
+    subject = agent(FakeModelClient([reply("Hola.", usage=absurd)]), catalog=catalog)
+
+    events = await run(subject)
+
+    assert isinstance(events[-1], TurnFinished)
+    assert (events[-1].reason, events[-1].cost) == ("end_turn", None)
+
+
+async def test_calls_whose_costs_add_up_past_any_amount_give_an_unknown_cost() -> None:
+    # Review of the deep audit: each call was within bounds, their sum was
+    # not, and the turn failed validating it.
+    large = Usage(input_tokens=9 * 10**17)
+    catalog = MemoryCatalog([priced(FAKE_MODEL, "1", "1")])
+    fake = FakeModelClient(
+        [tool_calls(call("c1"), usage=large), reply("Hola.", usage=large)]
+    )
+    subject = agent(fake, catalog=catalog)
+
+    events = await run(subject)
+
+    assert isinstance(events[-1], TurnFinished)
+    assert (events[-1].reason, events[-1].cost) == ("end_turn", None)

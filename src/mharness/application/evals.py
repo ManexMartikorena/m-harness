@@ -3,8 +3,10 @@ several at once; then check each run (spec hito 8, §1.5 to §1.9).
 
 A run goes through `run_once()`, as `maha -p` does. Its check is run by this
 code, never by the model: the answer, a file of the copy, and a command in
-the copy. A run the provider broke (`reason == "error"`) is an `error`, not
-a failure: it says nothing about the agent.
+the copy. A run the provider broke (429, 5xx, network, credentials) is an
+`error`, not a failure: it says nothing about the agent. A request the
+provider rejected, or an answer maha cannot read, is a failure: it may be a
+bug of maha (deep audit, I2).
 """
 
 import asyncio
@@ -15,7 +17,7 @@ from typing import Literal
 
 from mharness.application.headless import RunResult, TurnBroke, run_once
 from mharness.application.sessions import Conversation
-from mharness.domain.evals import Check, EvalError, Outcome, Task, TaskRun
+from mharness.domain.evals import EvalError, Outcome, Task, TaskRun, check_env
 from mharness.ports.commands import CommandRunner
 from mharness.ports.evals import EvalSuite
 
@@ -58,7 +60,8 @@ class Evaluator:
         self._suite = suite
         self._open_run = open_run
         self._runner = runner
-        # The variables of the check command, as for any command of maha.
+        # The variables maha's commands get; a check keeps only a few of
+        # them (`check_env`, deep audit, I5).
         self._env = env
         # Each run as it ends, its last try: a retry replaces the error it
         # repeats (review of the audit of hito 8).
@@ -92,9 +95,10 @@ class Evaluator:
             async with limit:
                 run = await self._safe(task, model, attempt)
             self._ended(run, on_run)
-            # Only what the provider broke: a bug of maha comes back, and
-            # the retry is paid (review of the audit of hito 8).
-            if run.outcome == "error" and run.reason != "internal" and retry_errors:
+            # Only what may pass if repeated: a bug of maha or a rejected
+            # key comes back, and the retry is paid (review of the audit of
+            # hito 8; deep audit, I2).
+            if run.outcome == "error" and run.reason == "provider" and retry_errors:
                 async with limit:
                     run = await self._safe(task, model, attempt)
                 self._ended(run, on_run)
@@ -146,9 +150,10 @@ class Evaluator:
                     task, model, attempt, spent, "error", spent.error, reason="internal"
                 )
             if result.reason == "error":
-                return _run(task, model, attempt, result, "error", result.error)
+                return _failed(task, model, attempt, result)
             try:
-                detail = await self.check(task.check, path, result.text)
+                restored = await self._suite.restore_tests(task, path)
+                detail = await self._checked(task, path, result.text)
             except Exception as exc:
                 # With what the run spent, already paid (review of the
                 # audit of hito 8).
@@ -157,11 +162,19 @@ class Evaluator:
                     task, model, attempt, result, "error", broke, reason="internal"
                 )
         outcome: Outcome = "pass" if detail is None else "fail"
-        return _run(task, model, attempt, result, outcome, detail)
+        run = _run(task, model, attempt, result, outcome, detail)
+        return run.model_copy(update={"restored": restored})
 
-    async def check(self, check: Check, path: Path, answer: str) -> str | None:
-        """Why a run, with the copy at `path` and its final `answer`, does
-        not pass `check`; None if it passes."""
+    async def check(self, task: Task, path: Path, answer: str) -> str | None:
+        """Why a run of `task`, with the copy at `path` and its final
+        `answer`, does not pass its check; None if it passes. The test
+        files of the fixture are put back first: the check runs the
+        fixture's tests, not the agent's (deep audit, I1)."""
+        await self._suite.restore_tests(task, path)
+        return await self._checked(task, path, answer)
+
+    async def _checked(self, task: Task, path: Path, answer: str) -> str | None:
+        check = task.check
         if (why := check.answer_fails(answer)) is not None:
             return why
         if check.file is not None:
@@ -171,15 +184,41 @@ class Evaluator:
             if (why := check.file_fails(text)) is not None:
                 return why
         if check.command is not None:
+            # Code the model wrote: an empty HOME, and no XDG folder nor
+            # credential, until the sandbox of hito 15 (deep audit, I5).
+            home = await self._suite.home(path)
             done = await self._runner.run(
-                check.command, cwd=path, time_limit=CHECK_TIME_LIMIT, env=self._env
+                check.command,
+                cwd=path,
+                time_limit=CHECK_TIME_LIMIT,
+                env=check_env(self._env, str(home)),
             )
             if done.timed_out:
                 return f"the check took more than {CHECK_TIME_LIMIT:.0f} s"
+            output = done.output.strip()[-CHECK_OUTPUT_CHARS:]
+            if done.exit_code is None:
+                # Killed by a signal, not by its time limit (deep audit, I9).
+                return f"the check was killed before it ended:\n{output}"
             if done.exit_code != 0:
-                output = done.output.strip()[-CHECK_OUTPUT_CHARS:]
                 return f"the check exited with {done.exit_code}:\n{output}"
         return None
+
+
+# What a failed call says, when it is maha's own: a failure.
+_MAHAS = {
+    "request": "the provider rejected the request of maha",
+    "response": "maha could not read the answer",
+}
+
+
+def _failed(task: Task, model: str, attempt: int, result: RunResult) -> TaskRun:
+    """A run whose call to the model failed: an `error` if the provider
+    broke it, a `fail` if maha did (deep audit, I2)."""
+    failure = result.failure or "provider"
+    if failure in _MAHAS:
+        detail = f"{_MAHAS[failure]}: {result.error}"
+        return _run(task, model, attempt, result, "fail", detail, reason=failure)
+    return _run(task, model, attempt, result, "error", result.error, reason=failure)
 
 
 def _run(

@@ -11,6 +11,7 @@ from mharness.domain.evals import (
     TASK_LIMITS,
     Baseline,
     Check,
+    Finding,
     Outcome,
     Stats,
     Task,
@@ -18,6 +19,8 @@ from mharness.domain.evals import (
     by_task,
     combine,
     compare,
+    fisher_worse,
+    is_test_file,
     stats,
 )
 
@@ -138,6 +141,15 @@ def test_a_run_without_cost_makes_the_mean_unknown() -> None:
     assert stats([run(), run(cost=None)]).cost is None
 
 
+def test_a_mean_below_any_amount_is_rounded() -> None:
+    # Review of the deep audit: a mean of 3.3E-13 is no amount in USD, and
+    # building the report failed.
+    runs = [run(cost="1E-12"), run(cost="0"), run(cost="0")]
+
+    assert stats(runs).cost == 0
+    assert combine([stats(runs), stats([run(cost="0")])]).cost == 0
+
+
 def test_only_errors_have_no_success_rate() -> None:
     assert stats([run(outcome="error")]).success is None
 
@@ -156,56 +168,142 @@ def test_combine_weights_each_task_by_its_finished_runs() -> None:
     assert total.cost == Decimal("0.001")
 
 
-# Comparison with the baseline (spec hito 8, §1.8).
+# Comparison with the baseline (spec hito 8, §1.8; deep audit, I4: a
+# regression is what the noise of 5 runs hardly explains).
+
+
+def runs_of(task: str, passes: int, fails: int = 0, **kwargs: object) -> list[TaskRun]:
+    return [run(task, **kwargs)] * passes + [run(task, "fail", **kwargs)] * fails  # type: ignore[arg-type]
+
+
+def regressions(found: list[Finding]) -> list[str]:
+    return [f.text for f in found if f.regression]
+
+
+def notes(found: list[Finding]) -> list[str]:
+    return [f.text for f in found if not f.regression]
+
+
+@pytest.mark.parametrize(
+    ("before", "now", "p"),
+    [
+        ((5, 5), (4, 5), 0.5),
+        ((5, 5), (1, 5), 6 / 252),
+        ((5, 5), (5, 5), 1.0),
+        ((94, 100), (86, 100), 0.0485),
+        ((94, 100), (87, 100), 0.0732),
+    ],
+)
+def test_fisher_exact_one_sided_with_known_values(
+    before: tuple[int, int], now: tuple[int, int], p: float
+) -> None:
+    assert fisher_worse(*before, *now) == pytest.approx(p, abs=1e-4)
+
+
+def test_fisher_is_one_sided_a_rise_is_never_worse() -> None:
+    assert fisher_worse(1, 5, 5, 5) == 1.0
 
 
 def test_no_regression_when_all_stays_the_same() -> None:
-    tasks = {"01": stats([run()] * 5), "02": stats([run("02")] * 5)}
+    now = runs_of("01", 5) + runs_of("02", 5)
 
-    assert compare(tasks, baseline(tasks)) == []
+    assert compare(now, baseline(by_task(now))) == []
 
 
-def test_a_task_that_always_passed_and_now_fails_is_a_regression() -> None:
-    before = {"01": stats([run()] * 5)}
-    now = {"01": stats([run()] * 4 + [run(outcome="fail")])}
+def test_one_failure_in_five_is_noise_not_a_regression() -> None:
+    # 5/5 -> 4/5: p = 0.5. The old rule marked it.
+    before = by_task(runs_of("01", 5))
+
+    found = compare(runs_of("01", 4, 1), baseline(before))
+
+    assert regressions(found) == []
+    assert notes(found) == [
+        "01: 5/5 in the baseline, now 4/5 (p = 0.5, within the noise)",
+        "success rate: 100% in the baseline, now 80% (p = 0.5, within the noise)",
+    ]
+
+
+def test_a_task_that_drops_far_is_a_regression_with_its_p() -> None:
+    # 5/5 -> 1/5: p = 6/252 ≈ 0.024 < 0.05.
+    before = by_task(runs_of("01", 5) + runs_of("02", 5))
+    now = runs_of("01", 1, 4) + runs_of("02", 5)
 
     found = compare(now, baseline(before))
 
-    assert "01: passed every time in the baseline, now 4/5" in found
-    assert "success rate: 100% in the baseline, now 80%" in found
+    # The total, 10/10 -> 6/10: p ≈ 0.043.
+    assert regressions(found) == [
+        "01: 5/5 in the baseline, now 1/5 (p = 0.024)",
+        "success rate: 100% in the baseline, now 60% (p = 0.043)",
+    ]
+    assert notes(found) == []
 
 
-def test_a_task_that_already_failed_sometimes_only_counts_in_the_total() -> None:
-    before = {"01": stats([run()] * 3 + [run(outcome="fail")] * 2)}
-    now = {"01": stats([run()] * 3 + [run(outcome="fail")] * 2)}
+def test_the_total_is_judged_on_the_pooled_runs() -> None:
+    # 94/100 -> 86/100 is just a regression; 94/100 -> 87/100 is not.
+    before = by_task(runs_of("01", 94, 6))
 
-    assert compare(now, baseline(before)) == []
+    assert regressions(compare(runs_of("01", 86, 14), baseline(before))) == [
+        "01: 94/100 in the baseline, now 86/100 (p = 0.049)",
+        "success rate: 94% in the baseline, now 86% (p = 0.049)",
+    ]
+    assert regressions(compare(runs_of("01", 87, 13), baseline(before))) == []
 
 
 def test_twenty_percent_more_cost_or_steps_is_a_regression() -> None:
-    before = {"01": stats([run(steps=10, cost="0.0010")] * 5)}
-    within = {"01": stats([run(steps=12, cost="0.0012")] * 5)}
-    beyond = {"01": stats([run(steps=13, cost="0.0013")] * 5)}
+    # The same in every run: no noise, the bound is the mean itself.
+    before = by_task(runs_of("01", 5, steps=10, cost="0.0010"))
+    within = runs_of("01", 5, steps=12, cost="0.0012")
+    beyond = runs_of("01", 5, steps=13, cost="0.0013")
 
     assert compare(within, baseline(before)) == []
-    assert compare(beyond, baseline(before)) == [
-        "cost per run: +30% ($0.0010 → $0.0013)",
-        "steps per run: +30% (10.0 → 13.0)",
+    assert regressions(compare(beyond, baseline(before))) == [
+        "cost per run: +30% ($0.0010 → $0.0013, at least $0.0013)",
+        "steps per run: +30% (10.0 → 13.0, at least 13.0)",
     ]
+
+
+def test_more_steps_within_the_noise_are_said_but_not_marked() -> None:
+    # Mean 13 (+30 %), but runs of 6, 13 and 20: the lower bound of 95 %,
+    # 13 - 1.645 * 7 / sqrt(5) ≈ 7.9, is not 20 % over 10.
+    before = by_task(runs_of("01", 5, steps=10))
+    now = [run("01", steps=6)] * 2 + [run("01", steps=20)] * 2 + [run("01", steps=13)]
+
+    found = compare(now, baseline(before))
+
+    assert regressions(found) == []
+    assert notes(found) == [
+        "steps per run: +30% (10.0 → 13.0, at least 7.9: within the noise)"
+    ]
+
+
+def test_with_one_run_of_a_task_more_steps_are_not_judged() -> None:
+    before = by_task(runs_of("01", 5, steps=10))
+
+    found = compare([run("01", steps=13)], baseline(before))
+
+    assert regressions(found) == []
+    assert notes(found) == [
+        "steps per run: +30% (10.0 → 13.0; not judged: needs 2 runs of each task)"
+    ]
+
+
+def test_a_task_that_already_failed_sometimes_and_stays_is_no_regression() -> None:
+    now = runs_of("01", 3, 2)
+
+    assert compare(now, baseline(by_task(now))) == []
 
 
 def test_only_the_tasks_both_have_are_compared() -> None:
     # A run of the train split against a full baseline: the validation
     # task that failed in the baseline does not lower its success rate.
-    before = {"01": stats([run()] * 5), "09": stats([run("09", "fail")] * 5)}
-    now = {"01": stats([run()] * 5)}
+    before = by_task(runs_of("01", 5) + runs_of("09", 0, 5))
 
-    assert compare(now, baseline(before)) == []
+    assert compare(runs_of("01", 5), baseline(before)) == []
 
 
 def test_provider_errors_are_not_failures() -> None:
-    before = {"01": stats([run()] * 5)}
-    now = {"01": stats([run()] * 3 + [run(outcome="error")] * 2)}
+    before = by_task(runs_of("01", 5))
+    now = runs_of("01", 3) + [run(outcome="error")] * 2
 
     assert compare(now, baseline(before)) == []
 
@@ -213,22 +311,54 @@ def test_provider_errors_are_not_failures() -> None:
 def test_a_task_with_no_run_finished_is_a_regression() -> None:
     # Audit of hito 8: a change that makes the provider refuse every call
     # (a broken tool schema) left nothing to compare and passed the gate.
-    before = {"01": stats([run()] * 5), "02": stats([run("02")] * 5)}
-    now = {
-        "01": stats([run(outcome="error")] * 5),
-        "02": stats([run("02")] * 5),
-    }
+    before = by_task(runs_of("01", 5) + runs_of("02", 5))
+    now = [run(outcome="error")] * 5 + runs_of("02", 5)
 
-    assert compare(now, baseline(before)) == [
+    assert regressions(compare(now, baseline(before))) == [
         "01: no run finished, every one ended in an error (5/5)"
     ]
 
 
 def test_a_cost_that_cannot_be_compared_is_said() -> None:
     # Audit of hito 8: it was skipped in silence.
-    before = {"01": stats([run()] * 5)}
-    now = {"01": stats([run(cost=None)] * 5)}
+    before = by_task(runs_of("01", 5))
 
-    assert compare(now, baseline(before)) == [
+    assert regressions(compare(runs_of("01", 5, cost=None), baseline(before))) == [
         "cost per run: unknown now (a run had no price), $0.0010 in the baseline"
     ]
+
+
+# The fixture's tests (deep audit, I1).
+
+
+@pytest.mark.parametrize(
+    ("path", "test"),
+    [
+        ("tests/test_pedidos.py", True),
+        ("tests/__init__.py", True),
+        ("test_texto.py", True),
+        ("pkg/thing_test.py", True),
+        ("conftest.py", True),
+        ("src/tienda/pedidos.py", False),
+        ("testing.py", False),
+        ("README.md", False),
+    ],
+)
+def test_which_files_of_a_fixture_are_tests(path: str, test: bool) -> None:
+    assert is_test_file(path) is test
+
+
+def test_own_tests_must_be_tests() -> None:
+    with pytest.raises(ValidationError, match="not a test file"):
+        Check(command="true", own_tests=["inventory.py"])
+
+
+def test_a_task_added_after_the_baseline_is_said_to_be_left_out() -> None:
+    # Deep audit (I13): it was left out of the comparison in silence.
+    before = by_task(runs_of("01", 5))
+    now = runs_of("01", 5) + runs_of("21", 0, 5) + runs_of("22", 5)
+
+    found = compare(now, baseline(before))
+
+    assert regressions(found) == []
+    assert notes(found) == ["not in the baseline, not compared: 21, 22"]

@@ -2,17 +2,28 @@
 (spec mejora-2026-10-23-deuda-hito-5, E6).
 
 Each `.gitignore` applies to its folder and below. Its patterns become
-regular expressions over the path relative to that folder. The last rule
-that matches decides; a deeper file is added later, so it wins. Case
-matters, as in git on Linux.
+wildcard tokens over the path relative to that folder, matched in linear
+time: a regular expression could freeze maha on a hostile rule (deep audit
+after hito 9, H1); character classes alone are small regular expressions.
+The last rule that matches decides, and a deeper file wins. Case matters,
+as in git on Linux.
 """
 
 import re
 from dataclasses import dataclass
 from pathlib import PurePath
 
-# Any number of folders, also none: "**/" at the start or "/**/" inside.
-_ANY_FOLDERS = "(?:.*/)?"
+from mharness.domain.wildcard import (
+    AnyChars,
+    AnyFolders,
+    CharClass,
+    Literal,
+    OneChar,
+    Star,
+    Token,
+    matches,
+)
+
 # The POSIX classes of "[[:name:]]", in ASCII, as git's wildmatch.
 _POSIX = {
     "alnum": "a-zA-Z0-9",
@@ -32,7 +43,7 @@ _POSIX = {
 
 @dataclass(frozen=True)
 class _Rule:
-    regex: re.Pattern[str]
+    tokens: tuple[Token, ...]
     negated: bool
     dir_only: bool
 
@@ -41,25 +52,28 @@ class GitIgnore:
     """The rules of every `.gitignore` read so far."""
 
     def __init__(self) -> None:
-        self._sets: list[tuple[PurePath, tuple[_Rule, ...]]] = []
+        # By folder: a path looks only at the files of the folders above it,
+        # not at every file read so far (review of the deep audit).
+        self._sets: dict[PurePath, tuple[_Rule, ...]] = {}
 
     def add(self, base: PurePath, text: str) -> None:
-        """The rules of the `.gitignore` of folder `base`; added after the
-        files of the folders above it."""
+        """The rules of the `.gitignore` of folder `base`."""
         rules = tuple(rule for line in text.splitlines() if (rule := _parse(line)))
         if rules:
-            self._sets.append((base, rules))
+            self._sets[base] = self._sets.get(base, ()) + rules
 
     def ignores(self, path: PurePath, *, is_dir: bool) -> bool:
         ignored = False
-        for base, rules in self._sets:
-            if path == base or not path.is_relative_to(base):
+        # From the top folder down: a deeper file wins.
+        for base in reversed(path.parents):
+            rules = self._sets.get(base)
+            if rules is None:
                 continue
             relative = path.relative_to(base).as_posix()
             for rule in rules:
                 if rule.dir_only and not is_dir:
                     continue
-                if rule.regex.fullmatch(relative):
+                if matches(rule.tokens, relative):
                     ignored = not rule.negated
         return ignored
 
@@ -86,8 +100,8 @@ def _parse(line: str) -> _Rule | None:
     if body is None:
         # git matches nothing with it.
         return None
-    regex = body if anchored else _ANY_FOLDERS + body
-    return _Rule(re.compile(regex, re.DOTALL), negated, dir_only)
+    tokens = body if anchored else (AnyFolders(), *body)
+    return _Rule(tokens, negated, dir_only)
 
 
 def _trim(line: str) -> str:
@@ -107,45 +121,49 @@ def _trim(line: str) -> str:
     return line[:kept]
 
 
-def _translate(pattern: str) -> str | None:
-    """The regular expression of a pattern: "*", "?", "[...]", "**" and "\\".
+def _translate(pattern: str) -> tuple[Token, ...] | None:
+    """The tokens of a pattern: "*", "?", "[...]", "**" and "\\".
     None if git matches nothing with it: a "[" that never closes, or a "\\"
     at the end (B7)."""
-    out = []
+    out: list[Token] = []
     i = 0
     while i < len(pattern):
         char = pattern[i]
         if pattern.startswith("**", i) and (i == 0 or pattern[i - 1] == "/"):
-            if pattern[i + 2 : i + 3] == "/":
-                out.append(_ANY_FOLDERS)
-                i += 3
+            # Two stars or more, as git's wildmatch: "***/" is "**/".
+            end = i
+            while pattern.startswith("*", end):
+                end += 1
+            if pattern[end : end + 1] == "/":
+                out.append(AnyFolders())
+                i = end + 1
                 continue
-            if i + 2 == len(pattern):
-                out.append(".*")
-                i += 2
+            if end == len(pattern):
+                out.append(AnyChars())
+                i = end
                 continue
         if char == "*":
-            out.append("[^/]*")
+            out.append(Star())
             # Any other "**" is a "*".
             while pattern.startswith("*", i + 1):
                 i += 1
         elif char == "?":
-            out.append("[^/]")
+            out.append(OneChar())
         elif char == "[":
             found = _class(pattern, i)
             if found is None:
                 return None
             regex, i = found
-            out.append(regex)
+            out.append(CharClass(re.compile(regex, re.DOTALL)))
         elif char == "\\":
             if i + 1 == len(pattern):
                 return None
             i += 1
-            out.append(re.escape(pattern[i]))
+            out.append(Literal(pattern[i]))
         else:
-            out.append(re.escape(char))
+            out.append(Literal(char))
         i += 1
-    return "".join(out)
+    return tuple(out)
 
 
 def _class(pattern: str, start: int) -> tuple[str, int] | None:

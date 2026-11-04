@@ -1,7 +1,8 @@
 """What a model sends while it answers, piece by piece (DESIGN §5).
 
 Hito 3 adds `TextDelta` and `MessageEnd` (spec hito 3, §1.4); hito 4,
-`ToolCallDelta` (spec hito 4, §1.3).
+`ToolCallDelta` (spec hito 4, §1.3); hito 9, `ReasoningDelta` and the block
+of a `TextDelta` (spec hito 9, §1.5).
 """
 
 from typing import Literal

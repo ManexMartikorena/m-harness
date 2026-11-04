@@ -156,6 +156,22 @@ def test_prices_reject_a_negative_price() -> None:
         Prices(input=Decimal("-0.15"), output=Decimal("0.50"), checked=CHECKED)
 
 
+@pytest.mark.parametrize("price", ["1E-7", "1000001", "1E+50"])
+def test_prices_reject_an_absurd_price(price: str) -> None:
+    # A call at them would cost an amount no session can hold (audit after
+    # hito 9, S4).
+    with pytest.raises(ValidationError):
+        Prices(input=Decimal(price), output=Decimal("0.50"), checked=CHECKED)
+    with pytest.raises(ValidationError):
+        Tier(above=1, input=Decimal(1), output=Decimal(1), cache_read=Decimal(price))
+
+
+def test_the_cheapest_price_of_one_token_is_an_amount() -> None:
+    prices = Prices(input=Decimal("1E-6"), output=Decimal(0), checked=CHECKED)
+
+    assert cost(Usage(input_tokens=1), prices) == Decimal("1E-12")
+
+
 def test_model_info_defaults() -> None:
     info = ModelInfo(provider="opencode-go", model="glm-5.3-flash")
 

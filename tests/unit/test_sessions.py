@@ -23,6 +23,7 @@ from mharness.domain.approval import ApprovalRequest
 from mharness.domain.catalog import ModelInfo, Prices
 from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta
+from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import (
     Message,
     ReasoningBlock,
@@ -90,6 +91,7 @@ class World:
         retry: RetryPolicy = NO_RETRIES,
         fallback: str | None = None,
         effort: Effort | None = None,
+        limits: TurnLimits | None = None,
     ) -> None:
         self.gate = gate or FakeApproval()
         self.traces = traces or MemoryTraceSink()
@@ -111,6 +113,7 @@ class World:
                 retry=retry,
                 sleep=no_wait,
                 fallback=fallback,
+                limits=limits or TurnLimits(),
             )
 
         self.sessions = Sessions(
@@ -265,7 +268,7 @@ async def test_switching_the_model_is_saved() -> None:
     await turn(conversation, "B")
 
     assert conversation.model == "kimi-k3"
-    assert entries(store)[3] == ModelEntry(model="kimi-k3")
+    assert entries(store)[3] == ModelEntry(model="kimi-k3", provider="opencode-go")
     assert fake.requests[1].model == "kimi-k3"
 
 
@@ -280,7 +283,7 @@ async def test_switching_the_model_before_any_turn_is_saved_in_order() -> None:
     await turn(conversation, "A")
 
     assert store.sessions[FIRST].header.model == "glm-5.3-flash"
-    assert entries(store)[0] == ModelEntry(model="kimi-k3")
+    assert entries(store)[0] == ModelEntry(model="kimi-k3", provider="opencode-go")
 
 
 def kinds(store: MemorySessionStore) -> list[str]:
@@ -394,6 +397,31 @@ async def test_resume_from_another_provider_uses_the_configured_model() -> None:
 
     assert resumed.conversation.model == "llama"
     assert resumed.fallback_from == "glm-5.3-flash"
+
+
+async def test_a_model_chosen_by_another_provider_is_only_that_providers() -> None:
+    # Audit after hito 9, S2: the model of another provider written in the
+    # file never reaches the API of the session's own.
+    store = MemorySessionStore()
+    session_id = await saved(store)
+    other = World(store, FakeModelClient([]), provider="anthropic", model="claude-y")
+    opened = await other.sessions.open(Start(session=session_id, model="claude-x"))
+    await opened.conversation.close()
+
+    assert entries(store, session_id)[-1] == ModelEntry(
+        model="claude-x", provider="anthropic"
+    )
+    own = World(store, FakeModelClient([]), tokens=["9999"])
+    resumed = await own.sessions.resume(session_id, current=await own.sessions.start())
+    await resumed.conversation.close()
+    assert resumed.conversation.model == "glm-5.3-flash"
+    assert resumed.fallback_from is None
+    # The other provider gets back the one it chose.
+    again = World(store, FakeModelClient([]), provider="anthropic", model="claude-y")
+    back = await again.sessions.resume(session_id, current=await again.sessions.start())
+    await back.conversation.close()
+    assert back.conversation.model == "claude-x"
+    assert back.fallback_from == "glm-5.3-flash"
 
 
 async def test_resume_from_another_directory_says_where_it_was() -> None:
@@ -568,7 +596,9 @@ async def test_open_a_session_with_another_model_records_the_change() -> None:
     await opened.conversation.close()
 
     assert opened.conversation.model == "kimi-k2.7-code"
-    assert entries(store, session)[-1] == ModelEntry(model="kimi-k2.7-code")
+    assert entries(store, session)[-1] == ModelEntry(
+        model="kimi-k2.7-code", provider="opencode-go"
+    )
 
 
 async def test_open_a_session_with_its_own_model_changes_nothing() -> None:
@@ -829,6 +859,21 @@ async def test_the_conversation_adds_up_the_cost_of_its_turns() -> None:
 
     assert conversation.cost == Decimal(2)
     assert conversation.uncosted_turns == 0
+
+
+async def test_a_session_cost_past_any_amount_counts_the_turn_as_unknown() -> None:
+    # Review of the deep audit: the sum of two turns within bounds could
+    # not be saved nor exported.
+    large = Usage(input_tokens=9 * 10**17)
+    store = MemorySessionStore()
+    fake = FakeModelClient([reply("Uno", usage=large), reply("Dos", usage=large)])
+    conversation = await World(store, fake, catalog=PRICED).sessions.start()
+
+    await turn(conversation, "A")
+    await turn(conversation, "B")
+
+    assert conversation.cost == Decimal("9E+11")
+    assert conversation.uncosted_turns == 1
 
 
 async def test_a_resumed_session_goes_on_from_its_saved_cost() -> None:
@@ -1312,6 +1357,8 @@ async def test_delete_removes_a_trace_left_without_its_session() -> None:
     traces = MemoryTraceSink()
     log = await traces.open(FIRST, new=True)
     await log.write(TraceRecord(at=NOW, session=FIRST, event=TurnStarted(text="A")))
+    # Its maha is gone.
+    await log.close()
     world = World(
         MemorySessionStore(), FakeModelClient([]), traces=traces, tokens=["b01c"]
     )
@@ -1320,6 +1367,26 @@ async def test_delete_removes_a_trace_left_without_its_session() -> None:
     await world.sessions.delete(FIRST, current=current)
 
     assert FIRST not in traces.traces
+
+
+async def test_a_session_in_its_first_turn_in_another_maha_is_not_deleted() -> None:
+    # Audit after hito 9, S3: it has a trace and no session file yet.
+    store = MemorySessionStore()
+    traces = MemoryTraceSink()
+    fake = FakeModelClient([[HANG]])
+    busy = World(store, fake, traces=traces)
+    conversation = await busy.sessions.start()
+    running = asyncio.create_task(turn(conversation, "A"))
+    await until(lambda: "turn_started" in traces.events(FIRST))
+    world = World(store, FakeModelClient([]), traces=traces, tokens=["b01c"])
+
+    with pytest.raises(SessionInUse, match=f"^session {FIRST} is open in another"):
+        await world.sessions.delete(FIRST)
+    assert "turn_started" in traces.events(FIRST)
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    await conversation.close()
 
 
 async def test_delete_of_an_id_with_nothing_is_not_found() -> None:

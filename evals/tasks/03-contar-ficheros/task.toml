@@ -3,4 +3,7 @@ instruction = "¿Cuántos ficheros .py hay dentro de src/, contando las subcarpe
 fixture = "tienda"
 
 [check]
-answer_matches = ['\b6\b']
+# El primer número de la respuesta tiene que ser el 6: un 6 cualquiera no
+# vale (auditoría profunda, I10). Después puede haber otros, como una
+# lista numerada de los ficheros o `__init__.py` (evals del 2026-11-04).
+answer_matches = ['^\D*6(?!\d)']

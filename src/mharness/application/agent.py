@@ -10,7 +10,7 @@ import json
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import aclosing
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -27,6 +27,7 @@ from mharness.domain.agent_events import (
     ModelRetry,
     ToolCallProposed,
     ToolFinished,
+    TurnEnd,
     TurnFinished,
     TurnStarted,
 )
@@ -36,7 +37,14 @@ from mharness.domain.errors import RetryableModelError
 from mharness.domain.events import ModelEvent, TextDelta
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
-from mharness.domain.model import Effort, ModelRequest, ModelResponse, Usage
+from mharness.domain.model import (
+    Effort,
+    ModelRequest,
+    ModelResponse,
+    StopReason,
+    Usage,
+)
+from mharness.domain.money import known
 from mharness.domain.retry import RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
@@ -49,6 +57,7 @@ NOT_RUN_DENIED = "not run: a previous call was denied"
 CANCELLED = "cancelled by the user"
 INTERRUPTED = "interrupted by an internal error"
 TIMED_OUT = "stopped by the time limit"
+CONTEXT_FULL = "not run: the conversation filled your context window"
 
 # The only answers that run a call that asked, or deny it.
 DECISIONS: tuple[Decision, ...] = ("once", "session", "deny")
@@ -116,229 +125,253 @@ class Agent:
         If no tool ran, nothing is kept (spec hito 5, §1.5), unless Ctrl+C
         cut an answer that had begun: its text is kept, marked as
         interrupted (spec hito 6, §1.7).
+
+        The events of each step come from two helpers, read here inside
+        `aclosing`: a Ctrl+C or a close at one of their `yield`s closes them
+        first and then arrives here, where `_Turn` says what to keep.
         """
         yield TurnStarted(text=text)
-        turn = [Message(role="user", blocks=[TextBlock(text=text)])]
-        usage = Usage()
-        # None once a call has no price: the turn's cost is then unknown.
-        turn_cost: Decimal | None = Decimal(0)
-        calls_run = 0
-        # Whether some tool's `run()` was called in this turn.
-        executed = False
-        # Whether the turn is already in the history.
-        kept = False
-        # The calls of the current step while they are handled, and their
-        # results so far.
-        calls: list[ToolCallBlock] = []
-        results: list[ToolResultBlock] = []
-        denied = False
-        accumulator = Accumulator()
-        # Whether the model is writing the answer of this step.
-        streaming = False
-        step = 0
-        # The model of this turn: the fallback, once it takes over.
-        model = self.model
-        # The provider's last failure while a call is being retried; empty
-        # once an answer begins.
-        failing: list[RetryableModelError] = []
         # When the loop stops waiting (spec hito 8, §1.1).
         timeout = self.limits.timeout
-        deadline = (
-            None if timeout is None else asyncio.get_running_loop().time() + timeout
+        turn = _Turn(
+            messages=[Message(role="user", blocks=[TextBlock(text=text)])],
+            model=self.model,
+            deadline=(
+                None if timeout is None else asyncio.get_running_loop().time() + timeout
+            ),
         )
         try:
-            for step in range(1, self.limits.max_steps + 1):
-                if step > 1 and (limit := self._reached(usage, turn_cost)):
+            for turn.step in range(1, self.limits.max_steps + 1):
+                if turn.step > 1 and (limit := self._reached(turn.usage, turn.cost)):
                     # Before the call that would pass it; what ran is in the
                     # turn, which the user can go on.
-                    self._messages.extend(turn)
-                    kept = True
-                    yield TurnFinished(
-                        reason=limit,
-                        usage=usage,
-                        tool_calls=calls_run,
-                        steps=step - 1,
-                        cost=turn_cost,
-                    )
+                    self._keep(turn)
+                    yield turn.finished(limit, steps=turn.step - 1)
                     return
-                accumulator = Accumulator()
-                streaming = True
-                async with aclosing(self._call(turn, model, failing)) as events:
-                    while True:
-                        try:
-                            event = await _within(anext(events), deadline)
-                        except StopAsyncIteration:
-                            break
-                        if isinstance(event, ModelRetry | ModelFallback):
-                            if isinstance(event, ModelFallback):
-                                model = event.fallback
-                            yield event
-                            continue
-                        accumulator.add(event)
-                        if isinstance(event, TextDelta):
-                            yield event
-                streaming = False
-                response = accumulator.response()
-                usage += response.usage
-                call_cost = self._cost(response, model)
-                turn_cost = add_cost(turn_cost, call_cost)
+                async with aclosing(self._answer(turn)) as events:
+                    async for event in events:
+                        yield event
+                response, call_cost = self._take_answer(turn)
                 yield ModelCallFinished(
                     usage=response.usage, model=response.model, cost=call_cost
                 )
-                turn.append(response.message)
-                calls = [
-                    b for b in response.message.blocks if isinstance(b, ToolCallBlock)
-                ]
-                if not calls:
-                    self._messages.extend(turn)
-                    kept = True
-                    yield TurnFinished(
-                        reason="end_turn",
-                        usage=usage,
-                        tool_calls=calls_run,
-                        steps=step,
-                        cost=turn_cost,
-                    )
+                if response.stop_reason == "context_full":
+                    # Calling the model again cannot fit either: the turn
+                    # ends, and a call it was writing never runs (review of
+                    # the deep audit).
+                    if turn.calls:
+                        blocks = turn.interrupted(CONTEXT_FULL)
+                        turn.messages.append(Message(role="tool", blocks=[*blocks]))
+                    self._keep(turn)
+                    yield turn.finished("context_full", steps=turn.step)
                     return
-                results = []
-                # In order, not in parallel, until hito 16 (spec hito 4, §1.7).
-                for call in calls:
-                    yield ToolCallProposed(call=call)
-                    if denied:
-                        # Every call gets a result (spec hito 4, §1.1); these
-                        # do not run, and do not count as handled.
-                        skipped = _error(call, NOT_RUN_DENIED)
-                        results.append(skipped.result)
-                        yield ToolFinished(
-                            call=call,
-                            result=skipped.result,
-                            summary=skipped.summary,
-                            duration=0.0,
-                            skipped=True,
-                        )
-                        continue
-                    started = time.monotonic()
-                    # None: nobody was asked, or the answer was not valid.
-                    decision: Decision | None = None
-                    asked = False
-                    prepared = await _within(self._prepare(call), deadline)
-                    if isinstance(prepared, _Outcome):
-                        outcome = prepared
-                    else:
-                        question = prepared.request
-                        if question is not None and not self._approvals.covers(
-                            question
-                        ):
-                            yield ApprovalRequested(call=call, request=question)
-                            asked = True
-                            answer: object = await _within(
-                                self._gate.decide(question), deadline
-                            )
-                            # The time spent deciding is not the tool's.
-                            started = time.monotonic()
-                            if answer in DECISIONS:
-                                decision = answer
-                                self._approvals.record(question, decision)
-                        if asked and decision is None:
-                            # Fails closed: a broken gate never runs a call.
-                            outcome = _crash(
-                                call, f"invalid approval decision: {answer!r}"
-                            )
-                        elif decision == "deny":
-                            denied = True
-                            outcome = _error(call, "the user denied this call")
-                        else:
-                            # Nobody was asked, or "once" or "session".
-                            executed = True
-                            outcome = await _within(self._run(call, prepared), deadline)
-                    calls_run += 1
-                    results.append(outcome.result)
-                    yield ToolFinished(
-                        call=call,
-                        result=outcome.result,
-                        summary=outcome.summary,
-                        duration=time.monotonic() - started,
-                        internal_error=outcome.internal_error,
-                        decision=decision,
-                    )
-                turn.append(Message(role="tool", blocks=list(results)))
-                calls = []
-                if denied:
+                if not turn.calls:
+                    self._keep(turn)
+                    yield turn.finished(_ending(response.stop_reason), steps=turn.step)
+                    return
+                async with aclosing(
+                    self._handle_calls(turn, response.stop_reason)
+                ) as events:
+                    async for event in events:
+                        yield event
+                if turn.denied:
                     # Without calling the model again: the user writes next
                     # (spec hito 5, §1.4).
-                    self._messages.extend(turn)
-                    kept = True
-                    yield TurnFinished(
-                        reason="denied",
-                        usage=usage,
-                        tool_calls=calls_run,
-                        steps=step,
-                        cost=turn_cost,
-                    )
+                    self._keep(turn)
+                    yield turn.finished("denied", steps=turn.step)
                     return
             # The turn ends on tool results; the user can still go on.
-            self._messages.extend(turn)
-            kept = True
-            yield TurnFinished(
-                reason="max_steps",
-                usage=usage,
-                tool_calls=calls_run,
-                steps=self.limits.max_steps,
-                cost=turn_cost,
-            )
+            self._keep(turn)
+            yield turn.finished("max_steps", steps=self.limits.max_steps)
         except _TimedOut:
-            if failing:
+            if turn.failing:
                 # The provider kept failing until the limit: that is what
                 # happened, not the limit; an eval counts it as the
                 # provider's (audit of hito 8; spec hito 8, §12.9). What ran
                 # is kept, as after any failed call to the model.
-                if executed and not kept:
-                    self._messages.extend(turn)
-                raise failing[0] from None
-            # As Ctrl+C, but the turn ends here (spec hito 8, §1.1). A half
-            # answer is not kept: its mark says the user cut it.
-            if executed and not kept:
-                if calls:
-                    blocks = _interrupted(
-                        calls, results, denied=denied, cause=TIMED_OUT
-                    )
-                    turn.append(Message(role="tool", blocks=[*blocks]))
-                self._messages.extend(turn)
-            yield TurnFinished(
-                reason="timeout",
-                usage=usage,
-                tool_calls=calls_run,
+                if turn.executed and not turn.kept:
+                    self._messages.extend(turn.messages)
+                raise turn.failing[0] from None
+            self._keep_timed_out(turn)
+            yield turn.finished(
+                "timeout",
                 # The call cut while it answered did not end.
-                steps=step - 1 if streaming else step,
-                cost=turn_cost,
+                steps=turn.step - 1 if turn.streaming else turn.step,
+                answering=turn.streaming,
             )
         except BaseException as exc:
             # A failed call to the model, Ctrl+C or any error nobody expected
             # (spec mejora-2026-10-23-deuda-hito-5, E4). Ctrl+C arrives as
             # CancelledError while the loop waits, or as GeneratorExit when
-            # the terminal was the one waiting and closes the loop. What ran
-            # is kept, so the model does not do it again (spec hito 5, §1.5).
+            # the terminal was the one waiting and closes the loop.
             by_user = isinstance(exc, asyncio.CancelledError | GeneratorExit)
-            # The text the person already saw; a half tool call never ran. A
-            # failed model call keeps none: its text may be broken.
-            half = accumulator.text if streaming and by_user else ""
-            if (executed or half) and not kept:
-                if calls:
-                    # The model is not called while the calls run: here only
-                    # Ctrl+C or an unexpected error can cut the step.
-                    cause = CANCELLED if by_user else INTERRUPTED
-                    blocks = _interrupted(calls, results, denied=denied, cause=cause)
-                    turn.append(Message(role="tool", blocks=[*blocks]))
-                if half:
-                    turn.append(
-                        Message(
-                            role="assistant",
-                            blocks=[TextBlock(text=half)],
-                            interrupted=True,
-                        )
-                    )
-                self._messages.extend(turn)
+            self._keep_cut(turn, by_user=by_user)
             raise
+
+    def _keep(self, turn: _Turn) -> None:
+        """Put the whole turn in the history: it ended."""
+        self._messages.extend(turn.messages)
+        turn.kept = True
+
+    async def _answer(self, turn: _Turn) -> AsyncGenerator[AgentEvent]:
+        """The step's call to the model, with its retries and its fallback,
+        gathered in `turn.accumulator`. It yields the retries, the fallback
+        and the text as it comes; the fallback answers the rest of the
+        turn."""
+        turn.accumulator = Accumulator()
+        turn.streaming = True
+        async with aclosing(
+            self._call(turn.messages, turn.model, turn.failing)
+        ) as events:
+            while True:
+                try:
+                    event = await _within(anext(events), turn.deadline)
+                except StopAsyncIteration:
+                    break
+                if isinstance(event, ModelRetry | ModelFallback):
+                    if isinstance(event, ModelFallback):
+                        turn.model = event.fallback
+                    yield event
+                    continue
+                turn.accumulator.add(event)
+                if isinstance(event, TextDelta):
+                    yield event
+        turn.streaming = False
+
+    def _take_answer(self, turn: _Turn) -> tuple[ModelResponse, Decimal | None]:
+        """Count the answer that came, put it in the turn and take its tool
+        calls as the step's. Returns it, with what it cost."""
+        response = turn.accumulator.response()
+        turn.usage += response.usage
+        call_cost = self._cost(response, turn.model)
+        turn.cost = add_cost(turn.cost, call_cost)
+        # In the turn before it is told: a turn closed right at
+        # ModelCallFinished keeps the answer the person saw (deep
+        # audit after hito 9).
+        turn.messages.append(response.message)
+        turn.calls = [
+            b for b in response.message.blocks if isinstance(b, ToolCallBlock)
+        ]
+        turn.answered = not turn.calls
+        # This step's results only: a cut right here must not give
+        # its calls the last step's.
+        turn.results = []
+        return response, call_cost
+
+    async def _handle_calls(
+        self, turn: _Turn, stop_reason: StopReason
+    ) -> AsyncGenerator[AgentEvent]:
+        """The step's tool calls, one by one: proposed, asked about if they
+        need it, run, and their results put in the turn."""
+        # The block the model was writing when an output limit cut it.
+        last = turn.messages[-1].blocks[-1]
+        # In order, not in parallel, until hito 16 (spec hito 4, §1.7).
+        for call in turn.calls:
+            yield ToolCallProposed(call=call)
+            if turn.denied:
+                # Every call gets a result (spec hito 4, §1.1); these
+                # do not run, and do not count as handled.
+                skipped = _error(call, NOT_RUN_DENIED)
+                turn.results.append(skipped.result)
+                yield ToolFinished(
+                    call=call,
+                    result=skipped.result,
+                    summary=skipped.summary,
+                    duration=0.0,
+                    skipped=True,
+                )
+                continue
+            started = time.monotonic()
+            # None: nobody was asked, or the answer was not valid.
+            decision: Decision | None = None
+            asked = False
+            cut = call is last or not _whole(call)
+            if stop_reason == "max_tokens" and cut:
+                # Cut by the output limit: its error says so, or the
+                # model writes the same cut call again (deep audit
+                # after hito 9, B1). The last one, also if its arguments
+                # look whole: "{}" may be all that came (review).
+                prepared: _Ready | _Outcome = _error(call, CUT_BY_OUTPUT)
+            else:
+                prepared = await _within(self._prepare(call), turn.deadline)
+            if isinstance(prepared, _Outcome):
+                outcome = prepared
+            else:
+                question = prepared.request
+                if question is not None and not self._approvals.covers(question):
+                    yield ApprovalRequested(call=call, request=question)
+                    asked = True
+                    answer = await self._decide(turn, question)
+                    # The time spent deciding is not the tool's.
+                    started = time.monotonic()
+                    if answer in DECISIONS:
+                        decision = answer
+                        self._approvals.record(question, decision)
+                if asked and decision is None:
+                    # Fails closed: a broken gate never runs a call.
+                    outcome = _crash(call, f"invalid approval decision: {answer!r}")
+                elif decision == "deny":
+                    turn.denied = True
+                    outcome = _error(call, "the user denied this call")
+                else:
+                    # Nobody was asked, or "once" or "session".
+                    turn.executed = True
+                    outcome = await _within(self._run(call, prepared), turn.deadline)
+            turn.calls_run += 1
+            turn.results.append(outcome.result)
+            yield ToolFinished(
+                call=call,
+                result=outcome.result,
+                summary=outcome.summary,
+                duration=time.monotonic() - started,
+                internal_error=outcome.internal_error,
+                decision=decision,
+            )
+        turn.messages.append(Message(role="tool", blocks=list(turn.results)))
+        turn.calls = []
+
+    async def _decide(self, turn: _Turn, question: ApprovalRequest) -> object:
+        """Ask the gate. The turn's clock stops while the person reads and
+        decides (deep audit after hito 9, B4, a decision of the
+        maintainer); without a person the answer is at once."""
+        waiting = asyncio.get_running_loop().time()
+        answer: object = await self._gate.decide(question)
+        if turn.deadline is not None:
+            turn.deadline += asyncio.get_running_loop().time() - waiting
+        return answer
+
+    def _keep_timed_out(self, turn: _Turn) -> None:
+        """What a turn stopped by its time limit keeps: as after Ctrl+C,
+        but the turn ends here (spec hito 8, §1.1). A half answer is not
+        kept: its mark says the user cut it."""
+        if turn.executed and not turn.kept:
+            if turn.calls:
+                blocks = turn.interrupted(TIMED_OUT)
+                turn.messages.append(Message(role="tool", blocks=[*blocks]))
+            self._messages.extend(turn.messages)
+
+    def _keep_cut(self, turn: _Turn, *, by_user: bool) -> None:
+        """What a turn cut by a failed call to the model, by the user or by
+        an unexpected error keeps. What ran is kept, so the model does not
+        do it again (spec hito 5, §1.5)."""
+        # The text the person already saw; a half tool call never ran. A
+        # failed model call keeps none: its text may be broken.
+        half = turn.accumulator.text if turn.streaming and by_user else ""
+        if (turn.executed or half or (turn.answered and by_user)) and not turn.kept:
+            if turn.calls:
+                # The model is not called while the calls run: here only
+                # Ctrl+C or an unexpected error can cut the step.
+                blocks = turn.interrupted(CANCELLED if by_user else INTERRUPTED)
+                turn.messages.append(Message(role="tool", blocks=[*blocks]))
+            if half:
+                turn.messages.append(
+                    Message(
+                        role="assistant",
+                        blocks=[TextBlock(text=half)],
+                        interrupted=True,
+                    )
+                )
+            self._messages.extend(turn.messages)
 
     async def _call(
         self, turn: list[Message], model: str, failing: list[RetryableModelError]
@@ -410,7 +443,11 @@ class Agent:
         for name in (response.model, model):
             info = self._catalog.get(self._provider, name)
             if info is not None and info.prices is not None:
-                return cost(response.usage, info.prices)
+                amount = cost(response.usage, info.prices)
+                # Past what an amount in USD can be, the counts are a
+                # provider's bug: unknown, never a broken turn (deep audit
+                # after hito 9, S9).
+                return known(amount)
         return None
 
     def _request(self, turn: list[Message], model: str) -> ModelRequest:
@@ -526,6 +563,82 @@ class _Outcome:
     result: ToolResultBlock
     summary: str
     internal_error: str | None = None
+
+
+@dataclass
+class _Turn:
+    """What one turn holds while it runs. What is kept when the turn is cut
+    comes from here."""
+
+    # The turn's messages so far, from the user's.
+    messages: list[Message]
+    # The model of this turn: the fallback, once it takes over.
+    model: str
+    # When the loop stops waiting (the loop's clock, spec hito 8, §1.1); it
+    # moves on while the person decides on a call.
+    deadline: float | None
+    usage: Usage = field(default_factory=Usage)
+    # None once a call has no price: the turn's cost is then unknown.
+    cost: Decimal | None = Decimal(0)
+    calls_run: int = 0
+    step: int = 0
+    # Whether some tool's `run()` was called in this turn.
+    executed: bool = False
+    # Whether the turn is already in the history.
+    kept: bool = False
+    # The calls of the current step while they are handled, and their
+    # results so far.
+    calls: list[ToolCallBlock] = field(default_factory=list)
+    results: list[ToolResultBlock] = field(default_factory=list)
+    denied: bool = False
+    accumulator: Accumulator = field(default_factory=Accumulator)
+    # Whether the model is writing the answer of this step.
+    streaming: bool = False
+    # Whether the turn holds a whole final answer, not yet kept.
+    answered: bool = False
+    # The provider's last failure while a call is being retried; empty
+    # once an answer begins.
+    failing: list[RetryableModelError] = field(default_factory=list)
+
+    def finished(
+        self, reason: TurnEnd, *, steps: int, answering: bool = False
+    ) -> TurnFinished:
+        return TurnFinished(
+            reason=reason,
+            usage=self.usage,
+            tool_calls=self.calls_run,
+            steps=steps,
+            cost=self.cost,
+            answering=answering,
+        )
+
+    def interrupted(self, cause: str) -> list[ToolResultBlock]:
+        """The results of the step cut short (see `_interrupted`)."""
+        return _interrupted(self.calls, self.results, denied=self.denied, cause=cause)
+
+
+CUT_BY_OUTPUT = (
+    "your answer reached your output limit before this call was complete, "
+    "so it was not run; write it again in smaller parts"
+)
+
+
+def _ending(stop_reason: StopReason) -> Literal["end_turn", "max_output", "refused"]:
+    """How a turn that ends on an answer without calls ended."""
+    if stop_reason == "max_tokens":
+        return "max_output"
+    if stop_reason == "content_filter":
+        return "refused"
+    return "end_turn"
+
+
+def _whole(call: ToolCallBlock) -> bool:
+    """Whether its arguments are a whole JSON object (or none at all)."""
+    try:
+        value = json.loads(call.arguments.strip() or "{}")
+    except ValueError, RecursionError:
+        return False
+    return isinstance(value, dict)
 
 
 def _error(

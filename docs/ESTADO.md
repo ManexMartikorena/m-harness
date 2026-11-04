@@ -1,20 +1,22 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-03, al cerrar el hito 9. **Hito 9 cerrado:
-`v0.9.0` — Adaptador de Anthropic. Siguiente: una auditoría profunda antes
-de la spec del hito 10 (decisión del mantenedor).**
+Última actualización: 2026-11-04. **Hito 9 cerrado: `v0.9.0` — Adaptador
+de Anthropic, y la auditoría profunda publicada como `v0.9.1`. Siguiente:
+la spec del hito 10, cuando el mantenedor dé el OK.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 ## Fase actual
 
-**Desarrollo. Hitos 1 a 9 cerrados; antes del hito 10 (system prompt por
-capas), una auditoría profunda. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
+**Desarrollo. Hitos 1 a 9 cerrados, y la auditoría profunda que se pidió
+antes del hito 10 (system prompt por capas), también. Plan: 23 hitos hasta
+la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.9.0` — Adaptador de Anthropic** (2026-11-03):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.9.0
+- Última versión: **`v0.9.1` — Auditoría profunda tras el hito 9**
+  (2026-11-04):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.9.1
 - Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
@@ -40,25 +42,16 @@ spec, su nota de la guía y su release.
 | 6 | Sesiones e historial | `v0.6.0` (2026-10-26), `v0.6.1` |
 | 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
 | 8 | Evals (20 tareas, dos modelos, línea base), `maha -p`, reintentos con respaldo y comandos de línea; auditoría con tres revisiones independientes | `v0.8.0` (2026-10-30), `v0.8.1` (2026-11-03) |
-| 9 | Formato de Anthropic (Claude, MiniMax y Qwen por OpenCode; la API directa), el formato de cada modelo, razonamiento devuelto intacto, effort y caché del prompt | `v0.9.0` (2026-11-03) |
+| 9 | Formato de Anthropic (Claude, MiniMax y Qwen por OpenCode; la API directa), el formato de cada modelo, razonamiento devuelto intacto, effort y caché del prompt; auditoría profunda con cinco revisores y una revisión de los arreglos | `v0.9.0` (2026-11-03), `v0.9.1` (2026-11-04) |
 
 ## Siguiente paso
 
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente, con el mantenedor:** una **auditoría profunda** antes de la
-   spec del hito 10, para no dejar deuda técnica (decisión del mantenedor,
-   2026-11-03). Revisores independientes del código (lo del hito 9 y lo
-   acumulado), con cada fallo con su test y arreglado, como en las
-   auditorías de los hitos 7 y 8. Puntos ya conocidos para ella (spec 9,
-   §12.18):
-   - la puerta de las evals marca ⚠ con un solo fallo en 5 repeticiones, y
-     avisa de ruido como si fuera regresión;
-   - Zen tiene un modelo nuevo, `pulse-alpha-free`, sin catálogo;
-   - la API directa de Anthropic, sin probar con una llamada real (no hay
-     clave).
-   La spec del hito 10 no se empieza hasta cerrar la auditoría.
+1. **Mantenedor:** dar el OK para empezar la spec del hito 10 (system
+   prompt por capas). El agente no la empieza sin él. Con el OK, el
+   agente propone la spec en su propio PR (`docs/spec-hito-10-<slug>`).
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
@@ -86,7 +79,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.8.1`).
+   `maha 0.9.1`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -148,6 +141,11 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   mirando el contenido (mejora `2026-10-23`, E5); con el sandbox,
   `run_command` en las evals y tareas de "ejecuta y arregla" (spec 8,
   §11.2).
+- **Hito 15:** (también) que una comprobación de las evals no se pueda
+  engañar con un módulo que tapa uno de la biblioteca estándar
+  (`unittest.py` en la copia): el aislamiento completo de las comprobaciones
+  (auditoría profunda tras el hito 9, I14 e I5; decisión del mantenedor,
+  2026-11-03).
 - **Hito 16:** llamadas a herramientas en paralelo (spec 4, §11); comandos
   que esperan entrada, con los comandos en segundo plano (spec 5, §10);
   varios comandos a la vez, hoy uno a uno por el subreaper (spec 8, §12.10).
@@ -220,7 +218,8 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
   (2026-10-27)
 - [x] 8. Evals y modo no interactivo. `v0.8.0` (2026-10-30) y el arreglo
   `v0.8.1` (2026-11-03, la auditoría)
-- [x] 9. Adaptador de Anthropic. `v0.9.0` (2026-11-03)
+- [x] 9. Adaptador de Anthropic. `v0.9.0` (2026-11-03) y el arreglo
+  `v0.9.1` (2026-11-04, la auditoría profunda)
 - [ ] 10. System prompt por capas. `v0.10.0`
 - [ ] 11. Gestión del contexto. `v0.11.0`
 - [ ] 12. Deshacer y puntos de control. `v0.12.0` *(nuevo, 2026-10-27)*

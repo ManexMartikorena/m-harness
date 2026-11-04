@@ -4,7 +4,7 @@
 so the evals measure exactly what `-p` does.
 """
 
-import re
+import secrets
 import time
 from collections.abc import Callable
 from contextlib import aclosing
@@ -13,6 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from mharness.application.collect import Accumulator
 from mharness.application.sessions import Conversation
 from mharness.domain.agent_events import (
     AgentEvent,
@@ -22,15 +23,35 @@ from mharness.domain.agent_events import (
     TurnFinished,
 )
 from mharness.domain.catalog import add_cost
-from mharness.domain.errors import ModelError
+from mharness.domain.errors import (
+    ModelAuthError,
+    ModelError,
+    ModelRequestError,
+    RetryableModelError,
+)
 from mharness.domain.events import TextDelta
 from mharness.domain.model import Usage
 from mharness.domain.money import Usd
 
 # How the run ended: as `TurnFinished` says, or `error` if the model failed.
 type Reason = Literal[
-    "end_turn", "max_steps", "max_cost", "max_tokens", "timeout", "denied", "error"
+    "end_turn",
+    "max_steps",
+    "max_cost",
+    "max_tokens",
+    "timeout",
+    "denied",
+    "max_output",
+    "refused",
+    "context_full",
+    "error",
 ]
+# Whose the model's failure is: `provider`, one that may pass if repeated
+# (429, 5xx, network); `credentials`, a rejected key; `request`, a request
+# the provider rejected (another 4xx: maha built it wrong, or the model is
+# unknown); `response`, an answer maha cannot read. The evals count the
+# last two as failures: they may be a bug of maha (deep audit, I2).
+type Failure = Literal["provider", "credentials", "request", "response"]
 
 
 class RunResult(BaseModel, frozen=True):
@@ -60,25 +81,25 @@ class RunResult(BaseModel, frozen=True):
     model: str
     # What the model's failure said, if it failed.
     error: str | None
+    # Whose that failure is, if it failed.
+    failure: Failure | None = None
 
 
-# What could pass for the closing tag of the block: any case, spaces, what
-# follows the name, and the full-width "<" and "/" (review of the audit of
-# hito 8).
-_CLOSING = re.compile(r"[<\uff1c]\s*[/\uff0f]\s*(stdin)", re.IGNORECASE)
-
-
-def instruction(text: str, piped: str | None) -> str:
+def instruction(text: str, piped: str | None, *, tag: str | None = None) -> str:
     """What `maha -p` asks (spec hito 8, §1.10): `text`, and below it what
     was piped, between delimiters, because it is data and not the user's
-    words. Without `text`, what was piped is the instruction."""
+    words. Without `text`, what was piped is the instruction.
+
+    The tag carries a random value of this run: the piped text cannot know
+    it, so it cannot close its own block. Escaping look-alikes of
+    `</stdin>` always left some out (audits of hito 8 and after hito 9,
+    B5)."""
     if piped is None or not piped.strip():
         return text
     if not text.strip():
         return piped
-    # What was piped cannot close its own block (audit of hito 8).
-    data = _CLOSING.sub(lambda found: "<\\/" + found.group(1), piped.removesuffix("\n"))
-    return f"{text}\n\n<stdin>\n{data}\n</stdin>"
+    tag = tag or f"stdin-{secrets.token_hex(8)}"
+    return f"{text}\n\n<{tag}>\n{piped.removesuffix('\n')}\n</{tag}>"
 
 
 class TurnBroke(Exception):
@@ -100,8 +121,10 @@ async def run_once(
     result, with what the turn kept saved; anything else that fails is a
     bug, and goes up as `TurnBroke`, with what the turn spent."""
     started = time.monotonic()
-    # The text of the call in progress, and of the last one that ended.
-    current: list[str] = []
+    # The text of the call in progress, and of the last one that ended;
+    # joined by blocks as the session keeps it, so that two paragraphs do
+    # not run together (review of the deep audit).
+    current = Accumulator()
     answer = ""
     steps = 0
     usage = Usage()
@@ -113,6 +136,8 @@ async def run_once(
     tool_calls = 0
     reason: Reason = "error"
     error: str | None = None
+
+    failure: Failure | None = None
 
     def summed(reason: Reason, error: str | None) -> RunResult:
         return RunResult(
@@ -129,6 +154,7 @@ async def run_once(
             duration=time.monotonic() - started,
             model=model,
             error=error,
+            failure=failure,
         )
 
     try:
@@ -137,9 +163,9 @@ async def run_once(
                 if on_event is not None:
                     on_event(event)
                 if isinstance(event, TextDelta):
-                    current.append(event.text)
+                    current.add(event)
                 elif isinstance(event, ModelCallFinished):
-                    answer, current = "".join(current), []
+                    answer, current = current.text, Accumulator()
                     steps += 1
                     usage += event.usage
                     cost = add_cost(cost, event.cost)
@@ -155,8 +181,30 @@ async def run_once(
                         tool_errors += 1
                 elif isinstance(event, TurnFinished):
                     reason = event.reason
+                    if event.answering:
+                        # The last step is the one cut: the text of the one
+                        # before ("let me read it") is no answer, as after a
+                        # failed call (review of the deep audit).
+                        answer = ""
     except ModelError as exc:
         error = str(exc)
+        # The turn gave no final answer: the text of a step before ("let me
+        # read it") is not one (deep audit after hito 9, I11).
+        answer = ""
+        failure = failure_of(exc)
     except Exception as exc:
         raise TurnBroke(summed("error", f"{type(exc).__name__}: {exc}")) from exc
     return summed(reason, error)
+
+
+def failure_of(error: ModelError) -> Failure:
+    """Whose a failed call is (deep audit, I2). One of no known kind is
+    taken as maha's answer problem, not the provider's: an eval must not
+    hide it."""
+    if isinstance(error, RetryableModelError):
+        return "provider"
+    if isinstance(error, ModelAuthError):
+        return "credentials"
+    if isinstance(error, ModelRequestError):
+        return "request"
+    return "response"

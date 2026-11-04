@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from mharness.domain.evals import Baseline, Task
+from mharness.domain.evals import Baseline, Task, is_test_file
 
 
 class MemoryEvalSuite:
@@ -28,12 +28,33 @@ class MemoryEvalSuite:
     @asynccontextmanager
     async def workspace(self, task: Task) -> AsyncIterator[Path]:
         with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder)
+            # The copy in a folder of its own, with room for its check's
+            # HOME next to it, as the real one.
+            path = Path(folder) / "repo"
+            path.mkdir()
             for name, text in self._fixtures.get(task.fixture, {}).items():
                 (path / name).parent.mkdir(parents=True, exist_ok=True)
                 (path / name).write_text(text, encoding="utf-8")
             self.workspaces.append(path)
             yield path
+
+    async def home(self, workspace: Path) -> Path:
+        home = workspace.parent / "home"
+        home.mkdir()
+        return home
+
+    async def restore_tests(self, task: Task, workspace: Path) -> list[str]:
+        restored = []
+        for name, text in self._fixtures.get(task.fixture, {}).items():
+            if name in task.check.own_tests or not is_test_file(name):
+                continue
+            target = workspace / name
+            if target.is_file() and target.read_text(encoding="utf-8") == text:
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+            restored.append(name)
+        return restored
 
     async def read(self, workspace: Path, path: str) -> str | None:
         try:

@@ -25,6 +25,7 @@ from mharness.domain.session import (
     replay,
     session_id,
     summarize,
+    whole_turns,
 )
 
 ENTRY: TypeAdapter[SessionEntry] = TypeAdapter(SessionEntry)
@@ -190,6 +191,32 @@ def test_replay_gives_messages_the_last_model_and_the_tokens() -> None:
     )
 
 
+def test_replay_keeps_the_last_model_of_each_provider() -> None:
+    # Audit after hito 9, S2: another provider's model is never the
+    # session's own.
+    entries: list[SessionEntry] = [
+        ModelEntry(model="kimi-k3"),
+        ModelEntry(model="claude-x", provider="anthropic"),
+        ModelEntry(model="glm-5.3", provider="opencode-go"),
+        ModelEntry(model="claude-z", provider="anthropic"),
+    ]
+
+    session = replay(HEADER, entries)
+
+    assert session.model == "glm-5.3"
+    assert session.models == {"opencode-go": "glm-5.3", "anthropic": "claude-z"}
+
+
+def test_a_model_entry_names_its_provider_and_older_ones_do_not() -> None:
+    entry = ModelEntry(model="claude-x", provider="anthropic")
+
+    assert ENTRY.validate_json(entry.model_dump_json()) == entry
+    assert ModelEntry(model="k").model_dump(mode="json") == {
+        "type": "model",
+        "model": "k",
+    }
+
+
 def test_replay_without_entries_keeps_the_first_model() -> None:
     session = replay(HEADER, [])
 
@@ -205,6 +232,33 @@ def test_replay_refuses_a_broken_history() -> None:
         replay(
             HEADER, [MessageEntry(message=user()), MessageEntry(message=calls("c1"))]
         )
+
+
+def messages_of(*messages: Message) -> list[SessionEntry]:
+    return [MessageEntry(message=m) for m in messages]
+
+
+@pytest.mark.parametrize(
+    ("entries", "keep"),
+    [
+        ([], 0),
+        (messages_of(user(), answer()), 2),
+        (messages_of(user(), calls("c1"), results("c1")), 3),
+        # A crash cut the turn after the call: the whole turn goes.
+        (messages_of(user(), answer(), user("Sigue"), calls("c1")), 2),
+        (messages_of(user(), calls("c1"), results("c1"), calls("c2")), 0),
+        # Without a user message, only the call.
+        (messages_of(calls("c1")), 0),
+        (messages_of(answer(), calls("c1")), 1),
+        # Something written after the call: not a cut turn, left as it is.
+        ([*messages_of(user(), calls("c1")), UsageEntry(usage=Usage())], 3),
+        (messages_of(user(), calls("c1"), answer()), 3),
+    ],
+)
+def test_whole_turns_leaves_out_a_turn_cut_after_a_call(
+    entries: list[SessionEntry], keep: int
+) -> None:
+    assert whole_turns(entries) == keep
 
 
 def test_the_summary_has_the_first_line_of_the_first_user_message() -> None:
@@ -266,6 +320,23 @@ def test_replay_sums_the_cost_and_counts_the_turns_without_it() -> None:
 
     assert session.cost == Decimal("0.0031")
     assert session.uncosted_turns == 1
+
+
+def test_replay_counts_a_cost_past_any_amount_as_unknown() -> None:
+    # Review of the deep audit: two turns within bounds, a sum that is not,
+    # and the session failed validating on resume.
+    entries: list[SessionEntry] = [
+        MessageEntry(message=user()),
+        MessageEntry(message=answer()),
+        UsageEntry(usage=Usage(), cost=Decimal("9E+11")),
+        MessageEntry(message=user("Otra")),
+        MessageEntry(message=answer("Vale.")),
+        UsageEntry(usage=Usage(), cost=Decimal("9E+11")),
+    ]
+
+    session = replay(HEADER, entries)
+
+    assert (session.cost, session.uncosted_turns) == (Decimal("9E+11"), 1)
 
 
 def test_replay_without_turns_costs_nothing() -> None:

@@ -31,15 +31,19 @@ from pydantic import BaseModel, Field
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.gitignore import GitIgnore
 from mharness.domain.paths import (
+    HARD_LINK,
     SECRET_DIR,
     SECRET_FILE,
     SKIPPED_DIRS,
     change_warning,
     is_inside,
     is_secret_at,
+    printable,
     read_warning,
+    unquoted,
 )
 from mharness.domain.tools import Permission, ToolError
+from mharness.domain.wildcard import glob_matches
 
 # Diagnosis only, never content (spec hito 7, §1.11).
 _log = logging.getLogger(__name__)
@@ -87,7 +91,7 @@ class Workspace:
         they go: every check runs on the resolved path.
         """
         try:
-            return (self.root / raw).resolve()
+            return (self.root / _unquoted(raw)).resolve()
         except ValueError:
             # A NUL in the path (spec mejora-2026-10-23-deuda-hito-5, A5).
             raise ToolError(f"invalid path: {raw}") from None
@@ -100,15 +104,15 @@ class Workspace:
 
     def shown(self, path: Path) -> str:
         """What the model and the user see: relative inside, absolute
-        outside."""
+        outside, and always valid UTF-8 (`printable`)."""
         if self.contains(path):
-            return str(path.relative_to(self.root))
-        return str(path)
+            return printable(str(path.relative_to(self.root)))
+        return printable(str(path))
 
     def asked(self, raw: str) -> Path:
         """`raw` made absolute, without resolving links: the name the model
         asked for (spec mejora-2026-10-26-deuda-pre-hito-6, A1)."""
-        return Path(os.path.normpath(self.root / raw))
+        return Path(os.path.normpath(self.root / _unquoted(raw)))
 
     def warning(self, path: Path, secret: str | None, raw: str) -> str | None:
         """Why reading needs a question: by the resolved path and by the one
@@ -116,7 +120,32 @@ class Workspace:
         return read_warning(path, self.root, secret=secret, asked=self.asked(raw))
 
     def change_warning(self, path: Path, raw: str) -> str | None:
-        return change_warning(path, self.root, asked=self.asked(raw))
+        """Why changing needs a question each time: by both paths, and by
+        the other names of the file, which change with it."""
+        found = [change_warning(path, self.root, asked=self.asked(raw))]
+        if _names(path) > 1:
+            found.append(HARD_LINK)
+        return "; ".join(warning for warning in found if warning) or None
+
+
+def _unquoted(raw: str) -> str:
+    """The path a quoted name of `printable` stands for (review of the deep
+    audit)."""
+    try:
+        return unquoted(raw)
+    except ValueError as exc:
+        raise ToolError(f"invalid path: {raw}: {exc}") from None
+
+
+def _names(path: Path) -> int:
+    """How many hard links the regular file `path` has; 0 if it is not
+    there or is not one: a folder always has two or more ("." and its
+    name), and is no hard link."""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return 0
+    return info.st_nlink if stat.S_ISREG(info.st_mode) else 0
 
 
 class _Asked:
@@ -134,14 +163,26 @@ class _Asked:
         self._last: tuple[BaseModel, Path] | None = None
         # The bytes the question showed; None: the file did not exist.
         self.old: bytes | None = None
+        # Whether the question showed nothing of the file: what failed
+        # comes after the approval (deep audit after hito 9, H6).
+        self.blind = False
 
     def forget(self) -> None:
         self._last = None
         self.old = None
+        self.blind = False
 
-    def remember(self, params: BaseModel, path: Path, old: bytes | None = None) -> None:
+    def remember(
+        self,
+        params: BaseModel,
+        path: Path,
+        old: bytes | None = None,
+        *,
+        blind: bool = False,
+    ) -> None:
         self._last = (params, path)
         self.old = old
+        self.blind = blind
 
     def same(self, params: BaseModel, path: Path) -> bool:
         return self._last == (params, path)
@@ -163,7 +204,8 @@ def _request(
 ) -> ApprovalRequest:
     """A question about reading `path`: never for the whole session."""
     shown = workspace.shown(path)
-    detail = str(path) if raw == shown else f"{path} (asked: {raw})"
+    full = printable(str(path))
+    detail = full if raw == shown else f"{full} (asked: {raw})"
     return ApprovalRequest(
         tool=tool, title=title, detail=detail, scope=None, warning=warning
     )
@@ -413,7 +455,8 @@ class ListDir:
         return "\n".join(lines)
 
     def _entry(self, entry: Path) -> str:
-        name = f"{entry.name}/" if entry.is_dir() else entry.name
+        # The "/" inside the quotes, if any: the model can ask for it back.
+        name = printable(f"{entry.name}/" if entry.is_dir() else entry.name)
         # Shown, so the model knows it exists and does not ask for it.
         return f"{name} [secret]" if self._workspace.secret(entry) else name
 
@@ -428,9 +471,10 @@ def _check_dir(path: Path, raw: str) -> None:
         raise ToolError(f"not a directory, use read_file: {raw}")
 
 
-# Searching walks at most this many files; it yields control every few files,
-# so Ctrl+C can stop it.
-WALK_MAX_FILES = 20_000
+# Searching walks at most this many files and folders; it yields control
+# every few of them, so Ctrl+C can stop it. Folders count too: a tree of
+# empty ones was walked without either (audit of hito 9, H5).
+WALK_MAX_ENTRIES = 20_000
 WALK_YIELD_EVERY = 100
 
 
@@ -457,7 +501,9 @@ class _Walk:
     def _shown(self, path: Path) -> str:
         # A search outside shows every path absolute, also the ones of the
         # working directory.
-        return self._workspace.shown(path) if self._inside else str(path)
+        if self._inside:
+            return self._workspace.shown(path)
+        return printable(str(path))
 
     def _rules_above(self) -> GitIgnore:
         """The rules that already apply at the base: `.git/info/exclude` and
@@ -474,27 +520,33 @@ class _Walk:
         seen = 0
         workspace = self._workspace
         rules = self._rules_above()
+        # The base; every other folder counts when it is checked, below.
+        seen += 1
         for dirpath, dirnames, filenames in os.walk(self._base):
             directory = Path(dirpath)
             here = PurePath(directory.relative_to(self._limit))
             _add_rules(rules, here, directory / ".gitignore")
+            kept: list[str] = []
+            for name in sorted(dirnames):
+                # Also the pruned ones: a folder of many folders must not
+                # hold the walk without yielding (review of the deep audit).
+                seen += 1
+                if await self._stop(seen):
+                    return
+                if (
+                    name not in SKIPPED_DIRS
+                    and not workspace.secret(directory / name)
+                    and not rules.ignores(here / name, is_dir=True)
+                ):
+                    kept.append(name)
             # Pruned in place, so os.walk does not go into them.
-            dirnames[:] = sorted(
-                name
-                for name in dirnames
-                if name not in SKIPPED_DIRS
-                and not workspace.secret(directory / name)
-                and not rules.ignores(here / name, is_dir=True)
-            )
+            dirnames[:] = kept
             for name in sorted(filenames):
                 # Every file counts, also the ones skipped below: the walk
                 # stays bounded and keeps yielding (final audit, 2026-10-23).
                 seen += 1
-                if seen > WALK_MAX_FILES:
-                    self.stopped_early = True
+                if await self._stop(seen):
                     return
-                if seen % WALK_YIELD_EVERY == 0:
-                    await asyncio.sleep(0)
                 if rules.ignores(here / name, is_dir=False):
                     continue
                 path = directory / name
@@ -505,6 +557,21 @@ class _Walk:
                     continue
                 in_base = PurePath(path.relative_to(self._base))
                 yield _Found(real, self._shown(path), in_base)
+
+    async def _stop(self, seen: int) -> bool:
+        """Whether the walk stops after `seen` files and folders; it yields
+        control every few of them."""
+        if seen > WALK_MAX_ENTRIES:
+            self.stopped_early = True
+            return True
+        if seen % WALK_YIELD_EVERY == 0:
+            await asyncio.sleep(0)
+        return False
+
+
+def _walk_stopped() -> str:
+    """The note of a walk stopped at its limit."""
+    return f"… [stopped after {WALK_MAX_ENTRIES} files and folders; narrow the path]"
 
 
 # A larger .gitignore is not read.
@@ -583,7 +650,7 @@ class Glob:
         found = [
             file.shown
             async for file in walk.files()
-            if file.in_base.full_match(params.pattern)
+            if glob_matches(params.pattern, file.in_base)
         ]
         lines = found[:GLOB_MAX_RESULTS]
         if len(found) > GLOB_MAX_RESULTS:
@@ -591,7 +658,7 @@ class Glob:
                 f"… [truncated: {GLOB_MAX_RESULTS} of {len(found)} files shown]"
             )
         if walk.stopped_early:
-            lines.append(f"… [stopped after {WALK_MAX_FILES} files; narrow the path]")
+            lines.append(_walk_stopped())
         return "\n".join(lines) if lines else "(no files match)"
 
     def summary(self, result: str) -> str:
@@ -720,7 +787,7 @@ def _glob_matches(in_base: PurePath, pattern: str) -> bool:
     # Without "/", by file name, as ripgrep does: "*.py" anywhere.
     if "/" not in pattern:
         return fnmatchcase(in_base.name, pattern)
-    return in_base.full_match(pattern)
+    return glob_matches(pattern, in_base)
 
 
 def _search(
@@ -842,7 +909,7 @@ def _grep_result(matches: list[str], *, stopped_early: bool) -> str:
     if len(matches) > GREP_MAX_MATCHES:
         lines.append(f"… [stopped at {GREP_MAX_MATCHES} matches; narrow the search]")
     if stopped_early:
-        lines.append(f"… [stopped after {WALK_MAX_FILES} files; narrow the path]")
+        lines.append(_walk_stopped())
     return "\n".join(lines) if lines else "(no matches)"
 
 
@@ -993,12 +1060,16 @@ def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
             return
 
 
-def _current_bytes(path: Path, raw: str, verb: str) -> bytes | None:
+def _current_bytes(
+    path: Path, raw: str, verb: str, *, warning: str | None = None
+) -> bytes | None:
     """The bytes of the file to `verb`, or None if it does not exist.
 
     Bytes, not text: a question about a secret or a file outside must not
     tell the model whether it is text before the user approves (review of
     PR 2, fix 1); the bytes still let `run()` see a change (decision W6).
+    Nor its size: with a `warning`, a file too large is refused without it
+    (audit of hito 9, H5).
     """
     if not path.exists():
         return None
@@ -1009,8 +1080,9 @@ def _current_bytes(path: Path, raw: str, verb: str) -> bytes | None:
         with file:
             size = os.fstat(file.fileno()).st_size
             if size > CHANGE_MAX_FILE_BYTES:
+                told = "" if warning else f"{size / MIB:.1f} MiB, "
                 raise ToolError(
-                    f"file too large to {verb} ({size / MIB:.1f} MiB, "
+                    f"file too large to {verb} ({told}"
                     f"max {CHANGE_MAX_FILE_BYTES // MIB} MiB); use run_command"
                 )
             return file.read()
@@ -1221,7 +1293,7 @@ def _as_shown(
         raise _changed(params.path)
     _check_target(workspace, path, params.path)
     data = _current_bytes(path, params.path, verb)
-    if data != asked.old:
+    if not asked.blind and data != asked.old:
         raise _changed(params.path)
     return path, data
 
@@ -1293,14 +1365,19 @@ class WriteFile:
         self._asked.forget()
         workspace = self._workspace
         path = workspace.resolve(params.path)
-        _check_target(workspace, path, params.path)
         try:
             params.content.encode("utf-8")
         except UnicodeEncodeError:
             raise ToolError("content is not valid UTF-8") from None
         warning = workspace.change_warning(path, params.path)
-        data = _current_bytes(path, params.path, "overwrite")
         shown = workspace.shown(path)
+        try:
+            _check_target(workspace, path, params.path)
+            data = _current_bytes(path, params.path, "overwrite", warning=warning)
+        except ToolError:
+            if warning is None:
+                raise
+            return self._blind(params, path, shown, warning, _preview(params.content))
         if data is None:
             lines = _count(len(_split(params.content)), "line")
             title = f"create {shown} ({lines})"
@@ -1325,6 +1402,13 @@ class WriteFile:
             warning=warning,
         )
 
+    def _blind(
+        self, params: WriteFileParams, path: Path, shown: str, warning: str, body: str
+    ) -> ApprovalRequest:
+        return _blind_question(
+            self.name, self._asked, params, path, shown, warning, body
+        )
+
     async def run(self, params: WriteFileParams) -> str:
         workspace = self._workspace
         path, data = _as_shown(workspace, self._asked, params, "overwrite")
@@ -1337,6 +1421,30 @@ class WriteFile:
     def summary(self, result: str) -> str:
         # "wrote notas.txt (3 lines)" → "3 lines".
         return result[result.rfind("(") + 1 : -1]
+
+
+def _blind_question(
+    tool: str,
+    asked: _Asked,
+    params: BaseModel,
+    path: Path,
+    shown: str,
+    warning: str,
+    body: str,
+) -> ApprovalRequest:
+    """The question about a file with a warning that could not be checked:
+    nothing of it is told before the approval; `run()` says what failed
+    (deep audit after hito 9, H6, a decision of the maintainer)."""
+    asked.remember(params, path, blind=True)
+    raw = getattr(params, "path", shown)
+    detail = body if raw == shown else f"(asked: {raw})\n{body}"
+    return ApprovalRequest(
+        tool=tool,
+        title=f"change {shown} (checked after your approval)",
+        detail=detail,
+        scope=None,
+        warning=warning,
+    )
 
 
 def _old_text(data: bytes, params: WriteFileParams) -> str:
@@ -1468,11 +1576,19 @@ class EditFile:
         _check_strings(params)
         workspace = self._workspace
         path = workspace.resolve(params.path)
-        _check_target(workspace, path, params.path)
-        data = _current_bytes(path, params.path, "edit")
-        if data is None:
-            raise ToolError(f"file not found: {params.path}")
         warning = workspace.change_warning(path, params.path)
+        try:
+            _check_target(workspace, path, params.path)
+            data = _current_bytes(path, params.path, "edit", warning=warning)
+            if data is None:
+                raise ToolError(f"file not found: {params.path}")
+        except ToolError:
+            if warning is None:
+                raise
+            shown = workspace.shown(path)
+            return _blind_question(
+                self.name, self._asked, params, path, shown, warning, _strings(params)
+            )
         try:
             old, new, _ = _edited(data, params)
             body = _diff(old, new)
@@ -1495,9 +1611,13 @@ class EditFile:
 
     async def run(self, params: EditFileParams) -> str:
         workspace = self._workspace
+        blind = self._asked.blind
         path, data = _as_shown(workspace, self._asked, params, "edit")
         if data is None:
-            # approval() refuses a missing file, so it appeared.
+            if blind:
+                # Told now, after the approval (H6).
+                raise ToolError(f"file not found: {params.path}")
+            # approval() refuses a missing file, so it went away.
             raise _changed(params.path)
         _, new, found = _edited(data, params)
         _write(workspace, path, new, data, parents=False)

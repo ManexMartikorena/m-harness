@@ -27,6 +27,7 @@ from mharness.domain.catalog import add_cost
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
 from mharness.domain.model import Effort, Usage
+from mharness.domain.money import known
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
@@ -48,6 +49,7 @@ from mharness.domain.trace import (
     TraceError,
     TraceEvent,
     TraceExists,
+    TraceInUse,
     TraceRecord,
     TurnFailed,
     TurnInterrupted,
@@ -223,8 +225,9 @@ class Conversation:
             await self._sync_trace()
 
     def _count(self, cost: Decimal | None) -> None:
-        """Add one turn's cost to the session's."""
-        if cost is None:
+        """Add one turn's cost to the session's; past what an amount in USD
+        can be, the turn counts as one without a cost, as on resuming."""
+        if cost is None or known(self.cost + cost) is None:
             self.uncosted_turns += 1
         else:
             self.cost += cost
@@ -233,7 +236,7 @@ class Conversation:
         """Use `model` from the next turn on; the change keeps its place
         among the turns (final audit of hito 6, 4)."""
         self._agent.model = model
-        self._pending.append(ModelEntry(model=model))
+        self._pending.append(ModelEntry(model=model, provider=self._origin.provider))
         await self._save()
 
     async def close(self) -> None:
@@ -508,7 +511,10 @@ class Sessions:
             loaded, log = await self._store.open(session)
         header = loaded.header
         same_provider = header.provider == self._origin.provider
-        model = loaded.model if same_provider else self._model
+        # Of another provider, the model it chose last, if it ever resumed
+        # this session; else the configured one (audit after hito 9, S2).
+        own = loaded.models.get(self._origin.provider)
+        model = loaded.model if same_provider else own or self._model
         try:
             if model is None:
                 raise SessionError("no model configured")
@@ -617,13 +623,24 @@ class Sessions:
         if _is_current(session, current):
             raise SessionError("this is the current session")
         traces = self._origin.traces
+        stored = True
         try:
             await self._store.delete(session)
         except SessionNotFound:
             if not await self._has_trace(session):
                 raise
+            stored = False
         try:
             await traces.delete(session)
+        except TraceInUse:
+            if stored:
+                raise SessionError(
+                    f"session {session} deleted, but not its trace: "
+                    "another maha writes it"
+                ) from None
+            # Another maha in its first turn: no file yet, but the session
+            # is that maha's (audit after hito 9, S3).
+            raise SessionInUse(f"session {session} is open in another maha") from None
         except TraceError as exc:
             raise SessionError(
                 f"session {session} deleted, but not its trace: {exc}"

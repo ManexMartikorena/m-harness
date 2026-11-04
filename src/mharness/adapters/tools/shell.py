@@ -13,7 +13,8 @@ from pydantic import BaseModel, Field
 
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.commands import OUTPUT_MAX_CHARS, CommandResult
-from mharness.domain.tools import Permission
+from mharness.domain.paths import printable
+from mharness.domain.tools import Permission, ToolError
 from mharness.ports.commands import CommandRunner
 
 DEFAULT_TIMEOUT = 120
@@ -50,7 +51,9 @@ class RunCommand:
         self._env = dict(env)
 
     async def approval(self, params: RunCommandParams) -> ApprovalRequest:
-        lines = [f"in {self._root}"]
+        _check_command(params.command)
+        # Valid UTF-8 whatever its name (deep audit after hito 9, H7).
+        lines = [f"in {printable(str(self._root))}"]
         if params.timeout != DEFAULT_TIMEOUT:
             lines.append(f"time limit: {params.timeout} s")
         # No perimeter until the sandbox (hito 15): the question says so.
@@ -64,6 +67,7 @@ class RunCommand:
         )
 
     async def run(self, params: RunCommandParams) -> str:
+        _check_command(params.command)
         result = await self._runner.run(
             params.command,
             cwd=self._root,
@@ -80,6 +84,13 @@ class RunCommand:
         return status + cut
 
 
+def _check_command(command: str) -> None:
+    """What no shell can run, found before asking: a NUL ends the command
+    line, and the system refuses it (audit of hito 9, H5)."""
+    if "\0" in command:
+        raise ToolError("the command has a NUL character")
+
+
 def _text(result: CommandResult, timeout: int) -> str:
     """What the model reads. A code other than 0 is not a tool error: it is
     information for the model."""
@@ -90,6 +101,8 @@ def _text(result: CommandResult, timeout: int) -> str:
         notes.append(f"… [output cut at {OUTPUT_MAX_CHARS} characters]")
     if result.timed_out:
         notes.append(f"[timed out after {timeout} s]")
+    if result.still_running:
+        notes.append("[it could not be stopped: it may still be running]")
     if notes:
         text = text.removesuffix("\n") + "\n" + "\n".join(notes)
     return text

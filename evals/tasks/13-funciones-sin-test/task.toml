@@ -4,4 +4,6 @@ fixture = "tienda"
 
 [check]
 answer_contains = ["calcular_iva"]
-answer_absent = ["aplicar_descuento", "total_con_iva", "resumen"]
+# Las otras cuatro funciones tienen test: nombrar cualquiera falla.
+# "total" cubre también total_con_iva (auditoría profunda, I10).
+answer_absent = ["aplicar_descuento", "total", "resumen"]

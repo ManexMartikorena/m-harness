@@ -57,7 +57,10 @@ class Accumulator:
         # share an index, an Anthropic block never does.
         self._text_blocks: dict[int, _PartialText] = {}
         self._reasonings: dict[int, _PartialReasoning] = {}
-        self._calls: dict[int, _PartialCall] = {}
+        # Calls by index and, if a server reuses an index for another call
+        # (a new id), by their order within it (deep audit after hito 9).
+        self._calls: dict[tuple[int, int], _PartialCall] = {}
+        self._latest: dict[int, int] = {}
         self._end: MessageEnd | None = None
 
     def add(self, event: ModelEvent) -> None:
@@ -73,7 +76,7 @@ class Accumulator:
                 part.signature = event.signature or part.signature
                 part.redacted = event.redacted or part.redacted
             case ToolCallDelta():
-                call = self._calls.setdefault(event.index, _PartialCall())
+                call = self._call(event)
                 # The id comes once, in the first piece.
                 call.id = call.id or event.id
                 call.name += event.name or ""
@@ -81,11 +84,31 @@ class Accumulator:
             case MessageEnd():
                 self._end = event
 
+    def _call(self, event: ToolCallDelta) -> _PartialCall:
+        """The call this piece belongs to: a new id with a name at an index
+        already in use starts another call. Without a name it is the same
+        call: some servers send another id in every piece (review of the
+        deep audit)."""
+        order = self._latest.get(event.index, 0)
+        call = self._calls.get((event.index, order))
+        renamed = event.id and call is not None and call.id and event.id != call.id
+        if renamed and event.name:
+            order += 1
+            self._latest[event.index] = order
+            call = None
+        if call is None:
+            call = self._calls[event.index, order] = _PartialCall()
+        return call
+
     @property
     def text(self) -> str:
         """The text so far, also before the answer ends (spec hito 6,
         §1.7)."""
-        return "".join(self._texts)
+        # Each block's text, joined as Message.text does (deep audit after
+        # hito 9): two paragraphs must not run together.
+        return "\n".join(
+            part.text for _, part in sorted(self._text_blocks.items()) if part.text
+        )
 
     def response(self) -> ModelResponse:
         """The answer. Raises `ModelResponseError` if it never ended."""
@@ -105,7 +128,7 @@ class Accumulator:
             )
             for index, part in self._reasonings.items()
         ]
-        for index, call in self._calls.items():
+        for (index, _order), call in sorted(self._calls.items()):
             if not call.id or not call.name:
                 raise ModelResponseError("a tool call came without its id or name")
             indexed.append(

@@ -49,3 +49,12 @@ def test_empty_registry() -> None:
 
     assert registry.specs() == []
     assert registry.names() == []
+
+
+@pytest.mark.parametrize("name", ["", "read file", "mcp.server.tool", "x" * 65])
+def test_a_name_the_providers_refuse_fails(name: str) -> None:
+    # Deep audit after hito 9 (B8): OpenAI and Anthropic take names of
+    # ^[a-zA-Z0-9_-]{1,64}$; one from an MCP server (hito 17) could break
+    # every request.
+    with pytest.raises(ValueError, match="tool name"):
+        ToolRegistry([FakeTool(name)])

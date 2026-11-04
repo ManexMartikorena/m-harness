@@ -8,11 +8,12 @@ Prices are in USD per million tokens, as providers publish them, and in
 from datetime import date
 from decimal import Decimal
 from itertools import pairwise
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AfterValidator, BaseModel, Field, model_validator
 
 from mharness.domain.model import Usage
+from mharness.domain.money import SMALLEST, known
 
 _MILLION = 1_000_000
 # The name of an API format: lowercase words joined by hyphens.
@@ -21,16 +22,28 @@ API_NAME = r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
 type SpokenApi = Literal["openai-chat", "anthropic"]
 
 
+def _sensible(rate: Decimal) -> Decimal:
+    # One token at a price below this costs less than any amount in USD.
+    if not rate.is_zero() and rate < _CHEAPEST:
+        raise ValueError(f"a price is 0 or at least {_CHEAPEST} per million")
+    return rate
+
+
+# USD per million tokens: 0, or between these (audit after hito 9, S4).
+_CHEAPEST = (SMALLEST * _MILLION).normalize()
+type Rate = Annotated[Decimal, Field(ge=0, le=1_000_000), AfterValidator(_sensible)]
+
+
 class _Rates(BaseModel, frozen=True):
     """USD per million tokens of each kind."""
 
-    input: Decimal = Field(ge=0)
-    output: Decimal = Field(ge=0)
+    input: Rate
+    output: Rate
     # None: billed as input.
-    cache_read: Decimal | None = Field(default=None, ge=0)
-    cache_write: Decimal | None = Field(default=None, ge=0)
+    cache_read: Rate | None = None
+    cache_write: Rate | None = None
     # Writes to the one-hour cache; None: as the other writes.
-    cache_write_1h: Decimal | None = Field(default=None, ge=0)
+    cache_write_1h: Rate | None = None
 
 
 class Tier(_Rates, frozen=True):
@@ -75,8 +88,9 @@ class ModelInfo(BaseModel, frozen=True):
 
 
 def add_cost(total: Decimal | None, more: Decimal | None) -> Decimal | None:
-    """The sum of two costs; unknown (None) once one of them is."""
-    return None if total is None or more is None else total + more
+    """The sum of two costs; unknown (None) once one of them is, or past
+    what an amount in USD can be."""
+    return None if total is None or more is None else known(total + more)
 
 
 def cost(usage: Usage, prices: Prices) -> Decimal:

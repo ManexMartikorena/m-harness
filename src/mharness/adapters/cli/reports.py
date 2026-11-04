@@ -1,6 +1,7 @@
 """Reports printed by the `maha` subcommands (spec hito 8, §1.7, §1.8 and
 §1.15)."""
 
+import re
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from typing import TextIO, get_args
@@ -20,19 +21,44 @@ def run_line(run: TaskRun) -> str:
         cost = "cost unknown" if run.cost is None else usd(run.cost)
         steps = f"{run.steps} step" + ("" if run.steps == 1 else "s")
         return f"{head} · {steps} · {cost} · {run.duration:.1f} s"
-    detail = clean_line((run.detail or "").splitlines()[0] if run.detail else "")
+    detail = _why(run.detail or "")
     if run.outcome == "error":
-        # A bug of maha, or its disk, is not the provider's (audit of hito 8).
-        who = "internal" if run.reason == "internal" else "provider"
+        # A bug of maha, or its disk, is not the provider's (audit of hito 8),
+        # nor is a rejected key (deep audit, I9).
+        who = run.reason if run.reason in ("internal", "credentials") else "provider"
         return f"{head} · {who}: {detail}"
     return f"{head} · {detail}"
 
 
+# A line that names an error: "AssertionError: 99.0 != 105.0".
+_ERROR_LINE = re.compile(r"^[\w.]*(Error|Exception)\b")
+
+
+def _why(detail: str) -> str:
+    """The detail of a run in one line: its first line and, if it has more,
+    the most useful of the rest, the last that names an error or else the
+    last one. A check's first line only says how it exited, and unittest
+    ends with "FAILED (failures=1)" (deep audit, I9)."""
+    lines = [clean_line(line).strip() for line in detail.splitlines()]
+    lines = [line for line in lines if line]
+    if len(lines) < 2:
+        return lines[0] if lines else ""
+    head, rest = lines[0], lines[1:]
+    errors = [line for line in rest if _ERROR_LINE.match(line)]
+    return f"{head.removesuffix(':')}: {(errors or rest)[-1]}"
+
+
 def eval_report(
-    runs: Sequence[TaskRun], baselines: Mapping[str, Baseline | None], out: TextIO
+    runs: Sequence[TaskRun],
+    baselines: Mapping[str, Baseline | None],
+    out: TextIO,
+    *,
+    effort: str | None = None,
 ) -> bool:
     """A table per model, its totals and its regressions against its
-    baseline; True if there is any regression."""
+    baseline; True if there is any regression. With an `effort`, the
+    differences are shown but none is a regression: a baseline is always
+    of the model's own effort (spec hito 9, §5; deep audit, I7)."""
     regressed = False
     for model, baseline in baselines.items():
         mine = [run for run in runs if run.model == model]
@@ -69,18 +95,42 @@ def eval_report(
                 part = stats([run for run in mine if run.split == split])
                 _total(split, part, None, width, passed, out)
         _total("total", stats(mine), _spent(mine), width, passed, out)
-        errors = sum(run.outcome == "error" for run in mine)
-        if errors:
-            print(
-                f"  provider errors: {errors}, not counted "
-                "(--retry-errors runs them again)",
-                file=out,
-            )
+        _errors(mine, out)
         if baseline is not None:
-            for found in compare(tasks, baseline):
-                regressed = True
-                print(f"  ⚠ {found}", file=out)
+            # ⚠ a regression; · a difference within the noise (deep audit,
+            # I4), with its p: the maintainer reads both.
+            for found in compare(mine, baseline):
+                judged = found.regression and effort is None
+                regressed = regressed or judged
+                print(f"  {'⚠' if judged else '·'} {found.text}", file=out)
+            if effort is not None:
+                print(
+                    f"  · effort {clean_line(effort)}: the baseline ran at the "
+                    "model's own effort, so the differences are shown, not judged",
+                    file=out,
+                )
     return regressed
+
+
+# Each kind of error, and what to do about it (deep audit, I9).
+_ERRORS = {
+    "provider": "--retry-errors runs them again",
+    "credentials": "check the key",
+    "internal": "a bug of maha: see runs.json",
+}
+
+
+def _errors(runs: Sequence[TaskRun], out: TextIO) -> None:
+    """How many runs ended in each kind of error: none counts."""
+    for kind, hint in _ERRORS.items():
+        count = sum(
+            run.outcome == "error"
+            and (run.reason if run.reason in _ERRORS else "provider") == kind
+            for run in runs
+        )
+        if count:
+            label = "credential" if kind == "credentials" else kind
+            print(f"  {label} errors: {count}, not counted ({hint})", file=out)
 
 
 def _passed(row: Stats) -> str:
@@ -90,7 +140,7 @@ def _passed(row: Stats) -> str:
 def _total(
     label: str,
     row: Stats,
-    spent: Decimal | None,
+    spent: str | None,
     width: int,
     passed: int,
     out: TextIO,
@@ -98,20 +148,24 @@ def _total(
     rate = "—" if row.success is None else f"{row.success:.0%}"
     line = f"  {label:<{width}}{_passed(row):<{passed}}{rate:<7}"
     if label == "total":
-        line += "cost unknown" if spent is None else f"{usd(spent)} in all"
+        line += "cost unknown" if spent is None else f"{spent} in all"
     print(line.rstrip(), file=out)
 
 
-def _spent(runs: Sequence[TaskRun]) -> Decimal | None:
-    """What the runs that finished cost, all together."""
+def _spent(runs: Sequence[TaskRun]) -> str | None:
+    """What every run cost, all together, also those that ended in an
+    error: they were paid (deep audit, I8). None if a run that finished
+    has no known cost; a minimum (≥) if one with an error has none."""
     total = Decimal(0)
+    unknown = False
     for run in runs:
-        if run.outcome == "error":
-            continue
-        if run.cost is None:
+        if run.cost is not None:
+            total += run.cost
+        elif run.outcome == "error":
+            unknown = True
+        else:
             return None
-        total += run.cost
-    return total
+    return ("≥" if unknown else "") + usd(total)
 
 
 # The API formats maha speaks.

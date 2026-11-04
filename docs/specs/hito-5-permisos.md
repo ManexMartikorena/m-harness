@@ -853,7 +853,9 @@ decidido por el mantenedor al implementar. Todo en
       1). Con aviso (fuera, secreto o `.git`), antes de preguntar solo salen
       errores de metadatos (no existe, carpeta, no es un fichero normal,
       padre que no es carpeta, tamaño, `cannot read`) y de parámetros que no
-      miran el disco (`old_string` vacío, `old_string` igual a `new_string`,
+      miran el disco *(cambiado en la auditoría profunda tras el hito 9, H6,
+      por decisión del mantenedor del 2026-11-03: con aviso, tampoco los de
+      metadatos; se pregunta igual y salen en `run()`)* (`old_string` vacío, `old_string` igual a `new_string`,
       `content` o `new_string` no UTF-8). Los que dependen del contenido
       (`not found`, `appears N times`, `nothing to change`, binario, no
       UTF-8) salen en `run()`, tras aprobar. `read_file` con aviso tampoco

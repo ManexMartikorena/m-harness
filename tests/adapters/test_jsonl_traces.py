@@ -1,5 +1,6 @@
 """`JsonlTraceSink` over `tmp_path` (spec hito 7, §1.7 and §4.5)."""
 
+import fcntl
 import json
 import os
 import stat
@@ -11,7 +12,13 @@ import pytest
 from mharness.adapters.tracing import JsonlTraceSink
 from mharness.domain.agent_events import ToolFinished, TurnStarted
 from mharness.domain.messages import ToolCallBlock, ToolResultBlock
-from mharness.domain.trace import TraceError, TraceExists, TraceRecord, TurnFailed
+from mharness.domain.trace import (
+    TraceError,
+    TraceExists,
+    TraceInUse,
+    TraceRecord,
+    TurnFailed,
+)
 from mharness.ports.tracing import TraceSink
 
 SESSION = "20261027-091502-3fa2"
@@ -33,6 +40,10 @@ def file_of(folder: Path) -> Path:
 
 def mode(path: Path) -> int:
     return stat.S_IMODE(path.stat().st_mode)
+
+
+def set_mode(path: Path, bits: int) -> None:
+    path.chmod(bits)
 
 
 def exists(path: Path) -> bool:
@@ -228,6 +239,59 @@ async def test_delete_removes_the_trace(folder: Path) -> None:
     assert not exists(file_of(folder))
 
 
+async def test_a_trace_being_written_is_not_deleted(folder: Path) -> None:
+    # Audit after hito 9, S3: another maha in its first turn has a trace
+    # and no session yet. Two sinks stand for two maha: flock locks open
+    # files, not processes.
+    log = await JsonlTraceSink(folder).open(SESSION, new=True)
+    await log.write(record())
+
+    with pytest.raises(TraceInUse, match=f"trace of {SESSION} is open in another"):
+        await JsonlTraceSink(folder).delete(SESSION)
+    assert exists(file_of(folder))
+    await log.write(record("Dos"))
+    await log.close()
+
+    await JsonlTraceSink(folder).delete(SESSION)
+    assert not exists(file_of(folder))
+
+
+async def test_a_trace_being_written_is_not_opened_twice(folder: Path) -> None:
+    log = await JsonlTraceSink(folder).open(SESSION)
+
+    with pytest.raises(TraceInUse):
+        await JsonlTraceSink(folder).open(SESSION)
+    await log.close()
+    again = await JsonlTraceSink(folder).open(SESSION)
+    await again.close()
+
+
+async def test_a_trace_deleted_while_opening_is_made_again(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Another maha deletes it between the open and the lock: the records
+    # never go to a file without a name.
+    sink = JsonlTraceSink(folder)
+    log = await sink.open(SESSION)
+    await log.write(record("Viejo"))
+    await log.close()
+    real_flock = fcntl.flock
+    deleted: list[bool] = []
+
+    def flock_after_a_delete(fd: int, operation: int) -> None:
+        if not deleted:
+            deleted.append(True)
+            file_of(folder).unlink()
+        real_flock(fd, operation)
+
+    monkeypatch.setattr(fcntl, "flock", flock_after_a_delete)
+    log = await sink.open(SESSION)
+    await log.write(record("Nuevo"))
+    await log.close()
+
+    assert await sink.read(SESSION) == [record("Nuevo")]
+
+
 async def test_deleting_a_session_without_trace_is_fine(folder: Path) -> None:
     await JsonlTraceSink(folder).delete(SESSION)
 
@@ -378,3 +442,40 @@ async def test_sessions_lists_every_trace_and_nothing_else(folder: Path) -> None
 
 async def test_sessions_without_a_folder_is_none(folder: Path) -> None:
     assert await JsonlTraceSink(folder).sessions() == []
+
+
+# Audit after hito 9, S6.
+
+
+async def test_an_unreadable_traces_folder_is_an_error(folder: Path) -> None:
+    # Path.glob in Python 3.14 swallows the error: maha stats showed
+    # nothing, and maha import could take an id with a trace.
+    log = await JsonlTraceSink(folder).open(SESSION)
+    await log.close()
+    set_mode(folder, 0o300)
+    try:
+        with pytest.raises(TraceError, match="cannot list the traces: "):
+            await JsonlTraceSink(folder).sessions()
+    finally:
+        set_mode(folder, 0o700)
+
+
+async def test_a_folder_named_as_a_trace_is_not_one(folder: Path) -> None:
+    (folder / f"{SESSION}.jsonl").mkdir(parents=True)
+
+    assert await JsonlTraceSink(folder).sessions() == []
+
+
+def link_to_a_trace(folder: Path, elsewhere: Path) -> None:
+    """The trace of SESSION as a link to a trace somewhere else."""
+    elsewhere.write_text(record().model_dump_json() + "\n", encoding="utf-8")
+    folder.mkdir()
+    file_of(folder).symlink_to(elsewhere)
+
+
+async def test_read_does_not_follow_a_link(folder: Path, tmp_path: Path) -> None:
+    # Audit after hito 9, S7: as open() and the session store, O_NOFOLLOW.
+    link_to_a_trace(folder, tmp_path / "otro.jsonl")
+
+    with pytest.raises(TraceError, match=f"cannot read the trace of {SESSION}"):
+        await JsonlTraceSink(folder).read(SESSION)

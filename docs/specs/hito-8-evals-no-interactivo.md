@@ -286,6 +286,16 @@ Un modelo no responde siempre igual: una sola pasada es ruido.
 
   Una ⚠ no bloquea nada por sí sola: AGENTS.md ya dice que una regresión no
   se mergea salvo decisión del mantenedor, anotada en la spec.
+
+  *(Cambiado en la auditoría profunda tras el hito 9, I4, por decisión del
+  mantenedor del 2026-11-03: esa regla marcaba ⚠ por ruido en la mayoría de
+  las pasadas. Ahora, por tarea y en el total, una prueba exacta de Fisher
+  de una cola con p < 0,05; el coste y los pasos, si el límite bajo de su
+  intervalo pasa del +20 %. El informe da la p y marca con · lo que explica
+  el ruido. Además, las comprobaciones ejecutan los tests del fixture, no
+  los de la copia del agente (I1), en un HOME vacío (I5); `--save` pide 5
+  repeticiones y ninguna ejecución con error (I13). Detalle en
+  `docs/specs/mejora-2026-11-03-auditoria-profunda.md`.)*
 - `--split train|validation|all` (por defecto `all`): al ajustar prompts se
   itera con `train`; la validación se mira solo al final.
 
@@ -525,7 +535,8 @@ Todo con fakes y directorios temporales; ninguna llamada real.
 10. **`-c` y `-r`:** la última sesión de este directorio, incluida una de
     `-p`; `-r` de otro directorio; id que no existe, error claro.
 11. **Evals, dominio:** `compare()` marca regresión con los umbrales de
-    §1.8 y no la marca dentro de ellos.
+    §1.8 y no la marca dentro de ellos. *(Desde la auditoría profunda tras
+    el hito 9: con la prueba de Fisher de §1.8.)*
 12. **Evals, suite:** `TomlEvalSuite` lee una tarea, rechaza una mal
     formada con error claro, copia el fixture a un temporal y escribe y lee
     una línea base.

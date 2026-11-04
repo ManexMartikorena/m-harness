@@ -34,7 +34,8 @@ class TraceSink(Protocol):
     async def open(self, session: str, *, new: bool = False) -> TraceLog:
         """The trace of `session`, to append to; created if missing. With
         `new`, only if there is none: otherwise `TraceExists`, and the
-        caller takes another id."""
+        caller takes another id. Held until closed: `TraceInUse` while
+        another maha holds it."""
         ...
 
     async def read(self, session: str) -> list[TraceRecord]:
@@ -43,7 +44,8 @@ class TraceSink(Protocol):
         ...
 
     async def delete(self, session: str) -> None:
-        """Remove the trace; without one, nothing happens."""
+        """Remove the trace; without one, nothing happens. `TraceInUse` if
+        another maha holds it open (audit after hito 9, S3)."""
         ...
 
     async def sessions(self) -> list[str]:

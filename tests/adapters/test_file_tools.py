@@ -7,6 +7,7 @@ import errno
 import os
 import stat
 import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -409,13 +410,15 @@ async def test_glob_cuts_long_results(root: Path) -> None:
 async def test_glob_stops_on_huge_trees(
     root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(files, "WALK_MAX_FILES", 3)
+    monkeypatch.setattr(files, "WALK_MAX_ENTRIES", 3)
     for i in range(5):
         write(root, f"f{i}.txt", "")
 
     result = await glob(root, "*.txt")
 
-    assert result.splitlines()[-1] == "… [stopped after 3 files; narrow the path]"
+    assert result.splitlines()[-1] == (
+        "… [stopped after 3 files and folders; narrow the path]"
+    )
 
 
 @pytest.mark.parametrize("pattern", ["/etc/*", "../*.py", "src/../../*"])
@@ -1776,18 +1779,35 @@ async def test_a_valid_edit_with_a_warning_still_shows_the_diff(root: Path) -> N
     assert request.detail == "@@ -1 +1 @@\n-KEY=1\n+KEY=2"
 
 
-async def test_metadata_errors_with_a_warning_still_come_first(root: Path) -> None:
+async def test_with_a_warning_nothing_of_the_file_is_told_before_asking(
+    root: Path,
+) -> None:
+    # Deep audit after hito 9 (H6), decision of the maintainer: with a
+    # warning (a secret, outside, what runs code), the model learns nothing
+    # of the file before the person approves; the error comes after. Before,
+    # "file not found" or "is a directory" came first. Errors of the
+    # arguments say nothing of the file, and still come first.
     (root.parent / "dir").mkdir()
-    tool = edit_tool(root)
+    (root / "seguro.env").write_text("KEY=1\n")
+    (root / "seguro.env").chmod(0o400)
+    edit, write = edit_tool(root), write_tool(root)
 
-    with pytest.raises(ToolError, match=r"file not found: \.env"):
-        await tool.approval(edit_params(".env", "a", "b"))
-    with pytest.raises(ToolError, match=r"is a directory: \.\./dir"):
-        await tool.approval(edit_params("../dir", "a", "b"))
+    for tool, params, error in [
+        (edit, edit_params(".env", "a", "b"), r"file not found: \.env"),
+        (edit, edit_params("../dir", "a", "b"), r"is a directory: \.\./dir"),
+        (write, WriteFileParams(path="../dir", content="x"), r"is a directory"),
+        (write, WriteFileParams(path="seguro.env", content="x"), "read-only file"),
+    ]:
+        question = await tool.approval(params)  # type: ignore[attr-defined]
+        assert question is not None
+        assert question.warning is not None
+        with pytest.raises(ToolError, match=error):
+            await tool.run(params)  # type: ignore[attr-defined]
+
     with pytest.raises(ToolError, match="old_string is empty"):
-        await tool.approval(edit_params(".env", "", "b"))
+        await edit.approval(edit_params(".env", "", "b"))
     with pytest.raises(ToolError, match="content is not valid UTF-8"):
-        await write_tool(root).approval(WriteFileParams(path=".env", content="\ud800"))
+        await write.approval(WriteFileParams(path=".env", content="\ud800"))
 
 
 async def test_a_binary_file_outside_asks_before_read_file_says_so(
@@ -1813,11 +1833,25 @@ def big_file(root: Path, name: str) -> Path:
     return path
 
 
-@pytest.mark.parametrize("name", ["big.txt", ".env"])
+async def test_a_secret_too_large_asks_and_is_refused_after(root: Path) -> None:
+    # Deep audit after hito 9 (H5, then H6): with a warning, not even its
+    # size reaches the model before the approval.
+    big_file(root, ".env")
+    params = WriteFileParams(path=".env", content="x")
+    tool = write_tool(root)
+
+    question = await tool.approval(params)
+
+    assert question is not None
+    assert "MiB" not in question.title + question.detail
+    with pytest.raises(ToolError, match="file too large to overwrite"):
+        await tool.run(params)
+
+
+@pytest.mark.parametrize(("name", "size"), [("big.txt", "3.0 MiB, ")])
 async def test_a_file_too_large_is_refused_before_reading(
-    root: Path, monkeypatch: pytest.MonkeyPatch, name: str
+    root: Path, monkeypatch: pytest.MonkeyPatch, name: str, size: str
 ) -> None:
-    # The size is metadata: also with a warning, before asking.
     big_file(root, name)
 
     def no_reading(*args: object) -> bytes:
@@ -1830,10 +1864,10 @@ async def test_a_file_too_large_is_refused_before_reading(
         await write_tool(root).approval(WriteFileParams(path=name, content="x"))
 
     assert str(edited.value) == (
-        "file too large to edit (3.0 MiB, max 2 MiB); use run_command"
+        f"file too large to edit ({size}max 2 MiB); use run_command"
     )
     assert str(written.value) == (
-        "file too large to overwrite (3.0 MiB, max 2 MiB); use run_command"
+        f"file too large to overwrite ({size}max 2 MiB); use run_command"
     )
 
 
@@ -2559,7 +2593,7 @@ async def test_ignored_files_count_for_the_walk_limit_and_its_yields(
 ) -> None:
     # Thousands of ignored *.o must not make the walk endless or deaf to
     # Ctrl+C (final audit, 2026-10-23).
-    monkeypatch.setattr(files, "WALK_MAX_FILES", 50)
+    monkeypatch.setattr(files, "WALK_MAX_ENTRIES", 50)
     monkeypatch.setattr(files, "WALK_YIELD_EVERY", 10)
     write(root, ".gitignore", "*.o\n")
     for n in range(200):
@@ -2575,7 +2609,7 @@ async def test_ignored_files_count_for_the_walk_limit_and_its_yields(
     monkeypatch.setattr(asyncio, "sleep", counting)
     result = await Glob(Workspace(root)).run(GlobParams(pattern="**/*"))
 
-    assert result.endswith("… [stopped after 50 files; narrow the path]")
+    assert result.endswith("… [stopped after 50 files and folders; narrow the path]")
     assert yields >= 5
 
 
@@ -2831,3 +2865,227 @@ async def test_what_asks_every_time_is_denied_without_a_person(tmp_path: Path) -
     )
     assert plain is not None
     assert await gate.decide(plain) == "once"
+
+
+async def test_a_hostile_glob_answers_at_once(root: Path) -> None:
+    # Deep audit after hito 9 (H1): full_match took exponential time with
+    # many "*" in the main process, and Ctrl+C could not stop it.
+    write(root, "a" * 200, "")
+    write(root, "src/" + "a" * 200, "")
+    started = time.monotonic()
+
+    found = await glob(root, "**/*a*a*a*a*a*a*a*a*a*a*a*a*b")
+    grepped = await Grep(Workspace(root)).run(
+        GrepParams(pattern="x", glob="src/*a*a*a*a*a*a*a*a*a*a*a*b")
+    )
+
+    assert (found, grepped) == ("(no files match)", "(no matches)")
+    assert time.monotonic() - started < 2.0
+
+
+@pytest.mark.parametrize(
+    ("pattern", "found"),
+    [
+        ("**/*.py", "main.py\nsrc/app.py\nsrc/sub/util.py"),
+        ("src/**/*.py", "src/app.py\nsrc/sub/util.py"),
+        ("src/*/*.py", "src/sub/util.py"),
+        ("**/sub/*.py", "src/sub/util.py"),
+        ("src/**", "src/app.py\nsrc/notes.md\nsrc/sub/util.py"),
+        ("*.p?", "main.py"),
+        ("src/[an]*", "src/app.py\nsrc/notes.md"),
+    ],
+)
+async def test_glob_patterns_with_folders(root: Path, pattern: str, found: str) -> None:
+    write(root, "main.py", "")
+    write(root, "src/app.py", "")
+    write(root, "src/sub/util.py", "")
+    write(root, "src/notes.md", "")
+
+    assert await glob(root, pattern) == found
+
+
+# Names that are not UTF-8
+
+
+def not_utf_8(folder: Path, name: bytes = b"caf\xe9.txt") -> Path:
+    """A file whose name has a Latin-1 byte, as os gives it: a surrogate."""
+    path = Path(os.fsdecode(os.fsencode(folder) + b"/" + name))
+    path.write_text("uno\n", encoding="utf-8")
+    return path
+
+
+def not_utf_8_folder(folder: Path) -> Path:
+    path = Path(os.fsdecode(os.fsencode(folder) + b"/dir\xe9"))
+    path.mkdir()
+    return path
+
+
+async def test_a_name_that_is_not_utf_8_is_listed_escaped(root: Path) -> None:
+    # Found in the audit of hito 9 (H2): a surrogate breaks the request.
+    not_utf_8(root)
+
+    result = await list_dir(root)
+
+    assert result == '"caf\\xe9.txt"'
+    result.encode("utf-8")
+
+
+async def test_a_name_that_is_not_utf_8_is_found_escaped(root: Path) -> None:
+    not_utf_8(root)
+
+    assert await glob(root, "*.txt") == '"caf\\xe9.txt"'
+    assert await grep(root, "uno") == '"caf\\xe9.txt":1: uno'
+
+
+async def test_a_name_that_is_not_utf_8_is_read_by_the_name_shown(root: Path) -> None:
+    # Review of the deep audit: the name shown leads back to the file.
+    not_utf_8(root)
+    (root / "caf\\xe9.txt").write_text("other\n")
+
+    shown = await list_dir(root)
+
+    assert shown.splitlines() == ['"caf\\\\xe9.txt"', '"caf\\xe9.txt"']
+    assert "uno" in await read(root, '"caf\\xe9.txt"')
+    assert "other" in await read(root, '"caf\\\\xe9.txt"')
+
+
+async def test_a_quoted_path_with_an_unknown_escape_is_an_error(root: Path) -> None:
+    with pytest.raises(ToolError, match="invalid path"):
+        await read(root, '"caf\\q.txt"')
+
+
+async def test_a_written_path_that_is_not_utf_8_is_shown_escaped(root: Path) -> None:
+    (root / "d").symlink_to(not_utf_8_folder(root))
+    tool = write_tool(root)
+    params = WriteFileParams(path="d/new.txt", content="x\n")
+
+    request = await tool.approval(params)
+    result = await tool.run(params)
+
+    assert request is not None
+    assert request.title == 'create "dir\\xe9/new.txt" (1 line)'
+    assert result == 'wrote "dir\\xe9/new.txt" (1 line)'
+
+
+async def test_an_error_with_a_path_that_is_not_utf_8_is_escaped(root: Path) -> None:
+    blocker = not_utf_8(root, b"caf\xe9")
+    (root / "d").symlink_to(blocker)
+
+    with pytest.raises(ToolError) as caught:
+        await write_tool(root).approval(WriteFileParams(path="d/x.txt", content=""))
+
+    assert str(caught.value) == 'not a directory: "caf\\xe9"'
+
+
+RUNS_CODE = "runs code: hooks, CI or editor tasks here can run code"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".venv/lib/python3.14/site-packages/evil.pth",
+        "node_modules/pkg/index.js",
+        ".mcp.json",
+        ".cargo/config.toml",
+    ],
+)
+async def test_changing_what_runs_by_itself_is_never_for_the_session(
+    root: Path, path: str
+) -> None:
+    # Audit of hito 9, H3.
+    write(root, path, "uno\n")
+
+    written = await ask_write(write_tool(root), path, "dos\n")
+    edited = await ask_edit(edit_tool(root), edit_params(path, "uno", "dos"))
+
+    assert (written.scope, written.warning) == (None, RUNS_CODE)
+    assert (edited.scope, edited.warning) == (None, RUNS_CODE)
+
+
+async def test_reading_from_inside_a_secret_folder_asks(tmp_path: Path) -> None:
+    # Audit of hito 9, H5: the working directory is ~/.aws itself.
+    root = tmp_path / ".aws"
+    write(root, "credentials", "[default]\n")
+
+    request = await ReadFile(Workspace(root)).approval(
+        ReadFileParams(path="credentials")
+    )
+
+    assert request is not None
+    assert request.warning == SECRET_FILE
+
+
+HARD_LINK = "hard link: its other names change too, and one may run code"
+
+
+async def test_a_file_with_other_hard_links_is_never_for_the_session(
+    root: Path,
+) -> None:
+    # Audit of hito 9, H5: written in place (D1), a harmless name changed a
+    # hook without a warning.
+    hook = write(root, ".git/hooks/pre-commit", "uno\n")
+    os.link(hook, root / "notes.txt")
+
+    written = await ask_write(write_tool(root), "notes.txt", "dos\n")
+    edited = await ask_edit(edit_tool(root), edit_params("notes.txt", "uno", "dos"))
+
+    assert (written.scope, written.warning) == (None, HARD_LINK)
+    assert (edited.scope, edited.warning) == (None, HARD_LINK)
+
+
+async def test_a_file_with_one_name_is_for_the_session(root: Path) -> None:
+    write(root, "notes.txt", "uno\n")
+
+    written = await ask_write(write_tool(root), "notes.txt", "dos\n")
+
+    assert (written.scope, written.warning) == ("write_file", None)
+
+
+def empty_folders(root: Path, count: int) -> None:
+    for n in range(count):
+        (root / f"d{n:03}").mkdir()
+
+
+async def test_folders_count_for_the_walk_limit_and_its_yields(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Audit of hito 9, H5: a tree of empty folders was walked without limit
+    # and without yielding.
+    monkeypatch.setattr(files, "WALK_MAX_ENTRIES", 20)
+    monkeypatch.setattr(files, "WALK_YIELD_EVERY", 5)
+    empty_folders(root, 60)
+    yields = 0
+    real_sleep = asyncio.sleep
+
+    async def counting(delay: float) -> None:
+        nonlocal yields
+        yields += 1
+        await real_sleep(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", counting)
+    result = await Glob(Workspace(root)).run(GlobParams(pattern="**/*"))
+
+    assert result == "… [stopped after 20 files and folders; narrow the path]"
+    assert yields >= 3
+
+
+async def test_pruned_folders_count_for_the_walk_limit(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review of the deep audit: the folders of one listing were checked
+    # against the rules without counting and without yielding.
+    monkeypatch.setattr(files, "WALK_MAX_ENTRIES", 20)
+    write(root, ".gitignore", "d*/\n")
+    empty_folders(root, 60)
+
+    result = await Glob(Workspace(root)).run(GlobParams(pattern="**/*"))
+
+    assert result.endswith("… [stopped after 20 files and folders; narrow the path]")
+
+
+def test_a_folder_is_no_hard_link(root: Path) -> None:
+    # Deep audit after hito 9: every folder has two or more links ("." and
+    # its name), and the hard link warning of H5 took them for one.
+    (root / "src").mkdir()
+
+    assert Workspace(root).change_warning(root / "src", "src") is None

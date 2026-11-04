@@ -11,19 +11,19 @@
 done, **asking you before every change**. It works with the provider and
 model you choose, and tells you what each turn cost.
 
-> 🚧 **In development: `v0.9.0`.** Already usable to work on a project:
+> 🚧 **In development: `v0.9.1`.** Already usable to work on a project:
 > chat, read and change files, run commands, save and resume sessions and
 > see the cost, with OpenAI-format models and with Claude; and in scripts,
 > with `maha -p`. What comes next is in the [roadmap](#roadmap).
 
 ```
 $ maha -m claude-haiku-5-5
-maha 0.9.0 · opencode-go · claude-haiku-5-5 · /help for commands
+maha 0.9.1 · opencode-go · claude-haiku-5-5 · /help for commands
 > Lee notas.txt con read_file y dime qué pone, en una frase.
   → read_file(path="notas.txt")
   ✓ 2 lines
-El archivo notas.txt contiene solo dos palabras, una por línea: "uno" y "dos".
-  [tokens: 4027 in · 87 out · 1 call · $0.0013 · session $0.0013]
+El archivo notas.txt contiene solo dos líneas: "uno" y "dos".
+  [tokens: 4027 in · 82 out · 1 call · $0.0013 · session $0.0013]
 > Cambia la segunda línea de notas.txt por 'tres' con edit_file.
   → edit_file(path="notas.txt", old_string="dos", new_string="tres")
   ┌ edit notas.txt
@@ -33,21 +33,21 @@ El archivo notas.txt contiene solo dos palabras, una por línea: "uno" y "dos".
   │ +tres
   └ Allow? [y] yes · [a] always this session · [n] no: y
   ✓ 1 replacement
-He cambiado la segunda línea de notas.txt: ahora el archivo dice "uno" y "tres".
-  [tokens: 4415 in · 204 out (65 reasoning) · 1 call · $0.0007 · session $0.0020]
+He cambiado la segunda línea de notas.txt: ahora dice "tres" en lugar de "dos".
+  [tokens: 4419 in · 218 out (79 reasoning) · 1 call · $0.0007 · session $0.0020]
 > /trace
-  20261103-154631-4b20 · claude-haiku-5-5 · 2 turns · 4 model calls · 2 tools
-  1  16:46:32  2 calls · 1 tool · 4027 in · 87 out · $0.0013 · 3.2 s
-  2  16:46:35  2 calls · 1 tool · 4415 in · 204 out · $0.0007 · 3.9 s
-  total: 8442 in · 291 out · $0.0020
-  [trace: ~/.local/share/maha/traces/20261103-154631-4b20.jsonl]
+  20261104-142320-56bb · claude-haiku-5-5 · 2 turns · 4 model calls · 2 tools
+  1  15:23:20  2 calls · 1 tool · 4027 in · 82 out · $0.0013 · 2.2 s
+  2  15:23:23  2 calls · 1 tool · 4419 in · 218 out · $0.0007 · 3.2 s
+  total: 8446 in · 300 out · $0.0020
+  [trace: ~/.local/share/maha/traces/20261104-142320-56bb.jsonl]
 > /exit
 $ maha -c -p "¿Qué pone ahora en notas.txt? Una frase." --allow read_file
-  [resumed 20261103-154631-4b20 · 8 messages · claude-haiku-5-5]
+  [resumed 20261104-142320-56bb · 8 messages · claude-haiku-5-5]
   → read_file(path="notas.txt")
   ✓ 2 lines
-  [tokens: 4795 in · 85 out · 1 call · $0.0004 · session $0.0024]
-El archivo notas.txt ahora contiene "uno" y "tres", una palabra por línea.
+  [tokens: 4813 in · 80 out · 1 call · $0.0004 · session $0.0024]
+Ahora notas.txt contiene dos líneas: "uno" y "tres".
 ```
 
 *(A real session, in Spanish: you can talk to `maha` in any language. The
@@ -65,8 +65,11 @@ reads the conversation from the prompt cache, and each turn costs less.)*
 - **Nothing changes without your permission.** Every write and every command
   asks first, showing the diff or the command: once, always in this session,
   or no. "Always" covers every later edit inside the working directory, but
-  only that exact command. Reading outside the working directory or a
-  secret file asks too, every time; a secret is recognized by its name
+  only that exact command; files that run code by themselves (`.git`, CI,
+  editor and agent configs, `.venv`, `node_modules`, `*.pth`) and files
+  with more than one hard link ask every time. Reading outside the working
+  directory or a secret file asks too, every time, and the model learns
+  nothing of those files before you approve; a secret is recognized by its name
   (`.env`, keys, `.ssh`…), not by its content. Commands run with a time
   limit, without a terminal (one that asks for something, such as a
   password or an editor, fails at once) and without your provider key in
@@ -110,7 +113,7 @@ You need [uv](https://docs.astral.sh/uv/) (it also installs Python 3.14 if
 missing).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.9.0
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.9.1
 ```
 
 Then choose a provider and a model:
@@ -183,9 +186,11 @@ base_url = "http://localhost:11434/v1"
 # api_key_env = "MY_KEY"   # without it, no key is sent
 ```
 
-A project can choose its provider, model and fallback in `.maha/config.toml`,
-and tighten the limits (never loosen them), but never declare providers:
-that way a foreign repository cannot send your key to another server.
+A project can choose its provider, model, fallback, effort and cache in
+`.maha/config.toml`, and tighten the limits (never loosen them), but never
+declare providers: that way a foreign repository cannot send your key to
+another server. What a project chooses is said at start, so it cannot raise
+your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
 
 ## Usage
 
@@ -235,8 +240,10 @@ With `-p`:
   denied.
 - With `-p` or without it: `-m ID` (model), `--fallback-model ID`,
   `--effort LEVEL`, `--max-steps N`, `--max-cost USD`, `--max-tokens N` and `--timeout S`.
-- Exit code: 0 fine, 1 error, 2 wrong usage, 3 a limit stopped the turn, 4
-  a call was denied; with Ctrl+C or a signal, 128 + the signal.
+- Exit code: 0 fine, 1 error (also when the model declines), 2 wrong usage,
+  3 a limit stopped the turn (also when the answer reached the model's
+  output limit or the conversation filled its context window), 4 a call was denied; with Ctrl+C or a signal, 128 + the
+  signal.
 
 ```
 $ git diff | maha -p "review this diff" --output-format json | jq -r .result

@@ -6,19 +6,23 @@ application and starts the `maha` command.
 
 import argparse
 import asyncio
+import contextlib
 import io
 import json
 import logging
 import os
 import secrets
+import signal
 import subprocess
 import sys
+import tempfile
 import uuid
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import date, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import TextIO
 
 from mharness import __version__, config
 from mharness.adapters import cli
@@ -45,7 +49,15 @@ from mharness.application.routing import ModelRouter
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.tools import ToolRegistry
 from mharness.domain.environment import command_env
-from mharness.domain.evals import Baseline, EvalError, Task, TaskRun, by_task, stats
+from mharness.domain.evals import (
+    BASELINE_REPEAT,
+    Baseline,
+    EvalError,
+    Task,
+    TaskRun,
+    by_task,
+    stats,
+)
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message
 from mharness.domain.trace import known_secrets
@@ -260,9 +272,22 @@ async def _eval(
             "--save keeps a baseline with the model's own effort: drop --effort "
             "and the effort of the configuration"
         )
+    if options.save and options.repeat < BASELINE_REPEAT:
+        # One pass is noise (spec hito 8, decision 3; deep audit, I13).
+        return cli.fail(
+            f"--save keeps a baseline of {BASELINE_REPEAT} runs of each task or "
+            f"more: add --repeat {BASELINE_REPEAT}"
+        )
     # load() requires a model for the evals.
     assert settings.model is not None
-    suite = TomlEvalSuite(Path(options.tasks), keep=options.keep)
+    # Each run's sessions and traces, apart from the user's; the suffix
+    # keeps two `maha eval` of the same second apart.
+    stamp = f"{datetime.now():%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
+    run_dir = config.state_dir(os.environ) / "evals" / stamp
+    # With --keep, the copies of this battery, together and said at the end
+    # (deep audit, I9).
+    copies = Path(tempfile.gettempdir()) / f"maha-eval-{stamp}"
+    suite = TomlEvalSuite(Path(options.tasks), keep=copies if options.keep else None)
     try:
         tasks = choose(await suite.tasks(), options.split, options.only)
         models: list[str] = options.models or [settings.model]
@@ -276,10 +301,6 @@ async def _eval(
     drop = [provider.api_key_env] if provider.api_key_env else []
     env = command_env(os.environ, drop=drop)
     masked = known_secrets(os.environ, also=[settings.api_key])
-    # Each run's sessions and traces, apart from the user's; the suffix
-    # keeps two `maha eval` of the same second apart.
-    stamp = f"{datetime.now():%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
-    run_dir = config.state_dir(os.environ) / "evals" / stamp
 
     @asynccontextmanager
     async def open_run(
@@ -321,17 +342,35 @@ async def _eval(
             finally:
                 await conversation.close()
 
-    print(
+    out = _Out()
+    head = (
         f"evals: {len(tasks)} tasks · {', '.join(models)} · "
         f"{options.repeat} run{'' if options.repeat == 1 else 's'} each · "
-        f"{options.jobs} at once" + (f" · effort {effort}" if effort else ""),
-        flush=True,
+        f"{options.jobs} at once" + (f" · effort {effort}" if effort else "")
     )
+    out.line(head)
     evaluator = Evaluator(suite, open_run, LocalCommandRunner(), env)
 
     def on_run(run: TaskRun) -> None:
-        print(cli.run_line(run), flush=True)
+        out.line(cli.run_line(run))
 
+    # Closing the window or `kill` end the battery as Ctrl+C does: what
+    # finished is kept, the copies go, and the code is 128 + the signal
+    # (deep audit, I6). Ctrl+C is asyncio.run's own.
+    loop = asyncio.get_running_loop()
+    current = asyncio.current_task()
+    assert current is not None
+    received: list[int] = []
+
+    def on_signal(number: int) -> None:
+        received.append(number)
+        # Only the first: another one while what finished is written would
+        # cut the writing, and end in a traceback (review of the deep audit).
+        if len(received) == 1:
+            current.cancel()
+
+    for number in _CLOSING:
+        loop.add_signal_handler(number, on_signal, number)
     try:
         runs = await evaluator.run(
             tasks,
@@ -346,11 +385,41 @@ async def _eval(
         done = evaluator.finished
         await asyncio.to_thread(_write_runs, run_dir / "runs.json", done)
         kept = f"{len(done)} run" + ("" if len(done) == 1 else "s")
-        print(f"\ninterrupted: {kept} kept in {run_dir}", file=sys.stderr, flush=True)
-        raise
-    regressed = cli.eval_report(runs, baselines, sys.stdout)
-    # Every run in full: the report shows one line of a failure.
+        # A closed window may have taken the terminal: runs.json is written.
+        with contextlib.suppress(OSError):
+            print(f"\ninterrupted: {kept} kept in {run_dir}", file=sys.stderr)
+            if options.keep:
+                print(f"copies of the repositories: {copies}", file=sys.stderr)
+            sys.stderr.flush()
+        if not received:
+            raise
+        current.uncancel()
+        return 128 + received[0]
+    finally:
+        for number in _CLOSING:
+            loop.remove_signal_handler(number)
+    # Every run in full, first: the report shows one line of a failure, and
+    # may find nobody reading (deep audit, I6).
     await asyncio.to_thread(_write_runs, run_dir / "runs.json", runs)
+    regressed = out.show(
+        lambda stream: cli.eval_report(runs, baselines, stream, effort=effort)
+    )
+    broken = {
+        model: count
+        for model in models
+        if (count := sum(r.model == model and r.outcome == "error" for r in runs))
+    }
+    if options.save and broken:
+        # A baseline without the runs that did not finish would not be the
+        # battery's (deep audit, I13).
+        for model, count in broken.items():
+            cli.fail(
+                f"not saved: {count} run{'' if count == 1 else 's'} of {model} "
+                "ended in an error; run the battery again (--retry-errors) to "
+                "keep a baseline"
+            )
+        out.line(f"\nsessions and traces of these runs: {run_dir}")
+        return 1
     if options.save:
         commit = _commit()
         for model in models:
@@ -367,9 +436,40 @@ async def _eval(
                     total=stats(mine),
                 )
             )
-            print(f"\nsaved: {where}")
-    print(f"\nsessions and traces of these runs: {run_dir}")
+            out.line(f"\nsaved: {where}")
+    out.line(f"\nsessions and traces of these runs: {run_dir}")
+    if options.keep:
+        out.line(f"copies of the repositories: {copies}")
     return 1 if regressed else 0
+
+
+# Closing the window (SIGHUP) and `kill` (SIGTERM).
+_CLOSING = (signal.SIGHUP, signal.SIGTERM)
+
+
+class _Out:
+    """The stdout of `maha eval` until nobody reads it (`maha eval | head`);
+    then nothing more is shown, and the battery goes on: runs.json keeps
+    every run (deep audit, I6)."""
+
+    def __init__(self) -> None:
+        self._stream: TextIO = sys.stdout
+
+    def show[T](self, write: Callable[[TextIO], T]) -> T:
+        """Run `write` on the stream, and return what it returns."""
+        try:
+            done = write(self._stream)
+            self._stream.flush()
+        except BrokenPipeError:
+            cli.drop_output(sys.stdout)
+            # Somewhere to write that nobody reads: the report still has to
+            # say whether there was a regression.
+            self._stream = io.StringIO()
+            done = write(self._stream)
+        return done
+
+    def line(self, text: str) -> None:
+        self.show(lambda stream: print(text, file=stream))
 
 
 def _write_runs(path: Path, runs: Sequence[TaskRun]) -> None:
@@ -392,6 +492,13 @@ def _commit() -> str | None:
     except OSError, subprocess.SubprocessError:
         return None
     return done.stdout.strip() or None
+
+
+def _notes(settings: config.Settings) -> list[str]:
+    """What to say at start: what the project's file chose (deep audit
+    after hito 9, M4)."""
+    note = cli.project_note(settings.from_project)
+    return [] if note is None else [note]
 
 
 def _gate(lines: cli.StdinLines) -> ApprovalGate:
@@ -548,6 +655,7 @@ async def _print(
             provider=settings.provider_name,
             output_format=options.output_format,
             start=start,
+            notes=_notes(settings),
         )
 
 
@@ -570,4 +678,5 @@ async def _converse(
             # Only a terminal has typed-ahead input to drop.
             discard=lines.discard if os.isatty(0) else None,
             start=start,
+            notes=_notes(settings),
         )

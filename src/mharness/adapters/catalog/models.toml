@@ -298,6 +298,17 @@ output = 0.00
 cache_read = 0.00
 trains_on_data = true
 
+[models."opencode-zen/pulse-alpha-free"]  # Pulse Alpha Free; free for a limited time
+max_output = 131_072
+context = 1_048_576
+input = 0.00
+output = 0.00
+cache_read = 0.00
+checked = 2026-11-03
+# "During its free period, collected data may be retained and used to
+# improve the model" (OpenCode's docs, 2026-11-03).
+trains_on_data = true
+
 [models."opencode-zen/glm-5.3-flash-free"]  # GLM-5.3-Flash Free
 max_output = 32_000
 context = 200_000

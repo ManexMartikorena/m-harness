@@ -4,6 +4,6 @@ fixture = "texto"
 allow = ["write_file", "edit_file"]
 
 [check]
+# El arnés repone los tests del fixture antes de comprobar: los que toque
+# el agente no cuentan (auditoría profunda, I1).
 command = "python3 -m unittest -q test_texto"
-file = "test_texto.py"
-contains = ['self.assertEqual(slugify("Hola Mundo"), "hola-mundo")']

@@ -9,11 +9,18 @@ from collections.abc import Iterator, Sequence
 from decimal import Decimal
 from importlib.metadata import version
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
 from mharness.adapters.cli.approval import TerminalApproval
-from mharness.adapters.cli.conversation import EXIT_INTERRUPTED, converse, retry_note
+from mharness.adapters.cli.commands import _ENDINGS
+from mharness.adapters.cli.conversation import (
+    EXIT_INTERRUPTED,
+    converse,
+    retry_note,
+    turn_note,
+)
 from mharness.adapters.cli.input import InputTooLarge, StdinLines
 from mharness.adapters.cli.spinner import CLEAR_LINE
 from mharness.adapters.commands import LocalCommandRunner
@@ -21,13 +28,21 @@ from mharness.adapters.tools import RunCommand
 from mharness.application.agent import Agent
 from mharness.application.sessions import Sessions, Start
 from mharness.application.tools import ToolRegistry
-from mharness.domain.agent_events import ModelRetry
+from mharness.application.traces import Ending
+from mharness.domain.agent_events import ModelRetry, TurnEnd, TurnFinished
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import ModelInfo
 from mharness.domain.errors import ModelAuthError, ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.limits import TurnLimits
-from mharness.domain.messages import Message, ToolCallBlock, ToolResultBlock
+from mharness.domain.messages import (
+    Block,
+    Message,
+    ReasoningBlock,
+    TextBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+)
 from mharness.domain.model import ModelResponse, Usage
 from mharness.domain.retry import NO_RETRIES, RetryPolicy
 from mharness.domain.tools import ToolError
@@ -110,6 +125,25 @@ async def test_shows_the_answer_and_the_tokens() -> None:
         "  [tokens: 31 in · 5 out]\n"
         "> "
     )
+
+
+async def test_each_text_block_starts_on_a_new_line() -> None:
+    # Review of the deep audit: text, thinking, text ran together.
+    blocks: list[Block] = [
+        TextBlock(text="Uno."),
+        ReasoningBlock(text="pienso", signature="firma"),
+        TextBlock(text="Dos."),
+    ]
+    response = ModelResponse(
+        message=Message(role="assistant", blocks=blocks),
+        stop_reason="end_turn",
+        usage=Usage(),
+        model="glm-5.3-flash",
+    )
+
+    _, out, _ = await run(FakeModelClient([response]), "Hola", "/exit")
+
+    assert out == f"{HEADER}\n> Uno.\nDos.\n> "
 
 
 async def test_exit_command_ends_with_zero() -> None:
@@ -1246,3 +1280,61 @@ def test_a_retry_note_is_clean_and_rounded() -> None:
     )
 
     assert retry_note(event) == ("[m\\x1b[2J: HTTP 429\\n; retrying in 2.5 s (2/3)]")
+
+
+async def test_the_model_in_the_header_is_escaped() -> None:
+    # Deep audit after hito 9 (I3): a session imported with a model like
+    # this one wrote live escapes to the terminal when resumed.
+    evil = "glm\x1b]0;PWNED\x07\x1b[31mRED"
+    sessions = Sessions(
+        MemorySessionStore(),
+        lambda model, history: Agent(
+            FakeModelClient([]),
+            ToolRegistry(),
+            gate=FakeApproval(),
+            model=model,
+            catalog=MemoryCatalog(),
+            provider="opencode-go",
+            history=history,
+        ),
+        cwd="/home/ana/proyecto",
+        provider="opencode-go",
+        model=evil,
+        version="0.9.0",
+        traces=MemoryTraceSink(),
+    )
+    out = io.StringIO()
+
+    await converse(
+        sessions,
+        provider="opencode-go",
+        catalog=KNOWN,
+        read_line=ScriptedInput(),
+        out=out,
+        err=io.StringIO(),
+    )
+
+    assert "\x1b" not in out.getvalue()
+    assert "glm\\x1b]0;PWNED" in out.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("reason", "note"),
+    [
+        ("max_output", "[the answer was cut: the model reached its output limit]"),
+        ("refused", "[the model declined to answer]"),
+        (
+            "context_full",
+            "[the conversation filled the model's context window: /new starts another]",
+        ),
+    ],
+)
+def test_how_the_model_stopped_is_told(reason: TurnEnd, note: str) -> None:
+    turn = TurnFinished(reason=reason, usage=Usage(), tool_calls=0, steps=1, cost=None)
+
+    assert turn_note(turn) == note
+
+
+def test_every_way_a_turn_ends_has_its_name_in_the_trace() -> None:
+    # Review of the deep audit: /trace showed a raw key for a new reason.
+    assert set(get_args(Ending.__value__)) - {"end_turn"} == set(_ENDINGS)

@@ -256,10 +256,120 @@ async def test_without_a_valid_header_it_is_corrupt(
 
 
 async def test_a_history_the_model_would_refuse_is_corrupt(folder: Path) -> None:
-    await saved(folder, HOLA, CALL)
+    # In the middle: no crash leaves a whole line after a missing one.
+    await saved(folder, HOLA, CALL, ANSWER)
 
     with pytest.raises(SessionCorrupt, match="call c1 has no result"):
         await JsonlSessionStore(folder).open(HEADER.id)
+
+
+# A turn is one write, but not an atomic one: a crash can leave whole lines
+# of half a turn (audit after hito 9, S1).
+
+TURN = [MessageEntry(message=m) for m in (HOLA, CALL, RESULT, ANSWER)]
+LATER = Message(role="user", blocks=[TextBlock(text="¿Y el README?")])
+LATER_CALL = Message(
+    role="assistant",
+    blocks=[ToolCallBlock(id="c2", name="read_file", arguments='{"path": "b"}')],
+)
+LATER_RESULT = Message(
+    role="tool", blocks=[ToolResultBlock(call_id="c2", content="readme")]
+)
+
+
+def entry_lines(*messages: Message) -> bytes:
+    return b"".join(
+        (json.dumps(MessageEntry(message=m).model_dump(mode="json")) + "\n").encode()
+        for m in messages
+    )
+
+
+async def cut_turn(folder: Path) -> tuple[Path, bytes]:
+    """A whole turn, and a second one cut by a crash after the assistant's
+    call, before its result. Returns the file and the bytes of the first."""
+    log = await JsonlSessionStore(folder).create(HEADER)
+    await log.append([*TURN, UsageEntry(usage=Usage(input_tokens=5))])
+    await log.close()
+    path = file_of(folder)
+    first = path.read_bytes()
+    add_bytes(path, entry_lines(LATER, LATER_CALL))
+    return path, first
+
+
+async def test_a_turn_cut_between_its_lines_is_dropped_on_open(folder: Path) -> None:
+    path, first = await cut_turn(folder)
+
+    session, log = await JsonlSessionStore(folder).open(HEADER.id)
+    await log.close()
+
+    assert session.messages == [HOLA, CALL, RESULT, ANSWER]
+    assert session.usage == Usage(input_tokens=5)
+    # Cut from the file too: what is appended later follows the whole turn.
+    assert path.read_bytes() == first
+
+
+async def test_after_a_dropped_turn_the_next_one_is_appended_cleanly(
+    folder: Path,
+) -> None:
+    await cut_turn(folder)
+    store = JsonlSessionStore(folder)
+    _, log = await store.open(HEADER.id)
+    await log.append([MessageEntry(message=m) for m in (LATER, ANSWER)])
+    await log.close()
+
+    again, log = await store.open(HEADER.id)
+    await log.close()
+
+    assert again.messages == [HOLA, CALL, RESULT, ANSWER, LATER, ANSWER]
+
+
+async def test_a_turn_cut_after_a_result_keeps_what_ran(folder: Path) -> None:
+    # A valid history: the turn up to its last result, as the agent keeps
+    # one cut by an error.
+    path = await saved(folder, HOLA, ANSWER)
+    add_bytes(path, entry_lines(LATER, LATER_CALL, LATER_RESULT))
+
+    session, log = await JsonlSessionStore(folder).open(HEADER.id)
+    await log.close()
+
+    assert session.messages == [HOLA, ANSWER, LATER, LATER_CALL, LATER_RESULT]
+
+
+async def test_read_and_the_list_leave_out_a_cut_turn_without_touching_it(
+    folder: Path,
+) -> None:
+    path, first = await cut_turn(folder)
+    before = path.read_bytes()
+    store = JsonlSessionStore(folder)
+
+    session = await store.read(HEADER.id)
+    [summary] = await store.summaries()
+
+    assert session.messages == [HOLA, CALL, RESULT, ANSWER]
+    assert summary.messages == 4
+    assert path.read_bytes() == before != first
+
+
+async def test_a_cut_turn_and_a_cut_line_are_both_dropped(folder: Path) -> None:
+    path, first = await cut_turn(folder)
+    add_bytes(path, b'{"type": "message", "mess')
+
+    session, log = await JsonlSessionStore(folder).open(HEADER.id)
+    await log.close()
+
+    assert session.messages == [HOLA, CALL, RESULT, ANSWER]
+    assert path.read_bytes() == first
+
+
+async def test_a_session_whose_only_turn_was_cut_opens_empty(folder: Path) -> None:
+    path = await saved(folder, HOLA, CALL)
+    header_line = path.read_bytes().split(b"\n")[0] + b"\n"
+
+    session, log = await JsonlSessionStore(folder).open(HEADER.id)
+    await log.close()
+
+    assert session.messages == []
+    assert path.read_bytes() == header_line
 
 
 # The lock: one maha per session (spec hito 6, §1.4 and §4.3.5). Two stores

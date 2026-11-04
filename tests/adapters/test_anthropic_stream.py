@@ -163,7 +163,7 @@ async def test_the_cost_opencode_reports_wins(client: AnthropicClient) -> None:
         ("end_turn", "end_turn"),
         ("tool_use", "tool_use"),
         ("max_tokens", "max_tokens"),
-        ("model_context_window_exceeded", "max_tokens"),
+        ("model_context_window_exceeded", "context_full"),
         ("refusal", "content_filter"),
         ("stop_sequence", "other"),
         ("pause_turn", "other"),
@@ -287,7 +287,7 @@ async def test_a_stream_that_does_not_finish_fails(
 ) -> None:
     respx.post(ENDPOINT).mock(return_value=stream_of(*parts))
 
-    with pytest.raises(ModelResponseError, match="before the answer was complete"):
+    with pytest.raises(ModelUnavailableError, match="before the answer was complete"):
         await events(client)
 
 
@@ -408,4 +408,51 @@ async def test_writes_to_the_hour_cache_are_counted_apart(
     ) == (
         3000,
         2000,
+    )
+
+
+@respx.mock
+async def test_a_null_in_the_last_usage_does_not_wipe_what_came(
+    client: AnthropicClient,
+) -> None:
+    # Deep audit after hito 9: `|=` replaced the counts with null, and the
+    # turn's limits saw almost nothing.
+    respx.post(ENDPOINT).mock(
+        return_value=stream_of(
+            event(
+                {
+                    "type": "message_start",
+                    "message": {
+                        "model": MODEL,
+                        "usage": {
+                            "input_tokens": 1000,
+                            "cache_read_input_tokens": 5000,
+                            "cache_creation_input_tokens": 200,
+                            "output_tokens": 1,
+                        },
+                    },
+                }
+            ),
+            event(
+                {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": "end_turn"},
+                    "usage": {
+                        "input_tokens": None,
+                        "cache_read_input_tokens": None,
+                        "cache_creation_input_tokens": None,
+                        "output_tokens": 7,
+                    },
+                }
+            ),
+            event({"type": "message_stop"}),
+        )
+    )
+
+    usage = (await collect(client.stream(REQUEST))).usage
+
+    assert (usage.input_tokens, usage.cache_read_tokens, usage.output_tokens) == (
+        6200,
+        5000,
+        7,
     )

@@ -14,7 +14,9 @@ from mharness.domain.paths import (
     is_inside,
     is_secret,
     is_secret_at,
+    printable,
     read_warning,
+    unquoted,
 )
 
 
@@ -159,6 +161,25 @@ def test_change_warning(path: str, warning: str | None) -> None:
         (".git/HEAD", GIT_DIR),
         ("docs/github.md", None),
         ("envrc.txt", None),
+        # Run by themselves too (audit of hito 9, H3): a `.pth` runs at every
+        # start of Python, maha's grep worker included.
+        (".venv/lib/python3.14/site-packages/evil.pth", RUNS_CODE),
+        (".venv/bin/activate", RUNS_CODE),
+        ("venv/bin/python", RUNS_CODE),
+        ("node_modules/left-pad/index.js", RUNS_CODE),
+        (".mcp.json", RUNS_CODE),
+        (".cursor/mcp.json", RUNS_CODE),
+        (".zed/tasks.json", RUNS_CODE),
+        (".nvim.lua", RUNS_CODE),
+        (".exrc", RUNS_CODE),
+        (".cargo/config.toml", RUNS_CODE),
+        (".cargo/config", RUNS_CODE),
+        ("sub/.CARGO/Config.toml", RUNS_CODE),
+        ("lib/anything.pth", RUNS_CODE),
+        ("lib/ANYTHING.PTH", RUNS_CODE),
+        ("docs/config.toml", None),
+        ("docs/cargo.md", None),
+        ("pth.txt", None),
     ],
 )
 def test_change_warning_of_what_runs_code(path: str, warning: str | None) -> None:
@@ -174,12 +195,30 @@ def test_a_working_directory_inside_git_does_not_warn_every_write() -> None:
 
 
 def test_inside_by_the_relative_path() -> None:
-    # ".ssh" above the root is not part of the relative path.
-    root = PurePath("/home/ane/.ssh/project")
+    root = PurePath("/home/ane/project")
 
-    assert is_inside(PurePath("/home/ane/.ssh/project/a.txt"), root)
-    assert not is_secret_at(PurePath("/home/ane/.ssh/project/a.txt"), root)
-    assert is_secret_at(PurePath("/home/ane/.ssh/a.txt"), root)
+    assert is_inside(PurePath("/home/ane/project/a.txt"), root)
+    assert not is_inside(PurePath("/home/ane/projectx/a.txt"), root)
+
+
+@pytest.mark.parametrize(
+    ("root", "name"),
+    [
+        ("/home/ane/.aws", "credentials"),
+        ("/home/ane/.ssh", "config"),
+        ("/home/ane/.ssh/project", "a.txt"),
+        ("/home/ane/.config/gcloud", "credentials.db"),
+    ],
+)
+def test_a_working_directory_inside_a_secret_folder_keeps_it_secret(
+    root: str, name: str
+) -> None:
+    # Audit of hito 9, H5: only the path below the root counted, so the
+    # credentials of ~/.aws were read without asking from inside it.
+    where = PurePath(root)
+
+    assert is_secret_at(where / name, where)
+    assert read_warning(where / name, where, secret=SECRET_FILE) == SECRET_FILE
 
 
 def test_the_asked_path_counts_too() -> None:
@@ -197,3 +236,44 @@ def test_the_asked_path_counts_too() -> None:
         change_warning(resolved, ROOT, asked=ROOT / ".github/workflows/ci.yml")
         == RUNS_CODE
     )
+
+
+@pytest.mark.parametrize(
+    ("name", "shown"),
+    [
+        ("notas.txt", "notas.txt"),
+        ("café.txt", "café.txt"),
+        # A byte that is not UTF-8, as os gives it: a surrogate. Quoted, as
+        # git does (review of the deep audit).
+        ("caf\udce9.txt", '"caf\\xe9.txt"'),
+        # A lone surrogate of no byte.
+        ("a\ud800b", '"a\\ud800b"'),
+        # A name that could be taken for an escape, or for quotes.
+        ("caf\\xe9.txt", '"caf\\\\xe9.txt"'),
+        ('"x"', '"\\"x\\""'),
+        ('say "hi"', 'say "hi"'),
+    ],
+)
+def test_printable_names_can_go_to_json_in_utf_8(name: str, shown: str) -> None:
+    assert printable(name) == shown
+    printable(name).encode("utf-8")
+    assert unquoted(printable(name)) == name
+
+
+def test_a_path_that_is_not_quoted_is_left_as_it_is() -> None:
+    assert unquoted("src/a.py") == "src/a.py"
+    assert unquoted('"') == '"'
+    assert unquoted('a"b"') == 'a"b"'
+
+
+@pytest.mark.parametrize("raw", ['"a\\qb"', '"a\\x4"', '"a\\xzz"', '"a"b"', '"a\\"'])
+def test_a_quoted_path_with_an_unknown_escape_is_refused(raw: str) -> None:
+    with pytest.raises(ValueError, match="quoted path"):
+        unquoted(raw)
+
+
+def test_a_pth_outside_warns_that_it_runs_code() -> None:
+    # The user's site-packages, outside the working directory.
+    path = PurePath("/home/ane/.local/lib/python3.14/site-packages/x.pth")
+
+    assert change_warning(path, ROOT) == f"{OUTSIDE}; {RUNS_CODE}"

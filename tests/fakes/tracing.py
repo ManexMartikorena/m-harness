@@ -1,12 +1,13 @@
 """A `TraceSink` in memory that behaves as the real one where the
 application relies on it (spec hito 7, §1.7; audit of hito 7): records
-through JSON, ids checked, broken lines skipped when read, writes to a
-deleted trace lost, and every operation able to fail on demand."""
+through JSON, ids checked, broken lines skipped when read, a trace with an
+open log neither opened again nor deleted (the lock), and every operation
+able to fail on demand."""
 
 from pydantic import ValidationError
 
 from mharness.domain.session import is_session_id
-from mharness.domain.trace import TraceError, TraceExists, TraceRecord
+from mharness.domain.trace import TraceError, TraceExists, TraceInUse, TraceRecord
 
 
 class MemoryTraceLog:
@@ -39,6 +40,9 @@ class MemoryTraceLog:
     async def close(self) -> None:
         self.closed = True
 
+    def holds(self, session: str) -> bool:
+        return not self.closed and self._session == session
+
     def _check(self) -> None:
         if self.closed:
             raise TraceError(f"the trace of {self._session} is closed")
@@ -67,6 +71,7 @@ class MemoryTraceSink:
         if self.open_failures:
             self.open_failures -= 1
             raise TraceError(f"cannot write the trace of {session}: Permission denied")
+        self._unlocked(session)
         # The file exists from here on, even without records.
         if session not in self.traces:
             self.created.append(session)
@@ -90,6 +95,7 @@ class MemoryTraceSink:
 
     async def delete(self, session: str) -> None:
         _check(session)
+        self._unlocked(session)
         self.traces.pop(session, None)
 
     async def sessions(self) -> list[str]:
@@ -98,6 +104,11 @@ class MemoryTraceSink:
     def location(self, session: str) -> str:
         _check(session)
         return f"/traces/{session}.jsonl"
+
+    def _unlocked(self, session: str) -> None:
+        """As flock: a log not yet closed holds its trace."""
+        if any(log.holds(session) for log in self.logs):
+            raise TraceInUse(f"the trace of {session} is open in another maha")
 
     def events(self, session: str) -> list[str]:
         """The `type` of each record, for short assertions."""

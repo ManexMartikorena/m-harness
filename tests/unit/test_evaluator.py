@@ -2,14 +2,24 @@
 failures apart (spec hito 8, §1.5 to §1.9), with fakes."""
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+import os
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from mharness.application.evals import Evaluator, choose
+import pytest
+
+from mharness.application.evals import CHECK_TIME_LIMIT, Evaluator, choose
 from mharness.application.sessions import Conversation
 from mharness.domain.commands import CommandResult
-from mharness.domain.errors import ModelRateLimitError
+from mharness.domain.errors import (
+    ModelAuthError,
+    ModelError,
+    ModelRateLimitError,
+    ModelRequestError,
+    ModelResponseError,
+    ModelUnavailableError,
+)
 from mharness.domain.evals import Check, Task, TaskRun
 from mharness.domain.model import Usage
 from tests.adapters.test_print_mode import crashing_second
@@ -141,7 +151,7 @@ async def test_the_command_runs_in_the_copy_and_must_end_with_zero() -> None:
     assert [r.outcome for r in runs] == ["pass", "fail"]
     assert runs[1].detail == "the check exited with 1:\nFAILED (failures=1)"
     assert [r.cwd for r in runner.ran] == [path for *_, path in opened]
-    assert runner.ran[0].env == ENV
+    assert runner.ran[0].env["PATH"] == ENV["PATH"]
 
 
 async def test_a_provider_failure_is_an_error_and_is_not_checked() -> None:
@@ -324,3 +334,151 @@ async def test_a_run_that_breaks_mid_turn_keeps_what_it_spent() -> None:
         1,
     )
     assert run.detail == "RuntimeError: boom"
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (ModelRequestError("400 tools.0: invalid schema"), "request"),
+        (ModelResponseError("a stream line is too long"), "response"),
+    ],
+)
+async def test_a_broken_request_or_answer_of_maha_is_a_failure(
+    error: ModelError, reason: str
+) -> None:
+    # Deep audit (I2): a 4xx for a request maha broke, or an answer maha
+    # cannot read, left the success rate as "provider errors": a
+    # regression of maha hid.
+    subject, _ = evaluator(lambda t, m: [error], task())
+
+    [run] = await subject.run([task()], ["m"], retry_errors=True)
+
+    assert (run.outcome, run.reason) == ("fail", reason)
+    assert str(error) in (run.detail or "")
+
+
+@pytest.mark.parametrize(
+    ("error", "reason", "retried"),
+    [
+        (ModelRateLimitError("429 Too Many Requests"), "provider", True),
+        (ModelUnavailableError("503 Service Unavailable"), "provider", True),
+        (ModelAuthError("401 Unauthorized"), "credentials", False),
+    ],
+)
+async def test_only_what_the_provider_may_fix_is_run_again(
+    error: ModelError, reason: str, retried: bool
+) -> None:
+    # Deep audit (I2): --retry-errors says it retries the provider's errors
+    # (429, 5xx, network); a rejected key fails the same way again.
+    seen: list[TaskRun] = []
+    subject, _ = evaluator(lambda t, m: [error], task())
+
+    [run] = await subject.run([task()], ["m"], retry_errors=True, on_run=seen.append)
+
+    assert (run.outcome, run.reason) == ("error", reason)
+    assert len(seen) == (2 if retried else 1)
+
+
+async def test_a_test_the_agent_changed_is_put_back_and_said() -> None:
+    # Deep audit (I1): the check runs the fixture's tests, not the agent's.
+    fixtures = {"tienda": {"tests/test_a.py": "original\n", "src/a.py": "x\n"}}
+    check = Check(command="python3 -m unittest -q tests.test_a")
+    seen: list[str] = []
+
+    class Seeing(FakeRunner):
+        async def run(
+            self, command: str, *, cwd: Path, time_limit: float, env: Mapping[str, str]
+        ) -> CommandResult:
+            seen.append((cwd / "tests/test_a.py").read_text())
+            return await super().run(command, cwd=cwd, time_limit=time_limit, env=env)
+
+    @asynccontextmanager
+    async def open_run(t: Task, model: str, path: Path) -> AsyncIterator[Conversation]:
+        # As an agent that rewrote the test.
+        (path / "tests/test_a.py").write_text("pass\n")
+        world = World(MemorySessionStore(), FakeModelClient([reply("Hecho.")]))
+        conversation = await world.sessions.start()
+        try:
+            yield conversation
+        finally:
+            await conversation.close()
+
+    ok = CommandResult(exit_code=0, output="OK", truncated=False, timed_out=False)
+    suite = MemoryEvalSuite([task(check=check)], fixtures)
+    subject = Evaluator(suite, open_run, Seeing([ok]), ENV)
+
+    [run] = await subject.run([task(check=check)], ["m"])
+
+    assert seen == ["original\n"]
+    assert (run.outcome, run.restored) == ("pass", ["tests/test_a.py"])
+
+
+async def test_the_check_runs_with_an_empty_home_and_no_credentials() -> None:
+    # Deep audit (I5): the check runs code the model wrote, on the host,
+    # and had the user's HOME and XDG folders. Until the sandbox of hito
+    # 15, an empty HOME of its own and only the variables it needs.
+    env = {
+        "PATH": "/usr/bin",
+        "LANG": "es_ES.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "TZ": "Europe/Madrid",
+        "HOME": "/home/someone",
+        "USER": "someone",
+        "XDG_CONFIG_HOME": "/home/someone/.config",
+        "XDG_DATA_HOME": "/home/someone/.local/share",
+        "SSH_AUTH_SOCK": "/tmp/ssh-agent",
+        "VIRTUAL_ENV": "/home/someone/venv",
+        "LC_MY_TOKEN": "secret",
+    }
+    check = Check(command="python3 -m unittest -q tests.test_a")
+    homes: list[list[str]] = []
+
+    class Seeing(FakeRunner):
+        async def run(
+            self, command: str, *, cwd: Path, time_limit: float, env: Mapping[str, str]
+        ) -> CommandResult:
+            homes.append(os.listdir(env["HOME"]))
+            return await super().run(command, cwd=cwd, time_limit=time_limit, env=env)
+
+    ok = CommandResult(exit_code=0, output="OK", truncated=False, timed_out=False)
+    runner = Seeing([ok])
+    opened: list[tuple[str, str, Path]] = []
+    suite = MemoryEvalSuite([task(check=check)], FIXTURES)
+    subject = Evaluator(suite, opener(says("Hecho."), opened), runner, env)  # type: ignore[arg-type]
+
+    [run] = await subject.run([task(check=check)], ["m"])
+
+    [ran] = runner.ran
+    home = ran.env["HOME"]
+    assert run.outcome == "pass"
+    assert ran.env == {
+        "PATH": "/usr/bin",
+        "LANG": "es_ES.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "TZ": "Europe/Madrid",
+        "HOME": home,
+        "TMPDIR": home,
+    }
+    # Empty, and not the copy nor in it: the check cannot read it back.
+    assert homes == [[]]
+    [(_, _, copy)] = opened
+    assert ran.cwd == copy
+    assert not Path(home).is_relative_to(copy)
+    assert ran.time_limit == CHECK_TIME_LIMIT
+
+
+async def test_a_killed_check_says_so() -> None:
+    # Deep audit (I9): it said "the check exited with None".
+    check = Check(command="python3 -m unittest -q tests.test_a")
+    killed = CommandResult(
+        exit_code=None, output="Killed", truncated=False, timed_out=False
+    )
+    runner = FakeRunner([killed])
+    subject, _ = evaluator(says("Hecho."), task(check=check), runner=runner)
+
+    [run] = await subject.run([task(check=check)], ["m"])
+
+    assert (run.outcome, run.detail) == (
+        "fail",
+        "the check was killed before it ended:\nKilled",
+    )

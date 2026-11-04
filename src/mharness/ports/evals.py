@@ -21,6 +21,17 @@ class EvalSuite(Protocol):
         on leaving, unless the suite keeps them."""
         ...
 
+    async def home(self, workspace: Path) -> Path:
+        """An empty folder of the run of `workspace`, out of the copy, that
+        goes away with it: the HOME of its check (deep audit, I5)."""
+        ...
+
+    async def restore_tests(self, task: Task, workspace: Path) -> list[str]:
+        """Put the test files of the task's fixture back in the copy as the
+        fixture has them, but those of `task.check.own_tests`; the paths of
+        those the run had changed (deep audit, I1)."""
+        ...
+
     async def read(self, workspace: Path, path: str) -> str | None:
         """A file of the copy as text; None if it is not there."""
         ...

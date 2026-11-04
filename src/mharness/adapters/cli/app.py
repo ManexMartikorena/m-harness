@@ -167,7 +167,10 @@ def _eval_parser(commands: Any) -> None:
         "--only", action="append", default=[], metavar="ID", help="only this task"
     )
     evals.add_argument(
-        "--save", action="store_true", help="keep the result as the new baseline"
+        "--save",
+        action="store_true",
+        help="keep the result as the new baseline (with --repeat 5 or more, and "
+        "no run in error)",
     )
     evals.add_argument(
         "--keep", action="store_true", help="keep each run's copy of its repository"

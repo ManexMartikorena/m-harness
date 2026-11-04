@@ -7,6 +7,7 @@ changes. Reading it back gives a `Session`.
 """
 
 import re
+from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -15,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from mharness.domain.messages import Message, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
-from mharness.domain.money import Usd
+from mharness.domain.money import Usd, known
 
 # Date and time in UTC, and 4 random hex digits: short to type, sorted by
 # date, and two sessions in the same second do not clash.
@@ -71,10 +72,15 @@ class UsageEntry(BaseModel, frozen=True):
 
 
 class ModelEntry(BaseModel, frozen=True):
-    """`/model` changed the model from here on."""
+    """`/model` or `-m` changed the model from here on, for the maha of
+    `provider`: a session resumed by another provider names a model of
+    that one, which the API of the header's never gets (audit after hito
+    9, S2)."""
 
     type: Literal["model"] = "model"
     model: str
+    # None in older files: the header's.
+    provider: str | None = Field(default=None, exclude_if=lambda p: p is None)
 
 
 # Validated by `type`, as the blocks of a message.
@@ -88,13 +94,18 @@ class Session(BaseModel, frozen=True):
 
     header: SessionHeader
     messages: list[Message]
-    # The last one: the header's, or that of the last `ModelEntry`.
+    # The last one of the header's provider: the header's, or that of its
+    # last `ModelEntry`.
     model: str
     # The sum of every `UsageEntry`.
     usage: Usage
     # The sum of the turns with a cost, in USD, and how many had none.
     cost: Usd = Decimal(0)
     uncosted_turns: int = Field(default=0, ge=0)
+    # The last model of every provider that changed it, the header's too;
+    # empty in the exports before it. An import takes only `model`, with
+    # the header's provider.
+    models: dict[str, str] = Field(default_factory=dict)
 
 
 class SessionSummary(BaseModel, frozen=True):
@@ -156,6 +167,32 @@ def check_history(messages: list[Message]) -> None:
         raise _broken(f"call {waiting[0]} has no result")
 
 
+def whole_turns(entries: Sequence[SessionEntry]) -> int:
+    """How many of `entries`, from the start, to keep: all of them, unless
+    a crash cut the last turn between two of its lines and left an
+    assistant's calls without their results (audit after hito 9, S1).
+    Then that turn goes, from its user message on: the agent keeps whole
+    turns, and a call never comes without its result. Damage anywhere
+    else is left for `replay` to find."""
+    last = entries[-1] if entries else None
+    if not isinstance(last, MessageEntry) or not _calls(last.message):
+        # A turn is written messages first: anything after its last
+        # message means the messages were all written.
+        return len(entries)
+    for index in range(len(entries) - 2, -1, -1):
+        entry = entries[index]
+        if isinstance(entry, MessageEntry) and entry.message.role == "user":
+            return index
+    return len(entries) - 1
+
+
+def _calls(message: Message) -> bool:
+    """Whether `message` is the assistant's and calls tools."""
+    return message.role == "assistant" and any(
+        isinstance(block, ToolCallBlock) for block in message.blocks
+    )
+
+
 def _broken(problem: str) -> SessionCorrupt:
     return SessionCorrupt(f"history: {problem}")
 
@@ -164,7 +201,7 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
     """The session that `entries`, in the order of the file, build. Raises
     `SessionCorrupt` if its history could not go to the model."""
     messages: list[Message] = []
-    model = header.model
+    models = {header.provider: header.model}
     usage = Usage()
     cost = Decimal(0)
     uncosted = 0
@@ -172,11 +209,13 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
         match entry:
             case MessageEntry(message=message):
                 messages.append(message)
-            case ModelEntry(model=changed):
-                model = changed
+            case ModelEntry(model=changed, provider=provider):
+                models[provider or header.provider] = changed
             case UsageEntry(usage=more, cost=spent, turns=turns):
                 usage += more
-                if spent is None:
+                # A sum past what an amount in USD can be is no longer
+                # known (review of the deep audit).
+                if spent is None or known(cost + spent) is None:
                     uncosted += turns
                 else:
                     cost += spent
@@ -184,10 +223,11 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
     return Session(
         header=header,
         messages=messages,
-        model=model,
+        model=models[header.provider],
         usage=usage,
         cost=cost,
         uncosted_turns=uncosted,
+        models=models,
     )
 
 

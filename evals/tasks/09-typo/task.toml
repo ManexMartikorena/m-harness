@@ -5,5 +5,14 @@ allow = ["write_file", "edit_file"]
 
 [check]
 file = "README.md"
-contains = ["receive"]
+# Arreglado en su frase, y el resto del README sigue ahí: cambiarlo
+# entero por "receive" no vale (auditoría profunda, I10).
+contains = [
+    "pass it a value and receive a new one",
+    "# Toolkit",
+    "Small helpers for numbers and text",
+    "nothing is changed in place",
+    "## Tests",
+    "python3 -m unittest",
+]
 absent = ["recieve"]

@@ -48,6 +48,10 @@ PR_SET_CHILD_SUBREAPER = 36
 # Rounds to find what is left of a command, and the pause between them.
 ESCAPED_ROUNDS = 50
 ESCAPED_PAUSE = 0.02
+# How long the end of a killed shell is waited for. One that maha cannot
+# kill (another user's, after `exec sudo …`) is left running past it, and
+# the result says so (audit of hito 9, H4).
+KILL_WAIT_SECONDS = 3.0
 
 
 # One lock per event loop, shared by every runner: being the subreaper is
@@ -108,8 +112,11 @@ class LocalCommandRunner:
             reader.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await reader
-            # Reaped also when cancelled: SIGKILL ends it at once.
-            await _exited(process)
+            # Reaped also when cancelled: SIGKILL ends it at once, unless
+            # maha cannot kill it.
+            with contextlib.suppress(TimeoutError):
+                async with asyncio.timeout(KILL_WAIT_SECONDS):
+                    await _exited(process)
             await _kill_escaped(before | {process.pid})
         text = output.kept.decode("utf-8", errors="replace")
         code = process.returncode
@@ -118,6 +125,7 @@ class LocalCommandRunner:
             output=text[:OUTPUT_MAX_CHARS],
             truncated=output.seen > len(output.kept) or len(text) > OUTPUT_MAX_CHARS,
             timed_out=timed_out,
+            still_running=code is None,
         )
 
 

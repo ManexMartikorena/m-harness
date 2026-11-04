@@ -4,6 +4,6 @@ fixture = "inventario"
 allow = ["write_file", "edit_file"]
 
 [check]
+# El arnés repone los tests del fixture antes de comprobar: los que toque
+# el agente no cuentan (auditoría profunda, I1).
 command = "python3 -m unittest -q test_inventory"
-file = "test_inventory.py"
-contains = ["Inventory().remove(\"ghost\", 1)"]

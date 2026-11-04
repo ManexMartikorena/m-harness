@@ -1,6 +1,7 @@
 """`.gitignore` rules, as gitignore(5) describes them (spec
 mejora-2026-10-23-deuda-hito-5, E6), without the disk."""
 
+import time
 from pathlib import PurePath
 
 import pytest
@@ -130,7 +131,52 @@ def test_crlf_files_are_read() -> None:
         ("[a-]", "a", True),
         ("[a-]", "-", True),
         ("[a-]", "b", False),
+        # Three stars at the start of a folder are "**", as in git's
+        # wildmatch (review of the deep audit).
+        ("***/b", "b", True),
+        ("***/b", "a/x/b", True),
     ],
 )
 def test_like_git(pattern: str, path: str, ignored: bool) -> None:
     assert ignores(pattern, path) is ignored
+
+
+# No pattern can freeze maha (deep audit after hito 9, H1).
+
+
+def test_a_hostile_rule_answers_at_once() -> None:
+    rules = GitIgnore()
+    rules.add(PurePath(), "*a*a*a*a*a*a*a*a*a*a*a*a*b\n**/x*a*a*a*a*a*a*a*a*b\n")
+    started = time.monotonic()
+
+    ignored = rules.ignores(PurePath("a" * 250), is_dir=False)
+
+    assert not ignored
+    assert time.monotonic() - started < 1.0
+
+
+def test_a_long_chain_of_folders_answers_at_once() -> None:
+    # Review of the deep audit: every "**/" stayed open on every character,
+    # 0.36 s a path with this rule; now a few operations on integers.
+    rules = GitIgnore()
+    rules.add(PurePath(), "**/" * 20_000 + "zz\n")
+    started = time.monotonic()
+
+    for n in range(20):
+        assert not rules.ignores(PurePath(f"src/pkg/m{n}/file.py"), is_dir=False)
+
+    assert time.monotonic() - started < 1.0
+
+
+def test_a_path_looks_only_at_the_files_above_it() -> None:
+    # Review of the deep audit: every .gitignore read was looked at for
+    # every path, and a tree of many of them took minutes.
+    rules = GitIgnore()
+    for n in range(2_000):
+        rules.add(PurePath(f"d{n}"), "*.o\n")
+    started = time.monotonic()
+
+    for n in range(2_000):
+        assert rules.ignores(PurePath(f"d{n}/x.o"), is_dir=False)
+
+    assert time.monotonic() - started < 1.0

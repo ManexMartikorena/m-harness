@@ -101,9 +101,9 @@ debe. El detalle: [`DESIGN.md`](DESIGN.md); dónde está cada fichero:
 | 4 | Tool calling y bucle agéntico | ✅ `v0.4.0` |
 | 5 | Permisos y herramientas con efecto | ✅ `v0.5.0` (y `v0.5.1`, `v0.5.2`) |
 | 6 | Sesiones e historial | ✅ `v0.6.0` (y `v0.6.1`) |
-| 7 | Trazas y coste | ✅ `v0.7.0` |
-| 8 | Evals y modo no interactivo | ✅ `v0.8.0` |
-| 9 | Adaptador de Anthropic | ✅ `v0.9.0` |
+| 7 | Trazas y coste | ✅ `v0.7.0` (y `v0.7.1`) |
+| 8 | Evals y modo no interactivo | ✅ `v0.8.0` (y `v0.8.1`) |
+| 9 | Adaptador de Anthropic | ✅ `v0.9.0` (y `v0.9.1`) |
 | 10 | System prompt por capas | ⬜ |
 | 11 | Gestión del contexto | ⬜ |
 | 12 | Deshacer y puntos de control | ⬜ |

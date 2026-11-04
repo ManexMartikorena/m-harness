@@ -27,6 +27,18 @@ def clean(text: str) -> str:
     return _UNSAFE.sub(_escaped, text)
 
 
+def _json_escaped(match: re.Match[str]) -> str:
+    return f"\\u{ord(match.group()):04x}"
+
+
+def clean_json(text: str) -> str:
+    """JSON text with every unsafe character as a `\\u` escape. JSON only
+    escapes U+0000-001F; outside a string there is nothing but ASCII, so
+    the escapes are valid and give back the same text (audit after hito 9,
+    S5)."""
+    return _UNSAFE.sub(_json_escaped, text)
+
+
 def clean_line(text: str) -> str:
     """`text` clean and on one line: its line breaks and tabs escaped too, so
     a title cannot push the start of a command off the screen."""

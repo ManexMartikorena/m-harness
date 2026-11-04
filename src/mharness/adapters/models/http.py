@@ -23,6 +23,7 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
+from mharness.domain.money import SMALLEST
 
 USER_AGENT = f"maha/{__version__} (+https://github.com/ManexMartikorena/m-harness)"
 # `read` is the longest silence between two chunks, not the time of the whole
@@ -122,7 +123,8 @@ def _amount(value: object) -> Decimal | None:
         return None
     if not amount.is_finite() or not 0 <= amount <= _MAX_CALL_COST:
         return None
-    return amount
+    # Less than any amount (audit after hito 9, S4): free.
+    return Decimal(0) if amount < SMALLEST else amount
 
 
 def count(tokens: int | None) -> int:
@@ -142,7 +144,9 @@ def status_error(response: httpx.Response, api_key: str | None) -> ModelError:
     wait = retry_after(response.headers.get("retry-after"), datetime.now(UTC))
     if status == 429:
         return ModelRateLimitError(message, retry_after=wait)
-    if status >= 500:
+    # 408: the server gave up waiting for the request; it can pass (deep
+    # audit after hito 9, M8).
+    if status >= 500 or status == 408:
         return ModelUnavailableError(message, retry_after=wait)
     return ModelRequestError(message)
 

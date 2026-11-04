@@ -7,7 +7,9 @@ and OpenCode on 2026-11-03 (spec, §1.0).
 """
 
 import asyncio
+import hashlib
 import json
+import re
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
 from decimal import Decimal
@@ -64,7 +66,7 @@ STOP_REASONS: dict[str, StopReason] = {
     "end_turn": "end_turn",
     "tool_use": "tool_use",
     "max_tokens": "max_tokens",
-    "model_context_window_exceeded": "max_tokens",
+    "model_context_window_exceeded": "context_full",
     "refusal": "content_filter",
 }
 # Added to an answer cut by Ctrl+C (spec hito 6, §1.7), as in OpenAI.
@@ -221,7 +223,7 @@ class _Stream:
             case "message_start":
                 message = _dict(event.get("message"))
                 self.model = _str(message.get("model")) or self.model
-                self.usage |= _dict(message.get("usage"))
+                self._count(message.get("usage"))
             case "content_block_start":
                 return self._start(_index(event), _dict(event.get("content_block")))
             case "content_block_delta":
@@ -236,11 +238,18 @@ class _Stream:
                 self.stop_reason = _str(delta.get("stop_reason")) or self.stop_reason
                 self.stop_details = delta.get("stop_details") or self.stop_details
                 # Cumulative: the last one says it all.
-                self.usage |= _dict(event.get("usage"))
+                self._count(event.get("usage"))
             case "message_stop":
                 self.stopped = True
         # Unknown events are ignored, as the versioning policy asks.
         return []
+
+    def _count(self, usage: Any) -> None:
+        """Take the counts that came; a null is no count, not zero (deep
+        audit after hito 9): it must not wipe what came before."""
+        self.usage |= {
+            key: value for key, value in _dict(usage).items() if value is not None
+        }
 
     def _start(self, index: int, block: dict[str, Any]) -> list[ModelEvent]:
         self._last = max(self._last, index)
@@ -295,7 +304,9 @@ class _Stream:
 
     def finish(self) -> list[ModelEvent]:
         if not self.stopped or self.stop_reason is None:
-            raise ModelResponseError("stream ended before the answer was complete")
+            # The server or the network cut it: the provider's, as any other
+            # cut (deep audit after hito 9, I15, a decision of the maintainer).
+            raise ModelUnavailableError("stream ended before the answer was complete")
         events: list[ModelEvent] = []
         explanation = _refusal(self.stop_reason, self.stop_details, self._text)
         if explanation:
@@ -359,7 +370,7 @@ def _content(message: Message) -> list[dict[str, Any]]:
     content: list[dict[str, Any]] = []
     for block in message.blocks:
         match block:
-            case TextBlock(text=said) if said:
+            case TextBlock(text=said) if said.strip():
                 content.append({"type": "text", "text": said})
             case ReasoningBlock(redacted=str() as data):
                 content.append({"type": "redacted_thinking", "data": data})
@@ -372,7 +383,7 @@ def _content(message: Message) -> list[dict[str, Any]]:
                 content.append(
                     {
                         "type": "tool_use",
-                        "id": block.id,
+                        "id": _tool_id(block.id),
                         "name": block.name,
                         "input": _input(block.arguments),
                     }
@@ -380,7 +391,7 @@ def _content(message: Message) -> list[dict[str, Any]]:
             case ToolResultBlock():
                 result: dict[str, Any] = {
                     "type": "tool_result",
-                    "tool_use_id": block.call_id,
+                    "tool_use_id": _tool_id(block.call_id),
                     "content": block.content,
                 }
                 if block.is_error:
@@ -389,6 +400,21 @@ def _content(message: Message) -> list[dict[str, Any]]:
     if message.interrupted:
         content.append({"type": "text", "text": INTERRUPTED_MARK})
     return content
+
+
+# What Anthropic accepts as a tool_use id.
+_TOOL_ID = re.compile(r"[a-zA-Z0-9_-]+")
+
+
+def _tool_id(call_id: str) -> str:
+    """An id Anthropic accepts: as it is, or, if another server made it
+    with other characters (`functions.read_file:0`), remade from it the
+    same way for the call and its result (deep audit after hito 9, M2)."""
+    if _TOOL_ID.fullmatch(call_id):
+        return call_id
+    digest = hashlib.sha256(call_id.encode("utf-8", "surrogatepass")).hexdigest()
+    readable = re.sub(r"[^a-zA-Z0-9_-]", "_", call_id)[:40]
+    return f"{readable}_{digest[:12]}"
 
 
 def _input(arguments: str) -> dict[str, Any]:
@@ -414,7 +440,7 @@ def _to_domain(body: dict[str, Any], request: ModelRequest) -> ModelResponse:
                 blocks.append(
                     ReasoningBlock(
                         text=_str(block.get("thinking")) or "",
-                        signature=_str(block.get("signature")),
+                        signature=_str(block.get("signature")) or None,
                     )
                 )
             case "redacted_thinking":

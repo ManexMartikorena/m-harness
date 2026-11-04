@@ -13,6 +13,8 @@ is never touched, and runs in parallel never see each other's changes.
 """
 
 import asyncio
+import configparser
+import os
 import shutil
 import tempfile
 import tomllib
@@ -23,14 +25,21 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from mharness.domain.evals import TASK_LIMITS, Baseline, EvalError, Task
+from mharness.domain.evals import (
+    TASK_LIMITS,
+    Baseline,
+    EvalError,
+    Task,
+    is_test_file,
+)
 from mharness.domain.limits import TurnLimits
 
 
 class TomlEvalSuite:
-    def __init__(self, root: Path, *, keep: bool = False) -> None:
+    def __init__(self, root: Path, *, keep: Path | None = None) -> None:
         self._root = root
-        # Keep the copies after each run, to look at them.
+        # Where to keep the copies after each run, to look at them; None to
+        # remove them (deep audit, I9: `--keep` said nowhere where they were).
         self._keep = keep
 
     async def tasks(self) -> list[Task]:
@@ -39,9 +48,16 @@ class TomlEvalSuite:
     @asynccontextmanager
     async def workspace(self, task: Task) -> AsyncIterator[Path]:
         # Resolved: the tools and the session name it the same way.
-        folder = await asyncio.to_thread(
-            lambda: Path(tempfile.mkdtemp(prefix="maha-eval-")).resolve()
-        )
+        def make() -> Path:
+            if self._keep is None:
+                return Path(tempfile.mkdtemp(prefix="maha-eval-")).resolve()
+            # Named by its task, to find it among the others.
+            self._keep.mkdir(parents=True, exist_ok=True)
+            return Path(
+                tempfile.mkdtemp(prefix=f"{task.id}-", dir=self._keep)
+            ).resolve()
+
+        folder = await asyncio.to_thread(make)
         copy = folder / task.fixture
         try:
             await asyncio.to_thread(
@@ -52,8 +68,19 @@ class TomlEvalSuite:
             )
             yield copy
         finally:
-            if not self._keep:
+            if self._keep is None:
                 await asyncio.to_thread(shutil.rmtree, folder, ignore_errors=True)
+
+    async def home(self, workspace: Path) -> Path:
+        # Next to the copy, in the run's temporary folder (`workspace()`).
+        def make() -> Path:
+            folder = Path(tempfile.mkdtemp(prefix="home-", dir=workspace.parent))
+            return folder.resolve()
+
+        return await asyncio.to_thread(make)
+
+    async def restore_tests(self, task: Task, workspace: Path) -> list[str]:
+        return await asyncio.to_thread(self._restore_tests, task, workspace)
 
     async def read(self, workspace: Path, path: str) -> str | None:
         def read() -> str | None:
@@ -69,6 +96,29 @@ class TomlEvalSuite:
 
     async def save(self, baseline: Baseline) -> str:
         return await asyncio.to_thread(self._save, baseline)
+
+    def _restore_tests(self, task: Task, workspace: Path) -> list[str]:
+        """The test files of the fixture put back, and those the agent added
+        taken away: a new `conftest.py` or `addopts = -k nothing` must not
+        pass the check (review of the deep audit). The names changed."""
+        fixture = self._root / "fixtures" / task.fixture
+        own = set(task.check.own_tests)
+        restored = []
+        originals: set[str] = set()
+        for source in sorted(fixture.rglob("*")):
+            name = source.relative_to(fixture).as_posix()
+            if source.is_symlink() or not source.is_file():
+                continue
+            originals.add(name)
+            if name in own:
+                continue
+            test = is_test_file(name) or _test_settings_changed(
+                source, workspace / name
+            )
+            if test and _put_back(workspace, name, source.read_bytes()):
+                restored.append(name)
+        restored += _added(workspace, fixture, originals | own)
+        return sorted(restored)
 
     def _tasks(self) -> list[Task]:
         folder = self._root / "tasks"
@@ -123,6 +173,86 @@ class TomlEvalSuite:
             return str(path.relative_to(Path.cwd()))
         except ValueError:
             return str(path)
+
+
+def _put_back(workspace: Path, name: str, original: bytes) -> bool:
+    """Write `original` at `name` in the copy, unless it is there as it
+    is; True if it was not. A link or a file where a folder should be is
+    taken away first: nothing is written out of the copy."""
+    target = workspace
+    for part in Path(name).parts[:-1]:
+        target = target / part
+        if target.is_symlink() or (target.exists() and not target.is_dir()):
+            target.unlink()
+        target.mkdir(exist_ok=True)
+    target = target / Path(name).name
+    if target.is_symlink():
+        target.unlink()
+    elif target.is_dir():
+        shutil.rmtree(target)
+    elif target.is_file() and target.read_bytes() == original:
+        return False
+    target.write_bytes(original)
+    return True
+
+
+# Files of the project that may hold settings of pytest, in a section.
+_SETTINGS_SECTIONS = ("pyproject.toml", "setup.cfg")
+
+
+def _test_settings_changed(source: Path, copy: Path) -> bool:
+    """Whether the copy of a `pyproject.toml` or `setup.cfg` changed its
+    settings of pytest: then the fixture's file goes back whole."""
+    if source.name not in _SETTINGS_SECTIONS:
+        return False
+    return _pytest_settings(source) != _pytest_settings(copy)
+
+
+def _pytest_settings(path: Path) -> object:
+    """The section of pytest of `path`; None if there is none, and a mark
+    of its own if the file cannot be read: changed, as far as we know."""
+    try:
+        if path.is_symlink() or not path.is_file():
+            return None
+        text = path.read_text(encoding="utf-8")
+        if path.name == "pyproject.toml":
+            return tomllib.loads(text).get("tool", {}).get("pytest")
+        parser = configparser.ConfigParser(interpolation=None)
+        parser.read_string(text)
+        if not parser.has_section("tool:pytest"):
+            return None
+        return dict(parser.items("tool:pytest"))
+    except (OSError, UnicodeDecodeError, ValueError, configparser.Error) as exc:
+        return f"unreadable: {type(exc).__name__}"
+
+
+def _added(workspace: Path, fixture: Path, kept: set[str]) -> list[str]:
+    """Take away what the agent added that the check could run as a test:
+    a test file, or a project file with settings of pytest. Links are not
+    followed; a folder that is not in the fixture and is left empty goes
+    too: an empty `test_x/` would still hide the module `test_x.py`."""
+    removed: list[str] = []
+    emptied: set[Path] = set()
+    for folder, dirnames, filenames in os.walk(workspace, topdown=False):
+        here = Path(folder)
+        links = [name for name in dirnames if (here / name).is_symlink()]
+        for name in [*filenames, *links]:
+            path = here / name
+            relative = path.relative_to(workspace).as_posix()
+            if relative in kept:
+                continue
+            settings = name in _SETTINGS_SECTIONS and _pytest_settings(path) is not None
+            # A link to a folder is that folder: "tests" holds tests.
+            linked = name in links and name.startswith("test")
+            if is_test_file(relative) or linked or settings:
+                path.unlink()
+                removed.append(relative)
+                emptied.add(here)
+        gone = here in emptied and here != workspace and not any(here.iterdir())
+        if gone and not (fixture / here.relative_to(workspace)).is_dir():
+            here.rmdir()
+            emptied.add(here.parent)
+    return removed
 
 
 def _stem(baseline: Baseline) -> str:
