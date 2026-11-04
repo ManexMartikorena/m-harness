@@ -9,10 +9,29 @@ Para cada hito, además: su spec en `docs/specs/` (decisiones, verificación
 a mano y "Aprendido al implementar"), su nota en `docs/guia/` y su release
 en GitHub.
 
-## Hito 9 (2026-11-03)
+## Hito 9 (2026-11-03 a 2026-11-04)
 
 Lo más reciente primero.
 
+- **Auditoría profunda tras el hito 9, 2026-11-03 y 2026-11-04: `v0.9.1`**
+  (rama `fix/auditoria-hito-9`; spec
+  `mejora-2026-11-03-auditoria-profunda.md`). El mantenedor la pidió antes
+  de la spec del hito 10 para no dejar deuda. Cinco revisores
+  independientes de todo el código (bucle y núcleo; sesiones y trazas;
+  modelos y configuración; herramientas y seguridad; interfaz y evals) y
+  una revisión independiente de los
+  arreglos (R1 a R15), cada fallo con su test primero. Lo más gordo: un
+  `.gitignore` con muchos `*` congelaba `maha` (comodines en tiempo
+  lineal, Shift-And); el bucle no miraba el motivo de parada (`max_output`,
+  `refused`, `context_full`); las comprobaciones de las evals corrían los
+  tests que cambiaba el agente; la puerta de las evals era sobre todo ruido
+  (ahora, Fisher exacto); `Agent.run()` pasa de 252 líneas a 81. Decisiones
+  del mantenedor: el tiempo del turno no cuenta la espera a la persona;
+  aislar del todo las comprobaciones, al hito 15 (I14). Evals finales con
+  líneas base nuevas: GLM 96/100 (base 94), Kimi 97/100 (99) y Haiku
+  100/100 (100), sin regresión, tras arreglar una comprobación de la tarea
+  03 que suspendía respuestas correctas. 2130 tests, mypy, ruff e
+  import-linter en verde.
 - **Hito 9 cerrado, 2026-11-03: `v0.9.0` — Adaptador de Anthropic.** Spec
   IMPLEMENTADA, nota 09 de la guía y los dos README con un ejemplo real de
   Claude Haiku 5.5. PRs: #100 (spec), #101, #102, #103 y el de cierre. El
