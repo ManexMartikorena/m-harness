@@ -70,7 +70,7 @@ La batería de `maha eval` (spec hito 8, §1.5 a §1.9). Solo datos inventados.
 | `specs/hito-7-trazas-coste.md` | Spec del hito 7 (IMPLEMENTADA): `Usage.reasoning_tokens`, catálogo de modelos en TOML (paquete y usuario), coste por llamada, turno y sesión, `TurnStarted`, trazas JSONL sin credenciales, `/trace`, avisos del catálogo y `maha.log` |
 | `specs/hito-8-evals-no-interactivo.md` | Spec del hito 8 (IMPLEMENTADA, `v0.8.0`): límites del turno, aprobación sin persona (`--allow`), evals con 20 tareas y línea base, `maha -p` con salida de texto o JSON, `-c`/`-r`, reintentos con modelo de respaldo y los comandos `models`, `sessions`, `trace`, `stats`, `export` e `import` |
 | `specs/hito-9-anthropic.md` | Spec del hito 9 (IMPLEMENTADA, `v0.9.0`): el formato de cada modelo en el catálogo, `ModelRouter`, `AnthropicClient`, el razonamiento guardado y devuelto intacto, `max_tokens` por llamada, effort y caché del prompt |
-| `specs/mejora-2026-11-03-auditoria-profunda.md` | La auditoría profunda tras el hito 9 (EN CURSO): cada hallazgo de los cinco revisores, con su estado y su commit |
+| `specs/mejora-2026-11-03-auditoria-profunda.md` | La auditoría profunda tras el hito 9 (IMPLEMENTADA, `v0.9.1`): cada hallazgo de los cinco revisores y de la revisión independiente de los arreglos, con su estado y su commit; las evals finales y lo aprendido |
 
 ## Código: `src/mharness/`
 

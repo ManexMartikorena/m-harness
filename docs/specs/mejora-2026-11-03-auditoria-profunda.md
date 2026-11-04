@@ -1,7 +1,7 @@
-Estado: EN CURSO (2026-11-04, rama `fix/auditoria-hito-9`). Hechos: los
-arreglos de los cinco revisores, los de la revisión independiente (R1 a
-R15) y las evals finales con sus líneas base nuevas (I16). Falta:
-`v0.9.1`, PR, merge y tag.
+Estado: EN CURSO (2026-11-03) → IMPLEMENTADA (2026-11-04, `v0.9.1`, rama
+`fix/auditoria-hito-9`). Hechos: los arreglos de los cinco revisores, los
+de la revisión independiente (R1 a R15) y las evals finales con sus líneas
+base nuevas (I16).
 
 # Auditoría profunda tras el hito 9
 
@@ -296,3 +296,23 @@ Cada hallazgo se comprobó antes de tocarlo, con su test primero.
   "el texto del último paso") y su test.
 - **R15.** Una segunda señal mientras `maha eval` guardaba lo terminado
   acababa en una traza. ARREGLADO (`d8bad78`).
+
+## Aprendido al implementar (2026-11-04)
+
+1. **Hace falta revisar los arreglos.** La revisión independiente (R)
+   encontró 15 fallos más; nueve eran arreglos a medias o rotos por el
+   propio arreglo (R1, R4, R5, R6, R8, R11 a R14). Un arreglo es código
+   nuevo y se revisa como tal.
+2. **Un algoritmo reescrito se compara con el anterior en casos al azar**
+   (R1, 480.000 casos; R4, 35.466). R4 lo pide: el comparador viejo
+   limpiaba el patrón sin decirlo, y el nuevo dejó de encontrar
+   `./src/*.py`. Los tests escritos a mano no lo vieron.
+3. **Una comprobación que se endurece se prueba con respuestas reales.**
+   La regla de I10 para la tarea 03 rechazaba respuestas correctas, y no
+   se vio hasta las evals. Las sesiones de una pasada anterior sirven de
+   banco de pruebas, sin gastar llamadas.
+4. **La puerta estadística (I4) funciona.** Las bajadas de 5/5 a 4/5 salen
+   como ruido (·, p = 0,5); el fallo real de la comprobación salió como ⚠
+   (p = 0,024).
+5. **Ningún test cambió al refactorizar `Agent.run()`** (de 252 líneas a
+   81): son los tests, y no la estructura, los que fijan el comportamiento.
