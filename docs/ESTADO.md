@@ -2,7 +2,7 @@
 
 Última actualización: 2026-11-04. **Hito 9 cerrado: `v0.9.0` — Adaptador
 de Anthropic, y la auditoría profunda publicada como `v0.9.1`. En curso:
-la spec del hito 10 (system prompt por capas), PROPUESTA en su PR.**
+el hito 10 (system prompt por capas), con la spec APROBADA.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -17,8 +17,7 @@ la 1.0 (DESIGN §14).**
 - Última versión: **`v0.9.1` — Auditoría profunda tras el hito 9**
   (2026-11-04):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.9.1
-- Ramas abiertas: `docs/spec-hito-10-system-prompt` (la spec del hito 10,
-  en su PR). Las integradas se conservan en GitHub.
+- Ramas abiertas: `feature/hito-10-capas` (el PR 1 del hito 10). Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -50,10 +49,10 @@ spec, su nota de la guía y su release.
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Mantenedor:** revisar la spec del hito 10
-   (`docs/specs/hito-10-system-prompt.md`, PROPUESTA) en su PR, sobre todo
-   las 12 decisiones de §11. Integrar el PR la aprueba. Después, el agente
-   implementa el PR 1 (`feature/hito-10-capas`, spec §6).
+1. **Agente:** implementar el PR 1 del hito 10 (`feature/hito-10-capas`,
+   `docs/specs/hito-10-system-prompt.md` §6), pieza a pieza, con las evals
+   de §5 antes del merge. Después, el PR 2 (herramientas) y el PR 3
+   (`/init` y títulos).
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
@@ -134,14 +133,14 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 - **Hito 10:** el modelo no sabe en qué directorio trabaja tras retomar una
   sesión de otro (spec 6, §1.8). Lo resuelve la spec 10, §1.2.
 - **Hito 11:** los `AGENTS.md` de subcarpetas, cargados al leer un fichero
-  de allí (spec 10, decisión 6, si se aprueba); el coste en tokens de las
+  de allí (spec 10, decisión 6); el coste en tokens de las
   herramientas en cada llamada (~700 con las cuatro del hito 4; hoy son
   siete, por medir) y compactar (spec 4, §12.14); en la batería de evals, tareas con historial previo y la marca
   `[interrupted by the user]` (spec 6, §5; pasa del hito 8 por decisión
   del mantenedor, spec 8, §11.8).
 - **Hito 12:** bifurcar una sesión (spec 8, §11.8).
 - **Hito 13:** las reglas de instrucciones por ruta, como `.claude/rules/`
-  con `paths` (spec 10, decisión 6, si se aprueba).
+  con `paths` (spec 10, decisión 6).
 - **Hito 15:** detectar secretos con otro nombre (`credenciales.txt`)
   mirando el contenido (mejora `2026-10-23`, E5); con el sandbox,
   `run_command` en las evals y tareas de "ejecuta y arregla" (spec 8,

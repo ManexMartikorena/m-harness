@@ -1,4 +1,5 @@
-Estado: PROPUESTA (2026-11-04)
+Estado: PROPUESTA (2026-11-04) → APROBADA (2026-11-04, por el humano, con la
+decisión 2 revisada a su petición: una capa por familia de modelo, §1.3)
 
 # Spec — Hito 10: System prompt por capas
 
