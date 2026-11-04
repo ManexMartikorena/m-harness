@@ -377,7 +377,8 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
 - **System prompt:** composición por capas (base + entorno + `AGENTS.md` del
   proyecto + skills + memoria), con plantillas versionadas en el repositorio y
   evaluadas como código (hito 10). *(Concretado el 04/11/2026, spec del
-  hito 10, §1.1 y §1.2: base, usuario, proyecto, extra y entorno, en ese
+  hito 10, §1.1 a §1.3: base, familia del modelo (del catálogo, solo si
+  las evals la justifican), usuario, proyecto, extra y entorno, en ese
   orden; skills y memoria, detrás de "extra". Se construye una vez por
   sesión y no cambia hasta `/new` o `/resume`, por la caché.)*
 - **Skills:** formato Agent Skills (`SKILL.md`). El índice va en el prompt y el

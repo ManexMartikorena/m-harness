@@ -40,7 +40,8 @@ persona), títulos de sesión con un modelo pequeño y `/rename`.
   título a una sesión.
 
 Dentro de alcance:
-- **Las capas** (§1.1 a §1.7): base, usuario, proyecto, extra y entorno.
+- **Las capas** (§1.1 a §1.7): base, familia del modelo, usuario,
+  proyecto, extra y entorno.
 - **Ver y ajustar el prompt** (§1.8): `maha prompt`, la línea de
   instrucciones al arrancar y `--append-system-prompt` y
   `--system-prompt-file`.
@@ -59,8 +60,6 @@ Dentro de alcance:
   demanda, como las skills; hito 13 (decisión 6).
 - **Instrucciones por URL:** son red; hito 19 (web).
 - **Imports `@fichero` de `CLAUDE.md`:** no se expanden (decisión 5).
-- **Un prompt base distinto por familia de modelo:** solo si las evals lo
-  piden (decisión 2).
 - **Contar tokens del prompt:** hito 11 (`/context`). Aquí se cuentan bytes.
 
 ## 1. Decisiones de fondo
@@ -91,13 +90,14 @@ Leídos en la documentación oficial y, para OpenCode, en su código
 
 ### 1.1 Las capas, y en qué orden
 
-Cinco capas, de la más fija a la más variable. La caché compara el
+Seis capas, de la más fija a la más variable. La caché compara el
 principio exacto de la petición (§1.0), así que lo que menos cambia va
 primero:
 
 | # | Capa | De dónde sale |
 |---|---|---|
-| 1 | **Base** | `src/mharness/prompts/base.md`, del repo (§1.3) |
+| 1 | **Base** | `src/mharness/prompts/base.md`, del repo, o el fichero de la persona (§1.3) |
+| 1b | **Familia** | `src/mharness/prompts/families/<familia>.md`, si existe (§1.3) |
 | 2 | **Usuario** | `~/.config/maha/AGENTS.md` (§1.4) |
 | 3 | **Proyecto** | los `AGENTS.md` de la raíz git al directorio actual (§1.4) |
 | 4 | **Extra** | `instructions` de la configuración (§1.5) |
@@ -157,10 +157,30 @@ toca.
   un test recorre todas las plantillas. Jinja2 sería una dependencia para
   sustituir una docena de huecos (DESIGN §7.1: a mano lo que es del
   agente).
-- **Un prompt por familia** (como OpenCode): no ahora. El mismo prompt se
-  mide con tres modelos de tres familias (GLM, Kimi y Claude). Si uno
-  empeora claramente, se añade una capa de familia con su spec
-  (decisión 2).
+- **Una capa por familia de modelo** (como OpenCode, §1.0), detrás de la
+  base. Cada familia responde distinto al mismo texto; el mecanismo está
+  desde el principio para que adaptar `maha` a un modelo sea añadir un
+  fichero, no rediseñar:
+  - **la familia la dice el catálogo**, con un campo explícito
+    (`family = "claude"`), no una subcadena del id como OpenCode: un id
+    propio de la persona o de un proveedor nuevo la rompería. Un modelo
+    sin `family` no tiene capa;
+  - **la capa es `src/mharness/prompts/families/<familia>.md`**: lo que
+    esa familia necesita y la base no dice (por ejemplo, cuándo usar
+    `todo_write`, o lo largo que responde);
+  - **una capa solo entra si las evals la justifican** (§5): base sola
+    frente a base + capa, en la familia que mide. Hoy se pueden medir
+    `glm`, `kimi` y `claude`. Para las familias que no se pueden medir
+    aquí (`gpt`, `gemini`…) el mecanismo queda listo y sin fichero, y
+    cada una entra con su eval (un prompt sin medir es deuda);
+  - el campo `family` se rellena en todos los modelos del catálogo de
+    serie, con su test, y la persona lo pone en su `models.toml`.
+- **La persona puede cambiar la base**, para siempre o para una vez:
+  `system_prompt_file` en `~/.config/maha/config.toml` y
+  `--system-prompt-file` en la línea (§1.8). Sustituye la base y la capa de
+  familia; las instrucciones y el entorno siguen. Desde `.maha/config.toml`
+  no se acepta: un repo clonado no debe poder cambiar el prompt base, solo
+  añadir instrucciones (§1.6).
 
 ### 1.4 Instrucciones del usuario y del proyecto
 
@@ -243,11 +263,13 @@ Today's date: 2026-11-04
   `[instructions: AGENTS.md · ~/.config/maha/AGENTS.md]`. Sin ficheros, no
   se escribe nada. Con avisos (cortado, no UTF-8), una línea por aviso.
 - **`maha prompt`** escribe el system prompt que tendría una sesión en
-  este directorio, con esta configuración y estas opciones, sin llamar al
-  modelo. Para depurar y para aprender.
+  este directorio, con esta configuración y estas opciones (también `-m`,
+  que elige la capa de familia), sin llamar al modelo. Para depurar y para aprender.
 - **`--append-system-prompt TEXTO`** y **`--append-system-prompt-file
   RUTA`**: añaden una capa al final. **`--system-prompt-file RUTA`**:
-  sustituye **solo la base**; las instrucciones y el entorno siguen. En la
+  sustituye la base y la capa de familia, como `system_prompt_file` de la
+  configuración del usuario, al que gana (§1.3); las instrucciones y el
+  entorno siguen. En la
   terminal y en `-p`, solo por la línea de comandos (como el resto de lo
   que cambia el comportamiento sin persona, DESIGN §8).
 
@@ -355,8 +377,8 @@ Today's date: 2026-11-04
   apunta un registro `prompt`: la huella (SHA-256, 12 caracteres), las
   capas con su origen y sus bytes. El texto entero no: se ve con `maha
   prompt`, y una traza no debe guardar dos veces los `AGENTS.md`.
-- **La línea base guarda la huella de la base** (plantilla y líneas de
-  herramientas, sin entorno ni instrucciones). Si una pasada de evals
+- **La línea base guarda la huella de la base** (plantilla, capa de
+  familia y líneas de herramientas, sin entorno ni instrucciones). Si una pasada de evals
   tiene otra, el informe lo dice: `[the base prompt changed since the
   baseline]`.
 
@@ -386,7 +408,7 @@ deja la conversación limpia.
 
 | Fichero | Capa | Qué |
 |---|---|---|
-| `src/mharness/prompts/base.md`, `init.md`, `title.md` (nuevos) | — (datos del paquete) | Las plantillas. Las lee `bootstrap.py` con `importlib.resources` y las pasa como texto |
+| `src/mharness/prompts/base.md`, `init.md`, `title.md` y `families/` (nuevos) | — (datos del paquete) | Las plantillas. Las lee `bootstrap.py` con `importlib.resources` y las pasa como texto |
 | `domain/prompt.py` (nuevo) | domain | `render(plantilla, valores)` estricto; `Layer(source, text)`; `compose(layers)`; el tope de 64 KiB y la marca de corte; `Environment`; `fingerprint()` |
 | `domain/session.py` | domain | `TitleEntry` (automático o a mano) |
 | `domain/todo.py` (nuevo) | domain | `Todo` y `TodoList` (Pydantic), las reglas y el resumen |
@@ -402,7 +424,8 @@ deja la conversación limpia.
 | `application/sessions.py` | application | El prompt al crear cada agente; el título; `/rename` |
 | `application/evals.py`, `adapters/evals/toml_suite.py` | application, adapters | Sin capa de usuario; la huella en la línea base |
 | `adapters/cli/*` | adapters | `/init`, `/rename`, la lista de tareas, la línea de instrucciones, `maha prompt` y las opciones nuevas |
-| `adapters/catalog/models.toml`, `toml_catalog.py` | adapters | `small_model` por proveedor |
+| `domain/catalog.py` | domain | `ModelInfo.family` |
+| `adapters/catalog/models.toml`, `toml_catalog.py` | adapters | `family` en cada modelo; `small_model` por proveedor |
 | `config.py` | — | `instructions`, `compat_claude` y `small_model` |
 | `bootstrap.py` | — | El cableado |
 
@@ -413,7 +436,11 @@ deja la conversación limpia.
 instructions = ["CONTRIBUTING.md"]   # §1.5; en el proyecto, solo dentro de él
 compat_claude = true                 # §1.4; false apaga CLAUDE.md
 small_model = "glm-5.3-flash"        # §1.12; en el proyecto, con aviso
+system_prompt_file = "~/prompts/mi-base.md"  # §1.3; solo en la del usuario
 ```
+
+En `models.toml` (el de serie y el de la persona), cada modelo gana
+`family = "glm"` (§1.3).
 
 Opciones de la línea de comandos: `--append-system-prompt`,
 `--append-system-prompt-file` y `--system-prompt-file` (§1.8). Subcomando:
@@ -469,6 +496,12 @@ Con fakes y ficheros temporales; ninguna llamada real.
     `XDG_CONFIG_HOME` del test no aparece).
 17. Arquitectura: import-linter con los paquetes nuevos; el test de
     parámetros de herramientas cubre las dos nuevas.
+18. Capa de familia: un modelo con `family` y su fichero la lleva detrás de
+    la base; sin fichero o sin `family`, no; `system_prompt_file` y
+    `--system-prompt-file` quitan base y familia; desde el proyecto,
+    `system_prompt_file` es un error de configuración. Todos los modelos
+    del catálogo de serie tienen `family`, y cada fichero de `families/`
+    es de una familia que existe en el catálogo.
 
 ## 5. Evals
 
@@ -482,6 +515,13 @@ El prompt cambia el comportamiento del agente en todo: la batería entera.
   - `23-varios-pasos` (validation): una tarea de varios pasos (renombrar,
     tests y documentación), donde la lista de tareas puede ayudar. Con
     ella, la validación pasa de 4 a 5 de 23 (22 %).
+- **Capas de familia** (PR 1, §1.3): con el train (las tareas de
+  validación no se miran), una repetición al iterar, para cada familia
+  medible (`glm`, `kimi`, `claude`): base sola frente a base + capa. Una
+  capa entra solo si mejora éxito, pasos o coste sin empeorar nada, y se
+  confirma con la pasada de 5 repeticiones. Los números de cada
+  experimento se anotan aquí; si ninguna capa gana, el mecanismo queda
+  sin ficheros y se dice.
 - **Dos pasadas, una por PR que cambia el comportamiento** (§6): tres
   modelos (`glm-5.3-flash`, `kimi-k2.7-code`, `claude-haiku-5-5`), 5
   repeticiones, contra las líneas base del 2026-11-04. Unos 1,3 $ por
@@ -503,25 +543,30 @@ El resultado se anota aquí al implementar.
 **PR 1 — las capas** (`feature/hito-10-capas`)
 1. `domain/prompt.py`: `render`, `Layer`, `compose`, tope y huella.
    *Commit:* "Componer el system prompt por capas en el dominio"
-2. `prompts/base.md` y el test de plantillas. *Commit:* "Escribir el prompt
+2. `family` en el catálogo (dominio, `models.toml` de serie y el de la
+   persona) y la capa de familia. *Commit:* "Dar a cada modelo del
+   catálogo su familia"
+3. `prompts/base.md` y el test de plantillas. *Commit:* "Escribir el prompt
    base de maha"
-3. `ports/project.py` y `adapters/project/local.py`: raíz git y entorno.
+4. `ports/project.py` y `adapters/project/local.py`: raíz git y entorno.
    *Commit:* "Detectar la raíz git y el entorno del directorio"
-4. Las instrucciones del proyecto y del usuario, con `compat_claude`.
+5. Las instrucciones del proyecto y del usuario, con `compat_claude`.
    *Commit:* "Leer AGENTS.md y, si falta, CLAUDE.md"
-5. `instructions` en la configuración. *Commit:* "Añadir las instrucciones
+6. `instructions` en la configuración. *Commit:* "Añadir las instrucciones
    extra de la configuración"
-6. `application/prompt.py` y `system` en el agente y en las sesiones.
+7. `application/prompt.py` y `system` en el agente y en las sesiones.
    *Commit:* "Mandar el system prompt en cada llamada"
-7. La línea al arrancar y los avisos. *Commit:* "Decir al arrancar qué
+8. La línea al arrancar y los avisos. *Commit:* "Decir al arrancar qué
    instrucciones se han cargado"
-8. `maha prompt` y las tres opciones. *Commit:* "Añadir maha prompt y las
+9. `maha prompt` y las tres opciones. *Commit:* "Añadir maha prompt y las
    opciones del system prompt"
-9. La traza y la huella en la línea base. *Commit:* "Apuntar la huella del
-   prompt en la traza y en la línea base"
-10. Evals sin capa de usuario; tareas 21 y 22. *Commit:* "Añadir a las
+10. La traza y la huella en la línea base. *Commit:* "Apuntar la huella del
+    prompt en la traza y en la línea base"
+11. Evals sin capa de usuario; tareas 21 y 22. *Commit:* "Añadir a las
     evals las tareas de AGENTS.md y CLAUDE.md"
-11. Evals (§5), anotadas aquí. *Commit:* "Anotar las evals del system
+12. Las capas de familia que las evals justifiquen (§5), una por commit.
+    *Commit:* "Añadir la capa de la familia <familia>"
+13. Evals (§5), anotadas aquí. *Commit:* "Anotar las evals del system
     prompt"
 
 **PR 2 — las herramientas** (`feature/hito-10-herramientas`)
@@ -589,7 +634,9 @@ antes de leerte":
 ## 10. Riesgos
 
 - **El prompt empeora algún modelo.** Las evals con tres familias lo ven;
-  si pasa, una capa de familia (decisión 2).
+  la capa de esa familia lo corrige, medida (§1.3).
+- **Una familia que no se puede medir aquí** (`gpt`, `gemini`) va solo con
+  la base hasta tener su eval. Se dice en la guía y en ESTADO.
 - **Más tokens por llamada.** Mitigado por la caché; se mide (§5).
 - **`AGENTS.md` maliciosos.** No tocan permisos (§1.6); se ven al arrancar.
 - **`ask_user` molesta** si el modelo pregunta de más. El prompt base pide
@@ -606,8 +653,14 @@ spec las aprueba):
 1. **Todo en el system prompt, fijado por sesión** (§1.1, §1.2), en lugar
    del mensaje de usuario de Claude Code. Da la misma caché y sigue
    DESIGN §5 y §8.
-2. **Un solo prompt base**, medido con tres familias; uno por familia solo
-   si las evals lo piden (§1.3).
+2. **Una base común y una capa por familia de modelo** (§1.3), con la
+   familia explícita en el catálogo. Una capa solo entra medida con evals;
+   las familias que no se pueden medir aquí quedan con el mecanismo listo
+   y sin fichero. La persona cambia la base con `system_prompt_file` o
+   `--system-prompt-file`. *(Revisada el 2026-11-04 a petición del
+   mantenedor: la propuesta era un solo prompt base, con capas de familia
+   solo si las evals lo pedían; con el criterio de "lo más profesional,
+   completo y adaptable", el mecanismo va desde el principio.)*
 3. **Plantillas propias `{{hueco}}`**, sin Jinja2 (§1.3).
 4. **`CLAUDE.md` por compatibilidad, encendido por defecto**, solo donde no
    hay `AGENTS.md` (§1.4).
