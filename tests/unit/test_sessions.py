@@ -10,6 +10,7 @@ from decimal import Decimal
 import pytest
 
 from mharness.application.agent import Agent
+from mharness.application.prompt import SystemPromptBuilder
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import (
@@ -32,6 +33,7 @@ from mharness.domain.messages import (
     ToolResultBlock,
 )
 from mharness.domain.model import Effort, ModelResponse, Usage
+from mharness.domain.prompt import Layer
 from mharness.domain.retry import NO_RETRIES, RetryPolicy
 from mharness.domain.session import (
     MessageEntry,
@@ -49,10 +51,12 @@ from mharness.domain.trace import TraceError, TraceRecord, TurnFailed
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import HANG, FakeModelClient, reply, tool_calls
+from tests.fakes.project import MemoryProject
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
 from tests.fakes.tools import EchoParams, FakeTool
 from tests.fakes.tracing import MemoryTraceSink
 from tests.unit.test_agent import until
+from tests.unit.test_prompt_builder import CATALOG, TEMPLATES
 
 CWD = "/home/ana/proyecto"
 NOW = datetime(2026, 10, 26, 9, 15, 2, tzinfo=UTC)
@@ -92,6 +96,7 @@ class World:
         fallback: str | None = None,
         effort: Effort | None = None,
         limits: TurnLimits | None = None,
+        prompt: SystemPromptBuilder | None = None,
     ) -> None:
         self.gate = gate or FakeApproval()
         self.traces = traces or MemoryTraceSink()
@@ -128,6 +133,7 @@ class World:
             now=lambda: NOW,
             token=lambda: left.pop(0),
             effort=effort,
+            prompt=prompt,
         )
 
 
@@ -1693,3 +1699,81 @@ async def test_the_reasoning_is_saved_and_given_back_on_resume() -> None:
     await turn(resumed.conversation, "B")
 
     assert fake.requests[1].messages[1] == thought
+
+
+# The system prompt of each session (spec hito 10, §1.2 and §1.3).
+
+
+def prompt_builder(project: MemoryProject | None = None) -> SystemPromptBuilder:
+    return SystemPromptBuilder(
+        project or MemoryProject(),
+        TEMPLATES,
+        catalog=CATALOG,
+        provider="go",
+        tools=["read_file"],
+    )
+
+
+async def test_every_call_of_a_session_sends_its_system_prompt() -> None:
+    fake = FakeModelClient([reply("Hola."), reply("Sí.")])
+    project = MemoryProject([Layer(kind="project", source="AGENTS.md", text="v1")])
+    world = World(MemorySessionStore(), fake, prompt=prompt_builder(project))
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "Hola")
+    project.layers = [Layer(kind="project", source="AGENTS.md", text="v2")]
+    await turn(conversation, "¿Sigues?")
+
+    first, second = (request.system for request in fake.requests)
+    assert first is not None
+    assert "You are maha." in first
+    assert "GLM: be brief." in first
+    # Fixed for the session: the edit counts from the next one.
+    assert second == first
+    assert "v1" in first
+    assert conversation.prompt is not None
+    assert conversation.prompt.text == first
+
+
+async def test_another_model_gets_its_family_layer() -> None:
+    fake = FakeModelClient([reply("Hola."), reply("Sí.")])
+    world = World(MemorySessionStore(), fake, prompt=prompt_builder())
+    conversation = await world.sessions.start()
+    await turn(conversation, "Hola")
+
+    await conversation.switch_model("kimi-k2.7-code")
+    await turn(conversation, "¿Sigues?")
+
+    first, second = (request.system for request in fake.requests)
+    assert first is not None
+    assert second is not None
+    assert "GLM: be brief." in first
+    assert "GLM: be brief." not in second
+    assert second.startswith("You are maha.")
+
+
+async def test_a_resumed_session_is_told_where_it_works_now() -> None:
+    # Spec hito 6, §1.8: the model did not know.
+    store = MemorySessionStore()
+    elsewhere = World(store, FakeModelClient([reply("Hola.")]), cwd="/home/ana/web")
+    conversation = await elsewhere.sessions.start()
+    await turn(conversation, "Hola")
+    await conversation.close()
+    fake = FakeModelClient([reply("Sí.")])
+    here = World(store, fake, prompt=prompt_builder(), tokens=("b01c",))
+
+    resumed = await here.sessions.resume(FIRST, current=await here.sessions.start())
+    await turn(resumed.conversation, "¿Sigues?")
+
+    [request] = fake.requests
+    assert request.system is not None
+    assert "This conversation started in /home/ana/web" in request.system
+
+
+async def test_without_a_builder_no_system_prompt() -> None:
+    fake = FakeModelClient([reply("Hola.")])
+    conversation = await World(MemorySessionStore(), fake).sessions.start()
+
+    await turn(conversation, "Hola")
+
+    assert fake.requests[0].system is None

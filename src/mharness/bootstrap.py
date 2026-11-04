@@ -20,6 +20,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import date, datetime
+from importlib import resources
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import TextIO
@@ -30,6 +31,7 @@ from mharness.adapters.catalog import CatalogError, TomlCatalog
 from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.evals import TomlEvalSuite
 from mharness.adapters.models import AnthropicClient, OpenAIChatClient
+from mharness.adapters.project import LocalProject
 from mharness.adapters.storage import JsonlSessionStore
 from mharness.adapters.tools import (
     EditFile,
@@ -45,6 +47,7 @@ from mharness.adapters.tracing import JsonlTraceSink
 from mharness.application.agent import Agent
 from mharness.application.approvals import AllowList
 from mharness.application.evals import Evaluator, choose
+from mharness.application.prompt import PromptTemplates, SystemPromptBuilder
 from mharness.application.routing import ModelRouter
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.tools import ToolRegistry
@@ -60,6 +63,7 @@ from mharness.domain.evals import (
 )
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message
+from mharness.domain.prompt import sections
 from mharness.domain.trace import known_secrets
 from mharness.ports.approval import ApprovalGate
 from mharness.ports.catalog import ModelCatalog
@@ -240,6 +244,72 @@ def _tools(cwd: Path, env: Mapping[str, str]) -> ToolRegistry:
     )
 
 
+# The shell `run_command` runs in: asyncio's subprocess shell.
+COMMAND_SHELL = "/bin/sh"
+
+
+def _templates() -> PromptTemplates:
+    """The prompt templates of the package (spec hito 10, §1.3)."""
+    root = resources.files("mharness") / "prompts"
+    families = root / "families"
+    return PromptTemplates(
+        base=(root / "base.md").read_text(encoding="utf-8"),
+        tools=sections((root / "tools.md").read_text(encoding="utf-8")),
+        families={
+            entry.name.removesuffix(".md"): entry.read_text(encoding="utf-8").strip()
+            for entry in (families.iterdir() if families.is_dir() else ())
+            if entry.name.endswith(".md")
+        },
+    )
+
+
+def _prompt(
+    settings: config.Settings,
+    catalog: ModelCatalog,
+    cwd: Path,
+    tools: ToolRegistry,
+) -> SystemPromptBuilder:
+    """The system prompt of the user's sessions (spec hito 10)."""
+    project = LocalProject(
+        cwd,
+        shell=COMMAND_SHELL if tools.get("run_command") is not None else None,
+        home=config.home(),
+        config_dir=config.config_dir(os.environ),
+        compat_claude=settings.compat_claude,
+        extra_user=settings.instructions,
+        extra_project=settings.project_instructions,
+    )
+    return SystemPromptBuilder(
+        project,
+        _templates(),
+        catalog=catalog,
+        provider=settings.provider_name,
+        tools=tools.names(),
+    )
+
+
+def _eval_prompt(
+    settings: config.Settings, catalog: ModelCatalog, cwd: Path, tools: ToolRegistry
+) -> SystemPromptBuilder:
+    """The system prompt of an eval run: only the task's own files, never
+    the user's instructions nor those of the directory maha eval runs in
+    (spec hito 10, §5)."""
+    project = LocalProject(
+        cwd,
+        shell=None,
+        home=config.home(),
+        config_dir=config.config_dir(os.environ),
+        user=False,
+    )
+    return SystemPromptBuilder(
+        project,
+        _templates(),
+        catalog=catalog,
+        provider=settings.provider_name,
+        tools=tools.names(),
+    )
+
+
 def _eval_tools(cwd: Path) -> ToolRegistry:
     """The tools of an eval run: all but `run_command`, until the sandbox
     of hito 15 (spec hito 8, decision 2)."""
@@ -335,6 +405,7 @@ async def _eval(
                 traces=JsonlTraceSink(run_dir / "traces"),
                 masked=masked,
                 effort=effort,
+                prompt=_eval_prompt(settings, catalog, cwd, tools),
             )
             conversation = await sessions.start()
             try:
@@ -552,6 +623,7 @@ def _sessions(
         # reach a trace (spec hito 7, §1.8).
         masked=known_secrets(os.environ, also=[settings.api_key]),
         effort=settings.effort,
+        prompt=_prompt(settings, catalog, cwd, tools),
     )
 
 

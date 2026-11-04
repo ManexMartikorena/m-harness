@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from mharness.application.agent import Agent
+from mharness.application.prompt import SystemPromptBuilder
 from mharness.application.traces import TraceSummary, summarize
 from mharness.domain.agent_events import (
     AgentEvent,
@@ -28,6 +29,7 @@ from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
 from mharness.domain.model import Effort, Usage
 from mharness.domain.money import known
+from mharness.domain.prompt import SystemPrompt
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
@@ -75,6 +77,8 @@ class _Origin:
     traces: TraceSink
     # Masked in every trace record (spec hito 7, §1.8).
     masked: Secrets
+    # Builds each session's system prompt; None: no system prompt.
+    prompt: SystemPromptBuilder | None = None
 
 
 class Conversation:
@@ -107,6 +111,7 @@ class Conversation:
         session: str | None = None,
         cost: Decimal = Decimal(0),
         uncosted_turns: int = 0,
+        prompt: SystemPrompt | None = None,
     ) -> None:
         self._store = store
         self._agent = agent
@@ -141,6 +146,10 @@ class Conversation:
         # The session's cost so far, in USD, and the turns without one.
         self.cost = cost
         self.uncosted_turns = uncosted_turns
+        # The system prompt of this session, fixed until the next (spec
+        # hito 10, §1.2); its warnings are told when it opens.
+        self.prompt = prompt
+        agent.system = None if prompt is None else prompt.text
 
     @property
     def model(self) -> str:
@@ -236,6 +245,10 @@ class Conversation:
         """Use `model` from the next turn on; the change keeps its place
         among the turns (final audit of hito 6, 4)."""
         self._agent.model = model
+        if self.prompt is not None and self._origin.prompt is not None:
+            # Another model, maybe of another family (spec hito 10, §1.3).
+            self.prompt = self._origin.prompt.for_model(self.prompt, model)
+            self._agent.system = self.prompt.text
         self._pending.append(ModelEntry(model=model, provider=self._origin.provider))
         await self._save()
 
@@ -458,6 +471,7 @@ class Sessions:
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         token: Callable[[], str] = lambda: secrets.token_hex(2),
         effort: Effort | None = None,
+        prompt: SystemPromptBuilder | None = None,
     ) -> None:
         self._store = store
         self._new_agent = new_agent
@@ -466,7 +480,7 @@ class Sessions:
         # changes it (spec hito 9, §1.7).
         self.effort = effort
         self._origin = _Origin(
-            cwd, provider, version, now, token, traces, Secrets(masked)
+            cwd, provider, version, now, token, traces, Secrets(masked), prompt
         )
 
     @property
@@ -482,9 +496,10 @@ class Sessions:
         chosen = model or self._model
         if chosen is None:
             raise SessionError("no model configured")
+        prompt = await self._build(chosen, None)
         agent = self._new_agent(chosen, ())
         agent.effort = self.effort
-        return Conversation(self._store, agent, self._origin)
+        return Conversation(self._store, agent, self._origin, prompt=prompt)
 
     async def open(self, start: Start | None = None) -> Opened:
         """The first conversation of this maha: a new one, or a session
@@ -518,6 +533,8 @@ class Sessions:
         try:
             if model is None:
                 raise SessionError("no model configured")
+            # Built again, here: the model learns where it works now.
+            prompt = await self._build(model, header.cwd)
             agent = self._new_agent(model, loaded.messages)
             agent.effort = self.effort
         except BaseException:
@@ -531,6 +548,7 @@ class Sessions:
             session=header.id,
             cost=loaded.cost,
             uncosted_turns=loaded.uncosted_turns,
+            prompt=prompt,
         )
         # The new one is ready: only now is the current one let go.
         await current.close()
@@ -543,6 +561,11 @@ class Sessions:
             interrupted=last is not None and last.interrupted,
             left_unsaved=current.unsaved,
         )
+
+    async def _build(self, model: str, started_in: str | None) -> SystemPrompt | None:
+        if self._origin.prompt is None:
+            return None
+        return await self._origin.prompt.build(model, started_in=started_in)
 
     async def summaries(self) -> list[SessionSummary]:
         """Every session, of every directory, newest first."""

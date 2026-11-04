@@ -169,6 +169,17 @@ def user_catalog_path(env: Mapping[str, str]) -> Path:
     return _config_dir(env) / "models.toml"
 
 
+def config_dir(env: Mapping[str, str]) -> Path:
+    """`$XDG_CONFIG_HOME/maha`: the user's files of maha, also their
+    `AGENTS.md` (spec hito 10, §1.4)."""
+    return _config_dir(env)
+
+
+def home() -> Path:
+    """The user's home, or a `ConfigError` that says what to do."""
+    return _home()
+
+
 def _config_dir(env: Mapping[str, str]) -> Path:
     xdg = env.get("XDG_CONFIG_HOME", "")
     # The XDG spec says to ignore relative paths.

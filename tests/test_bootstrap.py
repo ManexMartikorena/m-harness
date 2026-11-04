@@ -14,6 +14,7 @@ import tempfile
 import time
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -63,6 +64,16 @@ def stdin() -> Iterator[Callable[[str], None]]:
     os.close(saved)
 
 
+def conversation(body: bytes) -> list[dict[str, Any]]:
+    """The messages of a request, after its system prompt, which goes first
+    in every one (spec hito 10)."""
+    messages: list[dict[str, Any]] = json.loads(body)["messages"]
+    system, *rest = messages
+    assert system["role"] == "system"
+    assert "You are maha" in str(system["content"])
+    return rest
+
+
 def streamed(text: str, prompt_tokens: int, completion_tokens: int) -> bytes:
     """An SSE body: the text, the finish reason, the usage and [DONE]."""
     chunks = [
@@ -84,6 +95,31 @@ def sse_response(body: bytes) -> respx.MockResponse:
     return respx.MockResponse(
         headers={"content-type": "text/event-stream"}, content=body
     )
+
+
+@respx.mock
+def test_the_projects_agents_md_reaches_the_model(
+    workspace: Path, stdin: Callable[[str], None]
+) -> None:
+    # Spec hito 10, §1.4: what the project tells its agents, in every call.
+    write_user_config(workspace, 'provider = "opencode-go"\nmodel = "glm-5.3-flash"\n')
+    (workspace / "project" / "AGENTS.md").write_text(
+        "Los tests: `uv run pytest`.\n", encoding="utf-8"
+    )
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Vale.", 12, 3))
+    )
+    stdin("Hola\n/exit\n")
+
+    assert main([]) == 0
+
+    system = json.loads(route.calls.last.request.content)["messages"][0]
+    assert system["role"] == "system"
+    assert (
+        '<instructions source="AGENTS.md">\n'
+        "Los tests: `uv run pytest`.\n</instructions>" in system["content"]
+    )
+    assert f"Working directory: {workspace / 'project'}" in system["content"]
 
 
 @respx.mock
@@ -111,9 +147,9 @@ def test_two_turns_resend_the_history(
         "Te llamas Ane.\n  [tokens: 31 in · 5 out · <$0.0001 · session <$0.0001]" in out
     )
 
-    first, second = (json.loads(call.request.content) for call in route.calls)
-    assert len(first["messages"]) == 1
-    assert second["messages"] == [
+    first, second = (conversation(call.request.content) for call in route.calls)
+    assert len(first) == 1
+    assert second == [
         {"role": "user", "content": "Hola, soy Ane"},
         {"role": "assistant", "content": "Hola, Ane."},
         {"role": "user", "content": "¿Cómo me llamo?"},
@@ -155,8 +191,9 @@ def test_a_cut_stream_shows_the_error_and_the_next_turn_works(
     ) in captured.out
     assert captured.err.startswith("error: the connection to the provider failed")
     # The cut turn was not kept.
-    second = json.loads(route.calls.last.request.content)
-    assert second["messages"] == [{"role": "user", "content": "Hola otra vez"}]
+    assert conversation(route.calls.last.request.content) == [
+        {"role": "user", "content": "Hola otra vez"}
+    ]
 
 
 @respx.mock
@@ -225,7 +262,7 @@ def test_a_tool_call_reads_a_real_file(
         "Dice: comprar pan.\n"
         "  [tokens: 430 in · 29 out · 1 call · $0.0001 · session $0.0001]"
     ) in out
-    second = json.loads(route.calls.last.request.content)["messages"]
+    second = conversation(route.calls.last.request.content)
     assert second[-1] == {
         "role": "tool",
         "tool_call_id": "call_e2e",
@@ -321,7 +358,7 @@ def test_without_a_terminal_a_write_is_denied_without_asking(
     out = capsys.readouterr().out
     assert code == 0
     # The "y" was not an answer: it reached the model as the next message.
-    last = json.loads(route.calls.last.request.content)["messages"][-1]
+    last = conversation(route.calls.last.request.content)[-1]
     assert last == {"role": "user", "content": "y"}
     assert "  (denied: input is not a terminal)\n" in out
     assert "  [denied: tell maha how to continue]\n" in out
@@ -382,7 +419,7 @@ def test_in_a_terminal_a_command_asks_and_runs_without_the_key(
     assert code == 0
     assert "  (discarded typed input)\n  ┌ run: env\n" in out
     assert "  ✓ exit code 0\n" in out
-    result = json.loads(route.calls.last.request.content)["messages"][-1]
+    result = conversation(route.calls.last.request.content)[-1]
     assert result["role"] == "tool"
     assert "PATH=" in result["content"]
     assert KEY not in result["content"]
@@ -458,7 +495,7 @@ def test_a_second_maha_resumes_the_first_one(
 
     out = capsys.readouterr().out
     assert " · 2 messages · glm-5.3-flash]\n" in out
-    assert json.loads(route.calls.last.request.content)["messages"] == [
+    assert conversation(route.calls.last.request.content) == [
         {"role": "user", "content": "Hola, soy Ane"},
         {"role": "assistant", "content": "Hola, Ane."},
         {"role": "user", "content": "¿Cómo me llamo?"},
@@ -749,7 +786,7 @@ def test_print_answers_on_stdout_and_saves_the_session(
     captured = capsys.readouterr()
     assert (code, captured.out) == (0, "Dos palabras.\n")
     assert captured.err == "  [tokens: 12 in · 3 out · <$0.0001 · session <$0.0001]\n"
-    messages = json.loads(route.calls.last.request.content)["messages"]
+    messages = conversation(route.calls.last.request.content)
     [message] = messages
     assert message["role"] == "user"
     assert re.fullmatch(
@@ -869,9 +906,7 @@ def test_continue_with_print_follows_a_print_session(
     captured = capsys.readouterr()
     assert captured.out == "Que apuntara 42.\n"
     assert " · 2 messages · glm-5.3-flash]\n" in captured.err
-    assert [
-        m["content"] for m in json.loads(route.calls.last.request.content)["messages"]
-    ] == [
+    assert [m["content"] for m in conversation(route.calls.last.request.content)] == [
         "apunta 42",
         "Apuntado.",
         "¿qué te pedí antes?",
@@ -1195,7 +1230,7 @@ def test_an_exported_session_is_imported_and_resumed(
     )
     stdin("")
     assert main(["-r", new, "-p", "¿Sigues?"]) == 0
-    assert json.loads(route.calls.last.request.content)["messages"][:2] == [
+    assert conversation(route.calls.last.request.content)[:2] == [
         {"role": "user", "content": "Hola"},
         {"role": "assistant", "content": "Hola, Ane."},
     ]

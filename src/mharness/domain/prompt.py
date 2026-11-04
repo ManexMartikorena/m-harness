@@ -176,9 +176,11 @@ def _shown(layer: Layer) -> str:
 
 
 class SystemPrompt(BaseModel, frozen=True):
-    """The layers of one session's system prompt, in their order."""
+    """The layers of one session's system prompt, in their order, and what
+    the user is told of the files not read or cut (§1.8)."""
 
     layers: tuple[Layer, ...]
+    warnings: tuple[str, ...] = ()
 
     @property
     def text(self) -> str:

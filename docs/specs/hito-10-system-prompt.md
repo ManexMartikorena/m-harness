@@ -119,8 +119,11 @@ Las capas de ANALISIS §5 que faltan (skills y memoria) llegan en los hitos
 ### 1.2 Una vez por sesión
 
 El prompt se construye al crear el agente de una sesión (al arrancar, con
-`/new` y con `/resume`) y **no cambia** hasta la siguiente. `/model` no lo
-toca.
+`/new` y con `/resume`) y **no cambia** hasta la siguiente. `/model` solo
+cambia la capa de familia. *(Corregido al implementarlo: decía "`/model`
+no lo toca", pero con la capa de familia otro modelo puede necesitar otra;
+la caché del proveedor es de cada modelo, así que cambiar de modelo ya la
+pierde. Las instrucciones siguen las del principio de la sesión.)*
 - **Por qué:** si cambia, la caché del proveedor se pierde en cada
   llamada (§1.0). Claude Code hace lo mismo.
 - **Consecuencia:** un `AGENTS.md` editado a mitad de sesión (también por
