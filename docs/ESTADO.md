@@ -1,22 +1,23 @@
 # Estado del proyecto
 
 Última actualización: 2026-11-04. **Hito 9 cerrado: `v0.9.0` — Adaptador
-de Anthropic. La auditoría profunda antes de la spec del hito 10, terminada
-(evals sin regresión); falta publicarla como `v0.9.1`.**
+de Anthropic, y la auditoría profunda publicada como `v0.9.1`. Siguiente:
+la spec del hito 10, cuando el mantenedor dé el OK.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 ## Fase actual
 
-**Desarrollo. Hitos 1 a 9 cerrados; antes del hito 10 (system prompt por
-capas), una auditoría profunda. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
+**Desarrollo. Hitos 1 a 9 cerrados, y la auditoría profunda que se pidió
+antes del hito 10 (system prompt por capas), también. Plan: 23 hitos hasta
+la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.9.0` — Adaptador de Anthropic** (2026-11-03):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.9.0
-- Ramas abiertas: `fix/auditoria-hito-9` (la auditoría, lista para su PR).
-  Las integradas se conservan en GitHub.
+- Última versión: **`v0.9.1` — Auditoría profunda tras el hito 9**
+  (2026-11-04):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.9.1
+- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -48,19 +49,10 @@ spec, su nota de la guía y su release.
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** publicar la **auditoría profunda** como `v0.9.1` (rama
-   `fix/auditoria-hito-9`; spec
-   `docs/specs/mejora-2026-11-03-auditoria-profunda.md`, IMPLEMENTADA).
-   Todo hecho y commiteado: los arreglos (cinco revisores y R1 a R15), las
-   evals finales con líneas base nuevas (2026-11-04: GLM 96, Kimi 97,
-   Haiku 100, sin regresión; I16), la versión `0.9.1`, la spec, el
-   historial y el mapa. Falta: push, PR sin milestone, merge commit con el
-   CI en verde, tag `v0.9.1` y su release.
-   Sigue POR VERIFICAR: la API directa de Anthropic con una llamada real
-   (no hay clave).
-2. **Mantenedor:** dar el OK para empezar la spec del hito 10 (system
-   prompt por capas). El agente no la empieza sin él.
-3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+1. **Mantenedor:** dar el OK para empezar la spec del hito 10 (system
+   prompt por capas). El agente no la empieza sin él. Con el OK, el
+   agente propone la spec en su propio PR (`docs/spec-hito-10-<slug>`).
+2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
