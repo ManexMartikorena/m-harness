@@ -129,6 +129,9 @@ class Settings(BaseModel, frozen=True):
     project_instructions: tuple[str, ...] = ()
     # Read CLAUDE.md where there is no AGENTS.md (spec hito 10, §1.4).
     compat_claude: bool = True
+    # The user's own base of the system prompt, instead of maha's; only
+    # from the user's file (spec hito 10, §1.3).
+    system_prompt_file: Path | None = None
 
 
 class _Limits(BaseModel, extra="forbid"):
@@ -156,6 +159,7 @@ class _ProjectFile(BaseModel, extra="forbid"):
 
 class _UserFile(_ProjectFile):
     providers: dict[str, ProviderSettings] = {}
+    system_prompt_file: str | None = Field(default=None, min_length=1)
 
 
 def user_config_path(env: Mapping[str, str]) -> Path:
@@ -221,6 +225,12 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
             f"(URL and key variable) go only in {user_path}, so that a "
             "repository cannot send your key to another server."
         )
+    if "system_prompt_file" in project_data:
+        raise ConfigError(
+            f"{project_path}: a project cannot replace the base of the system "
+            f"prompt (system_prompt_file); it goes only in {user_path}. A "
+            "project adds its instructions in AGENTS.md."
+        )
     project = _validate(_ProjectFile, project_data, project_path)
     for pattern in project.instructions:
         _inside_project(pattern, project_path)
@@ -253,6 +263,11 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
         instructions=tuple(user.instructions),
         project_instructions=tuple(dict.fromkeys(project.instructions)),
         compat_claude=_first(project.compat_claude, user.compat_claude, True),
+        system_prompt_file=(
+            None
+            if user.system_prompt_file is None
+            else Path(user.system_prompt_file).expanduser()
+        ),
         api_key=_api_key(provider_name, provider, env, need=calls_model),
         from_project={
             name: value

@@ -615,3 +615,20 @@ def test_compat_claude_takes_only_a_boolean(home: Path, project: Path) -> None:
 
     with pytest.raises(ConfigError, match="compat_claude"):
         load(home, project)
+
+
+def test_the_users_own_base_of_the_system_prompt(home: Path, project: Path) -> None:
+    # Spec hito 10, §1.3.
+    write_user(home, 'model = "m"\nsystem_prompt_file = "~/prompts/base.md"\n')
+
+    settings = load(home, project)
+
+    assert settings.system_prompt_file == Path("~/prompts/base.md").expanduser()
+
+
+def test_a_project_cannot_replace_the_base(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'system_prompt_file = "evil.md"\n')
+
+    with pytest.raises(ConfigError, match="cannot replace the base"):
+        load(home, project)

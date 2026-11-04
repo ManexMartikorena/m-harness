@@ -19,6 +19,7 @@ import tempfile
 import uuid
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
 from datetime import date, datetime
 from importlib import resources
 from logging.handlers import RotatingFileHandler
@@ -63,7 +64,7 @@ from mharness.domain.evals import (
 )
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message
-from mharness.domain.prompt import sections
+from mharness.domain.prompt import Layer, sections
 from mharness.domain.trace import known_secrets
 from mharness.ports.approval import ApprovalGate
 from mharness.ports.catalog import ModelCatalog
@@ -148,13 +149,83 @@ def _dispatch(
         )
     if options.command in ("sessions", "trace", "export", "import"):
         return asyncio.run(_sessions_command(settings, catalog, data, options))
-    settings = _with_options(settings, options)
-    start = Start(last=options.last, session=options.session, model=options.model)
+    try:
+        files = _prompt_files(settings, options)
+    except config.ConfigError as exc:
+        json_result = options.prompt is not None and options.output_format != "text"
+        return cli.fail(str(exc), result=json_result)
     # Resolved once: the tools and the sessions name it the same way.
     cwd = Path.cwd().resolve()
+    if options.command == "prompt":
+        model = options.model or settings.model
+        return asyncio.run(_show_prompt(settings, catalog, cwd, files, model))
+    settings = _with_options(settings, options)
+    start = Start(last=options.last, session=options.session, model=options.model)
     if options.prompt is not None:
-        return asyncio.run(_print(settings, catalog, data, cwd, start, options))
-    return asyncio.run(_converse(settings, catalog, data, cwd, start))
+        return asyncio.run(_print(settings, catalog, data, cwd, start, options, files))
+    return asyncio.run(_converse(settings, catalog, data, cwd, start, files))
+
+
+@dataclass(frozen=True)
+class _PromptFiles:
+    """What the command line and the user's configuration put in the system
+    prompt: their own base, and what goes at the end (spec hito 10, §1.8)."""
+
+    base: Layer | None = None
+    append: tuple[Layer, ...] = ()
+
+
+def _prompt_files(
+    settings: config.Settings, options: argparse.Namespace
+) -> _PromptFiles:
+    """Read the files of the options; a `ConfigError` says which and why.
+    The base of the command line wins over the configuration's."""
+    path: Path | None = options.system_prompt_file or settings.system_prompt_file
+    base = None
+    if path is not None:
+        base = Layer(kind="base", source=str(path), text=_read_prompt(path))
+    append: list[Layer] = []
+    if options.append_system_prompt_file is not None:
+        path = options.append_system_prompt_file
+        append.append(Layer(kind="append", source=str(path), text=_read_prompt(path)))
+    if options.append_system_prompt is not None:
+        append.append(
+            Layer(
+                kind="append",
+                source="--append-system-prompt",
+                text=options.append_system_prompt,
+            )
+        )
+    return _PromptFiles(base, tuple(append))
+
+
+def _read_prompt(path: Path) -> str:
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except UnicodeDecodeError:
+        raise config.ConfigError(f"{path}: not UTF-8") from None
+    except OSError as exc:
+        raise config.ConfigError(f"{path}: cannot read it: {exc.strerror}") from None
+    if not text:
+        raise config.ConfigError(f"{path}: empty")
+    return text
+
+
+async def _show_prompt(
+    settings: config.Settings,
+    catalog: ModelCatalog,
+    cwd: Path,
+    files: _PromptFiles,
+    model: str | None,
+) -> int:
+    """`maha prompt`: the system prompt of a session here, with the tools
+    of a conversation, without calling the model (spec hito 10, §1.8)."""
+    tools = _tools(cwd, {})
+    prompt = await _prompt(settings, catalog, cwd, tools, files).build(model or "")
+    for note in cli.prompt_notes(prompt):
+        print(f"  {note}", file=sys.stderr)
+    print(prompt.text)
+    return 0
 
 
 # The conversation, `-p` (both without a command) and the evals.
@@ -268,6 +339,7 @@ def _prompt(
     catalog: ModelCatalog,
     cwd: Path,
     tools: ToolRegistry,
+    files: _PromptFiles | None = None,
 ) -> SystemPromptBuilder:
     """The system prompt of the user's sessions (spec hito 10)."""
     project = LocalProject(
@@ -279,12 +351,15 @@ def _prompt(
         extra_user=settings.instructions,
         extra_project=settings.project_instructions,
     )
+    files = files or _PromptFiles()
     return SystemPromptBuilder(
         project,
         _templates(),
         catalog=catalog,
         provider=settings.provider_name,
         tools=tools.names(),
+        base=files.base,
+        append=files.append,
     )
 
 
@@ -589,6 +664,7 @@ def _sessions(
     cwd: Path,
     client: ModelClient,
     gate: ApprovalGate,
+    files: _PromptFiles | None = None,
 ) -> Sessions:
     """The user's sessions, whose agents have the seven tools and `gate`."""
     provider = settings.provider
@@ -623,7 +699,7 @@ def _sessions(
         # reach a trace (spec hito 7, §1.8).
         masked=known_secrets(os.environ, also=[settings.api_key]),
         effort=settings.effort,
-        prompt=_prompt(settings, catalog, cwd, tools),
+        prompt=_prompt(settings, catalog, cwd, tools, files),
     )
 
 
@@ -710,6 +786,7 @@ async def _print(
     cwd: Path,
     start: Start,
     options: argparse.Namespace,
+    files: _PromptFiles,
 ) -> int:
     """`maha -p` (spec hito 8, §1.10 and §1.11). Nobody to ask: only the
     tools of `--allow` run, and only with a scope (§1.2)."""
@@ -717,7 +794,7 @@ async def _print(
     read_all = None if os.isatty(0) else cli.StdinLines().read_all
     async with _client(settings, catalog) as client:
         sessions = _sessions(
-            settings, catalog, data, cwd, client, AllowList(options.allow)
+            settings, catalog, data, cwd, client, AllowList(options.allow), files
         )
         return await cli.print_mode(
             sessions,
@@ -737,11 +814,12 @@ async def _converse(
     data: Path,
     cwd: Path,
     start: Start,
+    files: _PromptFiles,
 ) -> int:
     # One reader for the conversation and the questions (B3).
     lines = cli.StdinLines()
     async with _client(settings, catalog) as client:
-        sessions = _sessions(settings, catalog, data, cwd, client, _gate(lines))
+        sessions = _sessions(settings, catalog, data, cwd, client, _gate(lines), files)
         return await cli.converse(
             sessions,
             provider=settings.provider_name,

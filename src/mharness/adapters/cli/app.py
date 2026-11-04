@@ -30,9 +30,17 @@ _CONVERSATION = {
     "max_cost": "--max-cost",
     "max_tokens": "--max-tokens",
     "timeout": "--timeout",
+    "append_system_prompt": "--append-system-prompt",
+    "append_system_prompt_file": "--append-system-prompt-file",
+    "system_prompt_file": "--system-prompt-file",
 }
 # Only without a person: the others also go with the conversation.
 _PRINT_ONLY = ("output_format", "allow")
+# What `maha prompt` takes of the conversation's: what changes the prompt
+# (spec hito 10, §1.8).
+_PROMPT_TAKES = frozenset(
+    {"model", "append_system_prompt", "append_system_prompt_file", "system_prompt_file"}
+)
 
 
 def build_parser(tools: Sequence[str]) -> argparse.ArgumentParser:
@@ -137,6 +145,25 @@ def _conversation_options(
     parser.add_argument(
         "--timeout", type=_seconds, metavar="S", help="seconds per turn"
     )
+    parser.add_argument(
+        "--append-system-prompt",
+        type=_text,
+        metavar="TEXT",
+        help="add this text at the end of the system prompt",
+    )
+    parser.add_argument(
+        "--append-system-prompt-file",
+        type=Path,
+        metavar="FILE",
+        help="add this file at the end of the system prompt",
+    )
+    parser.add_argument(
+        "--system-prompt-file",
+        type=Path,
+        metavar="FILE",
+        help="use this file as the base of the system prompt, instead of "
+        "maha's; the instructions and the environment stay",
+    )
 
 
 def _eval_parser(commands: Any) -> None:
@@ -201,6 +228,24 @@ def _models_parser(commands: Any) -> None:
     models.add_argument(
         "--all", action="store_true", dest="every", help="of every provider"
     )
+    prompt = commands.add_parser(
+        "prompt",
+        help="the system prompt of a session here, without calling the model",
+        description="The system prompt a session would have in this "
+        "directory, with this configuration: maha's base, the layer of the "
+        "model's family, the instruction files and the environment. Takes "
+        "-m and the options of the system prompt.",
+    )
+    # Also after the command; SUPPRESS keeps what came before it.
+    keep = argparse.SUPPRESS
+    prompt.add_argument("-m", "--model", type=_text, metavar="ID", default=keep)
+    prompt.add_argument(
+        "--append-system-prompt", type=_text, metavar="TEXT", default=keep
+    )
+    prompt.add_argument(
+        "--append-system-prompt-file", type=Path, metavar="FILE", default=keep
+    )
+    prompt.add_argument("--system-prompt-file", type=Path, metavar="FILE", default=keep)
 
 
 def _sessions_parser(commands: Any) -> None:
@@ -352,6 +397,12 @@ def _check(parser: argparse.ArgumentParser, options: argparse.Namespace) -> None
     ]
     if options.session == "":
         parser.error("-r needs the id of a session: maha sessions lists them")
+    if options.command == "prompt":
+        given = [
+            flag
+            for name, flag in _CONVERSATION.items()
+            if name not in _PROMPT_TAKES and _given(getattr(options, name))
+        ]
     if options.command is not None and given:
         parser.error(f"{options.command} does not take {', '.join(given)}")
     if options.prompt is None:

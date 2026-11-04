@@ -1723,3 +1723,94 @@ def test_a_provider_of_anthropics_format_with_its_own_version(
     request = route.calls.last.request
     assert request.headers["anthropic-version"] == "2023-06-01"
     assert json.loads(request.content)["cache_control"] == {"type": "ephemeral"}
+
+
+# Seeing and adjusting the system prompt (spec hito 10, §1.8).
+
+
+def test_maha_prompt_shows_the_prompt_without_calling_the_model(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # No key: it never calls the model.
+    monkeypatch.delenv("OPENCODE_API_KEY")
+    write_user_config(workspace, 'provider = "opencode-go"\nmodel = "glm-5.3-flash"\n')
+    (workspace / "project" / "AGENTS.md").write_text("Usa uv.\n", encoding="utf-8")
+
+    assert main(["prompt", "--append-system-prompt", "Sé breve."]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out.startswith("You are maha")
+    assert "- run_command: " in captured.out
+    assert '<instructions source="AGENTS.md">\nUsa uv.\n</instructions>' in captured.out
+    assert captured.out.endswith("Sé breve.\n")
+    assert captured.err == "  [instructions: AGENTS.md]\n"
+
+
+@respx.mock
+def test_the_users_base_and_what_is_appended_reach_the_model(
+    workspace: Path, stdin: Callable[[str], None]
+) -> None:
+    base = workspace / "mi-base.md"
+    base.write_text("Eres un asistente de pruebas.\n", encoding="utf-8")
+    extra = workspace / "extra.md"
+    extra.write_text("Responde en una línea.\n", encoding="utf-8")
+    write_user_config(
+        workspace,
+        'provider = "opencode-go"\nmodel = "glm-5.3-flash"\n'
+        f"system_prompt_file = {str(base)!r}\n",
+    )
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Vale.", 12, 3))
+    )
+    stdin("")
+
+    code = main(
+        [
+            "-p",
+            "Hola",
+            "--append-system-prompt-file",
+            str(extra),
+            "--append-system-prompt",
+            "Fin.",
+        ]
+    )
+
+    assert code == 0
+    system = json.loads(route.calls.last.request.content)["messages"][0]["content"]
+    assert system.startswith("Eres un asistente de pruebas.\n\n<environment>")
+    assert "You are maha" not in system
+    assert system.endswith("Responde en una línea.\n\nFin.")
+
+
+def test_the_base_of_the_command_line_wins(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mine = workspace / "mine.md"
+    mine.write_text("Configured.\n", encoding="utf-8")
+    once = workspace / "once.md"
+    once.write_text("Just this once.\n", encoding="utf-8")
+    write_user_config(workspace, f'model = "m"\nsystem_prompt_file = {str(mine)!r}\n')
+
+    assert main(["prompt", "--system-prompt-file", str(once)]) == 0
+
+    assert capsys.readouterr().out.startswith("Just this once.\n")
+
+
+@pytest.mark.parametrize(
+    ("content", "says"),
+    [(None, "cannot read it"), (b"\xff", "not UTF-8"), (b" \n", "empty")],
+)
+def test_a_prompt_file_that_cannot_be_used_stops_maha(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    content: bytes | None,
+    says: str,
+) -> None:
+    write_user_config(workspace, 'model = "m"\n')
+    path = workspace / "base.md"
+    if content is not None:
+        path.write_bytes(content)
+
+    assert main(["prompt", "--system-prompt-file", str(path)]) == 1
+
+    assert says in capsys.readouterr().err
