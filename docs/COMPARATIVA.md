@@ -101,7 +101,7 @@ Fuentes: https://opencode.ai/docs/tui/, https://code.claude.com/docs/en/commands
 | Elegir modelo | `/models` (lista) | `/model` (selector) | ✓ `/model ID` | h21: selector |
 | Sesiones: listar, retomar, borrar | `/sessions` | `/resume` | ✓ | — |
 | Nueva sesión | `/new` | `/clear` | — | h8 o mejora pequeña |
-| Renombrar sesión | sí | `/rename` | — | mejora pequeña |
+| Renombrar sesión | sí | `/rename` | — | h10 *(04/11/2026, spec del hito 10, con los títulos)* |
 | Exportar la conversación | `/export` (Markdown) | `/export` | — | h8 |
 | Copiar la última respuesta | sí | `/copy` | — | h21 |
 | Bifurcar la sesión | `--fork` | `/branch`, `/fork` | — | h8 o después |
@@ -234,9 +234,9 @@ Fuentes: https://opencode.ai/docs/rules/, https://code.claude.com/docs/en/memory
 
 | Capacidad | OpenCode | Claude Code | `maha` | Propuesta |
 |---|---|---|---|---|
-| `AGENTS.md` del proyecto y del usuario | sí | lee `AGENTS.md` | h10 | — |
+| `AGENTS.md` del proyecto y del usuario | sí | lee `AGENTS.md` | h10 | los de subcarpetas, al leer allí: h11 *(04/11/2026, spec del hito 10)* |
 | Compatibilidad con `CLAUDE.md` | sí | propio | — | h10 (P4) |
-| Instrucciones extra (rutas, URL) | `instructions` | `.claude/rules/` con rutas | — | h10 |
+| Instrucciones extra (rutas, URL) | `instructions` | `.claude/rules/` con rutas | — | h10 *(04/11/2026, spec del hito 10: rutas y globs; las URL, h19; las reglas por ruta, h13)* |
 | `/init` | sí | sí | — | h10 |
 | Compactación automática y manual | sí | sí | h11 | — |
 | Qué sobrevive a la compactación | `prune` | lista documentada | — | h11 |
@@ -255,7 +255,7 @@ https://code.claude.com/docs/en/checkpointing.md.
 | Guardar, listar, retomar, borrar | sí | sí | ✓ | — |
 | De cualquier directorio | — | `ctrl+a` en el selector | ✓ | — |
 | Títulos automáticos | modelo pequeño | sí | parcial (primera línea) | h10 |
-| Renombrar | sí | sí | — | mejora pequeña |
+| Renombrar | sí | sí | — | h10 *(04/11/2026, spec del hito 10)* |
 | Bifurcar | sí | sí | — | h8 o después |
 | Exportar e importar | sí | exportar | — | h8 |
 | Deshacer cambios en ficheros | `/undo` (git) | puntos de control | — | h12 (P8, nuevo) |

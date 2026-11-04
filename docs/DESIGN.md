@@ -131,6 +131,11 @@ usa los nombres reales de los ficheros que ya existen.)*
 `adapters/storage/sessions.py`; y spec del hito 7, §3.1:
 `domain/catalog.py`, `domain/trace.py`, `ports/catalog.py`,
 `application/traces.py` y `adapters/catalog/`.)*
+*(Anotado el 04/11/2026, spec del hito 10, §3.1: `domain/prompt.py`,
+`domain/todo.py`, `domain/question.py`, `ports/project.py`,
+`ports/questions.py`, `adapters/project/`, `application/titles.py` y las
+plantillas en `src/mharness/prompts/` (`base.md`, `init.md` y `title.md`),
+que lee `bootstrap.py`.)*
 
 El árbol muestra el destino: cada carpeta nace en el hito que la necesita
 (§14). `docs/MAPA.md` describe lo que existe en cada momento y se actualiza en
@@ -371,7 +376,11 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   MCP (17) → web (19). *(Números al día con el plan del 27/10/2026.)*
 - **System prompt:** composición por capas (base + entorno + `AGENTS.md` del
   proyecto + skills + memoria), con plantillas versionadas en el repositorio y
-  evaluadas como código (hito 10).
+  evaluadas como código (hito 10). *(Concretado el 04/11/2026, spec del
+  hito 10, §1.1 a §1.3: base, familia del modelo (del catálogo, solo si
+  las evals la justifican), usuario, proyecto, extra y entorno, en ese
+  orden; skills y memoria, detrás de "extra". Se construye una vez por
+  sesión y no cambia hasta `/new` o `/resume`, por la caché.)*
 - **Skills:** formato Agent Skills (`SKILL.md`). El índice va en el prompt y el
   contenido se carga bajo demanda (hito 13).
 - **Supervisión:** toda herramienta con efecto pide aprobación. "Aprobar para
@@ -592,7 +601,10 @@ queda abierto ("o", "mejora pequeña") se decide en esa spec.)*
     plantillas versionadas, medido con evals. Guía: el system prompt.
     Además (P4, P5): `/init`, compatibilidad con `CLAUDE.md`, instrucciones
     extra, títulos de sesión con un modelo pequeño, y las herramientas de
-    lista de tareas y de pregunta estructurada al usuario.
+    lista de tareas y de pregunta estructurada al usuario. *(Concretado el
+    04/11/2026, spec del hito 10, §0 y decisión 6: también `/rename`; los
+    `AGENTS.md` de subcarpetas pasan al hito 11, las reglas por ruta al 13 y
+    las instrucciones por URL al 19.)*
 11. **Gestión del contexto.** Conteo, umbral y compactación por resumen. Guía:
     la ventana de contexto. Además (P6): `/compact`, `/context` y qué
     sobrevive a la compactación.
