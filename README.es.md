@@ -19,12 +19,12 @@ el modelo que elijas, y te dice en cada turno lo que ha costado.
 
 ```
 $ maha -m claude-haiku-5-5
-maha 0.9.0 · opencode-go · claude-haiku-5-5 · /help for commands
+maha 0.9.1 · opencode-go · claude-haiku-5-5 · /help for commands
 > Lee notas.txt con read_file y dime qué pone, en una frase.
   → read_file(path="notas.txt")
   ✓ 2 lines
-El archivo notas.txt contiene solo dos palabras, una por línea: "uno" y "dos".
-  [tokens: 4027 in · 87 out · 1 call · $0.0013 · session $0.0013]
+El archivo notas.txt contiene solo dos líneas: "uno" y "dos".
+  [tokens: 4027 in · 82 out · 1 call · $0.0013 · session $0.0013]
 > Cambia la segunda línea de notas.txt por 'tres' con edit_file.
   → edit_file(path="notas.txt", old_string="dos", new_string="tres")
   ┌ edit notas.txt
@@ -34,21 +34,21 @@ El archivo notas.txt contiene solo dos palabras, una por línea: "uno" y "dos".
   │ +tres
   └ Allow? [y] yes · [a] always this session · [n] no: y
   ✓ 1 replacement
-He cambiado la segunda línea de notas.txt: ahora el archivo dice "uno" y "tres".
-  [tokens: 4415 in · 204 out (65 reasoning) · 1 call · $0.0007 · session $0.0020]
+He cambiado la segunda línea de notas.txt: ahora dice "tres" en lugar de "dos".
+  [tokens: 4419 in · 218 out (79 reasoning) · 1 call · $0.0007 · session $0.0020]
 > /trace
-  20261103-154631-4b20 · claude-haiku-5-5 · 2 turns · 4 model calls · 2 tools
-  1  16:46:32  2 calls · 1 tool · 4027 in · 87 out · $0.0013 · 3.2 s
-  2  16:46:35  2 calls · 1 tool · 4415 in · 204 out · $0.0007 · 3.9 s
-  total: 8442 in · 291 out · $0.0020
-  [trace: ~/.local/share/maha/traces/20261103-154631-4b20.jsonl]
+  20261104-142320-56bb · claude-haiku-5-5 · 2 turns · 4 model calls · 2 tools
+  1  15:23:20  2 calls · 1 tool · 4027 in · 82 out · $0.0013 · 2.2 s
+  2  15:23:23  2 calls · 1 tool · 4419 in · 218 out · $0.0007 · 3.2 s
+  total: 8446 in · 300 out · $0.0020
+  [trace: ~/.local/share/maha/traces/20261104-142320-56bb.jsonl]
 > /exit
 $ maha -c -p "¿Qué pone ahora en notas.txt? Una frase." --allow read_file
-  [resumed 20261103-154631-4b20 · 8 messages · claude-haiku-5-5]
+  [resumed 20261104-142320-56bb · 8 messages · claude-haiku-5-5]
   → read_file(path="notas.txt")
   ✓ 2 lines
-  [tokens: 4795 in · 85 out · 1 call · $0.0004 · session $0.0024]
-El archivo notas.txt ahora contiene "uno" y "tres", una palabra por línea.
+  [tokens: 4813 in · 80 out · 1 call · $0.0004 · session $0.0024]
+Ahora notas.txt contiene dos líneas: "uno" y "tres".
 ```
 
 *(Una sesión real. Los totales son exactos; cada turno se redondea a cuatro
