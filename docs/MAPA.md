@@ -30,7 +30,12 @@ La batería de `maha eval` (spec hito 8, §1.5 a §1.9). Solo datos inventados.
 
 | Fichero | Qué es |
 |---|---|
-| `tasks/<id>/task.toml` | Una tarea: instrucción, repo (`fixture`), conjunto (`train` o `validation`), herramientas permitidas sin persona (`allow`), límites y comprobación (`command`, `file` con `contains`/`absent`, `answer_contains`, `answer_matches`). La carpeta es el id. Diez tareas: leer, buscar, contar, crear, cambiar un valor, arreglar un fallo, renombrar, escribir una función, una errata y añadir una función; las dos últimas en inglés; `04` y `07` son de validación |
+| `tasks/<id>/task.toml` | Una tarea: instrucción, repo (`fixture`), conjunto (`train` o `validation`), herramientas permitidas sin persona (`allow`), límites y comprobación (`command`, `file` con `contains`/`absent`, `answer_contains`, `answer_matches`). La carpeta es el id; `own_tests` nombra los tests que escribe el agente (auditoría profunda, I1). 22 tareas. Diez básicas (01 a 10): leer, buscar, contar, crear, cambiar un valor, arreglar un fallo, renombrar, escribir una función, una errata y añadir una función; las dos últimas en inglés. Diez exigentes (11 a 20, spec del hito 8): el puerto por entorno, el IVA reducido, las funciones sin test, el descuento por volumen, el año bisiesto, las notas ordenadas y en JSON, `parse_duration`, el inventario y `total_value`. Dos de instrucciones (21 y 22, spec del hito 10): seguir un `AGENTS.md` y un `CLAUDE.md`. De validación: `04`, `07`, `14` y `18` |
+| `fixtures/agenda/` | `calendario.py` con un año bisiesto mal calculado y sus tests (tarea 15) |
+| `fixtures/citas/` | Una agenda de citas con un `AGENTS.md` que pide apuntar cada cambio en `CHANGELOG.md` (tarea 21, spec del hito 10) |
+| `fixtures/conversor/` | Conversiones de temperatura, solo con `CLAUDE.md`: cómo se escriben los errores (tarea 22, spec del hito 10) |
+| `fixtures/inventario/` | En inglés: `inventory.py` y sus tests (tareas 19 y 20) |
+| `fixtures/notas/` | `notas.py`, notas en la línea de comandos, y su README (tareas 16 y 17) |
 | `fixtures/tienda/` | El repo de siete tareas: una tienda en Python con IVA, descuentos (con un fallo a propósito) y pedidos, y sus tests con `unittest` |
 | `fixtures/texto/` | `slugify` sin escribir y sus tests |
 | `fixtures/toolkit/` | En inglés: un README con una errata y `utils.py` |

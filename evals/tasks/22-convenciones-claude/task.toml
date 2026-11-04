@@ -1,0 +1,18 @@
+# Seguir el CLAUDE.md cuando no hay AGENTS.md: el formato del mensaje solo
+# lo dice el CLAUDE.md (spec del hito 10, §1.4 y §5).
+instruction = "Haz que a_fahrenheit rechace las temperaturas por debajo del cero absoluto (-273.15 °C)."
+fixture = "conversor"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = '''python3 -c "
+import conversor
+assert conversor.a_fahrenheit(100) == 212
+conversor.a_fahrenheit(-273.15)
+try:
+    conversor.a_fahrenheit(-300)
+except ValueError as exc:
+    assert str(exc).startswith('a_fahrenheit: '), str(exc)
+else:
+    raise AssertionError('no ValueError below absolute zero')
+"'''

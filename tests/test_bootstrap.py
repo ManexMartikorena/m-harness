@@ -1,6 +1,7 @@
 """`maha` end to end: configuration, adapter, `Agent` and terminal, no
 network."""
 
+import asyncio
 import contextlib
 import io
 import json
@@ -20,9 +21,10 @@ import httpx
 import pytest
 import respx
 
-from mharness import bootstrap
+from mharness import bootstrap, config
+from mharness.adapters.catalog import TomlCatalog
 from mharness.adapters.cli import StdinLines
-from mharness.bootstrap import main
+from mharness.bootstrap import _eval_prompt, _eval_tools, _prompt, _tools, main
 from mharness.domain.evals import TaskRun
 from mharness.domain.limits import TurnLimits
 
@@ -1819,3 +1821,36 @@ def test_a_prompt_file_that_cannot_be_used_stops_maha(
     assert main(["prompt", "--system-prompt-file", str(path)]) == 1
 
     assert says in capsys.readouterr().err
+
+
+def test_the_evals_measure_maha_not_the_users_instructions(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Spec hito 10, §5 and §4, test 16: the user's AGENTS.md and the extra
+    # instructions stay out; the task's own files come in.
+    write_user_config(
+        workspace, 'model = "glm-5.3-flash"\ninstructions = ["notas.md"]\n'
+    )
+    (workspace / "xdg" / "maha" / "AGENTS.md").write_text("mine", encoding="utf-8")
+    task = workspace / "task"
+    task.mkdir()
+    (task / "AGENTS.md").write_text("the task's", encoding="utf-8")
+    (task / "notas.md").write_text("extra", encoding="utf-8")
+    monkeypatch.chdir(task)
+    settings = config.load(cwd=task, env=os.environ)
+    catalog = TomlCatalog.load(workspace / "none.toml")
+
+    evals = asyncio.run(
+        _eval_prompt(settings, catalog, task, _eval_tools(task)).build("glm-5.3-flash")
+    )
+    user = asyncio.run(
+        _prompt(settings, catalog, task, _tools(task, {})).build("glm-5.3-flash")
+    )
+
+    assert "the task's" in evals.text
+    assert "mine" not in evals.text
+    assert "extra" not in evals.text
+    assert "run_command" not in evals.text
+    assert "Shell:" not in evals.text
+    assert "mine" in user.text
+    assert "extra" in user.text
