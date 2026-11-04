@@ -90,6 +90,13 @@ class SystemPromptBuilder:
         changed = compose([*rest, *([family] if family is not None else [])])
         return changed.model_copy(update={"warnings": prompt.warnings})
 
+    def base_fingerprint(self, model: str) -> str:
+        """The fingerprint of the base and family layers with `model`: what
+        a baseline of the evals depends on (§1.13)."""
+        family = self._family(model)
+        layers = [self._base or self._default_base(), *([family] if family else [])]
+        return compose(layers).base_fingerprint
+
     def _default_base(self) -> Layer:
         guidance = tool_guidance(self._templates.tools, self._tools)
         return Layer(

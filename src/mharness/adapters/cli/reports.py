@@ -54,6 +54,7 @@ def eval_report(
     out: TextIO,
     *,
     effort: str | None = None,
+    prompts: Mapping[str, str] | None = None,
 ) -> bool:
     """A table per model, its totals and its regressions against its
     baseline; True if there is any regression. With an `effort`, the
@@ -76,6 +77,11 @@ def eval_report(
                 f"({commit}{baseline.repeat} runs each)",
                 file=out,
             )
+            now = (prompts or {}).get(model)
+            if now is not None and baseline.prompt != now:
+                # Not a regression: what the numbers measure changed
+                # (spec hito 10, §1.13).
+                print("  [the base prompt changed since the baseline]", file=out)
         print(
             f"  {'task':<{width}}{'pass':<{passed}}{'steps':<7}{'tool errors':<13}"
             f"{'tokens':<8}{'cost':<9}time",

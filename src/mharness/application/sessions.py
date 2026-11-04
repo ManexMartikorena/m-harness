@@ -47,6 +47,8 @@ from mharness.domain.session import (
     session_id,
 )
 from mharness.domain.trace import (
+    PromptLayerInfo,
+    PromptUsed,
     Secrets,
     TraceError,
     TraceEvent,
@@ -150,6 +152,8 @@ class Conversation:
         # hito 10, §1.2); its warnings are told when it opens.
         self.prompt = prompt
         agent.system = None if prompt is None else prompt.text
+        # Traced with the next turn that starts (spec hito 10, §1.13).
+        self._prompt_untraced = prompt is not None
 
     @property
     def model(self) -> str:
@@ -201,6 +205,9 @@ class Conversation:
                         cost = add_cost(cost, event.cost)
                     if not isinstance(event, TextDelta):
                         await self._record(event)
+                    if isinstance(event, TurnStarted) and self._prompt_untraced:
+                        await self._record(self._prompt_used())
+                        self._prompt_untraced = False
                     finished = isinstance(event, TurnFinished)
                     if finished and calls:
                         # Before it is shown: the terminal tells the session's
@@ -233,6 +240,21 @@ class Conversation:
             await self._save()
             await self._sync_trace()
 
+    def _prompt_used(self) -> PromptUsed:
+        assert self.prompt is not None
+        return PromptUsed(
+            fingerprint=self.prompt.fingerprint,
+            base=self.prompt.base_fingerprint,
+            layers=tuple(
+                PromptLayerInfo(
+                    kind=layer.kind,
+                    source=layer.source,
+                    bytes=len(layer.text.encode("utf-8")),
+                )
+                for layer in self.prompt.layers
+            ),
+        )
+
     def _count(self, cost: Decimal | None) -> None:
         """Add one turn's cost to the session's; past what an amount in USD
         can be, the turn counts as one without a cost, as on resuming."""
@@ -249,6 +271,7 @@ class Conversation:
             # Another model, maybe of another family (spec hito 10, §1.3).
             self.prompt = self._origin.prompt.for_model(self.prompt, model)
             self._agent.system = self.prompt.text
+            self._prompt_untraced = True
         self._pending.append(ModelEntry(model=model, provider=self._origin.provider))
         await self._save()
 

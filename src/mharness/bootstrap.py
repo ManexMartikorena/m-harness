@@ -547,8 +547,14 @@ async def _eval(
     # Every run in full, first: the report shows one line of a failure, and
     # may find nobody reading (deep audit, I6).
     await asyncio.to_thread(_write_runs, run_dir / "runs.json", runs)
+    # The base prompt of each model, as its runs had it (spec hito 10, §1.13).
+    here = Path.cwd()
+    builder = _eval_prompt(settings, catalog, here, _eval_tools(here))
+    prompts = {model: builder.base_fingerprint(model) for model in models}
     regressed = out.show(
-        lambda stream: cli.eval_report(runs, baselines, stream, effort=effort)
+        lambda stream: cli.eval_report(
+            runs, baselines, stream, effort=effort, prompts=prompts
+        )
     )
     broken = {
         model: count
@@ -580,6 +586,7 @@ async def _eval(
                     repeat=options.repeat,
                     tasks=by_task(mine),
                     total=stats(mine),
+                    prompt=prompts[model],
                 )
             )
             out.line(f"\nsaved: {where}")

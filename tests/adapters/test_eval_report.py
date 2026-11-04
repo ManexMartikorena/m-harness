@@ -262,3 +262,30 @@ def test_with_an_effort_the_baseline_is_shown_but_not_judged() -> None:
         "  · effort high: the baseline ran at the model's own effort, "
         "so the differences are shown, not judged\n"
     ) in text
+
+
+def test_a_changed_base_prompt_is_said() -> None:
+    # Spec hito 10, §1.13: what the baseline measured is not what runs now.
+    before = by_task([run()] * 5)
+    baseline = Baseline(
+        date=date(2026, 11, 4),
+        maha="0.9.1",
+        commit=None,
+        provider="opencode-go",
+        model="glm-5.3-flash",
+        repeat=5,
+        tasks=before,
+        total=combine(list(before.values())),
+        prompt="aaaaaaaaaaaa",
+    )
+    note = "  [the base prompt changed since the baseline]"
+
+    for now, said in (("bbbbbbbbbbbb", True), ("aaaaaaaaaaaa", False)):
+        out = io.StringIO()
+        eval_report(
+            [run()] * 5,
+            {"glm-5.3-flash": baseline},
+            out,
+            prompts={"glm-5.3-flash": now},
+        )
+        assert (note in out.getvalue()) is said

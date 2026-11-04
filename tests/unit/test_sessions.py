@@ -47,7 +47,7 @@ from mharness.domain.session import (
     SessionNotFound,
     UsageEntry,
 )
-from mharness.domain.trace import TraceError, TraceRecord, TurnFailed
+from mharness.domain.trace import PromptUsed, TraceError, TraceRecord, TurnFailed
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import HANG, FakeModelClient, reply, tool_calls
@@ -1777,3 +1777,25 @@ async def test_without_a_builder_no_system_prompt() -> None:
     await turn(conversation, "Hola")
 
     assert fake.requests[0].system is None
+
+
+async def test_the_trace_has_the_prompt_once_and_again_after_model() -> None:
+    # Spec hito 10, §1.13.
+    traces = MemoryTraceSink()
+    fake = FakeModelClient([reply("a"), reply("b"), reply("c")])
+    world = World(MemorySessionStore(), fake, prompt=prompt_builder(), traces=traces)
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "uno")
+    await turn(conversation, "dos")
+    await conversation.switch_model("kimi-k2.7-code")
+    await turn(conversation, "tres")
+
+    records = [record.event for record in await traces.read(conversation.id)]
+    prompts = [event for event in records if isinstance(event, PromptUsed)]
+    assert [event.type for event in records].count("prompt") == 2
+    first, second = prompts
+    assert first.fingerprint != second.fingerprint
+    assert first.base != second.base
+    assert [layer.kind for layer in first.layers] == ["base", "family", "environment"]
+    assert "GLM" not in str(first)

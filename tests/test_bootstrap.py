@@ -481,11 +481,16 @@ def test_a_turn_leaves_a_trace_with_its_cost_and_without_the_key(
     events = [json.loads(line)["event"] for line in text.splitlines()]
     assert [event["type"] for event in events] == [
         "turn_started",
+        # The system prompt of the session, with its first turn (spec hito
+        # 10, §1.13): its fingerprint and where its layers came from.
+        "prompt",
         "model_call_finished",
         "turn_finished",
     ]
+    assert len(events[1]["fingerprint"]) == 12
+    assert [layer["kind"] for layer in events[1]["layers"]] == ["base", "environment"]
     # 1000 * 0.15 + 100 * 0.50, per million.
-    assert events[1]["cost"] == "0.0002"
+    assert events[2]["cost"] == "0.0002"
     assert KEY not in text
     assert "[redacted]" in text
 
