@@ -1,8 +1,9 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-04. **Hito 9 cerrado: `v0.9.0` — Adaptador
-de Anthropic, y la auditoría profunda publicada como `v0.9.1`. En curso:
-el hito 10 (system prompt por capas), con la spec APROBADA.**
+Última actualización: 2026-11-04, al cerrar la sesión. **Hito 9 cerrado:
+`v0.9.0` y `v0.9.1` (auditoría profunda). En curso: el hito 10 (system
+prompt por capas), PR 1 con todo el código hecho; faltan las evals de
+confirmación y abrir su PR.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -17,7 +18,9 @@ la 1.0 (DESIGN §14).**
 - Última versión: **`v0.9.1` — Auditoría profunda tras el hito 9**
   (2026-11-04):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.9.1
-- Ramas abiertas: `feature/hito-10-capas` (el PR 1 del hito 10). Las integradas se conservan en GitHub.
+- Ramas abiertas: `feature/hito-10-capas` (el PR 1 del hito 10, subida a
+  GitHub, sin PR todavía). Desde otro PC: `git fetch && git switch
+  feature/hito-10-capas && git pull`, y `uv sync`. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -49,10 +52,31 @@ spec, su nota de la guía y su release.
 Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
 tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
 
-1. **Agente:** implementar el PR 1 del hito 10 (`feature/hito-10-capas`,
-   `docs/specs/hito-10-system-prompt.md` §6), pieza a pieza, con las evals
-   de §5 antes del merge. Después, el PR 2 (herramientas) y el PR 3
-   (`/init` y títulos).
+1. **Agente:** terminar el PR 1 del hito 10 (rama `feature/hito-10-capas`,
+   ya en GitHub; spec `docs/specs/hito-10-system-prompt.md`, APROBADA).
+   Hechas las piezas 1 a 12 de §6, cada una con su commit y en verde
+   (2238 tests). Resultados de las evals ya anotados en spec §5
+   ("Resultados (PR 1)"): pasada 1, el arreglo de la base (`d9367e7`) y
+   la decisión de no añadir capas de familia por ahora. Falta, en orden:
+   1. **La pasada 2 de confirmación** (§5): se lanzó el 2026-11-04 a las
+      18:47 en el WSL, pero la sesión se cerró antes de que terminara. En
+      el WSL, si `~/.local/state/maha/evals/` tiene un directorio de esa
+      hora con `runs.json` de 330 ejecuciones, vale; si no (o desde otro
+      PC), lanzarla de nuevo (unos 1,4 $ y 50 minutos):
+      `uv run --env-file .env maha eval --models
+      glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5 --repeat 5
+      --retry-errors --jobs 4`. Sin `--save`: las líneas base nuevas van
+      al cierre del hito, con 23 tareas.
+   2. Anotarla en la spec §5 (sustituir "Pendiente de anotar"), con la
+      comparación con la línea base: éxito sin ⚠; pasos y coste,
+      comparados también con la pasada 1. Si queda una ⚠ de coste o de
+      pasos, explicarla con números y que decida el mantenedor.
+   3. La pieza 13 de §6: commit "Anotar las evals del system prompt".
+   4. Verificación a mano de lo que toca el PR 1 (§7, puntos 1 a 4 y 9).
+   5. Push, PR al milestone "Hito 10 — System prompt por capas", merge
+      commit con el CI en verde.
+   6. Seguir con el PR 2 (`feature/hito-10-herramientas`: `todo_write`,
+      `ask_user` y la tarea 23) y el PR 3 (`/init`, títulos, `/rename`).
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.

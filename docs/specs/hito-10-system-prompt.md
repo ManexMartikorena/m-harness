@@ -542,6 +542,42 @@ El prompt cambia el comportamiento del agente en todo: la batería entera.
 
 El resultado se anota aquí al implementar.
 
+### Resultados (PR 1)
+
+**Pasada 1, 2026-11-04** (`b82ec5c`, prompt base sin capas de familia;
+3 modelos, 5 repeticiones, 22 tareas, contra las líneas base del
+2026-11-04; sesiones en `~/.local/state/maha/evals/20261104-182436-daa8`
+del WSL):
+
+| Modelo | Éxito | Pasos por ejecución | Coste por ejecución |
+|---|---|---|---|
+| `glm-5.3-flash` | 96 % → 98 % (108/110) | 4,4 → 7,2 (⚠ +65 %) | ⚠ +129 % (0,0007 → 0,0015 $) |
+| `kimi-k2.7-code` | 97 % → 98 % (108/110) | 5,3 → 6,5 (+22 %, ruido) | +32 % (ruido) |
+| `claude-haiku-5-5` | 100 % → 99 % (109/110, ruido) | 3,4 → 4,3 (⚠ +26 %) | ⚠ +56 % (0,0029 → 0,0045 $) |
+
+- Las tareas 21 y 22 (`AGENTS.md` y `CLAUDE.md`): 15/15 en cada modelo.
+- Ninguna ⚠ de éxito; las de pasos y coste, explicadas: en las sesiones de
+  train, GLM buscaba cómo lanzar los tests sin `run_command` y escribía
+  tests que nadie pidió (tarea 10, de 3 a 9 pasos; tarea 06, "no tengo
+  herramienta para ejecutar comandos"). La base pedía "run the tests"
+  aunque no hubiera con qué. Arreglado en la base (`d9367e7`): comprobar
+  solo con las herramientas que hay; lanzar los tests, en la línea de
+  `run_command`.
+
+**Iteración, 2026-11-04** (`d9367e7`; solo train, 1 repetición): pasos por
+ejecución en train, GLM 6,6 → 4,5, Kimi 6,0 → 4,4 y Haiku 4,1 → 3,7, ya
+cerca de los de la línea base sin prompt (4,4, 5,3 y 3,4); el coste baja
+igual. Fallo: GLM, la 08, una vez (lógica).
+
+**Capas de familia:** en los fallos de train de la pasada 1 no hay un
+patrón de una familia (GLM, un nombre sin definir en la 12; Kimi, una
+respuesta equivocada en la 13; Haiku, ninguno en train). El único patrón
+era de la base, y se arregló en la base. Sin un fallo que corregir, ninguna
+capa: el mecanismo queda listo y sin ficheros (§1.3).
+
+**Pasada 2 (confirmación)**: lanzada el 2026-11-04 a las 18:47, con
+`d9367e7`, la batería completa y 5 repeticiones. *Pendiente de anotar.*
+
 ## 6. Orden de piezas para el implementador
 
 **PR 1 — las capas** (`feature/hito-10-capas`)

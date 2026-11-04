@@ -153,6 +153,14 @@ input = 0                   # USD por millón de tokens
 output = 0
 ```
 
+### 3.3 `~/.config/maha/AGENTS.md` (opcional)
+
+Desde el hito 10. Instrucciones personales para todas las sesiones de ese
+PC, en el system prompt (spec del hito 10, §1.4). No viaja por git: cada
+PC tiene el suyo, o ninguno. Si no existe, `maha` lee `~/.claude/CLAUDE.md`
+(apagado con `compat_claude = false` en `config.toml`). `maha prompt`
+enseña qué carga. Las evals nunca lo leen.
+
 ## 4. Comprobar que todo está en pie
 
 Desde el hito 1:
