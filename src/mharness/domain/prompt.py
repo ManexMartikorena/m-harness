@@ -168,9 +168,11 @@ def cap(
 
 
 def _shown(layer: Layer) -> str:
+    """The layer as the model reads it, without blank lines around: one
+    blank line between layers, whatever their files end with."""
     if layer.kind not in INSTRUCTION_KINDS:
-        return layer.text
-    text = _CLOSING.sub("&lt;/instructions&gt;", layer.text)
+        return layer.text.strip()
+    text = _CLOSING.sub("&lt;/instructions&gt;", layer.text.strip())
     source = printable(layer.source).replace('"', "'")
     return f'<instructions source="{source}">\n{text}\n</instructions>'
 
@@ -184,7 +186,7 @@ class SystemPrompt(BaseModel, frozen=True):
 
     @property
     def text(self) -> str:
-        return "\n\n".join(_shown(layer) for layer in self.layers if layer.text)
+        return "\n\n".join(_shown(layer) for layer in self.layers if layer.text.strip())
 
     @property
     def fingerprint(self) -> str:

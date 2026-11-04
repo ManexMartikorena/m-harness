@@ -212,3 +212,17 @@ def test_tool_guidance_speaks_only_of_the_registered_tools() -> None:
     guidance = {"read_file": "Read.", "run_command": "Run."}
 
     assert tool_guidance(guidance, ["glob", "read_file"]) == "- read_file: Read."
+
+
+def test_one_blank_line_between_layers() -> None:
+    prompt = compose(
+        [
+            Layer(kind="base", source="maha", text="base\n"),
+            Layer(kind="project", source="AGENTS.md", text="\nrules\n\n"),
+            Layer(kind="extra", source="x.md", text="  \n"),
+        ]
+    )
+
+    assert prompt.text == (
+        'base\n\n<instructions source="AGENTS.md">\nrules\n</instructions>'
+    )
