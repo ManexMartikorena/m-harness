@@ -57,6 +57,31 @@ def render(template: str, values: Mapping[str, str]) -> str:
     return _HOLE.sub(lambda match: values[match.group(1)], template)
 
 
+_SECTION = re.compile(r"^## ([a-z_]+)[ \t]*$", re.MULTILINE)
+
+
+def sections(text: str) -> dict[str, str]:
+    """The `## name` sections of a template, by name, each without its
+    heading and trimmed (`prompts/tools.md`)."""
+    found = list(_SECTION.finditer(text))
+    result: dict[str, str] = {}
+    for index, match in enumerate(found):
+        end = found[index + 1].start() if index + 1 < len(found) else len(text)
+        name = match.group(1)
+        if name in result:
+            raise TemplateError(f"section {name!r} twice")
+        result[name] = " ".join(text[match.end() : end].split())
+    return result
+
+
+def tool_guidance(guidance: Mapping[str, str], tools: Iterable[str]) -> str:
+    """One line per registered tool that has guidance, in their order: the
+    prompt speaks only of the tools the model has (§1.3)."""
+    return "\n".join(
+        f"- {name}: {guidance[name]}" for name in tools if name in guidance
+    )
+
+
 class Layer(BaseModel, frozen=True):
     """One part of the system prompt."""
 

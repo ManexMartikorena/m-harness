@@ -13,6 +13,8 @@ from mharness.domain.prompt import (
     environment_layer,
     fingerprint,
     render,
+    sections,
+    tool_guidance,
 )
 
 
@@ -193,3 +195,20 @@ def test_the_base_fingerprint_ignores_instructions_and_environment() -> None:
 def test_fingerprint_is_stable() -> None:
     assert fingerprint("maha") == fingerprint("maha")
     assert fingerprint("maha") != fingerprint("maha ")
+
+
+def test_sections_by_name() -> None:
+    text = "## read_file\nRead it\nfirst.\n\n## glob\nFind.\n"
+
+    assert sections(text) == {"read_file": "Read it first.", "glob": "Find."}
+
+
+def test_a_section_twice_is_an_error() -> None:
+    with pytest.raises(TemplateError):
+        sections("## glob\na\n## glob\nb\n")
+
+
+def test_tool_guidance_speaks_only_of_the_registered_tools() -> None:
+    guidance = {"read_file": "Read.", "run_command": "Run."}
+
+    assert tool_guidance(guidance, ["glob", "read_file"]) == "- read_file: Read."
