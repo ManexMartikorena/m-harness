@@ -19,5 +19,6 @@ Change part of a file. Copy old_string exactly from what read_file showed,
 without the line numbers.
 
 ## run_command
-Run tests, builds and other commands. Prefer the project's own commands (its
-instructions often name them). Never run a command that waits for input.
+Run tests, builds and other commands; after a change, run the tests that
+cover it. Prefer the project's own commands (its instructions often name
+them). Never run a command that waits for input.

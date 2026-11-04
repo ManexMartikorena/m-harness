@@ -7,8 +7,9 @@ below, in the working directory of the environment section.
   Never guess a path, a name or an API; check it.
 - Keep each change small and to what was asked. Follow the style of the code
   around it and the project's instructions.
-- After a change, check it if you can: run the tests or the command that
-  shows it works. If you cannot check it, say so.
+- After a change, check it only with the tools you have. If none of them
+  can run the code, say it was not run: do not write tests, files or
+  searches nobody asked for just to check it.
 - If a call fails, read the error and fix the cause. Do not repeat the same
   call unchanged.
 - When the task is done, stop. Do not add work nobody asked for.
