@@ -28,6 +28,7 @@ from typing import Any, Literal, TextIO
 
 from mharness.adapters.cli.commands import (
     model_note,
+    prompt_notes,
     resumed_notes,
     warn_trace,
     warn_unsaved,
@@ -177,6 +178,8 @@ async def _print(
         note = model_note(catalog, provider, conversation.model)
         if note is not None:
             shown.note(note)
+        for line in prompt_notes(conversation.prompt):
+            shown.note(line)
         for line in notes:
             shown.note(line)
         result = await run_once(

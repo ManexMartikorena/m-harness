@@ -11,7 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from mharness.adapters.cli.commands import COMMANDS, Command, parse_command
+from mharness.adapters.cli.commands import (
+    COMMANDS,
+    Command,
+    parse_command,
+    prompt_notes,
+)
 from mharness.adapters.cli.conversation import converse
 from mharness.application.agent import Agent
 from mharness.application.sessions import Sessions
@@ -20,6 +25,7 @@ from mharness.domain.agent_events import ModelCallFinished, TurnFinished, TurnSt
 from mharness.domain.catalog import ModelInfo
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock
 from mharness.domain.model import ModelResponse, Usage
+from mharness.domain.prompt import Layer, SystemPrompt
 from mharness.domain.session import (
     MessageEntry,
     SessionError,
@@ -703,3 +709,32 @@ def test_every_way_a_turn_ends_has_a_name_in_trace() -> None:
     from mharness.application.traces import Ending
 
     assert set(_ENDINGS) | {"end_turn"} == set(get_args(Ending.__value__))
+
+
+# What the system prompt holds, said at the start (spec hito 10, §1.8).
+
+
+def test_prompt_notes_name_the_files_and_the_warnings() -> None:
+    prompt = SystemPrompt(
+        layers=(
+            Layer(kind="base", source="maha", text="b"),
+            Layer(kind="user", source="~/.config/maha/AGENTS.md", text="u"),
+            Layer(kind="project", source="AGENTS.md\x1b[2J", text="p"),
+            Layer(kind="extra", source="CONTRIBUTING.md", text="e"),
+            Layer(kind="environment", source="maha", text="env"),
+        ),
+        warnings=("CLAUDE.md: not UTF-8, not read",),
+    )
+
+    assert prompt_notes(prompt) == [
+        "[instructions: ~/.config/maha/AGENTS.md · AGENTS.md\\x1b[2J"
+        " · CONTRIBUTING.md]",
+        "[warning: CLAUDE.md: not UTF-8, not read]",
+    ]
+
+
+def test_prompt_notes_say_nothing_without_instructions() -> None:
+    prompt = SystemPrompt(layers=(Layer(kind="base", source="maha", text="b"),))
+
+    assert prompt_notes(prompt) == []
+    assert prompt_notes(None) == []

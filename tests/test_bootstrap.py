@@ -99,7 +99,7 @@ def sse_response(body: bytes) -> respx.MockResponse:
 
 @respx.mock
 def test_the_projects_agents_md_reaches_the_model(
-    workspace: Path, stdin: Callable[[str], None]
+    workspace: Path, stdin: Callable[[str], None], capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Spec hito 10, §1.4: what the project tells its agents, in every call.
     write_user_config(workspace, 'provider = "opencode-go"\nmodel = "glm-5.3-flash"\n')
@@ -113,6 +113,8 @@ def test_the_projects_agents_md_reaches_the_model(
 
     assert main([]) == 0
 
+    # Said at the start: nothing enters the prompt unseen (§1.8).
+    assert "  [instructions: AGENTS.md]\n" in capsys.readouterr().out
     system = json.loads(route.calls.last.request.content)["messages"][0]
     assert system["role"] == "system"
     assert (
@@ -120,6 +122,22 @@ def test_the_projects_agents_md_reaches_the_model(
         "Los tests: `uv run pytest`.\n</instructions>" in system["content"]
     )
     assert f"Working directory: {workspace / 'project'}" in system["content"]
+
+
+@respx.mock
+def test_print_says_the_instructions_on_stderr(
+    workspace: Path, stdin: Callable[[str], None], capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_user_config(workspace, 'provider = "opencode-go"\nmodel = "glm-5.3-flash"\n')
+    (workspace / "project" / "CLAUDE.md").write_text("x\n", encoding="utf-8")
+    respx.post(GO_ENDPOINT).mock(return_value=sse_response(streamed("Vale.", 12, 3)))
+    stdin("")
+
+    assert main(["-p", "Hola"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out == "Vale.\n"
+    assert "  [instructions: CLAUDE.md]\n" in captured.err
 
 
 @respx.mock
