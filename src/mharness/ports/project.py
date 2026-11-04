@@ -3,7 +3,7 @@
 
 from typing import Protocol
 
-from mharness.domain.prompt import Environment
+from mharness.domain.prompt import Environment, Instructions
 
 
 class ProjectInfo(Protocol):
@@ -13,4 +13,9 @@ class ProjectInfo(Protocol):
     async def environment(self) -> Environment:
         """The working directory, its git root, the platform, the shell of
         the commands and today's date."""
+        ...
+
+    async def instructions(self) -> Instructions:
+        """The user's and the project's instruction files, in their order:
+        the user's, then the project's from the git root down."""
         ...

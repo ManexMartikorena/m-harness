@@ -92,6 +92,14 @@ class Layer(BaseModel, frozen=True):
     text: str
 
 
+class Instructions(BaseModel, frozen=True):
+    """The instruction files found, as layers in their order, and what the
+    user is told of those that could not be read or were cut (§1.4)."""
+
+    layers: tuple[Layer, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+
 class Environment(BaseModel, frozen=True):
     """What the model is told of where it runs (§1.7). Nothing that changes
     during a session: no git status, no file tree, no model name."""
