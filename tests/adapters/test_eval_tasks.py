@@ -353,10 +353,30 @@ async def test_every_check_that_runs_unittest_names_its_module() -> None:
         # `\b6\b` took any answer that mentions a 6.
         ("03-contar-ficheros", "Hay 5 ficheros; 6 si cuento __init__.py dos veces."),
         ("03-contar-ficheros", "1 2 3 4 5 6"),
+        ("03-contar-ficheros", "Hay 16 ficheros."),
     ],
 )
 async def test_a_wrong_answer_does_not_pass(task_id: str, answer: str) -> None:
     assert not await checked(task_id, lambda repo: None, answer)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "6",
+        "Hay **6** ficheros `.py` dentro de `src/`.",
+        # The real answers of GLM in the evals of 2026-11-04: right, and
+        # failed by `^\\D*6\\D*$`, because a numbered list or a name like
+        # `__init__.py` holds other numbers.
+        "Hay **6** ficheros `.py` dentro de `src/` (contando subcarpetas):\n\n"
+        "1. `src/tienda/__init__.py`\n2. `src/tienda/config.py`\n"
+        "3. `src/tienda/descuentos.py`\n4. `src/tienda/informe.py`\n"
+        "5. `src/tienda/iva.py`\n6. `src/tienda/pedidos.py`",
+        "**6** ficheros `.py` dentro de `src/` (todos en la subcarpeta `tienda/`).",
+    ],
+)
+async def test_a_right_count_passes_with_more_numbers_after_it(answer: str) -> None:
+    assert await checked("03-contar-ficheros", lambda repo: None, answer)
 
 
 async def test_the_typo_is_fixed_without_losing_the_readme() -> None:
