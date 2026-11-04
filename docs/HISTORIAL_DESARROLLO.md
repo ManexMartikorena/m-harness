@@ -13,6 +13,14 @@ en GitHub.
 
 Lo más reciente primero.
 
+- **Dependencias al día, 2026-11-04** (rama `fix/actualizar-dependencias`,
+  sin versión propia: entra en `v0.10.0`). pydantic 2.14.2, con dos
+  arreglos de seguridad de gravedad media que no afectan a `maha` (ningún
+  modelo admite datos extra); mypy 2.4.1, pytest 9.2.0, pytest-asyncio
+  1.4.1.post1 y ruff 0.17.3. `asyncio_default_fixture_loop_scope =
+  "function"`, porque pytest-asyncio avisa si falta. Dependabot no los
+  avisó: al consultarlo, los dos avisos no estaban en la base de datos
+  global de GitHub.
 - **Auditoría profunda tras el hito 9, 2026-11-03 y 2026-11-04: `v0.9.1`**
   (rama `fix/auditoria-hito-9`; spec
   `mejora-2026-11-03-auditoria-profunda.md`). El mantenedor la pidió antes
