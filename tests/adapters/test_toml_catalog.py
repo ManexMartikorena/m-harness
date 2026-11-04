@@ -41,6 +41,16 @@ def test_has_every_model_of_each_provider(builtin: TomlCatalog) -> None:
     assert providers.count("anthropic") == 14
 
 
+def test_every_model_has_its_family(builtin: TomlCatalog) -> None:
+    # Spec hito 10, §1.3: explicit, never guessed from the id.
+    assert [info.model for info in builtin.models() if info.family is None] == []
+    families = {(info.provider, info.model): info.family for info in builtin.models()}
+    assert families["opencode-go", "glm-5.3-flash"] == "glm"
+    assert families["opencode-go", "kimi-k2.7-code"] == "kimi"
+    assert families["opencode-go", "claude-haiku-5-5"] == "claude"
+    assert families["anthropic", "claude-opus-5-5"] == "claude"
+
+
 def test_every_model_has_dated_prices(builtin: TomlCatalog) -> None:
     checked = {"anthropic": date(2026, 11, 3)}
     # Added in the audit of hito 9, with its own date.
@@ -57,6 +67,7 @@ def test_a_model_as_the_docs_publish_it(builtin: TomlCatalog) -> None:
         model="glm-5.3-flash",
         context=1_000_000,
         max_output=131_072,
+        family="glm",
         prices=Prices(
             input=Decimal("0.15"),
             output=Decimal("0.50"),
@@ -87,6 +98,7 @@ def test_a_model_of_anthropic_as_its_pricing_page_publishes_it(
         model="claude-opus-5-5",
         context=1_000_000,
         max_output=128_000,
+        family="claude",
         prices=Prices(
             input=Decimal("4.00"),
             output=Decimal("20.00"),
@@ -246,6 +258,15 @@ def test_a_user_model_says_its_api_and_longest_answer(tmp_path: Path) -> None:
     )
 
 
+def test_a_user_model_says_its_family(tmp_path: Path) -> None:
+    # Spec hito 10, §1.3: a model of the user's own gets a prompt layer.
+    path = write(tmp_path, '[models."local/mi-modelo"]\nfamily = "qwen"\n')
+
+    info = TomlCatalog.load(path).get("local", "mi-modelo")
+
+    assert info == ModelInfo(provider="local", model="mi-modelo", family="qwen")
+
+
 def test_a_price_for_the_hour_cache(tmp_path: Path) -> None:
     # Spec hito 9, decision 9.
     path = write(
@@ -329,6 +350,9 @@ def test_an_unreadable_user_file_is_an_error(tmp_path: Path) -> None:
         ('[models."ollama/x"]\ncontext = true\n', r'models\."ollama/x"\.context'),
         ('[models."ollama/x"]\nmax_output = true\n', r'models\."ollama/x"\.max_output'),
         ('[models." ollama/x"]\n', "no spaces"),
+        # The family names a file of prompts/families/ (spec hito 10, §1.3).
+        ('[models."ollama/x"]\nfamily = "../x"\n', "family"),
+        ('[models."ollama/x"]\nfamily = "Claude"\n', "family"),
         ('[models."ollama/qwen local"]\n', "no spaces"),
     ],
 )

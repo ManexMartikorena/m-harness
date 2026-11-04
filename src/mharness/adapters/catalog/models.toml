@@ -23,6 +23,7 @@ source = "https://opencode.ai/docs/zen/"
 # OpenCode Go -----------------------------------------------------------
 
 [models."opencode-go/glm-5.3-flash"]  # GLM-5.3-Flash
+family = "glm"
 max_output = 131_072
 context = 1_000_000
 input = 0.15
@@ -30,6 +31,7 @@ output = 0.50
 cache_read = 0.03
 
 [models."opencode-go/glm-5.3"]  # GLM-5.3
+family = "glm"
 max_output = 131_072
 context = 1_000_000
 input = 1.40
@@ -37,6 +39,7 @@ output = 4.40
 cache_read = 0.26
 
 [models."opencode-go/glm-5.2"]  # GLM-5.2
+family = "glm"
 max_output = 131_072
 context = 1_000_000
 input = 1.40
@@ -44,6 +47,7 @@ output = 4.40
 cache_read = 0.26
 
 [models."opencode-go/kimi-k3.1-pro"]  # Kimi K3.1 Pro
+family = "kimi"
 max_output = 131_072
 context = 1_048_576
 input = 2.00
@@ -52,6 +56,7 @@ cache_read = 0.20
 cache_write = 2.00
 
 [models."opencode-go/kimi-k3"]  # Kimi K3
+family = "kimi"
 max_output = 131_072
 context = 1_048_576
 input = 3.00
@@ -60,6 +65,7 @@ cache_read = 0.30
 cache_write = 3.00
 
 [models."opencode-go/kimi-k2.7-code"]  # Kimi K2.7 Code
+family = "kimi"
 max_output = 262_144
 context = 262_144
 input = 0.95
@@ -67,6 +73,7 @@ output = 4.00
 cache_read = 0.19
 
 [models."opencode-go/longcat-2.0"]  # LongCat-2.0
+family = "longcat"
 max_output = 131_072
 context = 1_000_000
 input = 0.30
@@ -74,6 +81,7 @@ output = 1.20
 cache_read = 0.006
 
 [models."opencode-go/step-5-preview"]  # Step 5 Preview
+family = "step"
 max_output = 65_536
 context = 1_000_000
 input = 1.00
@@ -81,6 +89,7 @@ output = 2.70
 cache_read = 0.10
 
 [models."opencode-go/beam-free"]  # Beam Free
+family = "beam"
 max_output = 131_072
 context = 1_048_576
 input = 0.00
@@ -88,6 +97,7 @@ output = 0.00
 cache_read = 0.00
 
 [models."opencode-go/iceman-contributor-free"]  # Iceman Contributor Free
+family = "iceman"
 max_output = 131_072
 context = 262_144
 input = 0.00
@@ -96,6 +106,7 @@ cache_read = 0.00
 trains_on_data = true
 
 [models."opencode-go/mimo-v2.6-flash"]  # MiMo-V2.6-Flash
+family = "mimo"
 max_output = 131_072
 context = 1_048_576
 input = 0.14
@@ -103,6 +114,7 @@ output = 0.28
 cache_read = 0.0028
 
 [models."opencode-go/mimo-v2.6-pro"]  # MiMo-V2.6-Pro
+family = "mimo"
 max_output = 131_072
 context = 1_048_576
 input = 0.435
@@ -110,6 +122,7 @@ output = 0.87
 cache_read = 0.003625
 
 [models."opencode-go/mimo-v2.5"]  # MiMo-V2.5
+family = "mimo"
 max_output = 128_000
 context = 1_000_000
 input = 0.14
@@ -117,6 +130,7 @@ output = 0.28
 cache_read = 0.0028
 
 [models."opencode-go/mimo-v2.5-pro"]  # MiMo-V2.5-Pro
+family = "mimo"
 max_output = 128_000
 context = 1_048_576
 input = 0.435
@@ -124,6 +138,7 @@ output = 0.87
 cache_read = 0.003625
 
 [models."opencode-go/minimax-m3.1-flash"]  # MiniMax M3.1 Flash
+family = "minimax"
 max_output = 512_000
 context = 1_000_000
 input = 0.15
@@ -131,6 +146,7 @@ output = 0.60
 cache_read = 0.015
 
 [models."opencode-go/minimax-m3"]  # MiniMax M3
+family = "minimax"
 api = "anthropic"
 max_output = 131_072
 context = 1_000_000
@@ -139,6 +155,7 @@ output = 1.20
 cache_read = 0.06
 
 [models."opencode-go/muse-spark-1.3-contributor"]  # Muse Spark 1.3 Contributor
+family = "muse"
 api = "openai-responses"
 max_output = 131_072
 context = 1_048_576
@@ -148,6 +165,7 @@ cache_read = 0.002
 trains_on_data = true
 
 [models."opencode-go/muse-spark-1.2-contributor"]  # Muse Spark 1.2 Contributor
+family = "muse"
 api = "openai-responses"
 max_output = 131_072
 context = 1_048_576
@@ -157,6 +175,7 @@ cache_read = 0.002
 trains_on_data = true
 
 [models."opencode-go/qwen3.8-max"]  # Qwen3.8 Max
+family = "qwen"
 api = "anthropic"
 max_output = 131_072
 context = 1_000_000
@@ -166,6 +185,7 @@ cache_read = 0.25
 cache_write = 2.50
 
 [models."opencode-go/qwen3.8-flash"]  # Qwen3.8 Flash
+family = "qwen"
 api = "anthropic"
 max_output = 131_072
 context = 1_000_000
@@ -175,6 +195,7 @@ cache_read = 0.016
 cache_write = 0.20
 
 [models."opencode-go/qwen3.7-plus"]  # Qwen3.7 Plus
+family = "qwen"
 api = "anthropic"
 max_output = 65_536
 context = 1_000_000
@@ -191,6 +212,7 @@ cache_read = 0.12
 cache_write = 1.50
 
 [models."opencode-go/deepseek-v4.1-flash"]  # DeepSeek V4.1 Flash; peak price: the higher one
+family = "deepseek"
 max_output = 384_000
 context = 1_000_000
 input = 0.30
@@ -198,6 +220,7 @@ output = 1.20
 cache_read = 0.006
 
 [models."opencode-go/deepseek-v4-pro"]  # DeepSeek V4 Pro; peak price: the higher one
+family = "deepseek"
 max_output = 384_000
 context = 1_000_000
 input = 1.32
@@ -205,6 +228,7 @@ output = 3.96
 cache_read = 0.044
 
 [models."opencode-go/hy4-preview"]  # Hy4 preview
+family = "hy"
 max_output = 64_000
 context = 1_024_000
 input = 0.834
@@ -212,6 +236,7 @@ output = 2.501
 cache_read = 0.042
 
 [models."opencode-go/hy3"]  # Hy3
+family = "hy"
 max_output = 128_000
 context = 256_000
 input = 0.14
@@ -219,6 +244,7 @@ output = 0.58
 cache_read = 0.035
 
 [models."opencode-go/grok-4.7"]  # Grok 4.7
+family = "grok"
 api = "openai-responses"
 max_output = 500_000
 context = 500_000
@@ -233,6 +259,7 @@ output = 12.00
 cache_read = 1.00
 
 [models."opencode-go/gpt-6-luna"]  # GPT 6 Luna
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 1_050_000
@@ -249,6 +276,7 @@ cache_read = 0.02
 cache_write = 0.25
 
 [models."opencode-go/gpt-5.6-luna"]  # GPT 5.6 Luna
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 1_050_000
@@ -265,6 +293,7 @@ cache_read = 0.04
 cache_write = 0.50
 
 [models."opencode-go/claude-haiku-5-5"]  # Claude Haiku 5.5
+family = "claude"
 api = "anthropic"
 max_output = 128_000
 context = 1_000_000
@@ -281,6 +310,7 @@ cache_read = 0.05
 cache_write = 0.625
 
 [models."opencode-go/gemini-4-argon"]  # Gemini 4 Argon; 50% off through 2026-11-30
+family = "gemini"
 api = "google"
 max_output = 65_536
 context = 1_048_576
@@ -291,6 +321,7 @@ cache_read = 0.10
 # OpenCode Zen ---------------------------------------------------------
 
 [models."opencode-zen/big-pickle"]  # Big Pickle
+family = "big-pickle"
 max_output = 32_000
 context = 200_000
 input = 0.00
@@ -299,6 +330,7 @@ cache_read = 0.00
 trains_on_data = true
 
 [models."opencode-zen/pulse-alpha-free"]  # Pulse Alpha Free; free for a limited time
+family = "pulse"
 max_output = 131_072
 context = 1_048_576
 input = 0.00
@@ -310,6 +342,7 @@ checked = 2026-11-03
 trains_on_data = true
 
 [models."opencode-zen/glm-5.3-flash-free"]  # GLM-5.3-Flash Free
+family = "glm"
 max_output = 32_000
 context = 200_000
 input = 0.00
@@ -317,6 +350,7 @@ output = 0.00
 cache_read = 0.00
 
 [models."opencode-zen/deepseek-v4.1-flash-free"]  # DeepSeek V4.1 Flash Free
+family = "deepseek"
 max_output = 32_000
 context = 200_000
 input = 0.00
@@ -324,6 +358,7 @@ output = 0.00
 cache_read = 0.00
 
 [models."opencode-zen/beam-free"]  # Beam Free
+family = "beam"
 max_output = 131_072
 context = 1_048_576
 input = 0.00
@@ -331,6 +366,7 @@ output = 0.00
 cache_read = 0.00
 
 [models."opencode-zen/flint-40b-free"]  # Flint 40B Free
+family = "flint"
 max_output = 65_536
 context = 262_144
 input = 0.00
@@ -339,6 +375,7 @@ cache_read = 0.00
 trains_on_data = true
 
 [models."opencode-zen/mimo-v2.6-flash-free"]  # MiMo-V2.6-Flash Free
+family = "mimo"
 max_output = 32_000
 context = 200_000
 input = 0.00
@@ -347,6 +384,7 @@ cache_read = 0.00
 trains_on_data = true
 
 [models."opencode-zen/nemotron-3-ultra-free"]  # Nemotron 3 Ultra Free
+family = "nemotron"
 max_output = 128_000
 context = 1_000_000
 input = 0.00
@@ -355,6 +393,7 @@ cache_read = 0.00
 trains_on_data = true
 
 [models."opencode-zen/nemotron-3.5-lightning-free"]  # Nemotron 3.5 Lightning Free
+family = "nemotron"
 max_output = 262_144
 context = 262_144
 input = 0.00
@@ -363,6 +402,7 @@ cache_read = 0.00
 trains_on_data = true
 
 [models."opencode-zen/nemotron-3.5-super-vl-free"]  # Nemotron 3.5 Super VL Free
+family = "nemotron"
 max_output = 131_072
 context = 1_048_576
 input = 0.00
@@ -371,16 +411,19 @@ cache_read = 0.00
 trains_on_data = true
 
 [models."opencode-zen/jev-1.13-free"]  # Jev 1.13 Free
+family = "jev"
 api = "systemone"
 input = 0.00
 output = 0.00
 
 [models."opencode-zen/jev-1.13"]  # Jev 1.13
+family = "jev"
 api = "systemone"
 input = 0.042
 output = 0.00
 
 [models."opencode-zen/minimax-m3"]  # MiniMax M3
+family = "minimax"
 max_output = 128_000
 context = 512_000
 input = 0.30
@@ -388,6 +431,7 @@ output = 1.20
 cache_read = 0.06
 
 [models."opencode-zen/minimax-m2.7"]  # MiniMax M2.7
+family = "minimax"
 max_output = 131_072
 context = 204_800
 input = 0.30
@@ -395,6 +439,7 @@ output = 1.20
 cache_read = 0.06
 
 [models."opencode-zen/minimax-m2.5"]  # MiniMax M2.5
+family = "minimax"
 max_output = 131_072
 context = 204_800
 input = 0.30
@@ -402,6 +447,7 @@ output = 1.20
 cache_read = 0.06
 
 [models."opencode-zen/glm-5.3-flash"]  # GLM 5.3 Flash
+family = "glm"
 max_output = 131_072
 context = 1_000_000
 input = 0.15
@@ -409,6 +455,7 @@ output = 0.50
 cache_read = 0.03
 
 [models."opencode-zen/glm-5.3"]  # GLM 5.3
+family = "glm"
 max_output = 131_072
 context = 1_000_000
 input = 1.40
@@ -416,6 +463,7 @@ output = 4.40
 cache_read = 0.26
 
 [models."opencode-zen/glm-5.2"]  # GLM 5.2
+family = "glm"
 max_output = 131_072
 context = 1_000_000
 input = 1.40
@@ -423,6 +471,7 @@ output = 4.40
 cache_read = 0.26
 
 [models."opencode-zen/glm-5.1"]  # GLM 5.1
+family = "glm"
 max_output = 131_072
 context = 204_800
 input = 1.40
@@ -430,6 +479,7 @@ output = 4.40
 cache_read = 0.26
 
 [models."opencode-zen/glm-5"]  # GLM 5
+family = "glm"
 max_output = 131_072
 context = 204_800
 input = 1.00
@@ -437,6 +487,7 @@ output = 3.20
 cache_read = 0.20
 
 [models."opencode-zen/kimi-k2.7-code"]  # Kimi K2.7 Code
+family = "kimi"
 max_output = 262_144
 context = 262_144
 input = 0.95
@@ -444,6 +495,7 @@ output = 4.00
 cache_read = 0.19
 
 [models."opencode-zen/kimi-k3"]  # Kimi K3
+family = "kimi"
 max_output = 131_072
 context = 1_048_576
 input = 3.00
@@ -452,6 +504,7 @@ cache_read = 0.30
 cache_write = 3.00
 
 [models."opencode-zen/kimi-k2.6"]  # Kimi K2.6
+family = "kimi"
 max_output = 65_536
 context = 262_144
 input = 0.95
@@ -459,6 +512,7 @@ output = 4.00
 cache_read = 0.16
 
 [models."opencode-zen/kimi-k2.5"]  # Kimi K2.5
+family = "kimi"
 max_output = 65_536
 context = 262_144
 input = 0.60
@@ -466,6 +520,7 @@ output = 3.00
 cache_read = 0.10
 
 [models."opencode-zen/mistral-large-4"]  # Mistral Large 4; 50% off, no end date given
+family = "mistral"
 max_output = 262_144
 context = 524_288
 input = 0.68
@@ -473,6 +528,7 @@ output = 2.09
 cache_read = 0.07
 
 [models."opencode-zen/qwen3.8-max"]  # Qwen3.8 Max
+family = "qwen"
 max_output = 131_072
 context = 262_144
 input = 2.00
@@ -481,6 +537,7 @@ cache_read = 0.25
 cache_write = 2.50
 
 [models."opencode-zen/qwen3.8-flash"]  # Qwen3.8 Flash
+family = "qwen"
 api = "anthropic"
 max_output = 131_072
 context = 1_000_000
@@ -490,6 +547,7 @@ cache_read = 0.016
 cache_write = 0.20
 
 [models."opencode-zen/qwen3.6-plus"]  # Qwen3.6 Plus
+family = "qwen"
 api = "anthropic"
 max_output = 65_536
 context = 262_144
@@ -499,6 +557,7 @@ cache_read = 0.05
 cache_write = 0.625
 
 [models."opencode-zen/qwen3.5-plus"]  # Qwen3.5 Plus
+family = "qwen"
 api = "anthropic"
 max_output = 65_536
 context = 262_144
@@ -508,6 +567,7 @@ cache_read = 0.02
 cache_write = 0.25
 
 [models."opencode-zen/deepseek-v4.1-flash"]  # DeepSeek V4.1 Flash
+family = "deepseek"
 max_output = 384_000
 context = 1_000_000
 input = 0.30
@@ -515,6 +575,7 @@ output = 1.20
 cache_read = 0.006
 
 [models."opencode-zen/deepseek-v4-pro"]  # DeepSeek V4 Pro
+family = "deepseek"
 max_output = 384_000
 context = 1_000_000
 input = 1.74
@@ -522,6 +583,7 @@ output = 3.48
 cache_read = 0.145
 
 [models."opencode-zen/claude-fable-5-1"]  # Claude Fable 5.1
+family = "claude"
 api = "anthropic"
 max_output = 128_000
 context = 1_000_000
@@ -531,6 +593,7 @@ cache_read = 0.25
 cache_write = 12.50
 
 [models."opencode-zen/claude-fable-5"]  # Claude Fable 5
+family = "claude"
 api = "anthropic"
 max_output = 128_000
 context = 1_000_000
@@ -540,6 +603,7 @@ cache_read = 1.00
 cache_write = 12.50
 
 [models."opencode-zen/claude-opus-5-5"]  # Claude Opus 5.5
+family = "claude"
 api = "anthropic"
 max_output = 128_000
 context = 1_000_000
@@ -549,6 +613,7 @@ cache_read = 0.20
 cache_write = 5.00
 
 [models."opencode-zen/claude-opus-5"]  # Claude Opus 5
+family = "claude"
 api = "anthropic"
 max_output = 128_000
 context = 1_000_000
@@ -558,6 +623,7 @@ cache_read = 0.50
 cache_write = 6.25
 
 [models."opencode-zen/claude-opus-4-8"]  # Claude Opus 4.8
+family = "claude"
 api = "anthropic"
 max_output = 128_000
 context = 1_000_000
@@ -567,6 +633,7 @@ cache_read = 0.50
 cache_write = 6.25
 
 [models."opencode-zen/claude-opus-4-7"]  # Claude Opus 4.7
+family = "claude"
 api = "anthropic"
 max_output = 128_000
 context = 1_000_000
@@ -576,6 +643,7 @@ cache_read = 0.50
 cache_write = 6.25
 
 [models."opencode-zen/claude-opus-4-6"]  # Claude Opus 4.6
+family = "claude"
 api = "anthropic"
 max_output = 128_000
 context = 1_000_000
@@ -585,6 +653,7 @@ cache_read = 0.50
 cache_write = 6.25
 
 [models."opencode-zen/claude-opus-4-5"]  # Claude Opus 4.5
+family = "claude"
 api = "anthropic"
 max_output = 64_000
 context = 200_000
@@ -594,6 +663,7 @@ cache_read = 0.50
 cache_write = 6.25
 
 [models."opencode-zen/claude-sonnet-5-5"]  # Claude Sonnet 5.5
+family = "claude"
 api = "anthropic"
 max_output = 128_000
 context = 1_000_000
@@ -603,6 +673,7 @@ cache_read = 0.20
 cache_write = 2.50
 
 [models."opencode-zen/claude-sonnet-5"]  # Claude Sonnet 5
+family = "claude"
 api = "anthropic"
 max_output = 128_000
 context = 1_000_000
@@ -612,6 +683,7 @@ cache_read = 0.20
 cache_write = 2.50
 
 [models."opencode-zen/claude-sonnet-4-6"]  # Claude Sonnet 4.6
+family = "claude"
 api = "anthropic"
 max_output = 64_000
 context = 1_000_000
@@ -621,6 +693,7 @@ cache_read = 0.30
 cache_write = 3.75
 
 [models."opencode-zen/claude-sonnet-4-5"]  # Claude Sonnet 4.5
+family = "claude"
 api = "anthropic"
 max_output = 64_000
 context = 1_000_000
@@ -637,6 +710,7 @@ cache_read = 0.60
 cache_write = 7.50
 
 [models."opencode-zen/claude-haiku-5-5"]  # Claude Haiku 5.5
+family = "claude"
 api = "anthropic"
 max_output = 128_000
 context = 1_000_000
@@ -653,6 +727,7 @@ cache_read = 0.05
 cache_write = 0.625
 
 [models."opencode-zen/claude-haiku-4-5"]  # Claude Haiku 4.5
+family = "claude"
 api = "anthropic"
 max_output = 64_000
 context = 200_000
@@ -662,6 +737,7 @@ cache_read = 0.10
 cache_write = 1.25
 
 [models."opencode-zen/gemini-4-argon"]  # Gemini 4 Argon; 50% off through 2026-11-30
+family = "gemini"
 api = "google"
 max_output = 65_536
 context = 1_048_576
@@ -670,6 +746,7 @@ output = 10.00
 cache_read = 0.10
 
 [models."opencode-zen/gemini-3.8-flash"]  # Gemini 3.8 Flash
+family = "gemini"
 api = "google"
 max_output = 65_536
 context = 1_048_576
@@ -678,6 +755,7 @@ output = 7.50
 cache_read = 0.15
 
 [models."opencode-zen/gemini-3.7-flash"]  # Gemini 3.7 Flash
+family = "gemini"
 api = "google"
 max_output = 65_536
 context = 1_048_576
@@ -686,6 +764,7 @@ output = 7.50
 cache_read = 0.15
 
 [models."opencode-zen/gemini-3.6-flash"]  # Gemini 3.6 Flash
+family = "gemini"
 api = "google"
 max_output = 65_536
 context = 1_048_576
@@ -694,6 +773,7 @@ output = 7.50
 cache_read = 0.15
 
 [models."opencode-zen/gemini-3.5-flash"]  # Gemini 3.5 Flash
+family = "gemini"
 api = "google"
 max_output = 65_536
 context = 1_048_576
@@ -702,6 +782,7 @@ output = 9.00
 cache_read = 0.15
 
 [models."opencode-zen/gemini-3.5-flash-lite"]  # Gemini 3.5 Flash Lite
+family = "gemini"
 api = "google"
 max_output = 65_536
 context = 1_048_576
@@ -710,6 +791,7 @@ output = 2.50
 cache_read = 0.03
 
 [models."opencode-zen/gemini-3.1-pro"]  # Gemini 3.1 Pro
+family = "gemini"
 api = "google"
 max_output = 65_536
 context = 1_048_576
@@ -724,6 +806,7 @@ output = 18.00
 cache_read = 0.40
 
 [models."opencode-zen/gemini-3-flash"]  # Gemini 3 Flash
+family = "gemini"
 api = "google"
 max_output = 65_536
 context = 1_048_576
@@ -732,6 +815,7 @@ output = 3.00
 cache_read = 0.05
 
 [models."opencode-zen/grok-4.7"]  # Grok 4.7
+family = "grok"
 api = "openai-responses"
 max_output = 500_000
 context = 500_000
@@ -746,6 +830,7 @@ output = 12.00
 cache_read = 1.00
 
 [models."opencode-zen/grok-4.6"]  # Grok 4.6
+family = "grok"
 api = "openai-responses"
 max_output = 500_000
 context = 500_000
@@ -760,6 +845,7 @@ output = 12.00
 cache_read = 1.00
 
 [models."opencode-zen/grok-4.5"]  # Grok 4.5
+family = "grok"
 api = "openai-responses"
 max_output = 500_000
 context = 500_000
@@ -774,6 +860,7 @@ output = 12.00
 cache_read = 0.60
 
 [models."opencode-zen/grok-build-0.1"]  # Grok Build 0.1
+family = "grok"
 api = "openai-responses"
 max_output = 256_000
 context = 256_000
@@ -782,6 +869,7 @@ output = 2.00
 cache_read = 0.20
 
 [models."opencode-zen/muse-wonder-1.0"]  # Muse Wonder 1.0
+family = "muse"
 api = "openai-responses"
 max_output = 131_072
 context = 1_048_576
@@ -790,6 +878,7 @@ output = 20.00
 cache_read = 0.20
 
 [models."opencode-zen/muse-spark-1.3"]  # Muse Spark 1.3
+family = "muse"
 api = "openai-responses"
 max_output = 131_072
 context = 1_048_576
@@ -798,6 +887,7 @@ output = 4.25
 cache_read = 0.15
 
 [models."opencode-zen/muse-spark-1.2"]  # Muse Spark 1.2
+family = "muse"
 api = "openai-responses"
 max_output = 131_072
 context = 1_048_576
@@ -806,6 +896,7 @@ output = 4.25
 cache_read = 0.15
 
 [models."opencode-zen/gpt-6-astra"]  # GPT 6 Astra
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 1_050_000
@@ -822,6 +913,7 @@ cache_read = 2.00
 cache_write = 25.00
 
 [models."opencode-zen/gpt-6-sol"]  # GPT 6 Sol
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 1_050_000
@@ -838,6 +930,7 @@ cache_read = 0.40
 cache_write = 5.00
 
 [models."opencode-zen/gpt-6.1-sol"]  # GPT 6.1 Sol
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 1_050_000
@@ -854,6 +947,7 @@ cache_read = 0.20
 cache_write = 5.00
 
 [models."opencode-zen/gpt-6-luna"]  # GPT 6 Luna
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 1_050_000
@@ -870,6 +964,7 @@ cache_read = 0.02
 cache_write = 0.25
 
 [models."opencode-zen/gpt-5.6-sol"]  # GPT 5.6 Sol
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 1_050_000
@@ -886,6 +981,7 @@ cache_read = 0.80
 cache_write = 10.00
 
 [models."opencode-zen/gpt-5.6-terra"]  # GPT 5.6 Terra
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 1_050_000
@@ -902,6 +998,7 @@ cache_read = 0.40
 cache_write = 5.00
 
 [models."opencode-zen/gpt-5.6-luna"]  # GPT 5.6 Luna
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 1_050_000
@@ -918,6 +1015,7 @@ cache_read = 0.04
 cache_write = 0.50
 
 [models."opencode-zen/gpt-5.5"]  # GPT 5.5
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 1_050_000
@@ -932,6 +1030,7 @@ output = 45.00
 cache_read = 1.00
 
 [models."opencode-zen/gpt-5.5-pro"]  # GPT 5.5 Pro
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 1_050_000
@@ -940,6 +1039,7 @@ output = 180.00
 cache_read = 30.00
 
 [models."opencode-zen/gpt-5.4"]  # GPT 5.4
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 1_050_000
@@ -954,6 +1054,7 @@ output = 22.50
 cache_read = 0.50
 
 [models."opencode-zen/gpt-5.4-pro"]  # GPT 5.4 Pro
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 1_050_000
@@ -962,6 +1063,7 @@ output = 180.00
 cache_read = 30.00
 
 [models."opencode-zen/gpt-5.4-mini"]  # GPT 5.4 Mini
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 400_000
@@ -970,6 +1072,7 @@ output = 4.50
 cache_read = 0.075
 
 [models."opencode-zen/gpt-5.4-nano"]  # GPT 5.4 Nano
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 400_000
@@ -978,6 +1081,7 @@ output = 1.25
 cache_read = 0.02
 
 [models."opencode-zen/gpt-5.3-codex-spark"]  # GPT 5.3 Codex Spark
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 128_000
@@ -986,6 +1090,7 @@ output = 14.00
 cache_read = 0.175
 
 [models."opencode-zen/gpt-5.3-codex"]  # GPT 5.3 Codex
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 400_000
@@ -994,6 +1099,7 @@ output = 14.00
 cache_read = 0.175
 
 [models."opencode-zen/gpt-5.2"]  # GPT 5.2
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 400_000
@@ -1002,6 +1108,7 @@ output = 14.00
 cache_read = 0.175
 
 [models."opencode-zen/gpt-5.2-codex"]  # GPT 5.2 Codex
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 400_000
@@ -1010,6 +1117,7 @@ output = 14.00
 cache_read = 0.175
 
 [models."opencode-zen/gpt-5.1"]  # GPT 5.1
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 400_000
@@ -1018,6 +1126,7 @@ output = 8.50
 cache_read = 0.107
 
 [models."opencode-zen/gpt-5.1-codex"]  # GPT 5.1 Codex
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 400_000
@@ -1026,6 +1135,7 @@ output = 8.50
 cache_read = 0.107
 
 [models."opencode-zen/gpt-5.1-codex-max"]  # GPT 5.1 Codex Max
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 400_000
@@ -1034,6 +1144,7 @@ output = 10.00
 cache_read = 0.125
 
 [models."opencode-zen/gpt-5.1-codex-mini"]  # GPT 5.1 Codex Mini
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 400_000
@@ -1042,6 +1153,7 @@ output = 2.00
 cache_read = 0.025
 
 [models."opencode-zen/gpt-5"]  # GPT 5
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 400_000
@@ -1050,6 +1162,7 @@ output = 8.50
 cache_read = 0.107
 
 [models."opencode-zen/gpt-5-codex"]  # GPT 5 Codex
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 400_000
@@ -1058,6 +1171,7 @@ output = 8.50
 cache_read = 0.107
 
 [models."opencode-zen/gpt-5-nano"]  # GPT 5 Nano
+family = "gpt"
 api = "openai-responses"
 max_output = 128_000
 context = 400_000
@@ -1074,6 +1188,7 @@ checked = 2026-11-03
 source = "https://platform.claude.com/docs/en/about-claude/pricing"
 
 [models."anthropic/claude-fable-5-1"]  # Claude Fable 5.1
+family = "claude"
 context = 1_000_000
 max_output = 128_000
 input = 10.00
@@ -1083,6 +1198,7 @@ cache_write = 12.50
 cache_write_1h = 20.00
 
 [models."anthropic/claude-fable-5"]  # Claude Fable 5
+family = "claude"
 context = 1_000_000
 max_output = 128_000
 input = 10.00
@@ -1092,6 +1208,7 @@ cache_write = 12.50
 cache_write_1h = 20.00
 
 [models."anthropic/claude-opus-5-5"]  # Claude Opus 5.5
+family = "claude"
 context = 1_000_000
 max_output = 128_000
 input = 4.00
@@ -1101,6 +1218,7 @@ cache_write = 5.00
 cache_write_1h = 8.00
 
 [models."anthropic/claude-opus-5"]  # Claude Opus 5
+family = "claude"
 context = 1_000_000
 max_output = 128_000
 input = 5.00
@@ -1110,6 +1228,7 @@ cache_write = 6.25
 cache_write_1h = 10.00
 
 [models."anthropic/claude-opus-4-8"]  # Claude Opus 4.8
+family = "claude"
 context = 1_000_000
 max_output = 128_000
 input = 5.00
@@ -1119,6 +1238,7 @@ cache_write = 6.25
 cache_write_1h = 10.00
 
 [models."anthropic/claude-opus-4-7"]  # Claude Opus 4.7
+family = "claude"
 context = 1_000_000
 max_output = 128_000
 input = 5.00
@@ -1128,6 +1248,7 @@ cache_write = 6.25
 cache_write_1h = 10.00
 
 [models."anthropic/claude-opus-4-6"]  # Claude Opus 4.6
+family = "claude"
 context = 1_000_000
 max_output = 128_000
 input = 5.00
@@ -1137,6 +1258,7 @@ cache_write = 6.25
 cache_write_1h = 10.00
 
 [models."anthropic/claude-opus-4-5"]  # Claude Opus 4.5
+family = "claude"
 context = 200_000
 max_output = 64_000
 input = 5.00
@@ -1146,6 +1268,7 @@ cache_write = 6.25
 cache_write_1h = 10.00
 
 [models."anthropic/claude-sonnet-5-5"]  # Claude Sonnet 5.5
+family = "claude"
 context = 1_000_000
 max_output = 128_000
 input = 2.00
@@ -1155,6 +1278,7 @@ cache_write = 2.50
 cache_write_1h = 4.00
 
 [models."anthropic/claude-sonnet-5"]  # Claude Sonnet 5
+family = "claude"
 context = 1_000_000
 max_output = 128_000
 input = 2.00
@@ -1164,6 +1288,7 @@ cache_write = 2.50
 cache_write_1h = 4.00
 
 [models."anthropic/claude-sonnet-4-6"]  # Claude Sonnet 4.6
+family = "claude"
 context = 1_000_000
 max_output = 128_000
 input = 3.00
@@ -1173,6 +1298,7 @@ cache_write = 3.75
 cache_write_1h = 6.00
 
 [models."anthropic/claude-sonnet-4-5"]  # Claude Sonnet 4.5
+family = "claude"
 context = 200_000
 max_output = 64_000
 input = 3.00
@@ -1182,6 +1308,7 @@ cache_write = 3.75
 cache_write_1h = 6.00
 
 [models."anthropic/claude-haiku-5-5"]  # Claude Haiku 5.5
+family = "claude"
 context = 1_000_000
 max_output = 128_000
 input = 0.10
@@ -1199,6 +1326,7 @@ cache_write = 0.625
 cache_write_1h = 1.00
 
 [models."anthropic/claude-haiku-4-5"]  # Claude Haiku 4.5
+family = "claude"
 context = 200_000
 max_output = 64_000
 input = 1.00

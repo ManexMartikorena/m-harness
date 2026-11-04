@@ -18,6 +18,8 @@ from mharness.domain.money import SMALLEST, known
 _MILLION = 1_000_000
 # The name of an API format: lowercase words joined by hyphens.
 API_NAME = r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+# A family: lowercase words with hyphens, the name of its prompt file.
+FAMILY_NAME = API_NAME
 # The formats maha speaks; the catalog may name others (spec hito 9, §1.2).
 type SpokenApi = Literal["openai-chat", "anthropic"]
 
@@ -81,6 +83,9 @@ class ModelInfo(BaseModel, frozen=True):
     api: str | None = Field(default=None, pattern=API_NAME)
     # The most tokens one answer may have; None: unknown (spec hito 9, §1.6).
     max_output: int | None = Field(default=None, gt=0)
+    # The family of models it belongs to, whose prompt layer it gets
+    # ("claude", "glm"); None: none (spec hito 10, §1.3). A name of a file.
+    family: str | None = Field(default=None, pattern=FAMILY_NAME)
     # None: unknown, and no cost is shown.
     prices: Prices | None = None
     # The provider may use the conversation to train (ANALISIS §9).
