@@ -16,12 +16,13 @@ Start-up plumbing: only `mharness.bootstrap` uses it, once, before the core.
 
 import tomllib
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Annotated, Any, Literal
 
 from pydantic import (
     BaseModel,
     Field,
+    StrictBool,
     StrictFloat,
     StrictInt,
     ValidationError,
@@ -32,6 +33,7 @@ from mharness.domain.catalog import SpokenApi
 from mharness.domain.limits import TurnLimits
 from mharness.domain.model import Effort
 from mharness.domain.money import Usd
+from mharness.domain.paths import is_secret
 
 PROJECT_FILE = Path(".maha") / "config.toml"
 DEFAULT_PROVIDER = "opencode-go"
@@ -120,6 +122,13 @@ class Settings(BaseModel, frozen=True):
     # foreign repository cannot raise the cost unseen (deep audit after
     # hito 9, M4, a decision of the maintainer).
     from_project: dict[str, str] = {}
+    # Extra instruction files of the system prompt, paths or globs from the
+    # working directory: the user's, and the project's, which never leave
+    # the project (spec hito 10, §1.5).
+    instructions: tuple[str, ...] = ()
+    project_instructions: tuple[str, ...] = ()
+    # Read CLAUDE.md where there is no AGENTS.md (spec hito 10, §1.4).
+    compat_claude: bool = True
 
 
 class _Limits(BaseModel, extra="forbid"):
@@ -141,6 +150,8 @@ class _ProjectFile(BaseModel, extra="forbid"):
     effort: Effort | None = None
     cache_ttl: CacheTtl | None = None
     limits: _Limits = _Limits()
+    instructions: list[Annotated[str, Field(min_length=1)]] = []
+    compat_claude: StrictBool | None = None
 
 
 class _UserFile(_ProjectFile):
@@ -200,6 +211,8 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
             "repository cannot send your key to another server."
         )
     project = _validate(_ProjectFile, project_data, project_path)
+    for pattern in project.instructions:
+        _inside_project(pattern, project_path)
 
     providers = {**BUILTIN_PROVIDERS, **user.providers}
     provider_name = project.provider or user.provider or DEFAULT_PROVIDER
@@ -226,6 +239,9 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
         effort=project.effort or user.effort,
         cache_ttl=project.cache_ttl or user.cache_ttl or "5m",
         limits=_stricter(user.limits, project.limits),
+        instructions=tuple(user.instructions),
+        project_instructions=tuple(dict.fromkeys(project.instructions)),
+        compat_claude=_first(project.compat_claude, user.compat_claude, True),
         api_key=_api_key(provider_name, provider, env, need=calls_model),
         from_project={
             name: value
@@ -233,6 +249,28 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
             if (value := getattr(project, name)) is not None
         },
     )
+
+
+def _inside_project(pattern: str, path: Path) -> None:
+    """A project's instruction file stays in the project, and is never a
+    secret: a cloned repository could send the user's key to the provider
+    (spec hito 10, §1.5). The files a glob finds are checked again when
+    they are read."""
+    parts = PurePath(pattern).parts
+    if pattern.startswith("~") or PurePath(pattern).is_absolute() or ".." in parts:
+        raise ConfigError(
+            f"{path}: instructions {pattern!r} must be a path inside the project"
+        )
+    if is_secret(PurePath(pattern)):
+        raise ConfigError(
+            f"{path}: instructions {pattern!r} is a secret file: its content "
+            "would go to the model provider"
+        )
+
+
+def _first(*values: bool | None) -> bool:
+    """The first value that is set."""
+    return next(value for value in values if value is not None)
 
 
 def _stricter(user: _Limits, project: _Limits) -> TurnLimits:

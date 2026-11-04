@@ -266,3 +266,106 @@ async def test_a_big_file_that_is_not_utf8_is_skipped(tmp_path: Path) -> None:
     result = await project(tmp_path).instructions()
 
     assert result.warnings == ("AGENTS.md: not UTF-8, not read",)
+
+
+# Extra instructions of the configuration (§1.5).
+
+
+async def test_extra_files_and_globs(tmp_path: Path) -> None:
+    cwd = repo(tmp_path)
+    write(cwd / "CONTRIBUTING.md", "contribute")
+    write(cwd / "docs" / "b.md", "b")
+    write(cwd / "docs" / "a.md", "a")
+    write(cwd / "docs" / "c.txt", "not this")
+    home = tmp_path / "home"
+    write(home / "notas" / "estilo.md", "mine")
+
+    info = LocalProject(
+        cwd,
+        shell=None,
+        home=home,
+        config_dir=home / ".config" / "maha",
+        extra_user=["~/notas/estilo.md"],
+        extra_project=["CONTRIBUTING.md", "docs/*.md"],
+    )
+
+    assert await found(info) == [
+        ("extra", "~/notas/estilo.md", "mine"),
+        ("extra", "CONTRIBUTING.md", "contribute"),
+        ("extra", "docs/a.md", "a"),
+        ("extra", "docs/b.md", "b"),
+    ]
+
+
+async def test_a_file_already_loaded_is_not_repeated(tmp_path: Path) -> None:
+    write(tmp_path / "AGENTS.md", "once")
+    info = LocalProject(
+        tmp_path,
+        shell=None,
+        home=tmp_path / "home",
+        config_dir=tmp_path / "home" / ".config" / "maha",
+        extra_project=["*.md"],
+    )
+
+    assert await found(info) == [("project", "AGENTS.md", "once")]
+
+
+async def test_a_glob_skips_secrets_and_says_what_matched_nothing(
+    tmp_path: Path,
+) -> None:
+    write(tmp_path / "notes" / ".env", "API_KEY=x")
+    info = LocalProject(
+        tmp_path,
+        shell=None,
+        home=tmp_path / "home",
+        config_dir=tmp_path / "home" / ".config" / "maha",
+        extra_project=["notes/*", "missing.md", "none/*.md"],
+    )
+
+    result = await info.instructions()
+
+    assert result.layers == ()
+    assert result.warnings == (
+        "notes/.env: a secret file, not read",
+        "instructions 'missing.md': matches no file",
+        "instructions 'none/*.md': matches no file",
+    )
+
+
+async def test_a_glob_of_the_project_never_leaves_it(tmp_path: Path) -> None:
+    cwd = repo(tmp_path)
+    write(tmp_path / "outside.md", "the user's")
+    (cwd / "docs").mkdir()
+    (cwd / "docs" / "link.md").symlink_to(tmp_path / "outside.md")
+    info = LocalProject(
+        cwd,
+        shell=None,
+        home=tmp_path / "home",
+        config_dir=tmp_path / "home" / ".config" / "maha",
+        extra_project=["docs/*.md"],
+    )
+
+    result = await info.instructions()
+
+    assert result.layers == ()
+    assert result.warnings == ("docs/link.md: a link out of the project, not read",)
+
+
+async def test_a_glob_stops_at_its_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A small limit says the same as a huge tree (AGENTS.md).
+    monkeypatch.setattr("mharness.adapters.project.local.GLOB_MAX_SCAN", 5)
+    for index in range(10):
+        write(tmp_path / f"{index}.md", "x")
+    info = LocalProject(
+        tmp_path,
+        shell=None,
+        home=tmp_path / "home",
+        config_dir=tmp_path / "home" / ".config" / "maha",
+        extra_project=["**/*.md"],
+    )
+
+    result = await info.instructions()
+
+    assert result.warnings == ("instructions '**/*.md': stopped after 5 entries",)

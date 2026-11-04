@@ -12,11 +12,11 @@ import asyncio
 import os
 import stat
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from datetime import date
-from pathlib import Path
+from pathlib import Path, PurePath
 
-from mharness.domain.paths import is_inside, is_secret_at, printable
+from mharness.domain.paths import SKIPPED_DIRS, is_inside, is_secret_at, printable
 from mharness.domain.prompt import (
     INSTRUCTIONS_MAX,
     Environment,
@@ -24,10 +24,15 @@ from mharness.domain.prompt import (
     Layer,
     LayerKind,
 )
+from mharness.domain.wildcard import glob_matches
 
 AGENTS = "AGENTS.md"
 # Read where there is no AGENTS.md, in this order (§1.4).
 CLAUDE = ("CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md")
+# Entries a glob of `instructions` may look at: a pattern of a project's
+# file must not keep maha from starting (§1.5).
+GLOB_MAX_SCAN = 10_000
+_MAGIC = frozenset("*?[")
 
 
 def git_root(cwd: Path) -> Path | None:
@@ -100,6 +105,9 @@ class LocalProject:
     The user's instructions are in `config_dir` (`~/.config/maha`), or
     without them, with `compat_claude`, in `~/.claude/CLAUDE.md`; `user`
     False leaves them out (the evals measure maha, not the user's habits).
+    The extra `instructions` of the user's configuration and of the
+    project's are paths or globs from the working directory; the
+    project's never leave the project (§1.5).
     """
 
     def __init__(
@@ -111,6 +119,8 @@ class LocalProject:
         config_dir: Path,
         compat_claude: bool = True,
         user: bool = True,
+        extra_user: Sequence[str] = (),
+        extra_project: Sequence[str] = (),
         today: Callable[[], date] = date.today,
         platform: str = sys.platform,
     ) -> None:
@@ -120,6 +130,8 @@ class LocalProject:
         self._config_dir = config_dir
         self._compat_claude = compat_claude
         self._user = user
+        self._extra_user = tuple(extra_user)
+        self._extra_project = tuple(extra_project)
         self._today = today
         self._platform = platform
 
@@ -140,8 +152,17 @@ class LocalProject:
         layers: list[Layer] = []
         warnings: list[str] = []
 
+        # Each file once, also when a glob names an AGENTS.md again.
+        seen: set[Path] = set()
+
         def add(kind: LayerKind, path: Path, inside: Path | None) -> bool:
             source = self._shown(path)
+            try:
+                real = path.resolve()
+            except OSError, RuntimeError:
+                real = path
+            if real in seen:
+                return True
             try:
                 text = _read(path, inside=inside)
             except _Unread as why:
@@ -149,6 +170,7 @@ class LocalProject:
                 return True
             if text is None:
                 return False
+            seen.add(real)
             layers.append(Layer(kind=kind, source=source, text=text))
             return True
 
@@ -162,7 +184,55 @@ class LocalProject:
                 continue
             for name in CLAUDE:
                 add("project", directory / name, root)
+        for patterns, inside in (
+            (self._extra_user, None),
+            (self._extra_project, root),
+        ):
+            for pattern in patterns:
+                paths, problem = self._expand(pattern, inside)
+                if problem is not None:
+                    warnings.append(f"instructions {printable(pattern)!r}: {problem}")
+                for path in paths:
+                    if is_secret_at(path, self._cwd):
+                        warnings.append(f"{self._shown(path)}: a secret file, not read")
+                    elif not add("extra", path, inside):
+                        warnings.append(
+                            f"instructions {printable(pattern)!r}: matches no file"
+                        )
         return Instructions(layers=tuple(layers), warnings=tuple(warnings))
+
+    def _expand(
+        self, pattern: str, inside: Path | None
+    ) -> tuple[list[Path], str | None]:
+        """The files `pattern` names, sorted, and a problem to tell, if any.
+        A path without wildcards is itself; a glob walks from its part
+        without wildcards, at most `GLOB_MAX_SCAN` entries."""
+        if pattern.startswith("~/") and inside is None:
+            base, pattern = self._home, pattern[2:]
+        else:
+            base = self._cwd
+        parts = PurePath(pattern).parts
+        fixed = 0
+        while fixed < len(parts) and not _MAGIC & set(parts[fixed]):
+            fixed += 1
+        if fixed == len(parts):
+            return [base / pattern], None
+        start = base.joinpath(*parts[:fixed])
+        found: list[Path] = []
+        scanned = 0
+        for directory, names, files in os.walk(start):
+            names[:] = sorted(name for name in names if name not in SKIPPED_DIRS)
+            scanned += len(names) + len(files)
+            if scanned > GLOB_MAX_SCAN:
+                return sorted(found), f"stopped after {GLOB_MAX_SCAN} entries"
+            here = Path(directory)
+            for name in sorted(files):
+                path = here / name
+                if glob_matches(pattern, path.relative_to(base)):
+                    found.append(path)
+        if not found:
+            return [], "matches no file"
+        return sorted(found), None
 
     def _shown(self, path: Path) -> str:
         """The path as the user reads it: relative to the working
