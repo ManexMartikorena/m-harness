@@ -243,6 +243,18 @@ async def test_the_reasoning_of_the_stream_is_kept(client: OpenAIChatClient) -> 
 
 
 @respx.mock
+async def test_a_null_delta_is_an_empty_one(client: OpenAIChatClient) -> None:
+    # Audit after hito 10 (M3): `"delta": null` lost the whole answer, as
+    # "a chunk of the stream could not be understood".
+    nothing = {"model": MODEL, "choices": [{"index": 0, "delta": None}]}
+    serve(sse(chunk("Hola"), nothing, chunk(finish_reason="stop"), "[DONE]"))
+
+    texts = [e.text for e in await events(client) if isinstance(e, TextDelta)]
+
+    assert texts == ["Hola"]
+
+
+@respx.mock
 async def test_without_usage_or_model(client: OpenAIChatClient) -> None:
     serve(sse({"choices": [{"delta": {"content": "Hola"}, "finish_reason": "stop"}]}))
 

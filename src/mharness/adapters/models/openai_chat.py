@@ -12,10 +12,10 @@ import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
 from decimal import Decimal
 from types import TracebackType
-from typing import Any, Self
+from typing import Annotated, Any, Self
 
 import httpx
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, BeforeValidator, Field, ValidationError
 
 from mharness.adapters.models.http import (
     STALL_SECONDS,
@@ -417,7 +417,10 @@ class _Delta(BaseModel):
 
 
 class _ChunkChoice(BaseModel):
-    delta: _Delta = Field(default_factory=_Delta)
+    # Null on some servers: as empty (audit after hito 10, M3).
+    delta: Annotated[_Delta, BeforeValidator(lambda v: {} if v is None else v)] = Field(
+        default_factory=_Delta
+    )
     finish_reason: str | None = None
 
 
