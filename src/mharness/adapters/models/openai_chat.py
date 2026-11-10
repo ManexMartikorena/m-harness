@@ -35,10 +35,17 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
-from mharness.domain.events import MessageEnd, ModelEvent, TextDelta, ToolCallDelta
+from mharness.domain.events import (
+    MessageEnd,
+    ModelEvent,
+    ReasoningDelta,
+    TextDelta,
+    ToolCallDelta,
+)
 from mharness.domain.messages import (
     Block,
     Message,
+    ReasoningBlock,
     TextBlock,
     ToolCallBlock,
     ToolResultBlock,
@@ -186,6 +193,12 @@ class OpenAIChatClient:
                 continue
             # `maha` never asks for several choices (`n`).
             choice = chunk.choices[0]
+            if choice.delta.reasoning_content:
+                # What the model thought, kept to give it back (Kimi asks
+                # for it; audit after hito 10, P8).
+                yield ReasoningDelta(
+                    index=REASONING_INDEX, text=choice.delta.reasoning_content
+                )
             if choice.delta.content:
                 yield TextDelta(text=choice.delta.content)
             # A refusal is text the person must see (spec hito 5, §1.11).
@@ -247,6 +260,10 @@ def _to_openai(request: ModelRequest) -> dict[str, Any]:
     return body
 
 
+# The index of the reasoning of an answer: before its text and its calls,
+# which OpenAI leaves without one (-1) or numbers from 0.
+REASONING_INDEX = -2
+
 # Added to an answer cut by Ctrl+C.
 INTERRUPTED_MARK = "\n\n[interrupted by the user]"
 
@@ -266,27 +283,36 @@ def _message_to_openai(message: Message) -> list[dict[str, Any]]:
     if message.interrupted:
         # So the model knows it did not finish (spec hito 6, §1.7).
         text += INTERRUPTED_MARK
-    if not calls:
-        return [{"role": message.role, "content": text}]
-    return [
-        {
-            "role": message.role,
-            # Required unless there are tool calls: null when there is no text.
-            "content": text or None,
-            "tool_calls": [
-                {
-                    "id": call.id,
-                    "type": "function",
-                    "function": {"name": call.name, "arguments": call.arguments},
-                }
-                for call in calls
-            ],
-        }
-    ]
+    out: dict[str, Any] = {"role": message.role, "content": text}
+    if calls:
+        # Required unless there are tool calls: null when there is no text.
+        out["content"] = text or None
+        out["tool_calls"] = [
+            {
+                "id": call.id,
+                "type": "function",
+                "function": {"name": call.name, "arguments": call.arguments},
+            }
+            for call in calls
+        ]
+    # The model's own reasoning, given back (Kimi: "you must ... keep the
+    # reasoning_content of historical assistant messages", 2026-11-10). A
+    # signed or redacted one is Anthropic's, and has no place here.
+    thought = "\n".join(
+        block.text
+        for block in message.blocks
+        if isinstance(block, ReasoningBlock)
+        and block.signature is None
+        and block.redacted is None
+        and block.text
+    )
+    if thought:
+        out["reasoning_content"] = thought
+    return [out]
 
 
-# What the adapter reads from the response. Unknown fields (such as
-# `reasoning_content`) are ignored; missing or null counters count as 0.
+# What the adapter reads from the response. Unknown fields are ignored;
+# missing or null counters count as 0.
 
 
 class _Function(BaseModel):
@@ -301,6 +327,7 @@ class _ToolCall(BaseModel):
 
 class _ResponseMessage(BaseModel):
     content: str | None = None
+    reasoning_content: str | None = None
     refusal: str | None = None
     tool_calls: list[_ToolCall] | None = None
 
@@ -348,7 +375,10 @@ def _to_domain(completion: _Completion, request: ModelRequest) -> ModelResponse:
     choice = completion.choices[0]
     # A refusal is text the person must see (spec hito 5, §1.11).
     texts = (choice.message.content, choice.message.refusal)
-    blocks: list[Block] = [TextBlock(text=text) for text in texts if text]
+    blocks: list[Block] = []
+    if choice.message.reasoning_content:
+        blocks.append(ReasoningBlock(text=choice.message.reasoning_content))
+    blocks += [TextBlock(text=text) for text in texts if text]
     blocks.extend(
         ToolCallBlock(
             id=call.id, name=call.function.name, arguments=call.function.arguments
@@ -381,6 +411,7 @@ class _DeltaToolCall(BaseModel):
 
 class _Delta(BaseModel):
     content: str | None = None
+    reasoning_content: str | None = None
     refusal: str | None = None
     tool_calls: list[_DeltaToolCall] | None = None
 

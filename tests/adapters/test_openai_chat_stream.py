@@ -13,6 +13,8 @@ import pytest
 import respx
 
 from mharness.adapters.models import OpenAIChatClient, openai_chat
+from mharness.adapters.models.openai_chat import REASONING_INDEX
+from mharness.application.collect import Accumulator
 from mharness.domain.errors import (
     ModelAuthError,
     ModelError,
@@ -21,8 +23,14 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
-from mharness.domain.events import MessageEnd, ModelEvent, TextDelta, ToolCallDelta
-from mharness.domain.messages import Message, TextBlock
+from mharness.domain.events import (
+    MessageEnd,
+    ModelEvent,
+    ReasoningDelta,
+    TextDelta,
+    ToolCallDelta,
+)
+from mharness.domain.messages import Message, ReasoningBlock, TextBlock
 from mharness.domain.model import ModelRequest, StopReason, ToolSpec, Usage
 from tests.fakes.model import collect
 
@@ -153,16 +161,26 @@ async def test_without_key_there_is_no_authorization() -> None:
 
 @respx.mock
 @pytest.mark.parametrize(
-    "name", ["stream_finish_with_content.sse", "stream_finish_alone.sse"]
+    ("name", "thought"),
+    [
+        ("stream_finish_with_content.sse", "El usuario saluda. Respondo breve."),
+        ("stream_finish_alone.sse", "Me pide un saludo."),
+    ],
 )
 async def test_translates_a_measured_stream(
-    client: OpenAIChatClient, name: str
+    client: OpenAIChatClient, name: str, thought: str
 ) -> None:
     # The finish reason comes with the last text or in a chunk of its own; the
-    # usage comes after it, and MessageEnd carries both (decision 1.4).
+    # usage comes after it, and MessageEnd carries both (decision 1.4). The
+    # reasoning first, kept (audit after hito 10, P8).
     serve((FIXTURES / name).read_bytes())
 
-    assert await events(client) == [
+    got = await events(client)
+
+    reasoning = [e for e in got if isinstance(e, ReasoningDelta)]
+    assert "".join(e.text for e in reasoning) == thought
+    assert got[: len(reasoning)] == reasoning
+    assert got[len(reasoning) :] == [
         TextDelta(text="Hola, "),
         TextDelta(text="Ane."),
         MessageEnd(
@@ -195,6 +213,33 @@ async def test_only_content_becomes_text(client: OpenAIChatClient) -> None:
     texts = [e.text for e in await events(client) if isinstance(e, TextDelta)]
 
     assert texts == ["Hola"]
+
+
+@respx.mock
+async def test_the_reasoning_of_the_stream_is_kept(client: OpenAIChatClient) -> None:
+    # Audit after hito 10 (P8): Kimi sends `reasoning_content` (measured by
+    # OpenCode Go, 2026-11-10) and asks for it back.
+    serve(
+        sse(
+            chunk(reasoning_content="Pien"),
+            chunk(reasoning_content="so."),
+            chunk("Hola"),
+            chunk(finish_reason="stop"),
+            usage_chunk(),
+            "[DONE]",
+        )
+    )
+
+    got = await events(client)
+    gathered = Accumulator()
+    for event in got:
+        gathered.add(event)
+
+    assert [e.text for e in got if isinstance(e, ReasoningDelta)] == ["Pien", "so."]
+    assert gathered.response().message.blocks == [
+        ReasoningBlock(text="Pienso."),
+        TextBlock(text="Hola"),
+    ]
 
 
 @respx.mock
@@ -504,6 +549,7 @@ async def test_translates_measured_tool_calls(client: OpenAIChatClient) -> None:
     serve((FIXTURES / "stream_tool_calls.sse").read_bytes())
 
     assert await events(client) == [
+        ReasoningDelta(index=REASONING_INDEX, text="Hay que leer los dos."),
         TextDelta(text="Voy a leer ambos ficheros:"),
         ToolCallDelta(
             index=0,

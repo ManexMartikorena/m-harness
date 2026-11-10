@@ -167,6 +167,54 @@ async def test_without_effort_nor_max_tokens_neither_is_sent(
 
 
 @respx.mock
+async def test_the_models_own_reasoning_goes_back_as_reasoning_content(
+    client: OpenAIChatClient,
+) -> None:
+    # Audit after hito 10 (P8): Kimi's docs (kimi-k2.7-code, 2026-11-10):
+    # "you must therefore (not optionally) keep the reasoning_content of
+    # historical assistant messages". maha dropped it.
+    route = respx.post(ENDPOINT).respond(json=fixture("completion.json"))
+    call = ToolCallBlock(id="c1", name="read_file", arguments='{"path": "a"}')
+    answer = Message(
+        role="assistant",
+        blocks=[ReasoningBlock(text="Leo a."), TextBlock(text="Voy."), call],
+    )
+    result = Message(role="tool", blocks=[ToolResultBlock(call_id="c1", content="x")])
+    plain = Message(
+        role="assistant", blocks=[ReasoningBlock(text="Ya."), TextBlock(text="Es x.")]
+    )
+
+    await client.complete(
+        ModelRequest(
+            model="kimi-k2.7-code",
+            messages=[CONVERSATION[0], answer, result, plain],
+        )
+    )
+
+    sent = sent_json(route)["messages"]
+    assert sent[1]["reasoning_content"] == "Leo a."
+    assert sent[1]["tool_calls"][0]["id"] == "c1"
+    assert sent[3] == {
+        "role": "assistant",
+        "content": "Es x.",
+        "reasoning_content": "Ya.",
+    }
+
+
+@respx.mock
+async def test_a_complete_answer_keeps_its_reasoning(client: OpenAIChatClient) -> None:
+    body = fixture("completion.json")
+    body["choices"][0]["message"]["reasoning_content"] = "Pienso."
+    respx.post(ENDPOINT).respond(json=body)
+
+    response = await client.complete(
+        ModelRequest(model="kimi-k2.7-code", messages=CONVERSATION[:1])
+    )
+
+    assert response.message.blocks[0] == ReasoningBlock(text="Pienso.")
+
+
+@respx.mock
 async def test_reasoning_blocks_are_not_sent(client: OpenAIChatClient) -> None:
     # The format has no place for them (spec hito 9, §1.5).
     route = respx.post(ENDPOINT).respond(json=fixture("completion.json"))
@@ -461,7 +509,7 @@ async def test_without_usage_tokens_are_zero(client: OpenAIChatClient) -> None:
 
 
 @respx.mock
-async def test_reasoning_and_unknown_fields_are_ignored(
+async def test_unknown_fields_are_ignored_and_the_reasoning_kept(
     client: OpenAIChatClient,
 ) -> None:
     respx.post(ENDPOINT).respond(json=fixture("completion_with_reasoning.json"))
@@ -469,6 +517,7 @@ async def test_reasoning_and_unknown_fields_are_ignored(
     response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
 
     assert response.message.text == "Te llamas Ane."
+    assert isinstance(response.message.blocks[0], ReasoningBlock)
 
 
 @respx.mock
@@ -813,18 +862,20 @@ async def test_translates_tool_calls_of_a_whole_response(
     client: OpenAIChatClient,
 ) -> None:
     # Shape measured on OpenCode Go (spec hito 4, §1.1): content "" and the
-    # calls in message.tool_calls.
+    # calls in message.tool_calls; its reasoning, kept (audit after hito 10,
+    # P8).
     respx.post(ENDPOINT).respond(json=fixture("completion_with_tool_calls.json"))
 
     response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
 
     assert response.stop_reason == "tool_use"
     assert response.message.blocks == [
+        ReasoningBlock(text="Hay que leer el fichero."),
         ToolCallBlock(
             id="call_test_000000000000000c",
             name="read_file",
             arguments='{"path": "notas.txt"}',
-        )
+        ),
     ]
 
 
