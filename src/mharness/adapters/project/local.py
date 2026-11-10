@@ -218,6 +218,10 @@ class LocalProject:
         if fixed == len(parts):
             return [base / pattern], None
         start = base.joinpath(*parts[:fixed])
+        # The part with wildcards matches what is under its fixed start: an
+        # absolute pattern, or one with "..", is not under `base` (audit
+        # after hito 10, M1).
+        rest = PurePath(*parts[fixed:]).as_posix()
         found: list[Path] = []
         scanned = 0
         for directory, names, files in os.walk(start):
@@ -228,7 +232,7 @@ class LocalProject:
             here = Path(directory)
             for name in sorted(files):
                 path = here / name
-                if glob_matches(pattern, path.relative_to(base)):
+                if glob_matches(rest, path.relative_to(start)):
                     found.append(path)
         if not found:
             return [], "matches no file"

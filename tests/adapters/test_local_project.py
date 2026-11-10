@@ -297,6 +297,26 @@ async def test_extra_files_and_globs(tmp_path: Path) -> None:
     ]
 
 
+async def test_an_absolute_glob_of_the_user_is_read(tmp_path: Path) -> None:
+    # Audit after hito 10 (M1): `relative_to` the working directory raised
+    # ValueError, and maha fell at start.
+    cwd = repo(tmp_path)
+    notes = tmp_path / "notas"
+    write(notes / "estilo.md", "mine")
+    write(notes / "otra" / "mas.md", "more")
+    home = tmp_path / "home"
+
+    info = LocalProject(
+        cwd,
+        shell=None,
+        home=home,
+        config_dir=home / ".config" / "maha",
+        extra_user=[f"{notes}/*.md", f"{notes}/**/*.md"],
+    )
+
+    assert [text for _, _, text in await found(info)] == ["mine", "more"]
+
+
 async def test_a_file_already_loaded_is_not_repeated(tmp_path: Path) -> None:
     write(tmp_path / "AGENTS.md", "once")
     info = LocalProject(
