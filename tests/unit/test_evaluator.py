@@ -105,6 +105,39 @@ async def test_an_answer_that_passes_its_check() -> None:
     )
 
 
+async def test_the_instruction_goes_as_the_conversation_would_send_it() -> None:
+    # Spec hito 10, §5: `/init` is expanded, in the run's own copy.
+    sent: list[str] = []
+    seen: list[tuple[str, Path]] = []
+
+    def script(t: Task, model: str) -> list[Step]:
+        return [reply("La versión es 1.4.2.")]
+
+    def expand(instruction: str, path: Path) -> str:
+        seen.append((instruction, path))
+        return "expanded"
+
+    @asynccontextmanager
+    async def open_run(t: Task, model: str, path: Path) -> AsyncIterator[Conversation]:
+        fake = FakeModelClient(script(t, model))
+        world = World(MemorySessionStore(), fake, model=model)
+        conversation = await world.sessions.start()
+        try:
+            yield conversation
+        finally:
+            sent.extend(m.text for m in conversation.messages if m.role == "user")
+            await conversation.close()
+
+    suite = MemoryEvalSuite([task()], FIXTURES)
+    subject = Evaluator(suite, open_run, FakeRunner(), ENV, expand=expand)
+
+    await subject.run([task()], ["m"])
+
+    [(instruction, _)] = seen
+    assert instruction == "¿Qué versión?"
+    assert sent == ["expanded"]
+
+
 async def test_an_answer_that_fails_says_why() -> None:
     subject, _ = evaluator(says("No lo sé."), task())
 

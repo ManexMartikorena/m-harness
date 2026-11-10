@@ -56,8 +56,13 @@ class Evaluator:
         open_run: OpenRun,
         runner: CommandRunner,
         env: Mapping[str, str],
+        expand: Callable[[str, Path], str] = lambda instruction, path: instruction,
     ) -> None:
         self._suite = suite
+        # What a command of the conversation (`/init`) sends, in the copy
+        # at `path`: a task measures what the person would type (spec
+        # hito 10, §5).
+        self._expand = expand
         self._open_run = open_run
         self._runner = runner
         # The variables maha's commands get; a check keeps only a few of
@@ -142,7 +147,8 @@ class Evaluator:
         async with self._suite.workspace(task) as path:
             try:
                 async with self._open_run(task, model, path) as conversation:
-                    result = await run_once(conversation, task.instruction)
+                    text = self._expand(task.instruction, path)
+                    result = await run_once(conversation, text)
             except TurnBroke as exc:
                 # With what the run spent, already paid.
                 spent = exc.result

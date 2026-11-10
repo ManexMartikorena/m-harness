@@ -1,0 +1,18 @@
+# /init tal como la teclea la persona: la plantilla del paquete y lo que se
+# pide destacar (spec del hito 10, §5). La tienda tiene una trampa que no se
+# ve en los nombres: sus tests necesitan PYTHONPATH=src.
+instruction = "/init los mensajes de commit van en español"
+fixture = "tienda"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = '''python3 -c "
+import re
+text = open('AGENTS.md', encoding='utf-8').read()
+lines = text.splitlines()
+assert len(lines) <= 200, f'{len(lines)} líneas'
+runs = [line for line in lines if 'unittest' in line]
+assert any('PYTHONPATH=src' in line for line in runs), 'sin el comando de los tests'
+assert any(re.search(r'tests[./]test_\w+', line) for line in runs), 'sin cómo lanzar un solo test'
+assert re.search(r'commit', text, re.I) and re.search(r'español', text, re.I), 'sin lo destacado'
+"'''

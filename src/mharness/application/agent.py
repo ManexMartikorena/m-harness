@@ -453,21 +453,7 @@ class Agent:
         return None
 
     def _cost(self, response: ModelResponse, model: str) -> Decimal | None:
-        """What one call cost: as the provider says, if it does (exact also
-        with prices by the hour or by tier); if not, at the catalog's prices
-        of the model that answered, or, if it has none for that name, of the
-        one asked (a provider may name it its own way)."""
-        if response.cost is not None:
-            return response.cost
-        for name in (response.model, model):
-            info = self._catalog.get(self._provider, name)
-            if info is not None and info.prices is not None:
-                amount = cost(response.usage, info.prices)
-                # Past what an amount in USD can be, the counts are a
-                # provider's bug: unknown, never a broken turn (deep audit
-                # after hito 9, S9).
-                return known(amount)
-        return None
+        return call_cost(response, model, self._catalog, self._provider)
 
     def _request(self, turn: list[Message], model: str) -> ModelRequest:
         info = self._catalog.get(self._provider, model)
@@ -545,6 +531,25 @@ class Agent:
                 internal_error=f"summary: {type(exc).__name__}: {exc}",
             )
         return _Outcome(result=result, summary=summary)
+
+
+def call_cost(
+    response: ModelResponse, model: str, catalog: ModelCatalog, provider: str
+) -> Decimal | None:
+    """What one call cost: as the provider says, if it does (exact also
+    with prices by the hour or by tier); if not, at the catalog's prices of
+    the model that answered, or, if it has none for that name, of the one
+    asked (a provider may name it its own way)."""
+    if response.cost is not None:
+        return response.cost
+    for name in (response.model, model):
+        info = catalog.get(provider, name)
+        if info is not None and info.prices is not None:
+            amount = cost(response.usage, info.prices)
+            # Past what an amount in USD can be, the counts are a provider's
+            # bug: unknown, never a broken turn (deep audit after hito 9, S9).
+            return known(amount)
+    return None
 
 
 class _TimedOut(Exception):

@@ -19,8 +19,10 @@ from mharness.domain.session import (
     SessionInUse,
     SessionNotFound,
     SessionSummary,
+    TitleEntry,
     UsageEntry,
     check_history,
+    clean_title,
     is_session_id,
     replay,
     session_id,
@@ -282,6 +284,63 @@ def test_the_summary_has_the_first_line_of_the_first_user_message() -> None:
     cut = summarize(HEADER, [MessageEntry(message=user("x" * 100))], updated)
     assert cut.title == "x" * (TITLE_MAX - 1) + "…"
     assert summarize(HEADER, [], updated).title == ""
+
+
+# The titles (spec hito 10, §1.12).
+
+
+def test_the_summary_has_the_last_title() -> None:
+    updated = datetime(2026, 10, 26, 10, 0, tzinfo=UTC)
+    entries: list[SessionEntry] = [
+        MessageEntry(message=user("arregla el test")),
+        TitleEntry(title="Arreglar el test"),
+    ]
+
+    assert summarize(HEADER, entries, updated).title == "Arreglar el test"
+
+
+def test_a_title_by_hand_stays_until_another_by_hand() -> None:
+    updated = datetime(2026, 10, 26, 10, 0, tzinfo=UTC)
+    entries: list[SessionEntry] = [
+        TitleEntry(title="Del modelo"),
+        TitleEntry(title="Mío", manual=True),
+        TitleEntry(title="Otro del modelo"),
+    ]
+
+    assert summarize(HEADER, entries, updated).title == "Mío"
+    later = [*entries, TitleEntry(title="Mío otra vez", manual=True)]
+    assert summarize(HEADER, later, updated).title == "Mío otra vez"
+    # The session read back keeps it, with whether it was by hand.
+    session = replay(HEADER, [MessageEntry(message=user()), *entries])
+    assert session.title == TitleEntry(title="Mío", manual=True)
+
+
+@pytest.mark.parametrize(
+    ("written", "title"),
+    [
+        ("Arreglar el IVA", "Arreglar el IVA"),
+        ('"Arreglar el IVA."', "Arreglar el IVA"),
+        ("**Title:** Arreglar el IVA", "Arreglar el IVA"),
+        ("Título: «Arreglar el IVA»", "Arreglar el IVA"),
+        ("# Arreglar   el\tIVA", "Arreglar el IVA"),
+        ("\n\n  \nArreglar el IVA\nOtra línea", "Arreglar el IVA"),
+        ("Uno\x1b[2Jdos\u202e", "Uno [2Jdos"),
+        ("x" * 100, "x" * (TITLE_MAX - 1) + "…"),
+        ('  ""  ', None),
+        ("", None),
+    ],
+)
+def test_what_a_model_writes_becomes_a_clean_title(
+    written: str, title: str | None
+) -> None:
+    assert clean_title(written) == title
+
+
+def test_a_title_is_short_and_has_text() -> None:
+    with pytest.raises(ValidationError):
+        TitleEntry(title="")
+    with pytest.raises(ValidationError):
+        TitleEntry(title="x" * (TITLE_MAX + 1))
 
 
 # The cost of each turn (spec hito 7, §1.5 and §4.1.3).

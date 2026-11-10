@@ -267,6 +267,39 @@ def test_a_user_model_says_its_family(tmp_path: Path) -> None:
     assert info == ModelInfo(provider="local", model="mi-modelo", family="qwen")
 
 
+def test_each_provider_has_its_small_model(builtin: TomlCatalog) -> None:
+    # Spec hito 10, §1.12: the cheapest that the evals measure; in Zen, the
+    # paid one, never the free one that may train on the data.
+    assert builtin.small_model("opencode-go") == "glm-5.3-flash"
+    assert builtin.small_model("opencode-zen") == "glm-5.3-flash"
+    assert builtin.small_model("anthropic") == "claude-haiku-5-5"
+    assert builtin.small_model("local") is None
+    zen = builtin.get("opencode-zen", "glm-5.3-flash")
+    assert zen is not None
+    assert not zen.trains_on_data
+
+
+def test_the_user_names_a_small_model(tmp_path: Path) -> None:
+    path = write(
+        tmp_path,
+        "[providers.opencode-go]\nchecked = 2026-11-10\n"
+        'small_model = "kimi-k2.7-code"\n',
+    )
+
+    assert TomlCatalog.load(path).small_model("opencode-go") == "kimi-k2.7-code"
+
+
+def test_a_small_model_not_in_the_catalog_is_an_error(tmp_path: Path) -> None:
+    path = write(
+        tmp_path,
+        "[providers.opencode-go]\nchecked = 2026-11-10\n"
+        'small_model = "glm-5.3-flahs"\n',
+    )
+
+    with pytest.raises(CatalogError, match=r"'glm-5\.3-flahs' is not in the catalog"):
+        TomlCatalog.load(path)
+
+
 def test_a_price_for_the_hour_cache(tmp_path: Path) -> None:
     # Spec hito 9, decision 9.
     path = write(

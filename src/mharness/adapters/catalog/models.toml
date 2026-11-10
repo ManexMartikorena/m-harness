@@ -15,10 +15,15 @@
 [providers.opencode-go]
 checked = 2026-10-27
 source = "https://opencode.ai/docs/go/"
+# The model of side tasks, as the titles of the sessions (spec hito 10,
+# §1.12): the cheapest one that the evals measure.
+small_model = "glm-5.3-flash"
 
 [providers.opencode-zen]
 checked = 2026-10-27
 source = "https://opencode.ai/docs/zen/"
+# The paid one: the free one may train on the data.
+small_model = "glm-5.3-flash"
 
 # OpenCode Go -----------------------------------------------------------
 
@@ -1186,6 +1191,7 @@ cache_read = 0.005
 [providers.anthropic]
 checked = 2026-11-03
 source = "https://platform.claude.com/docs/en/about-claude/pricing"
+small_model = "claude-haiku-5-5"
 
 [models."anthropic/claude-fable-5-1"]  # Claude Fable 5.1
 family = "claude"

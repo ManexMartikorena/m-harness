@@ -31,14 +31,14 @@ Read once, at start-up: synchronous, like the configuration.
 """
 
 import tomllib
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import date
 from decimal import Decimal
 from importlib import resources
 from pathlib import Path
 from typing import Annotated, Any
 
-from pydantic import BaseModel, BeforeValidator, StrictInt, ValidationError
+from pydantic import BaseModel, BeforeValidator, Field, StrictInt, ValidationError
 
 from mharness.domain.catalog import ModelInfo, Prices, Tier
 
@@ -63,6 +63,8 @@ class CatalogError(Exception):
 class _Provider(BaseModel, extra="forbid"):
     checked: date
     source: str | None = None
+    # A model of this provider, of this same file (spec hito 10, §1.12).
+    small_model: str | None = Field(default=None, min_length=1)
 
 
 class _Tier(BaseModel, extra="forbid"):
@@ -100,8 +102,11 @@ class _File(BaseModel, extra="forbid"):
 class TomlCatalog:
     """A `ModelCatalog` read from the package's file and the user's."""
 
-    def __init__(self, models: Iterable[ModelInfo]) -> None:
+    def __init__(
+        self, models: Iterable[ModelInfo], small: Mapping[str, str] | None = None
+    ) -> None:
         self._models = {(info.provider, info.model): info for info in models}
+        self._small = dict(small or {})
 
     @classmethod
     def load(cls, user_file: Path) -> TomlCatalog:
@@ -113,20 +118,26 @@ class TomlCatalog:
         except (OSError, UnicodeDecodeError) as exc:
             # A broken install: said, not a traceback.
             raise CatalogError(f"cannot read the built-in catalog: {exc}") from None
-        models = parse(text, "the built-in catalog")
+        models, small = parse_file(text, "the built-in catalog")
+        _check_small(small, models, "the built-in catalog")
         try:
             text = user_file.read_text(encoding="utf-8")
         except FileNotFoundError:
-            return cls(models)
+            return cls(models, small)
         except OSError as exc:
             raise CatalogError(f"cannot read {user_file}: {exc.strerror}") from None
         except UnicodeDecodeError:
             raise CatalogError(f"{user_file} is not valid UTF-8") from None
         # Later entries win: the user's replace whole models.
-        return cls([*models, *parse(text, str(user_file))])
+        mine, my_small = parse_file(text, str(user_file))
+        _check_small(my_small, [*models, *mine], str(user_file))
+        return cls([*models, *mine], {**small, **my_small})
 
     def get(self, provider: str, model: str) -> ModelInfo | None:
         return self._models.get((provider, model))
+
+    def small_model(self, provider: str) -> str | None:
+        return self._small.get(provider)
 
     def models(self) -> list[ModelInfo]:
         """Every model, in file order."""
@@ -136,6 +147,12 @@ class TomlCatalog:
 def parse(text: str, source: str) -> list[ModelInfo]:
     """The models in one catalog file. Raises `CatalogError`, naming
     `source`."""
+    return parse_file(text, source)[0]
+
+
+def parse_file(text: str, source: str) -> tuple[list[ModelInfo], dict[str, str]]:
+    """The models in one catalog file, and the small model of each provider
+    that names one. Raises `CatalogError`, naming `source`."""
     try:
         data = tomllib.loads(text, parse_float=Decimal)
     except tomllib.TOMLDecodeError as exc:
@@ -156,7 +173,24 @@ def parse(text: str, source: str) -> list[ModelInfo]:
             raise _invalid(source, _problems(exc, ("models", key))) from None
         except ValueError as exc:
             raise _invalid(source, f"  {_where(('models', key))}: {exc}") from None
-    return models
+    small = {
+        name: provider.small_model
+        for name, provider in file.providers.items()
+        if provider.small_model is not None
+    }
+    return models, small
+
+
+def _check_small(
+    small: Mapping[str, str], models: Iterable[ModelInfo], source: str
+) -> None:
+    """A small model has to be in the catalog: a typo would title with a
+    model that does not exist."""
+    known = {(info.provider, info.model) for info in models}
+    for provider, model in small.items():
+        if (provider, model) not in known:
+            where = _where(("providers", provider, "small_model"))
+            raise _invalid(source, f"  {where}: {model!r} is not in the catalog")
 
 
 def _info(key: str, model: _Model, providers: dict[str, _Provider]) -> ModelInfo:

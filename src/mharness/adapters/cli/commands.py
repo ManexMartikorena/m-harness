@@ -22,7 +22,7 @@ from mharness.application.traces import TraceSummary, TurnSummary
 from mharness.domain.model import EFFORTS, Usage
 from mharness.domain.prompt import INSTRUCTION_KINDS, SystemPrompt
 from mharness.domain.session import SessionError, SessionNotFound
-from mharness.domain.trace import TraceError
+from mharness.domain.trace import TitleWritten, TraceError
 from mharness.ports.catalog import ModelCatalog
 
 # What each command does, for /help.
@@ -36,6 +36,9 @@ COMMANDS = {
     "makes the next call pay its prompt again, without the cache",
     "trace": "/trace [ID] — what a session did and cost; without ID, this one",
     "new": "/new — a new session, with the same model",
+    "rename": "/rename [TITLE] — show the session's title, or give it one",
+    "init": "/init [TEXT] — write or improve the project's AGENTS.md; TEXT, what "
+    "to stress",
     "export": "/export [FILE] — this conversation in Markdown; by default, ID.md",
     "help": "/help — this list",
     "exit": "/exit — quit",
@@ -114,6 +117,8 @@ class Commands:
                     await self._export(command.argument)
                 case "new":
                     await self._new()
+                case "rename":
+                    await self._rename(command.argument)
                 case _:
                     self._say(f"unknown command: /{command.name} (see /help)")
         except (SessionError, TraceError) as exc:
@@ -269,6 +274,20 @@ class Commands:
     def _shown(self, cwd: str) -> str:
         return shown_dir(cwd, self._home)
 
+    async def _rename(self, title: str | None) -> None:
+        """The session's title by hand; the small model never replaces it
+        (spec hito 10, §1.12)."""
+        conversation = self.conversation
+        if title is None:
+            current = conversation.title
+            if current is None:
+                self._say("[no title yet: /rename TITLE gives it one]")
+            else:
+                self._say(f"[title: {clean_line(current.title)}]")
+            return
+        kept = await conversation.rename(title)
+        self._say(f"[title: {clean_line(kept)}]")
+
     def _say(self, text: str) -> None:
         print(f"  {text}", file=self._out, flush=True)
 
@@ -343,6 +362,7 @@ _CHOICES = {
     "provider": "provider",
     "model": "model",
     "fallback_model": "fallback",
+    "small_model": "titles with",
     "effort": "effort",
     "cache_ttl": "cache",
 }
@@ -403,7 +423,8 @@ def trace_lines(report: TraceReport, home: Path) -> list[str]:
     if report.location is None:
         return ["(no trace for this session)"]
     summary = report.summary
-    lines = _summary_lines(summary) if summary.turns else ["(no turns in the trace)"]
+    shown = summary.turns or summary.titles
+    lines = _summary_lines(summary) if shown else ["(no turns in the trace)"]
     return [*lines, f"[trace: {shown_dir(report.location, home)}]"]
 
 
@@ -416,14 +437,27 @@ def _summary_lines(summary: TraceSummary) -> list[str]:
         f"{_count(summary.tools, 'tool')}"
     ]
     lines += [_turn_line(turn) for turn in summary.turns]
+    lines += [_title_line(title) for title in summary.titles]
     usage = summary.usage
-    if summary.uncosted_turns == len(summary.turns):
+    if summary.uncosted_turns == len(summary.turns) + len(summary.titles):
         # No turn has a price: "≥$0" would be true and say nothing.
         cost = "cost unknown"
     else:
         cost = ("≥" if summary.uncosted_turns else "") + usd(summary.cost)
     lines.append(f"total: {_tokens_in(usage)} · {usage.output_tokens} out · {cost}")
     return lines
+
+
+def _title_line(title: TitleWritten) -> str:
+    """The call that wrote the title (spec hito 10, §1.12)."""
+    parts = [
+        f"title by {clean_line(title.model)}",
+        _tokens_in(title.usage),
+        f"{title.usage.output_tokens} out",
+    ]
+    if title.cost is not None:
+        parts.append(usd(title.cost))
+    return " · ".join(parts)
 
 
 def _tokens_in(usage: Usage) -> str:

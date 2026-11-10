@@ -12,6 +12,7 @@ import pytest
 from mharness.application.agent import Agent
 from mharness.application.prompt import SystemPromptBuilder
 from mharness.application.sessions import Conversation, Sessions, Start
+from mharness.application.titles import Titler
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import (
     AgentEvent,
@@ -97,6 +98,7 @@ class World:
         effort: Effort | None = None,
         limits: TurnLimits | None = None,
         prompt: SystemPromptBuilder | None = None,
+        titler: Titler | None = None,
     ) -> None:
         self.gate = gate or FakeApproval()
         self.traces = traces or MemoryTraceSink()
@@ -134,6 +136,7 @@ class World:
             token=lambda: left.pop(0),
             effort=effort,
             prompt=prompt,
+            titler=titler,
         )
 
 

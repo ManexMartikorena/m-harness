@@ -32,7 +32,7 @@ from mharness.adapters.catalog import CatalogError, TomlCatalog
 from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.evals import TomlEvalSuite
 from mharness.adapters.models import AnthropicClient, OpenAIChatClient
-from mharness.adapters.project import LocalProject
+from mharness.adapters.project import LocalProject, git_root
 from mharness.adapters.storage import JsonlSessionStore
 from mharness.adapters.tools import (
     AskUser,
@@ -53,6 +53,7 @@ from mharness.application.evals import Evaluator, choose
 from mharness.application.prompt import PromptTemplates, SystemPromptBuilder
 from mharness.application.routing import ModelRouter
 from mharness.application.sessions import Conversation, Sessions, Start
+from mharness.application.titles import Titler, small_model
 from mharness.application.tools import ToolRegistry
 from mharness.domain.environment import command_env
 from mharness.domain.evals import (
@@ -524,7 +525,9 @@ async def _eval(
         f"{options.jobs} at once" + (f" · effort {effort}" if effort else "")
     )
     out.line(head)
-    evaluator = Evaluator(suite, open_run, LocalCommandRunner(), env)
+    evaluator = Evaluator(
+        suite, open_run, LocalCommandRunner(), env, expand=_eval_instruction
+    )
 
     def on_run(run: TaskRun) -> None:
         out.line(cli.run_line(run))
@@ -724,6 +727,7 @@ def _sessions(
     gate: ApprovalGate,
     files: _PromptFiles | None = None,
     questions: UserQuestions | None = None,
+    titler: Titler | None = None,
 ) -> Sessions:
     """The user's sessions, whose agents have the tools of a session and
     `gate`; `ask_user`, with `questions`."""
@@ -760,6 +764,7 @@ def _sessions(
         masked=known_secrets(os.environ, also=[settings.api_key]),
         effort=settings.effort,
         prompt=_prompt(settings, catalog, cwd, tools, files),
+        titler=titler,
     )
 
 
@@ -868,6 +873,46 @@ async def _print(
         )
 
 
+def _titler(
+    settings: config.Settings, catalog: ModelCatalog, client: ModelClient
+) -> Titler:
+    """Who names the sessions of a conversation: the small model (spec hito
+    10, §1.12). Not in `-p` nor in the evals."""
+    assert settings.model is not None
+    template = (resources.files("mharness") / "prompts" / "title.md").read_text(
+        encoding="utf-8"
+    )
+    return Titler(
+        client,
+        model=small_model(
+            settings.small_model, catalog, settings.provider_name, settings.model
+        ),
+        template=template,
+        catalog=catalog,
+        provider=settings.provider_name,
+        failed=cli.title_failed,
+    )
+
+
+def _eval_instruction(instruction: str, copy: Path) -> str:
+    """What a task's instruction sends: `/init TEXT` as the conversation
+    sends it, in the task's copy; anything else, as it is (spec hito 10,
+    §5)."""
+    command = cli.parse_command(instruction)
+    if command is None or command.name != "init":
+        return instruction
+    return cli.Init(template=_init(copy).template, root=copy).text(command.argument)
+
+
+def _init(cwd: Path) -> cli.Init:
+    """What `/init` needs: its template, and where AGENTS.md goes, the
+    project's root (spec hito 10, §1.9)."""
+    template = (resources.files("mharness") / "prompts" / "init.md").read_text(
+        encoding="utf-8"
+    )
+    return cli.Init(template=template, root=git_root(cwd) or cwd)
+
+
 async def _converse(
     settings: config.Settings,
     catalog: ModelCatalog,
@@ -888,6 +933,7 @@ async def _converse(
             _gate(lines),
             files,
             questions=_questions(lines),
+            titler=_titler(settings, catalog, client),
         )
         return await cli.converse(
             sessions,
@@ -898,4 +944,5 @@ async def _converse(
             discard=lines.discard if os.isatty(0) else None,
             start=start,
             notes=_notes(settings),
+            init=_init(cwd),
         )
