@@ -40,6 +40,8 @@ def test_the_package_template_fills(tmp_path: Path) -> None:
     assert str(tmp_path) in text
     assert "improve it in place" in text
     assert "CLAUDE.md, start from it" in text
+    # Its first line names the session until the small model titles it.
+    assert text.splitlines()[0] == "Write or improve the AGENTS.md of this project."
 
 
 def test_agents_md_goes_to_the_git_root(tmp_path: Path) -> None:

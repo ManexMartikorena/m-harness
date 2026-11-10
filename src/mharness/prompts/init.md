@@ -1,5 +1,7 @@
-Write the AGENTS.md of this project: the file that tells a coding agent what
-it needs to work here and cannot see at a glance.
+Write or improve the AGENTS.md of this project.
+
+AGENTS.md tells a coding agent what it needs to work here and cannot see at
+a glance.
 
 First look at the project with your tools: its build, lint and test commands
 (package files, Makefiles, CI workflows), its layout, and its README,
