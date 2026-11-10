@@ -58,6 +58,7 @@ CANCELLED = "cancelled by the user"
 INTERRUPTED = "interrupted by an internal error"
 TIMED_OUT = "stopped by the time limit"
 CONTEXT_FULL = "not run: the conversation filled your context window"
+REFUSED = "not run: the provider refused your answer"
 
 # The only answers that run a call that asked, or deny it.
 DECISIONS: tuple[Decision, ...] = ("once", "session", "deny")
@@ -168,6 +169,15 @@ class Agent:
                         turn.messages.append(Message(role="tool", blocks=[*blocks]))
                     self._keep(turn)
                     yield turn.finished("context_full", steps=turn.step)
+                    return
+                if response.stop_reason == "content_filter":
+                    # Refused: a call it holds may be cut, and none was
+                    # meant to run; the turn ends (audit after hito 10, B1).
+                    if turn.calls:
+                        refused = [_error(c, REFUSED).result for c in turn.calls]
+                        turn.messages.append(Message(role="tool", blocks=[*refused]))
+                    self._keep(turn)
+                    yield turn.finished("refused", steps=turn.step)
                     return
                 if not turn.calls:
                     self._keep(turn)
@@ -290,7 +300,8 @@ class Agent:
             decision: Decision | None = None
             asked = False
             cut = call is last or not _whole(call)
-            if stop_reason == "max_tokens" and cut:
+            # An unknown reason may have cut it too (audit after hito 10, B1).
+            if stop_reason in ("max_tokens", "other") and cut:
                 # Cut by the output limit: its error says so, or the
                 # model writes the same cut call again (deep audit
                 # after hito 9, B1). The last one, also if its arguments

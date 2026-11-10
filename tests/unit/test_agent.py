@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import cast
 
 import pytest
+from pydantic import BaseModel
 
 from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
@@ -1338,6 +1339,10 @@ async def test_after_the_answer_the_clock_goes_on() -> None:
     assert (turn.reason, turn.tool_calls) == ("end_turn", 1)
 
 
+class Optional(BaseModel):
+    text: str = "."
+
+
 class OnceThenHang(HangingApproval):
     """Approves the first request; then never answers."""
 
@@ -1936,6 +1941,49 @@ async def test_a_call_cut_by_the_output_limit_is_told_what_happened() -> None:
     assert len(tool.calls) == 1
     assert isinstance(events[-1], TurnFinished)
     assert events[-1].reason == "end_turn"
+
+
+async def test_no_call_of_a_refused_answer_runs() -> None:
+    # Audit after hito 10 (B1): a call cut by a refusal came with "" as its
+    # arguments, ran as "{}" if the tool needed none, and the turn went on.
+    class NoArguments(FakeTool):
+        params = Optional  # type: ignore[assignment]
+
+    cut = ToolCallBlock(id="c1", name="echo", arguments="")
+    answer = tool_calls(cut).model_copy(update={"stop_reason": "content_filter"})
+    tool = NoArguments()
+    subject = agent(FakeModelClient([answer]), tool)
+
+    events = await run(subject)
+
+    assert tool.calls == []
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert turn.reason == "refused"
+    # The history stays one the API takes: the call has its result.
+    *_, results = subject.messages
+    assert results.blocks == [
+        ToolResultBlock(
+            call_id="c1",
+            content="error: not run: the provider refused your answer",
+            is_error=True,
+        )
+    ]
+
+
+async def test_a_call_cut_by_an_unknown_stop_reason_never_runs() -> None:
+    # The last call of an answer that stopped for a reason maha does not
+    # know may be cut too: as with the output limit.
+    cut = ToolCallBlock(id="c1", name="echo", arguments="{}")
+    answer = tool_calls(cut).model_copy(update={"stop_reason": "other"})
+    tool = FakeTool()
+    subject = agent(FakeModelClient([answer, reply("Hecho.")]), tool)
+
+    events = await run(subject)
+
+    assert tool.calls == []
+    [finished] = [e for e in events if isinstance(e, ToolFinished)]
+    assert "was not run" in finished.result.content
 
 
 async def test_the_last_call_cut_by_the_output_limit_never_runs() -> None:
