@@ -32,7 +32,7 @@ from mharness.adapters.catalog import CatalogError, TomlCatalog
 from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.evals import TomlEvalSuite
 from mharness.adapters.models import AnthropicClient, OpenAIChatClient
-from mharness.adapters.project import LocalProject
+from mharness.adapters.project import LocalProject, git_root
 from mharness.adapters.storage import JsonlSessionStore
 from mharness.adapters.tools import (
     AskUser,
@@ -868,6 +868,15 @@ async def _print(
         )
 
 
+def _init(cwd: Path) -> cli.Init:
+    """What `/init` needs: its template, and where AGENTS.md goes, the
+    project's root (spec hito 10, §1.9)."""
+    template = (resources.files("mharness") / "prompts" / "init.md").read_text(
+        encoding="utf-8"
+    )
+    return cli.Init(template=template, root=git_root(cwd) or cwd)
+
+
 async def _converse(
     settings: config.Settings,
     catalog: ModelCatalog,
@@ -898,4 +907,5 @@ async def _converse(
             discard=lines.discard if os.isatty(0) else None,
             start=start,
             notes=_notes(settings),
+            init=_init(cwd),
         )

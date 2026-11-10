@@ -36,6 +36,8 @@ COMMANDS = {
     "makes the next call pay its prompt again, without the cache",
     "trace": "/trace [ID] — what a session did and cost; without ID, this one",
     "new": "/new — a new session, with the same model",
+    "init": "/init [TEXT] — write or improve the project's AGENTS.md; TEXT, what "
+    "to stress",
     "export": "/export [FILE] — this conversation in Markdown; by default, ID.md",
     "help": "/help — this list",
     "exit": "/exit — quit",

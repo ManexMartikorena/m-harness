@@ -6,6 +6,7 @@ from mharness.adapters.cli.approval import DenyAll, TerminalApproval
 from mharness.adapters.cli.commands import project_note, prompt_notes
 from mharness.adapters.cli.conversation import converse
 from mharness.adapters.cli.headless import drop_output, print_mode
+from mharness.adapters.cli.init import Init
 from mharness.adapters.cli.input import StdinLines
 from mharness.adapters.cli.questions import TerminalQuestions
 from mharness.adapters.cli.reports import eval_report, models_report, run_line
@@ -21,6 +22,7 @@ from mharness.adapters.cli.subcommands import (
 
 __all__ = [
     "DenyAll",
+    "Init",
     "StdinLines",
     "TerminalApproval",
     "TerminalQuestions",

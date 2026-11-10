@@ -16,6 +16,7 @@ from typing import TextIO
 
 from mharness import __version__
 from mharness.adapters.cli.commands import Commands, parse_command
+from mharness.adapters.cli.init import TAKES_EFFECT, Init
 from mharness.adapters.cli.input import Discard, ReadLine, StdinLines
 from mharness.adapters.cli.spinner import Spinner, use_color
 from mharness.adapters.cli.text import clean, clean_line, usd
@@ -74,6 +75,7 @@ async def converse(
     home: Path | None = None,
     start: Start | None = None,
     notes: Sequence[str] = (),
+    init: Init | None = None,
 ) -> int:
     """Run the conversation until /exit, Ctrl+D or Ctrl+C; return the exit code.
 
@@ -119,7 +121,7 @@ async def converse(
         loop.add_signal_handler(number, on_closing, number)
     try:
         return await _turns(
-            commands, provider, read, out, err, sigint, opened.resumed, notes
+            commands, provider, read, out, err, sigint, opened.resumed, notes, init
         )
     except asyncio.CancelledError:
         if sigint.closing is not None:
@@ -149,6 +151,7 @@ async def _turns(
     sigint: _Sigint,
     resumed: Resumed | None,
     notes: Sequence[str],
+    init: Init | None = None,
 ) -> int:
     # From the configuration or a resumed session: escaped as any other
     # text that may come from a file (deep audit after hito 9, I3).
@@ -180,6 +183,15 @@ async def _turns(
             commands.warn_trace()
         elif command.name == "exit":
             return 0
+        elif command.name == "init" and init is not None:
+            before = init.stamp()
+            text = init.text(command.argument)
+            await _answer(commands.conversation, text, out, err, sigint)
+            commands.warn_unsaved()
+            commands.warn_trace()
+            if init.stamp() not in (None, before):
+                # Written or changed: the prompt of this session is fixed.
+                print(f"  {TAKES_EFFECT}", file=out, flush=True)
         else:
             await commands.run(command)
 

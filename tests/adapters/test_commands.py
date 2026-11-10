@@ -87,6 +87,7 @@ def test_the_known_commands() -> None:
         "effort",
         "trace",
         "new",
+        "init",
         "export",
         "help",
         "exit",
