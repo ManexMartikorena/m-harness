@@ -1,4 +1,6 @@
-Estado: EN CURSO (2026-11-10)
+Estado: EN CURSO (2026-11-10). Hechos: B1 a B6, S1 a S5 y S7 a S8, M1 a M3
+y P8. Faltan S6, M4 a M7, H, I, P1 a P7, la revisión independiente de los
+arreglos, las evals y `v0.10.1`.
 
 # Auditoría tras el hito 10
 
@@ -39,20 +41,20 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 - **B1.** Una llamada cortada por un rechazo del proveedor
   (`content_filter`) llega con argumentos `""` y, si la herramienta no
   tiene parámetros obligatorios, se ejecuta; el turno sigue en vez de
-  acabar en `refused`. POR ARREGLAR.
+  acabar en `refused`. ARREGLADO (`5f3ed87`).
 - **B2.** Lo gastado en un paso cortado (Ctrl+C, tiempo límite, fallo a
   mitad de stream) no se cuenta: el uso solo llega con `MessageEnd`.
-  Anthropic manda la entrada ya en `message_start`. POR ARREGLAR.
+  Anthropic manda la entrada ya en `message_start`. ARREGLADO (`5b2896f`).
 - **B3.** El nombre de una llamada se concatena trozo a trozo: un servidor
-  que lo repite da `read_fileread_file`. POR ARREGLAR.
+  que lo repite da `read_fileread_file`. ARREGLADO (`4b3404e`).
 - **B4.** `KeyboardInterrupt` es corte del usuario en `Conversation` y
   error interno en `Agent`; un comentario de `sessions.py` habla de un
-  tiempo límite que nunca llega ahí. POR ARREGLAR.
+  tiempo límite que nunca llega ahí. ARREGLADO (`5b2896f`).
 - **B5.** El modelo de respaldo recibe el system prompt con la capa de
-  familia del principal. POR ARREGLAR.
+  familia del principal. ARREGLADO (`e40ed08`).
 - **B6.** Deuda: la pausa del reloj repetida en `_decide` y
   `_wait_for_user`; el parseo de argumentos repetido; `NO_RETRIES` solo lo
-  usan los tests. POR ARREGLAR.
+  usan los tests. ARREGLADO (`dbdc44c`).
 
 ## Sesiones y trazas (S)
 
@@ -61,30 +63,30 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   porque el adaptador JSONL no cede, pero el puerto es asíncrono. POR
   ARREGLAR.
 - **S2.** `-c` y `/resume` sin id saltan en silencio una sesión ilegible y
-  retoman otra más antigua; `/sessions` no la enseña. POR ARREGLAR.
+  retoman otra más antigua; `/sessions` no la enseña. ARREGLADO (`8d3a4f9`).
 - **S3.** El coste de la sesión y `/trace` dan "sin precio" al turno entero
   si una de sus llamadas no tiene precio; `maha stats` suma por llamada.
-  POR ARREGLAR.
+  ARREGLADO (`c93f049`).
 - **S4.** `close()` se corta si la tarea del título acabó con una
-  excepción que no es `CancelledError`. POR ARREGLAR.
+  excepción que no es `CancelledError`. ARREGLADO (`c73d447`).
 - **S5.** Si el primer turno no se pudo guardar, la sesión no recibe
-  título nunca. POR ARREGLAR.
+  título nunca. ARREGLADO (`687bb09`).
 - **S6.** `/delete` de una sesión que no existe, con una traza ilegible,
-  dice que se borró. POR ARREGLAR.
+  dice que se borró. ARREGLADO (`687bb09`).
 - **S7.** El título cancelado al salir se paga y no queda registrado.
-  DECISIÓN 3. POR ARREGLAR.
+  DECISIÓN 3. ARREGLADO (`687bb09`).
 - **S8.** `Conversation.titled()` solo lo usan los tests. Con la decisión
-  3 lo usa `close()`. POR ARREGLAR.
+  3 lo usa `close()`. ARREGLADO (`687bb09`).
 
 ## Modelos y configuración (M)
 
 - **M1.** Un patrón absoluto en `instructions` del usuario
   (`"/home/yo/notas/*.md"`) tira `maha` al arrancar (`ValueError` en
-  `relative_to`). POR ARREGLAR.
+  `relative_to`). ARREGLADO (`2155f8b`).
 - **M2.** Un `AGENTS.md` grande se recorta dos veces, y el aviso dice mal
-  cuánto (30 bytes en lugar de 34.464). POR ARREGLAR.
+  cuánto (30 bytes en lugar de 34.464). ARREGLADO (`a366176`).
 - **M3.** OpenAI: un `"delta": null` en un trozo tira la respuesta entera.
-  POR ARREGLAR.
+  ARREGLADO (`65630f2`).
 - **M4.** A los modelos Claude de OpenCode Go y Zen les falta
   `cache_write_1h`. Hay que comprobar el precio en la documentación de
   OpenCode. POR ARREGLAR.
@@ -195,8 +197,7 @@ motivo de la mayoría.
   incluidos, se ignoraba sin avisar. POR HACER.
 - **P8.** Si Kimi o GLM exigen que se les devuelva su `reasoning_content`
   en un bucle con herramientas, es un fallo del adaptador de OpenAI (los
-  tres piden comprobarlo en la documentación oficial antes). POR
-  COMPROBAR.
+  tres piden comprobarlo en la documentación oficial antes). COMPROBADO: la documentación de Kimi (2026-11-10) dice, para `kimi-k2.7-code`, "you must therefore (not optionally) keep the `reasoning_content` of historical assistant messages", y OpenCode Go lo manda. ARREGLADO (`69f16ec`).
 
 **A su hito:** el análisis de comandos peligrosos, las reglas por patrón,
 el `cd` que dura, la lista de variables como parte del sandbox y qué ve el

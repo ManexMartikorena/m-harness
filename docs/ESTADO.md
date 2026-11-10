@@ -52,14 +52,24 @@ auditoría (rama `fix/auditoria-hito-10`), y trabajar en esa rama: `git
 fetch && git switch fix/auditoria-hito-10 && git pull`, `uv sync`, y
 comprobar tests, mypy y lint-imports en verde.
 
-1. **Agente:** la auditoría tras el hito 10 (spec
-   `docs/specs/mejora-2026-11-10-auditoria-hito-10.md`). Cinco revisores
-   independientes del código entero y tres agentes que evaluaron las
-   mejoras de producto; decisiones del mantenedor ya tomadas (`/init` en
-   una subcarpeta, pegar texto con *bracketed paste*, esperar siempre al
-   título al salir, y hacer las mejoras que los agentes vean buenas). Cada
-   fallo con su test primero; después, una revisión independiente de los
-   arreglos, las evals contra las líneas base del 2026-11-10 y `v0.10.1`.
+1. **Agente:** seguir la auditoría tras el hito 10 (spec
+   `docs/specs/mejora-2026-11-10-auditoria-hito-10.md`; su primera línea
+   dice qué está hecho). Hechos y en GitHub, cada uno con su test: B1 a
+   B6, S1 a S5, S7, S8, M1 a M3 y P8 (Kimi exige que se le devuelva su
+   razonamiento). Faltan, en este orden:
+   1. S6 y los de herramientas (H1 a H13) e interfaz (I1 a I15), cada
+      fallo con su test primero;
+   2. M4 a M7: comprobar en la documentación de OpenCode los precios
+      (Claude con caché de 1 h, `jev-1.13`, Haiku 5.5) y la deuda M5;
+   3. las mejoras P1 a P7, ya evaluadas por tres agentes;
+   4. una revisión independiente de los arreglos (agentes nuevos);
+   5. la pasada de evals contra las líneas base del 2026-11-10 (P8 cambia
+      lo que se manda a Kimi, P3 el shell de `run_command`): unos 1,5 $;
+   6. spec IMPLEMENTADA, ESTADO, HISTORIAL, PR, merge y `v0.10.1`.
+   Decisiones del mantenedor ya tomadas (spec, "Decisiones"): `/init` en
+   una subcarpeta escribe el `AGENTS.md` de esa carpeta; pegar texto con
+   *bracketed paste*; esperar siempre al título (hecho); y hacer las
+   mejoras que los agentes vean buenas.
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
