@@ -18,8 +18,8 @@ def test_the_schema_forbids_extra_fields(spec: ToolSpec) -> None:
     assert spec.input_schema["additionalProperties"] is False
 
 
-def test_there_are_seven() -> None:
-    assert len(TOOLS) == 7
+def test_there_are_eight() -> None:
+    assert len(TOOLS) == 8
 
 
 def test_an_extra_field_is_an_error() -> None:

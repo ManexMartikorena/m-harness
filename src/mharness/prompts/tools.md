@@ -22,3 +22,7 @@ without the line numbers.
 Run tests, builds and other commands; after a change, run the tests that
 cover it. Prefer the project's own commands (its instructions often name
 them). Never run a command that waits for input.
+
+## todo_write
+For a task of three steps or more, write the plan before you start and keep
+it current as you go. Skip it for a simple task.

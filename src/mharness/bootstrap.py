@@ -41,6 +41,7 @@ from mharness.adapters.tools import (
     ListDir,
     ReadFile,
     RunCommand,
+    TodoWrite,
     Workspace,
     WriteFile,
 )
@@ -73,7 +74,16 @@ from mharness.ports.model import ModelClient
 # The tools of maha, by name: what `--allow` takes.
 TOOL_NAMES = tuple(
     tool.name
-    for tool in (ReadFile, ListDir, Glob, Grep, WriteFile, EditFile, RunCommand)
+    for tool in (
+        ReadFile,
+        ListDir,
+        Glob,
+        Grep,
+        WriteFile,
+        EditFile,
+        RunCommand,
+        TodoWrite,
+    )
 )
 
 
@@ -300,7 +310,7 @@ def _log_to(path: Path | None) -> None:
 
 
 def _tools(cwd: Path, env: Mapping[str, str]) -> ToolRegistry:
-    """The seven tools, over the directory where `maha` started."""
+    """The tools of a session, over the directory where `maha` started."""
     workspace = Workspace(cwd)
     return ToolRegistry(
         [
@@ -311,6 +321,7 @@ def _tools(cwd: Path, env: Mapping[str, str]) -> ToolRegistry:
             WriteFile(workspace),
             EditFile(workspace),
             RunCommand(workspace.root, LocalCommandRunner(), env),
+            TodoWrite(),
         ]
     )
 
@@ -387,7 +398,8 @@ def _eval_prompt(
 
 def _eval_tools(cwd: Path) -> ToolRegistry:
     """The tools of an eval run: all but `run_command`, until the sandbox
-    of hito 15 (spec hito 8, decision 2)."""
+    of hito 15 (spec hito 8, decision 2), and `ask_user`: nobody answers
+    (spec hito 10, §1.11)."""
     workspace = Workspace(cwd)
     return ToolRegistry(
         [
@@ -397,6 +409,7 @@ def _eval_tools(cwd: Path) -> ToolRegistry:
             Grep(workspace),
             WriteFile(workspace),
             EditFile(workspace),
+            TodoWrite(),
         ]
     )
 

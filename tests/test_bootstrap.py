@@ -217,9 +217,7 @@ def test_a_cut_stream_shows_the_error_and_the_next_turn_works(
 
 
 @respx.mock
-def test_maha_offers_the_seven_tools(
-    workspace: Path, stdin: Callable[[str], None]
-) -> None:
+def test_maha_offers_its_tools(workspace: Path, stdin: Callable[[str], None]) -> None:
     write_user_config(workspace, 'model = "glm-5.3-flash"\n')
     route = respx.post(GO_ENDPOINT).mock(
         return_value=sse_response(streamed("Hola.", 1, 1))
@@ -237,6 +235,7 @@ def test_maha_offers_the_seven_tools(
         "write_file",
         "edit_file",
         "run_command",
+        "todo_write",
     ]
 
 

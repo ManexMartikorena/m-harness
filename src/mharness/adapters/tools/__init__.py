@@ -10,6 +10,7 @@ from mharness.adapters.tools.files import (
     WriteFile,
 )
 from mharness.adapters.tools.shell import RunCommand
+from mharness.adapters.tools.todo import TodoWrite
 
 __all__ = [
     "EditFile",
@@ -18,6 +19,7 @@ __all__ = [
     "ListDir",
     "ReadFile",
     "RunCommand",
+    "TodoWrite",
     "Workspace",
     "WriteFile",
 ]
