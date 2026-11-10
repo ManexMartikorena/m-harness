@@ -19,7 +19,13 @@ take that name.
 
 from collections.abc import Sequence
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 ASK_TOOL = "ask_user"
 QUESTIONS_MAX = 4
@@ -122,3 +128,12 @@ def answers_text(answers: Sequence[Answer]) -> str:
     return "\n".join(
         f"{answer.header}: {', '.join(answer.choices)}" for answer in answers
     )
+
+
+def questions_of(arguments: str) -> Questions | None:
+    """The questions in a call's arguments; None if they are not valid,
+    and so were never shown to the person."""
+    try:
+        return Questions.model_validate_json(arguments or "{}")
+    except ValidationError, RecursionError:
+        return None

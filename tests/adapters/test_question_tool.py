@@ -1,25 +1,13 @@
 """`ask_user` over a fake person (spec hito 10, §1.11)."""
 
-from collections.abc import Sequence
-
 import pytest
 
 from mharness.adapters.tools.question import NO_ANSWER, AskUser
-from mharness.domain.question import Answer, Question, Questions
+from mharness.domain.question import Answer, Questions
 from mharness.domain.tools import ToolError
 from mharness.ports.questions import UserQuestions
 from mharness.ports.tools import Tool
-
-
-class FakePerson:
-    def __init__(self, answers: list[Answer] | None) -> None:
-        self.answers = answers
-        self.asked: list[Sequence[Question]] = []
-
-    async def ask(self, questions: Sequence[Question]) -> list[Answer] | None:
-        self.asked.append(questions)
-        return self.answers
-
+from tests.fakes.questions import FakePerson
 
 ASKED = Questions.model_validate(
     {

@@ -33,6 +33,7 @@ from mharness.domain.errors import ModelError
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import Usage
+from mharness.domain.question import ASK_TOOL, questions_of
 from mharness.domain.session import SessionError
 from mharness.ports.catalog import ModelCatalog
 
@@ -220,7 +221,11 @@ async def _answer(
                         if wrote:
                             print(file=out)
                             wrote = False
-                        if not is_todo(call.name):
+                        if call.name == ASK_TOOL:
+                            # Its questions are shown instead; Ctrl+C there
+                            # ends on a new line, as at an approval.
+                            asking = True
+                        elif not is_todo(call.name):
                             print(f"  → {call_line(call)}", file=out, flush=True)
                     case ApprovalRequested():
                         asking = True
@@ -289,13 +294,16 @@ async def _answer(
 
 def show_finished(event: ToolFinished, out: TextIO, *, color: bool = False) -> None:
     """`✓ 3 lines` after a call; the list after a call to `todo_write`,
-    whose call line was not shown (spec hito 10, §1.10)."""
+    whose call line was not shown (spec hito 10, §1.10), as it is not for
+    `ask_user`: its questions were (§1.11)."""
     todo = finished_todo(event, color=color)
     if todo is not None:
         print("\n".join(todo), file=out, flush=True)
         return
-    if is_todo(event.call.name):
-        # Failed: shown as any other call, with its error.
+    unseen = event.call.name == ASK_TOOL and questions_of(event.call.arguments) is None
+    if is_todo(event.call.name) or unseen:
+        # Its call line was not shown: a call whose list or questions could
+        # not be drawn is shown as any other, with its error.
         print(f"  → {call_line(event.call)}", file=out)
     mark = "✗" if event.result.is_error else "✓"
     print(f"  {mark} {clean(event.summary)}", file=out, flush=True)

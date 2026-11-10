@@ -22,9 +22,10 @@ from mharness.adapters.cli.conversation import (
     turn_note,
 )
 from mharness.adapters.cli.input import InputTooLarge, StdinLines
+from mharness.adapters.cli.questions import TerminalQuestions
 from mharness.adapters.cli.spinner import CLEAR_LINE
 from mharness.adapters.commands import LocalCommandRunner
-from mharness.adapters.tools import RunCommand, TodoWrite
+from mharness.adapters.tools import AskUser, RunCommand, TodoWrite
 from mharness.application.agent import Agent
 from mharness.application.sessions import Sessions, Start
 from mharness.application.tools import ToolRegistry
@@ -727,6 +728,85 @@ async def test_a_task_list_that_breaks_the_rules_is_shown_as_a_call() -> None:
     assert "  ✗ error: invalid arguments: " in out
     assert "at most one at a time" in out
     assert "▸" not in out
+
+
+ASKED = {
+    "questions": [
+        {
+            "question": "¿Qué base de datos?",
+            "header": "Base",
+            "options": [
+                {"label": "SQLite", "description": "Un fichero"},
+                {"label": "PostgreSQL", "description": "Un servidor"},
+            ],
+        }
+    ]
+}
+
+
+async def asking(fake: FakeModelClient, *lines: str) -> str:
+    """A conversation whose model may ask the person, who types `lines`."""
+    out = io.StringIO()
+    read = ScriptedInput(*lines)
+    agent = Agent(
+        fake,
+        ToolRegistry([AskUser(TerminalQuestions(read, out))]),
+        gate=FakeApproval(),
+        model="m",
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
+    )
+    await converse(
+        solo(agent),
+        provider="p",
+        catalog=KNOWN,
+        read_line=read,
+        out=out,
+        err=io.StringIO(),
+    )
+    return out.getvalue()
+
+
+async def test_the_model_asks_and_gets_the_answer() -> None:
+    # Spec hito 10, §1.11: the questions in place of the call line; the
+    # answer goes back as the call's result.
+    ask = ToolCallBlock(id="c1", name="ask_user", arguments=json.dumps(ASKED))
+    fake = FakeModelClient([tool_calls(ask), reply("Uso PostgreSQL.")])
+
+    out = await asking(fake, "Hazlo", "2", "/exit")
+
+    assert (
+        "> "
+        "  ┌ Base · ¿Qué base de datos?\n"
+        "  │ 1. SQLite — Un fichero\n"
+        "  │ 2. PostgreSQL — Un servidor\n"
+        "  │ 3. Other — write your own answer\n"
+        "  └ Choose 1-3:   ✓ 1 answer\n"
+        "Uso PostgreSQL.\n"
+    ) in out
+    assert "ask_user(" not in out
+    results = fake.requests[-1].messages[-1]
+    assert results.blocks == [ToolResultBlock(call_id="c1", content="Base: PostgreSQL")]
+
+
+async def test_questions_that_break_the_schema_are_shown_as_a_call() -> None:
+    bad = ToolCallBlock(id="c1", name="ask_user", arguments='{"questions": []}')
+    fake = FakeModelClient([tool_calls(bad), reply("Vaya.")])
+
+    out = await asking(fake, "Hazlo", "/exit")
+
+    assert "  → ask_user(questions=[])\n  ✗ error: invalid arguments: " in out
+
+
+async def test_no_answer_goes_back_to_the_model_without_the_call_line() -> None:
+    ask = ToolCallBlock(id="c1", name="ask_user", arguments=json.dumps(ASKED))
+    fake = FakeModelClient([tool_calls(ask), reply("Sigo sin saberlo.")])
+
+    # Ctrl+D at the question.
+    out = await asking(fake, "Hazlo")
+
+    assert "  └ Choose 1-3: \n  ✗ error: the user did not answer" in out
+    assert "ask_user(" not in out
 
 
 async def test_a_failed_call_is_marked() -> None:

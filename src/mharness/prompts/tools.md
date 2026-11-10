@@ -26,3 +26,8 @@ them). Never run a command that waits for input.
 ## todo_write
 For a task of three steps or more, write the plan before you start and keep
 it current as you go. Skip it for a simple task.
+
+## ask_user
+Ask only when you cannot go on without the answer and the project does not
+give it: a choice between real options. Never to confirm a plan, nor what
+the tools can find.
