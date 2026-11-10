@@ -60,6 +60,10 @@ class TodoList(BaseModel, frozen=True, extra="forbid"):
             raise ValueError(f"{working} tasks are in_progress: at most one at a time")
         return self
 
+    def unfinished(self) -> bool:
+        """Whether a task is still pending or in progress."""
+        return any(todo.status in ("pending", "in_progress") for todo in self.todos)
+
     def summary(self) -> str:
         """`3 tasks: 1 completed, 1 in progress, 1 pending`."""
         total = len(self.todos)
