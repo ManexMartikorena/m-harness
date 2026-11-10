@@ -168,7 +168,54 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 ## Producto (P)
 
 Las propuestas de los revisores, evaluadas por tres agentes Opus
-independientes. *Se anota al recibir su veredicto.*
+independientes, al máximo esfuerzo (2026-11-10). Entra lo que ven bueno
+al menos dos de los tres; lo demás va a su hito o se descarta, con el
+motivo de la mayoría.
+
+**Ahora, en esta auditoría:**
+- **P1.** Ctrl+C en el prompt: el primero limpia la línea y avisa; el
+  segundo sale (2 de 3; el tercero lo dejaba para el hito 21). Cambia lo
+  que fijó la spec 3, §1.10. POR HACER.
+- **P2.** `-p`: el id de la sesión en stderr al terminar; `stream-json`,
+  un evento inicial con el id, el modelo y las herramientas, cuando el id
+  ya es suyo (2 de 3). POR HACER.
+- **P3.** `run_command` con bash si lo hay, y si no `/bin/sh` (3 de 3):
+  `/bin/sh` es dash en Debian y Ubuntu, y `source` o `[[` fallan. Bash, no
+  `$SHELL` (zsh o fish cambian la sintaxis). El `cd` que dura entre
+  comandos, al hito 15. POR HACER.
+- **P4.** Enseñar el diff de una edición que pasa sin preguntar por un
+  "always" (3 de 3). POR HACER.
+- **P5.** Una lista de variables de entorno para los comandos, solo en la
+  configuración del usuario (proxy, `JAVA_HOME`…), sin las que tienen
+  forma de credencial (2 de 3; el tercero, al hito 15). POR HACER.
+- **P6.** `maha sessions --all` y `/sessions all`: hoy solo se ven 20 (3
+  de 3). POR HACER.
+- **P7.** Buscar `.maha/config.toml` de la carpeta actual a la raíz git
+  (3 de 3): desde una subcarpeta, la configuración del proyecto, límites
+  incluidos, se ignoraba sin avisar. POR HACER.
+- **P8.** Si Kimi o GLM exigen que se les devuelva su `reasoning_content`
+  en un bucle con herramientas, es un fallo del adaptador de OpenAI (los
+  tres piden comprobarlo en la documentación oficial antes). POR
+  COMPROBAR.
+
+**A su hito:** el análisis de comandos peligrosos, las reglas por patrón,
+el `cd` que dura, la lista de variables como parte del sandbox y qué ve el
+modelo tras una negativa en `-p`, al hito 15; `grep` con contexto o solo
+ficheros, la política de versiones del formato de sesión y subir el tope
+de pasos, al hito 11 (se miden con la batería larga y la compactación);
+el indicador de una herramienta larga, distinguir a la vista el texto del
+modelo, `maha "texto"`, el selector de `-r`, ver el razonamiento y
+explicar un `effort` no admitido, al hito 21; la limpieza de sesiones
+antiguas, al hito 23.
+
+**Descartadas:** ripgrep (el recorrido, con su perímetro y sus secretos,
+lo hace `maha`; otro dialecto de regex según la máquina); editar ficheros
+que no son UTF-8 (adivinar la codificación puede corromperlos); un tope
+de gasto por sesión (el coste de la sesión se ve en cada turno, y en `-p`
+el tope del turno ya acota la ejecución); pedir `thinking` a Claude (los
+modelos 5.x ya razonan sin pedirlo; solo los 4.x del catálogo, mejora
+menor con documentación y evals); `retry-after-ms` (no consta que un
+proveedor lo mande); Windows nativo (DESIGN §7 fija Linux y WSL2).
 
 ## Aprendido al implementar
 
