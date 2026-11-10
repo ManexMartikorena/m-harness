@@ -15,6 +15,7 @@ from mharness.domain.events import (
     ReasoningDelta,
     TextDelta,
     ToolCallDelta,
+    UsageSoFar,
 )
 from mharness.domain.messages import (
     Block,
@@ -62,6 +63,8 @@ class Accumulator:
         self._calls: dict[tuple[int, int], _PartialCall] = {}
         self._latest: dict[int, int] = {}
         self._end: MessageEnd | None = None
+        # What the call used before it ended, if the provider said.
+        self.so_far: UsageSoFar | None = None
 
     def add(self, event: ModelEvent) -> None:
         match event:
@@ -83,6 +86,8 @@ class Accumulator:
                 call.arguments += event.arguments
             case MessageEnd():
                 self._end = event
+            case UsageSoFar():
+                self.so_far = event
 
     def _call(self, event: ToolCallDelta) -> _PartialCall:
         """The call this piece belongs to: a new id with a name at an index

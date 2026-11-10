@@ -63,4 +63,14 @@ class MessageEnd(BaseModel, frozen=True):
     cost: Usd | None = None
 
 
-type ModelEvent = TextDelta | ReasoningDelta | ToolCallDelta | MessageEnd
+class UsageSoFar(BaseModel, frozen=True):
+    """What the call has used so far, before it ends: Anthropic sends the
+    input at its start. If the call is cut, it was paid all the same; once
+    it ends, `MessageEnd` has the whole count (audit after hito 10, B2)."""
+
+    type: Literal["usage_so_far"] = "usage_so_far"
+    usage: Usage
+    model: str
+
+
+type ModelEvent = TextDelta | ReasoningDelta | ToolCallDelta | MessageEnd | UsageSoFar

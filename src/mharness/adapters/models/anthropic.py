@@ -42,6 +42,7 @@ from mharness.domain.events import (
     ReasoningDelta,
     TextDelta,
     ToolCallDelta,
+    UsageSoFar,
 )
 from mharness.domain.messages import (
     Block,
@@ -224,6 +225,9 @@ class _Stream:
                 message = _dict(event.get("message"))
                 self.model = _str(message.get("model")) or self.model
                 self._count(message.get("usage"))
+                # The input is paid from here, even if the answer is cut
+                # (audit after hito 10, B2).
+                return [UsageSoFar(usage=_usage(self.usage), model=self.model)]
             case "content_block_start":
                 return self._start(_index(event), _dict(event.get("content_block")))
             case "content_block_delta":

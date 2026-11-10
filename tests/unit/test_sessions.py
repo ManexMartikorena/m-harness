@@ -16,6 +16,7 @@ from mharness.application.titles import Titler
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import (
     AgentEvent,
+    ModelCallFinished,
     ModelFallback,
     ModelRetry,
     TurnFinished,
@@ -24,7 +25,7 @@ from mharness.domain.agent_events import (
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.catalog import ModelInfo, Prices
 from mharness.domain.errors import ModelUnavailableError
-from mharness.domain.events import TextDelta
+from mharness.domain.events import TextDelta, UsageSoFar
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import (
     Message,
@@ -229,6 +230,34 @@ async def test_a_turn_cut_by_ctrl_c_is_saved_without_tokens() -> None:
         MessageEntry(message=user("Cuéntame")),
         MessageEntry(message=cut),
     ]
+
+
+async def test_a_turn_cut_by_ctrl_c_keeps_what_its_call_had_used() -> None:
+    # Audit after hito 10 (B2): Anthropic tells the input at the start; the
+    # cut call was paid, and the session, the trace and maha stats said 0.
+    store = MemorySessionStore()
+    paid = Usage(input_tokens=5000)
+    fake = FakeModelClient(
+        [[UsageSoFar(usage=paid, model="glm-5.3-flash"), TextDelta(text="Medio"), HANG]]
+    )
+    world = World(store, fake)
+    conversation = await world.sessions.start()
+    seen: list[AgentEvent] = []
+
+    async def consume() -> None:
+        async for event in conversation.run("Cuéntame"):
+            seen.append(event)
+
+    task = asyncio.ensure_future(consume())
+    await until(lambda: TextDelta(text="Medio") in seen)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await conversation.close()
+
+    assert entries(store)[-1] == UsageEntry(usage=paid, cost=None)
+    traced = [r.event for r in await world.traces.read(FIRST)]
+    assert ModelCallFinished(usage=paid, model="glm-5.3-flash", cost=None) in traced
 
 
 class BrokenLog(MemoryLog):

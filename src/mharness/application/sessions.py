@@ -233,11 +233,20 @@ class Conversation:
         except BaseException as exc:
             if not finished:
                 # Cut before it finished: Ctrl+C (CancelledError while
-                # waiting, KeyboardInterrupt), its reader closing it
-                # (GeneratorExit), or a time limit. Anything else failed.
+                # waiting, KeyboardInterrupt) or its reader closing it
+                # (GeneratorExit). Anything else failed. A time limit
+                # finishes the turn: it never comes here.
                 cut = isinstance(
                     exc, asyncio.CancelledError | GeneratorExit | KeyboardInterrupt
                 )
+                # The call the cut stopped was paid: it counts (audit after
+                # hito 10, B2).
+                paid = self._agent.take_cut_call()
+                if paid is not None:
+                    calls += 1
+                    usage += paid.usage
+                    cost = add_cost(cost, paid.cost)
+                    await self._record(paid)
                 await self._record(
                     TurnInterrupted()
                     if cut

@@ -35,7 +35,7 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
-from mharness.domain.events import TextDelta, ToolCallDelta
+from mharness.domain.events import TextDelta, ToolCallDelta, UsageSoFar
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import ModelRequest, Usage
@@ -2086,3 +2086,94 @@ async def test_calls_whose_costs_add_up_past_any_amount_give_an_unknown_cost() -
 
     assert isinstance(events[-1], TurnFinished)
     assert (events[-1].reason, events[-1].cost) == ("end_turn", None)
+
+
+# What a cut call used is paid (audit after hito 10, B2).
+
+PAID = Usage(input_tokens=5000, cache_read_tokens=4000)
+
+
+def started(model: str = FAKE_MODEL) -> UsageSoFar:
+    """What Anthropic says at the start: the input, already paid."""
+    return UsageSoFar(usage=PAID, model=model)
+
+
+def pricey() -> MemoryCatalog:
+    return MemoryCatalog([priced(FAKE_MODEL, "1", "1")])
+
+
+async def test_a_call_cut_by_a_failure_still_counts() -> None:
+    subject = agent(
+        FakeModelClient(
+            [[started(), TextDelta(text="Ya"), ModelUnavailableError("down")]]
+        ),
+        catalog=pricey(),
+    )
+    seen: list[AgentEvent] = []
+
+    async def consume() -> None:
+        async for event in subject.run("Hola"):
+            seen.append(event)
+
+    with pytest.raises(ModelUnavailableError):
+        await consume()
+
+    [paid] = [e for e in seen if isinstance(e, ModelCallFinished)]
+    assert paid.usage == PAID
+    assert paid.cost == Decimal("0.005")
+
+
+async def test_a_call_cut_by_the_time_limit_still_counts() -> None:
+    subject = agent(
+        FakeModelClient([[started(), TextDelta(text="Ya est"), HANG]]),
+        limits=LIMIT,
+        catalog=pricey(),
+    )
+
+    events = await run(subject)
+
+    paid, finished = events[-2:]
+    assert isinstance(paid, ModelCallFinished)
+    assert paid.usage == PAID
+    assert isinstance(finished, TurnFinished)
+    assert finished.reason == "timeout"
+    assert finished.usage == PAID
+    assert finished.cost == Decimal("0.005")
+
+
+async def test_a_try_that_failed_after_its_start_is_still_retried_and_counts() -> None:
+    # What was used so far is no answer shown: the call may still be tried
+    # again; the failed try was paid.
+    fake = FakeModelClient(
+        [[started(), ModelUnavailableError("down")], reply("Hecho.", usage=Usage())]
+    )
+    subject = agent(fake, retry=RETRY, sleep=Waits(), catalog=pricey())
+
+    events = await run(subject)
+
+    calls = [e for e in events if isinstance(e, ModelCallFinished)]
+    assert [c.usage for c in calls] == [PAID, Usage()]
+    finished = events[-1]
+    assert isinstance(finished, TurnFinished)
+    assert (finished.reason, finished.usage) == ("end_turn", PAID)
+
+
+async def test_a_call_cut_by_ctrl_c_is_left_for_the_conversation() -> None:
+    subject = agent(FakeModelClient([[started(), TextDelta(text="Medio"), HANG]]))
+    seen: list[AgentEvent] = []
+
+    async def consume() -> None:
+        async for event in subject.run("Hola"):
+            seen.append(event)
+
+    task = asyncio.ensure_future(consume())
+    await until(lambda: any(isinstance(e, TextDelta) for e in seen))
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    paid = subject.take_cut_call()
+    assert paid is not None
+    assert paid.usage == PAID
+    # Once.
+    assert subject.take_cut_call() is None

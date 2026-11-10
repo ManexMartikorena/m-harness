@@ -34,7 +34,7 @@ from mharness.domain.agent_events import (
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import add_cost, cost
 from mharness.domain.errors import RetryableModelError
-from mharness.domain.events import ModelEvent, TextDelta
+from mharness.domain.events import ModelEvent, TextDelta, UsageSoFar
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import (
@@ -99,6 +99,8 @@ class Agent:
         self._tools = tools
         self._gate = gate
         self._approvals = SessionApprovals()
+        # The call a Ctrl+C cut, for the conversation to count.
+        self._unseen_call: ModelCallFinished | None = None
         self.model = model
         self._catalog = catalog
         self._provider = provider
@@ -207,6 +209,8 @@ class Agent:
                     self._messages.extend(turn.messages)
                 raise turn.failing[0] from None
             self._keep_timed_out(turn)
+            if turn.streaming and (paid := self._cut_call(turn)) is not None:
+                yield paid
             yield turn.finished(
                 "timeout",
                 # The call cut while it answered did not end.
@@ -218,9 +222,43 @@ class Agent:
             # (spec mejora-2026-10-23-deuda-hito-5, E4). Ctrl+C arrives as
             # CancelledError while the loop waits, or as GeneratorExit when
             # the terminal was the one waiting and closes the loop.
-            by_user = isinstance(exc, asyncio.CancelledError | GeneratorExit)
+            by_user = isinstance(
+                exc, asyncio.CancelledError | GeneratorExit | KeyboardInterrupt
+            )
             self._keep_cut(turn, by_user=by_user)
+            paid = self._cut_call(turn) if turn.streaming else None
+            if paid is not None:
+                if by_user:
+                    # Nobody reads the events any more: the conversation
+                    # takes it (`take_cut_call`).
+                    self._unseen_call = paid
+                else:
+                    yield paid
             raise
+
+    def _cut_call(self, turn: _Turn) -> ModelCallFinished | None:
+        """The call in progress, cut: what it used so far, paid all the
+        same (audit after hito 10, B2); None if the provider said nothing.
+        Counted in the turn once."""
+        so_far = turn.accumulator.so_far
+        if so_far is None:
+            return None
+        turn.accumulator.so_far = None
+        cut = ModelResponse(
+            message=Message(role="assistant", blocks=[]),
+            stop_reason="other",
+            usage=so_far.usage,
+            model=so_far.model,
+        )
+        call_cost = self._cost(cut, turn.model)
+        turn.usage += so_far.usage
+        turn.cost = add_cost(turn.cost, call_cost)
+        return ModelCallFinished(usage=so_far.usage, model=so_far.model, cost=call_cost)
+
+    def take_cut_call(self) -> ModelCallFinished | None:
+        """The call a Ctrl+C cut, which no event could tell, once."""
+        paid, self._unseen_call = self._unseen_call, None
+        return paid
 
     def _keep(self, turn: _Turn) -> None:
         """Put the whole turn in the history: it ended."""
@@ -243,6 +281,11 @@ class Agent:
                 except StopAsyncIteration:
                     break
                 if isinstance(event, ModelRetry | ModelFallback):
+                    # The failed try was paid if it got that far.
+                    paid = self._cut_call(turn)
+                    if paid is not None:
+                        yield paid
+                    turn.accumulator = Accumulator()
                     if isinstance(event, ModelFallback):
                         turn.model = event.fallback
                     yield event
@@ -418,8 +461,11 @@ class Agent:
                 request = self._request(turn, model)
                 async with aclosing(self._client.stream(request)) as events:
                     async for event in events:
-                        began = True
-                        failing.clear()
+                        if not isinstance(event, UsageSoFar):
+                            # Only an answer shown cannot be retried: what
+                            # was used so far is no answer.
+                            began = True
+                            failing.clear()
                         yield event
                 return
             except RetryableModelError as exc:
