@@ -9,15 +9,19 @@ from mharness.adapters.tools.files import (
     Workspace,
     WriteFile,
 )
+from mharness.adapters.tools.question import AskUser
 from mharness.adapters.tools.shell import RunCommand
+from mharness.adapters.tools.todo import TodoWrite
 
 __all__ = [
+    "AskUser",
     "EditFile",
     "Glob",
     "Grep",
     "ListDir",
     "ReadFile",
     "RunCommand",
+    "TodoWrite",
     "Workspace",
     "WriteFile",
 ]

@@ -6,8 +6,8 @@ import io
 import json
 import re
 import signal
-from collections.abc import AsyncGenerator
-from typing import get_args
+from collections.abc import AsyncGenerator, Sequence
+from typing import Any, get_args
 
 import pytest
 
@@ -20,6 +20,7 @@ from mharness.adapters.cli.headless import (
     result_object,
 )
 from mharness.adapters.cli.input import InputTooLarge, ReadAll
+from mharness.adapters.tools import TodoWrite
 from mharness.application.agent import Agent
 from mharness.application.headless import Reason, RunResult
 from mharness.application.sessions import Sessions, Start
@@ -31,6 +32,7 @@ from mharness.domain.messages import ToolCallBlock
 from mharness.domain.model import ModelRequest, Usage
 from mharness.domain.retry import RetryPolicy
 from mharness.domain.session import SessionError, SessionHeader, is_session_id
+from mharness.ports.tools import Tool
 from tests.adapters.test_conversation import KNOWN
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
@@ -52,7 +54,7 @@ class Terminal(io.StringIO):
 def sessions(
     fake: FakeModelClient,
     *,
-    tools: list[FakeTool] | None = None,
+    tools: Sequence[Tool[Any]] | None = None,
     gate: FakeApproval | None = None,
     store: MemorySessionStore | None = None,
 ) -> Sessions:
@@ -126,6 +128,24 @@ async def test_stdout_has_only_the_final_answer() -> None:
     assert err == (
         '  → echo(text="Hola")\n  ✓ 10 chars\n  [tokens: 12 in · 9 out · 1 call]\n'
     )
+
+
+async def test_the_task_list_goes_to_stderr() -> None:
+    # Spec hito 10, §1.10: the list, not its call line; never on stdout.
+    todos = {
+        "todos": [
+            {"content": "Mirar el código", "status": "completed"},
+            {"content": "Arreglarlo", "status": "in_progress"},
+        ]
+    }
+    call = ToolCallBlock(id="c1", name="todo_write", arguments=json.dumps(todos))
+    fake = FakeModelClient([tool_calls(call), reply("Hecho.")])
+
+    code, out, err = await run(sessions(fake, tools=[TodoWrite()]), "Arréglalo")
+
+    assert code == 0
+    assert out == "Hecho.\n"
+    assert err.startswith("  ☑ Mirar el código\n  ▸ Arreglarlo\n")
 
 
 async def test_the_session_is_saved_and_can_be_resumed() -> None:

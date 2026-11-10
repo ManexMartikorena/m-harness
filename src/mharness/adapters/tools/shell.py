@@ -42,6 +42,7 @@ class RunCommand:
     )
     params = RunCommandParams
     permission: Permission = "effect"
+    waits_for_user = False
 
     def __init__(
         self, root: Path, runner: CommandRunner, env: Mapping[str, str]

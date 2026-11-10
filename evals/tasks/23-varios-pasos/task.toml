@@ -1,0 +1,29 @@
+# Una tarea de varios pasos, donde la lista de tareas puede ayudar:
+# renombrar en código y tests, una opción nueva con su test y la
+# documentación (spec del hito 10, §5).
+instruction = "En prestamos.py, renombra multa a calcular_multa en todo el proyecto, tests incluidos; añádele un parámetro opcional tope que limite la multa (sin tope si no se da), con un test que lo pruebe, y pon al día el README."
+fixture = "prestamos"
+split = "validation"
+allow = ["write_file", "edit_file"]
+
+[check]
+# Los tests del agente cuentan: renombrar los toca.
+own_tests = ["test_prestamos.py"]
+command = '''
+python3 -m unittest -q test_prestamos && python3 -c "
+import re, prestamos
+from datetime import date
+assert not hasattr(prestamos, 'multa'), 'multa sigue existiendo'
+assert prestamos.calcular_multa(10) == 5.0
+assert prestamos.calcular_multa(10, tope=3) == 3
+assert prestamos.calcular_multa(2, tope=3) == 1.0
+assert prestamos.multa_de_prestamo(date(2026, 3, 5), date(2026, 3, 2)) == 1.5
+code = open('prestamos.py', encoding='utf-8').read() + open('test_prestamos.py', encoding='utf-8').read()
+assert not re.search(r'(?<![\w.])multa\s*\(', code), 'queda una llamada a multa('
+tests = open('test_prestamos.py', encoding='utf-8').read()
+assert re.search(r'calcular_multa\s*\([^)]*,', tests), 'sin test del tope'
+readme = open('README.md', encoding='utf-8').read()
+assert 'calcular_multa' in readme and 'tope' in readme, 'el README no está al día'
+assert not re.search(r'(?<![\w.])multa\s*\(', readme), 'el README nombra multa('
+"
+'''

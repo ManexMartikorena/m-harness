@@ -7,9 +7,11 @@ from pathlib import Path
 
 from mharness.bootstrap import _tools
 from mharness.domain.prompt import render, sections, tool_guidance
+from tests.fakes.questions import FakePerson
 
 PROMPTS = resources.files("mharness") / "prompts"
-TOOLS = _tools(Path.cwd(), {}).names()
+# Every tool, `ask_user` too: the prompt of a conversation has it.
+TOOLS = _tools(Path.cwd(), {}, FakePerson()).names()
 
 
 def read(name: str) -> str:

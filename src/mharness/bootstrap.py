@@ -24,7 +24,7 @@ from datetime import date, datetime
 from importlib import resources
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 from mharness import __version__, config
 from mharness.adapters import cli
@@ -35,12 +35,14 @@ from mharness.adapters.models import AnthropicClient, OpenAIChatClient
 from mharness.adapters.project import LocalProject
 from mharness.adapters.storage import JsonlSessionStore
 from mharness.adapters.tools import (
+    AskUser,
     EditFile,
     Glob,
     Grep,
     ListDir,
     ReadFile,
     RunCommand,
+    TodoWrite,
     Workspace,
     WriteFile,
 )
@@ -69,11 +71,22 @@ from mharness.domain.trace import known_secrets
 from mharness.ports.approval import ApprovalGate
 from mharness.ports.catalog import ModelCatalog
 from mharness.ports.model import ModelClient
+from mharness.ports.questions import UserQuestions
+from mharness.ports.tools import Tool
 
 # The tools of maha, by name: what `--allow` takes.
 TOOL_NAMES = tuple(
     tool.name
-    for tool in (ReadFile, ListDir, Glob, Grep, WriteFile, EditFile, RunCommand)
+    for tool in (
+        ReadFile,
+        ListDir,
+        Glob,
+        Grep,
+        WriteFile,
+        EditFile,
+        RunCommand,
+        TodoWrite,
+    )
 )
 
 
@@ -220,7 +233,7 @@ async def _show_prompt(
 ) -> int:
     """`maha prompt`: the system prompt of a session here, with the tools
     of a conversation, without calling the model (spec hito 10, §1.8)."""
-    tools = _tools(cwd, {})
+    tools = _tools(cwd, {}, _questions(cli.StdinLines()))
     prompt = await _prompt(settings, catalog, cwd, tools, files).build(model or "")
     for note in cli.prompt_notes(prompt):
         print(f"  {note}", file=sys.stderr)
@@ -299,20 +312,34 @@ def _log_to(path: Path | None) -> None:
     logger.addHandler(handler)
 
 
-def _tools(cwd: Path, env: Mapping[str, str]) -> ToolRegistry:
-    """The seven tools, over the directory where `maha` started."""
+def _tools(
+    cwd: Path, env: Mapping[str, str], questions: UserQuestions | None = None
+) -> ToolRegistry:
+    """The tools of a session, over the directory where `maha` started;
+    `ask_user` only with someone to answer (spec hito 10, §1.11): what is
+    not registered does not exist for the model (DESIGN §10)."""
     workspace = Workspace(cwd)
-    return ToolRegistry(
-        [
-            ReadFile(workspace),
-            ListDir(workspace),
-            Glob(workspace),
-            Grep(workspace),
-            WriteFile(workspace),
-            EditFile(workspace),
-            RunCommand(workspace.root, LocalCommandRunner(), env),
-        ]
-    )
+    tools: list[Tool[Any]] = [
+        ReadFile(workspace),
+        ListDir(workspace),
+        Glob(workspace),
+        Grep(workspace),
+        WriteFile(workspace),
+        EditFile(workspace),
+        RunCommand(workspace.root, LocalCommandRunner(), env),
+        TodoWrite(),
+    ]
+    if questions is not None:
+        tools.append(AskUser(questions))
+    return ToolRegistry(tools)
+
+
+def _questions(lines: cli.StdinLines) -> UserQuestions | None:
+    """Who answers the model's questions: the person at the terminal; with
+    no terminal (`maha < notes.txt`), nobody."""
+    if not os.isatty(0):
+        return None
+    return cli.TerminalQuestions(lines.readline, sys.stdout, discard=lines.discard)
 
 
 # The shell `run_command` runs in: asyncio's subprocess shell.
@@ -387,7 +414,8 @@ def _eval_prompt(
 
 def _eval_tools(cwd: Path) -> ToolRegistry:
     """The tools of an eval run: all but `run_command`, until the sandbox
-    of hito 15 (spec hito 8, decision 2)."""
+    of hito 15 (spec hito 8, decision 2), and `ask_user`: nobody answers
+    (spec hito 10, §1.11)."""
     workspace = Workspace(cwd)
     return ToolRegistry(
         [
@@ -397,6 +425,7 @@ def _eval_tools(cwd: Path) -> ToolRegistry:
             Grep(workspace),
             WriteFile(workspace),
             EditFile(workspace),
+            TodoWrite(),
         ]
     )
 
@@ -694,13 +723,15 @@ def _sessions(
     client: ModelClient,
     gate: ApprovalGate,
     files: _PromptFiles | None = None,
+    questions: UserQuestions | None = None,
 ) -> Sessions:
-    """The user's sessions, whose agents have the seven tools and `gate`."""
+    """The user's sessions, whose agents have the tools of a session and
+    `gate`; `ask_user`, with `questions`."""
     provider = settings.provider
     # The variables a command gets; never the provider's key (spec
     # mejora-2026-10-23-deuda-hito-5, E1).
     drop = [provider.api_key_env] if provider.api_key_env else []
-    tools = _tools(cwd, command_env(os.environ, drop=drop))
+    tools = _tools(cwd, command_env(os.environ, drop=drop), questions)
 
     def new_agent(model: str, history: Sequence[Message]) -> Agent:
         return Agent(
@@ -848,7 +879,16 @@ async def _converse(
     # One reader for the conversation and the questions (B3).
     lines = cli.StdinLines()
     async with _client(settings, catalog) as client:
-        sessions = _sessions(settings, catalog, data, cwd, client, _gate(lines), files)
+        sessions = _sessions(
+            settings,
+            catalog,
+            data,
+            cwd,
+            client,
+            _gate(lines),
+            files,
+            questions=_questions(lines),
+        )
         return await cli.converse(
             sessions,
             provider=settings.provider_name,

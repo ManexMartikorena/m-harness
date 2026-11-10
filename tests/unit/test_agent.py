@@ -1308,6 +1308,36 @@ async def test_the_time_limit_waits_while_the_person_is_asked() -> None:
     assert len(gate.requests) == 2
 
 
+async def test_the_time_limit_waits_while_the_person_answers_a_question() -> None:
+    # Spec hito 10, §1.11: `ask_user` waits for the person as an approval
+    # does; the turn's clock stops meanwhile.
+    asking = FakeTool(gate=asyncio.Event(), waits_for_user=True)
+    subject = agent(FakeModelClient([tool_calls(call("c1"))]), asking, limits=LIMIT)
+
+    with pytest.raises(TimeoutError):
+        # Six times the limit, and still waiting for the answer.
+        await asyncio.wait_for(run(subject), 0.3)
+
+    assert len(asking.calls) == 1
+
+
+async def test_after_the_answer_the_clock_goes_on() -> None:
+    # Only the wait is not counted: what the turn did before still is.
+    class Answers(FakeTool):
+        async def run(self, params: EchoParams) -> str:
+            await asyncio.sleep(0.2)
+            return "Database: SQLite"
+
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Vale.")])
+    subject = agent(fake, Answers(waits_for_user=True), limits=LIMIT)
+
+    events = await run(subject)
+
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert (turn.reason, turn.tool_calls) == ("end_turn", 1)
+
+
 class OnceThenHang(HangingApproval):
     """Approves the first request; then never answers."""
 

@@ -9,7 +9,7 @@ from collections.abc import Iterator, Sequence
 from decimal import Decimal
 from importlib.metadata import version
 from pathlib import Path
-from typing import get_args
+from typing import Any, get_args
 
 import pytest
 
@@ -22,9 +22,10 @@ from mharness.adapters.cli.conversation import (
     turn_note,
 )
 from mharness.adapters.cli.input import InputTooLarge, StdinLines
+from mharness.adapters.cli.questions import TerminalQuestions
 from mharness.adapters.cli.spinner import CLEAR_LINE
 from mharness.adapters.commands import LocalCommandRunner
-from mharness.adapters.tools import RunCommand
+from mharness.adapters.tools import AskUser, RunCommand, TodoWrite
 from mharness.application.agent import Agent
 from mharness.application.sessions import Sessions, Start
 from mharness.application.tools import ToolRegistry
@@ -46,6 +47,7 @@ from mharness.domain.messages import (
 from mharness.domain.model import ModelResponse, Usage
 from mharness.domain.retry import NO_RETRIES, RetryPolicy
 from mharness.domain.tools import ToolError
+from mharness.ports.tools import Tool
 from tests.adapters.test_local_runner import gone, written_pid
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
@@ -621,7 +623,7 @@ def call(id: str, arguments: str = '{"text": "Hola"}') -> ToolCallBlock:
 async def run_with_tools(
     fake: FakeModelClient,
     *lines: str,
-    tool: FakeTool | None = None,
+    tool: Tool[Any] | None = None,
     steps: int = 25,
     limits: TurnLimits | None = None,
 ) -> tuple[int, str, str]:
@@ -672,6 +674,139 @@ async def test_shows_each_call_and_the_answer() -> None:
         "  [tokens: 474 in · 122 out · 1 call]\n"
         "> "
     )
+
+
+def todo_call(id: str, *todos: tuple[str, str]) -> ToolCallBlock:
+    arguments = {"todos": [{"content": c, "status": s} for c, s in todos]}
+    return ToolCallBlock(id=id, name="todo_write", arguments=json.dumps(arguments))
+
+
+async def test_the_task_list_is_drawn_in_place_of_its_call() -> None:
+    # Spec hito 10, §1.10.
+    fake = FakeModelClient(
+        [
+            tool_calls(
+                todo_call(
+                    "c1",
+                    ("Añadir la función", "completed"),
+                    ("Actualizar los tests", "in_progress"),
+                    ("Apuntarlo en el CHANGELOG", "pending"),
+                    ("Renombrar el módulo", "cancelled"),
+                ),
+                text="Primero, el plan.",
+            ),
+            reply("Hecho."),
+        ]
+    )
+
+    _, out, _ = await run_with_tools(fake, "Hazlo", "/exit", tool=TodoWrite())
+
+    assert (
+        "> Primero, el plan.\n"
+        "  ☑ Añadir la función\n"
+        "  ▸ Actualizar los tests\n"
+        "  ☐ Apuntarlo en el CHANGELOG\n"
+        "  ⊘ Renombrar el módulo\n"
+        "Hecho.\n"
+    ) in out
+    assert "todo_write(" not in out
+    # Not a terminal: no styles.
+    assert "\x1b" not in out
+
+
+async def test_a_task_list_that_breaks_the_rules_is_shown_as_a_call() -> None:
+    fake = FakeModelClient(
+        [
+            tool_calls(todo_call("c1", ("Uno", "in_progress"), ("Dos", "in_progress"))),
+            reply("Vaya."),
+        ]
+    )
+
+    _, out, _ = await run_with_tools(fake, "Hazlo", "/exit", tool=TodoWrite())
+
+    assert '  → todo_write(todos=[{"content": "Uno"' in out
+    assert "  ✗ error: invalid arguments: " in out
+    assert "at most one at a time" in out
+    assert "▸" not in out
+
+
+ASKED = {
+    "questions": [
+        {
+            "question": "¿Qué base de datos?",
+            "header": "Base",
+            "options": [
+                {"label": "SQLite", "description": "Un fichero"},
+                {"label": "PostgreSQL", "description": "Un servidor"},
+            ],
+        }
+    ]
+}
+
+
+async def asking(fake: FakeModelClient, *lines: str) -> str:
+    """A conversation whose model may ask the person, who types `lines`."""
+    out = io.StringIO()
+    read = ScriptedInput(*lines)
+    agent = Agent(
+        fake,
+        ToolRegistry([AskUser(TerminalQuestions(read, out))]),
+        gate=FakeApproval(),
+        model="m",
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
+    )
+    await converse(
+        solo(agent),
+        provider="p",
+        catalog=KNOWN,
+        read_line=read,
+        out=out,
+        err=io.StringIO(),
+    )
+    return out.getvalue()
+
+
+async def test_the_model_asks_and_gets_the_answer() -> None:
+    # Spec hito 10, §1.11: the questions in place of the call line; the
+    # answer goes back as the call's result.
+    ask = ToolCallBlock(id="c1", name="ask_user", arguments=json.dumps(ASKED))
+    fake = FakeModelClient([tool_calls(ask), reply("Uso PostgreSQL.")])
+
+    out = await asking(fake, "Hazlo", "2", "/exit")
+
+    assert (
+        "> "
+        "  ┌ Base · ¿Qué base de datos?\n"
+        "  │ 1. SQLite — Un fichero\n"
+        "  │ 2. PostgreSQL — Un servidor\n"
+        "  │ 3. Other — write your own answer\n"
+        "  └ Choose 1-3:   ✓ 1 answer\n"
+        "Uso PostgreSQL.\n"
+    ) in out
+    assert "ask_user(" not in out
+    results = fake.requests[-1].messages[-1]
+    assert results.blocks == [ToolResultBlock(call_id="c1", content="Base: PostgreSQL")]
+
+
+async def test_questions_that_break_the_schema_are_shown_as_a_call() -> None:
+    bad = ToolCallBlock(id="c1", name="ask_user", arguments='{"questions": []}')
+    fake = FakeModelClient([tool_calls(bad), reply("Vaya.")])
+
+    out = await asking(fake, "Hazlo", "/exit")
+
+    assert "  → ask_user(questions=[])\n  ✗ error: invalid arguments: " in out
+
+
+async def test_no_answer_goes_back_to_the_model_without_the_call_line() -> None:
+    ask = ToolCallBlock(id="c1", name="ask_user", arguments=json.dumps(ASKED))
+    fake = FakeModelClient([tool_calls(ask), reply("Sigo sin saberlo.")])
+
+    # Ctrl+D at the question.
+    out = await asking(fake, "Hazlo")
+
+    assert "  └ Choose 1-3: \n  ✗ error: the user did not answer" in out
+    assert "ask_user(" not in out
 
 
 async def test_a_failed_call_is_marked() -> None:

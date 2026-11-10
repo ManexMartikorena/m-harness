@@ -37,12 +37,14 @@ from mharness.adapters.cli.conversation import (
     CLOSING,
     call_line,
     retry_note,
+    show_finished,
     turn_note,
     usage_line,
     warn_crash,
 )
 from mharness.adapters.cli.input import InputTooLarge, ReadAll
 from mharness.adapters.cli.text import clean
+from mharness.adapters.cli.todo import is_todo
 from mharness.application.headless import RunResult, TurnBroke, instruction, run_once
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.domain.agent_events import (
@@ -355,15 +357,15 @@ class _Progress:
         err = self._err
         match event:
             case ToolCallProposed(call=call):
-                print(f"  → {call_line(call)}", file=err, flush=True)
+                if not is_todo(call.name):
+                    print(f"  → {call_line(call)}", file=err, flush=True)
             case ApprovalRequested(call=call, request=request):
                 if request.scope is None:
                     self._scopeless.add(call.id)
             case ModelRetry() | ModelFallback():
                 print(f"  {retry_note(event)}", file=err, flush=True)
             case ToolFinished():
-                mark = "✗" if event.result.is_error else "✓"
-                print(f"  {mark} {clean(event.summary)}", file=err, flush=True)
+                show_finished(event, err)
                 warn_crash(event, err)
                 if event.decision == "deny" and event.call.id in self._scopeless:
                     self._why = _NEEDS_A_PERSON

@@ -9,8 +9,10 @@ from pydantic import ValidationError
 
 from mharness.bootstrap import _tools
 from mharness.domain.model import ToolSpec
+from tests.fakes.questions import FakePerson
 
-TOOLS = _tools(Path.cwd(), {}).specs()
+# Every tool, `ask_user` too.
+TOOLS = _tools(Path.cwd(), {}, FakePerson()).specs()
 
 
 @pytest.mark.parametrize("spec", TOOLS, ids=lambda spec: spec.name)
@@ -18,8 +20,8 @@ def test_the_schema_forbids_extra_fields(spec: ToolSpec) -> None:
     assert spec.input_schema["additionalProperties"] is False
 
 
-def test_there_are_seven() -> None:
-    assert len(TOOLS) == 7
+def test_there_are_nine() -> None:
+    assert len(TOOLS) == 9
 
 
 def test_an_extra_field_is_an_error() -> None:

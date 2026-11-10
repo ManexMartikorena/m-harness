@@ -218,6 +218,47 @@ def reject_below_zero(repo: Path) -> None:
     path.write_text(text[: text.index("def a_fahrenheit")] + ABSOLUTE_ZERO)
 
 
+def rename_fine(repo: Path) -> None:
+    """Only the rename, in code and tests."""
+    for name in ("prestamos.py", "test_prestamos.py"):
+        file = repo / name
+        text = file.read_text(encoding="utf-8")
+        file.write_text(re.sub(r"(?<![\w.])multa(?=\s*\()", "calcular_multa", text))
+    edit(
+        repo / "test_prestamos.py",
+        "dias_retraso, multa,",
+        "dias_retraso, calcular_multa,",
+    )
+
+
+def capped_fine(repo: Path) -> None:
+    """The rename, the cap with its test and the README."""
+    rename_fine(repo)
+    edit(
+        repo / "prestamos.py",
+        "def calcular_multa(dias: int) -> float:\n"
+        '    """Lo que se paga por `dias` de retraso, en euros."""\n'
+        "    return dias * MULTA_POR_DIA\n",
+        "def calcular_multa(dias: int, tope: float | None = None) -> float:\n"
+        '    """Lo que se paga por `dias` de retraso, en euros, como mucho `tope`."""\n'
+        "    importe = dias * MULTA_POR_DIA\n"
+        "    return importe if tope is None else min(importe, tope)\n",
+    )
+    edit(
+        repo / "test_prestamos.py",
+        "    def test_multa_de_un_prestamo",
+        "    def test_con_tope(self) -> None:\n"
+        "        self.assertEqual(calcular_multa(10, tope=3), 3)\n\n"
+        "    def test_multa_de_un_prestamo",
+    )
+    edit(
+        repo / "README.md",
+        "- `multa(dias)`: lo que se paga por esos días, a 0,50 € el día.",
+        "- `calcular_multa(dias, tope=None)`: lo que se paga por esos días, a "
+        "0,50 € el día, como mucho `tope`.",
+    )
+
+
 # What a model that gets it right would leave, and answer.
 SOLUTIONS: dict[str, tuple[Callable[[Path], object], str]] = {
     "01-version": (lambda repo: None, "La versión es 1.4.2."),
@@ -275,6 +316,7 @@ SOLUTIONS: dict[str, tuple[Callable[[Path], object], str]] = {
     "20-total-value": (total_value, "Added."),
     "21-convenciones-agents": (count_appointments, "Hecho."),
     "22-convenciones-claude": (reject_below_zero, "Hecho."),
+    "23-varios-pasos": (capped_fine, "Hecho."),
 }
 
 
@@ -297,6 +339,7 @@ async def test_the_battery_and_its_validation_tasks() -> None:
         "07-renombrar",
         "14-descuento-volumen",
         "18-parse-duration",
+        "23-varios-pasos",
     ]
     # No run_command until hito 15 (decision 2).
     assert all("run_command" not in task.allow for task in tasks)
@@ -323,6 +366,27 @@ async def checked(task_id: str, change: Callable[[Path], object], answer: str) -
     async with suite.workspace(task) as repo:
         change(repo)
         return await evaluator(suite).check(task, repo, answer) is None
+
+
+def readme_without_cap(repo: Path) -> None:
+    capped_fine(repo)
+    edit(repo / "README.md", "tope", "límite")
+
+
+def no_test_of_the_cap(repo: Path) -> None:
+    capped_fine(repo)
+    edit(repo / "test_prestamos.py", "calcular_multa(10, tope=3), 3", "1, 1")
+
+
+@pytest.mark.parametrize(
+    # Each step alone is not the task.
+    "change",
+    [rename_fine, readme_without_cap, no_test_of_the_cap],
+)
+async def test_the_steps_of_task_23_count_one_by_one(
+    change: Callable[[Path], object],
+) -> None:
+    assert not await checked("23-varios-pasos", change, "Hecho.")
 
 
 async def test_a_cheat_on_the_tests_does_not_pass() -> None:

@@ -217,9 +217,7 @@ def test_a_cut_stream_shows_the_error_and_the_next_turn_works(
 
 
 @respx.mock
-def test_maha_offers_the_seven_tools(
-    workspace: Path, stdin: Callable[[str], None]
-) -> None:
+def test_maha_offers_its_tools(workspace: Path, stdin: Callable[[str], None]) -> None:
     write_user_config(workspace, 'model = "glm-5.3-flash"\n')
     route = respx.post(GO_ENDPOINT).mock(
         return_value=sse_response(streamed("Hola.", 1, 1))
@@ -237,7 +235,45 @@ def test_maha_offers_the_seven_tools(
         "write_file",
         "edit_file",
         "run_command",
+        "todo_write",
     ]
+
+
+def test_with_a_terminal_the_model_can_ask_the_person(
+    workspace: Path, stdin: Callable[[str], None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Spec hito 10, §1.11: `ask_user` only with someone to answer.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    stdin("Hola\n")
+    monkeypatch.setattr(os, "isatty", lambda fd: True)
+
+    with respx.mock:
+        route = respx.post(GO_ENDPOINT).mock(
+            return_value=sse_response(streamed("Hola.", 1, 1))
+        )
+        main([])
+
+    tools = json.loads(route.calls.last.request.content)["tools"]
+    assert tools[-1]["function"]["name"] == "ask_user"
+
+
+@respx.mock
+def test_p_never_offers_ask_user(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Nobody to answer, even from a terminal: the model would lose a step.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Hola.", 1, 1))
+    )
+    monkeypatch.setattr(os, "isatty", lambda fd: True)
+
+    main(["-p", "Hola"])
+
+    tools = json.loads(route.calls.last.request.content)["tools"]
+    names = [tool["function"]["name"] for tool in tools]
+    assert "ask_user" not in names
+    assert "todo_write" in names
 
 
 def tool_call_stream(name: str, arguments: str) -> bytes:
