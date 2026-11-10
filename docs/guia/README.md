@@ -19,7 +19,7 @@ Cada nota se escribe en el mismo PR que cierra su hito.
 | 07 | [Trazas y coste: lo que pasó y lo que costó](07-observabilidad.md) | Escrita (hito 7, `v0.7.0`) |
 | 08 | [Cómo se evalúa un agente](08-evals.md) | Escrita (hito 8, `v0.8.0`) |
 | 09 | [Dos formatos para hablar con un modelo](09-formatos-de-api.md) | Escrita (hito 9, `v0.9.0`) |
-| 10 | El system prompt | Pendiente (hito 10) |
+| 10 | [El system prompt: lo que el modelo sabe antes de leerte](10-system-prompt.md) | Escrita (hito 10, `v0.10.0`) |
 | 11 | La ventana de contexto y la compactación | Pendiente (hito 11) |
 | 12 | Deshacer: puntos de control | Pendiente (hito 12) |
 | 13 | Skills y comandos personalizados | Pendiente (hito 13) |
