@@ -43,6 +43,8 @@ COMMANDS = {
     "help": "/help — this list",
     "exit": "/exit — quit",
 }
+# While leaving a conversation waits for its title.
+NAMING = "[naming the session; Ctrl+C skips it]"
 # What the catalog says of a model (spec hito 7, §1.10).
 NOT_IN_CATALOG = "[model not in the catalog: cost only if the provider reports it]"
 TRAINS_ON_DATA = "[warning: this model may use your data for training]"
@@ -157,6 +159,7 @@ class Commands:
         self._out.flush()
 
     async def _resume(self, session: str | None) -> None:
+        self.tell_naming()
         left = self.conversation.id if self.conversation.stored else None
         try:
             resumed = await self._sessions.resume(session, current=self.conversation)
@@ -167,6 +170,12 @@ class Commands:
         self.conversation = resumed.conversation
         self._warn_lost(left, resumed.left_unsaved)
         self.tell_resumed(resumed)
+
+    def tell_naming(self) -> None:
+        """Leaving a conversation waits for its title, if it is on its way
+        (decision of the maintainer, 2026-11-10): said, with the way out."""
+        if self.conversation.naming:
+            self._say(NAMING)
 
     def tell_resumed(self, resumed: Resumed) -> None:
         """What the person should know of the session just resumed."""
@@ -237,6 +246,7 @@ class Commands:
         """A new session without leaving maha (spec hito 8, §1.15). The
         model chosen with /model stays: it is this maha's choice."""
         old = self.conversation
+        self.tell_naming()
         left = old.id if old.stored else None
         fresh = await self._sessions.start(old.model)
         # The new one is ready: only now is the current one let go.

@@ -216,8 +216,6 @@ class Conversation:
         self._turn = TurnStarted(text=text)
         self._turn_at = self._origin.now()
         self._turn_traced = False
-        # The first turn of a session names it.
-        first = not self._agent.messages
         try:
             async with aclosing(self._agent.run(text)) as events:
                 async for event in events:
@@ -270,15 +268,20 @@ class Conversation:
                     self._count(cost)
             await self._save()
             await self._sync_trace()
-            if first and self._stored:
-                self._name(text)
+            # Once its file exists: also if the first turn could not be
+            # saved and a later one was (audit after hito 10, S5).
+            if self._stored:
+                self.name()
 
-    def _name(self, first: str) -> None:
-        """Ask for the title in the background: nobody waits for it."""
+    def name(self) -> None:
+        """Ask for the title in the background, from the first message, if
+        the session has none yet: nobody waits for it."""
         titler = self._origin.titler
         if titler is None or self.title is not None or self._titling is not None:
             return
-        self._titling = asyncio.create_task(self._write_title(titler, first))
+        first = next((m.text for m in self._agent.messages if m.role == "user"), "")
+        if first:
+            self._titling = asyncio.create_task(self._write_title(titler, first))
 
     async def _write_title(self, titler: Titler, first: str) -> None:
         title = await titler.title(first)
@@ -296,10 +299,18 @@ class Conversation:
         await self._save()
         await self._sync_trace()
 
+    @property
+    def naming(self) -> bool:
+        """Whether a title is on its way."""
+        return self._titling is not None and not self._titling.done()
+
     async def titled(self) -> None:
-        """Wait for the title on its way, if any."""
+        """Wait for the title on its way, if any. A title is never worth an
+        error: one that failed in a way nobody expected is left (audit
+        after hito 10, S4)."""
         if self._titling is not None:
-            await self._titling
+            with suppress(Exception):
+                await self._titling
 
     async def rename(self, title: str) -> str:
         """Give the session `title` by hand; the small model never replaces
@@ -349,13 +360,19 @@ class Conversation:
         await self._save()
 
     async def close(self) -> None:
-        """Save what is still pending, and let other maha resume or delete
-        it. If saving fails again, `unsaved` says so. A title still on its
-        way is dropped: leaving never waits for it."""
+        """Wait for a title on its way, save what is still pending, and let
+        other maha resume or delete it. If saving fails again, `unsaved`
+        says so. Ctrl+C while the title comes leaves without it, and the
+        rest is still saved (decision of the maintainer, 2026-11-10)."""
+        cut: asyncio.CancelledError | None = None
         if self._titling is not None:
-            self._titling.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._titling
+            try:
+                await self.titled()
+            except asyncio.CancelledError as exc:
+                cut = exc
+                self._titling.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._titling
             self._titling = None
         await self._save()
         if self._log is not None:
@@ -364,6 +381,8 @@ class Conversation:
         if self._trace is not None:
             await self._trace.close()
             self._trace = None
+        if cut is not None:
+            raise cut
 
     def trace_warning(self) -> str | None:
         """Why the trace failed, the first time it did; then None, even if
@@ -667,6 +686,9 @@ class Sessions:
         )
         # The new one is ready: only now is the current one let go.
         await current.close()
+        # One left without a title gets it now (decision of the maintainer,
+        # 2026-11-10).
+        conversation.name()
         last = loaded.messages[-1] if loaded.messages else None
         return Resumed(
             conversation=conversation,

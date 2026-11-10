@@ -276,6 +276,34 @@ def test_p_never_offers_ask_user(
     assert "todo_write" in names
 
 
+def turns_and_titles(
+    *turns: httpx.Response,
+) -> Callable[[httpx.Request], httpx.Response]:
+    """Answers each turn's call with the next of `turns`, and the calls
+    that write the session's title (no stream) with a title of their own."""
+    left = list(turns)
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        if not json.loads(request.content).get("stream"):
+            return httpx.Response(
+                200,
+                json={
+                    "model": "glm-5.3-flash",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": "Un título"},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 3},
+                },
+            )
+        return left.pop(0)
+
+    return answer
+
+
 def last_turn(route: respx.Route) -> bytes:
     """The body of the last call of a turn: in a conversation, the title of
     the session goes in the background, in a call of its own, without
@@ -551,10 +579,10 @@ def test_a_second_maha_resumes_the_first_one(
     # Spec hito 6, §4.8: the history is read back from the disk.
     write_user_config(workspace, 'model = "glm-5.3-flash"\n')
     route = respx.post(GO_ENDPOINT).mock(
-        side_effect=[
+        side_effect=turns_and_titles(
             sse_response(streamed("Hola, Ane.", 12, 9)),
             sse_response(streamed("Te llamas Ane.", 31, 5)),
-        ]
+        )
     )
     stdin("Hola, soy Ane\n/exit\n")
     assert main([]) == 0

@@ -138,6 +138,7 @@ async def converse(
         for number in CLOSING:
             loop.remove_signal_handler(number)
         # What is still pending is saved, and the session let go.
+        commands.tell_naming()
         await commands.conversation.close()
         commands.warn_unsaved()
 
