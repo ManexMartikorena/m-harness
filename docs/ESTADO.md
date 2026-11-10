@@ -2,8 +2,8 @@
 
 Última actualización: 2026-11-10. **Hito 9 cerrado: `v0.9.0` y `v0.9.1`
 (auditoría profunda). En curso: el hito 10 (system prompt por capas). El
-PR 1 (las capas) está terminado, con evals y verificación a mano; sigue
-el PR 2 (`todo_write` y `ask_user`).**
+PR 1 (las capas) y el PR 2 (`todo_write` y `ask_user`) están terminados,
+con evals y verificación a mano; sigue el PR 3 (`/init` y los títulos).**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -18,8 +18,8 @@ la 1.0 (DESIGN §14).**
 - Última versión: **`v0.9.1` — Auditoría profunda tras el hito 9**
   (2026-11-04):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.9.1
-- Ramas abiertas: `feature/hito-10-capas` (el PR 1 del hito 10), hasta
-  que se integre. Las integradas se conservan en GitHub.
+- Ramas abiertas: `feature/hito-10-herramientas` (el PR 2 del hito 10),
+  hasta que se integre. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -48,22 +48,21 @@ spec, su nota de la guía y su release.
 
 ## Siguiente paso
 
-Al abrir: contrastar con GitHub (`gh pr list`) si el PR 1 del hito 10
-(`feature/hito-10-capas`) ya está integrado. Si sigue abierto, se integra
-primero (merge commit, CI en verde). Después, `git switch main && git
-pull`, `uv sync`, y comprobar tests, mypy y lint-imports en verde (2242
-tests).
+Al abrir: contrastar con GitHub (`gh pr list`) si el PR 2 del hito 10
+(`feature/hito-10-herramientas`) ya está integrado. Si sigue abierto, se
+integra primero (merge commit, CI en verde). Después, `git switch main &&
+git pull`, `uv sync`, y comprobar tests, mypy y lint-imports en verde
+(2313 tests).
 
-1. **Agente:** el PR 2 del hito 10, en `feature/hito-10-herramientas`
+1. **Agente:** el PR 3 del hito 10, en `feature/hito-10-init-titulos`
    desde `main` (spec `docs/specs/hito-10-system-prompt.md`, APROBADA, §6
-   "PR 2"): `todo_write`, `ask_user` y la tarea 23, una pieza por commit;
-   sus evals (§5) y su verificación a mano (§7, puntos 6 y 7). Al
-   terminar, push, PR al milestone "Hito 10 — System prompt por capas" y
-   merge commit.
-2. **Agente:** el PR 3 (`/init`, el modelo pequeño, títulos y `/rename`),
-   y el cierre del hito (§6, "Cierre"): líneas base nuevas con 23 tareas
-   (`--save`), nota 10 de la guía, los dos README, PROYECTO, HISTORIAL,
-   MAPA, spec IMPLEMENTADA y `v0.10.0`.
+   "PR 3"): `/init`, el modelo pequeño (`small_model`), los títulos de
+   sesión y `/rename`, una pieza por commit; su verificación a mano (§7,
+   puntos 5 y 8). Al terminar, push, PR al milestone "Hito 10 — System
+   prompt por capas" y merge commit.
+2. **Agente:** el cierre del hito (§6, "Cierre"): líneas base nuevas con
+   23 tareas (`--save`), nota 10 de la guía, los dos README, PROYECTO,
+   HISTORIAL, MAPA, spec IMPLEMENTADA y `v0.10.0`.
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
@@ -184,6 +183,10 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   catálogo da unos 0,0004 $). Hoy no cambia nada: con OpenCode Go vale el
   coste del proveedor. Comprobar el precio contra la documentación oficial
   y corregir el catálogo (decisión del mantenedor, 2026-11-10).
+- **Con la batería más larga (hito 11):** volver a medir cuándo usan los
+  modelos `todo_write`. Hoy solo la 12 (train) y la 23 (validación) son
+  trabajo largo; la guía se ajustó con la 12 y una tarea a mano (spec 10,
+  §5, "Resultados (PR 2)").
 - **Mejora posible:** refrescar los precios desde models.dev a una caché, a
   petición, si mantener a mano 113 modelos pesa (spec 7, §11). Hoy, con
   OpenCode Go, el coste que vale es el del proveedor.
