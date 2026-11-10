@@ -427,14 +427,21 @@ class Conversation:
         ):
             # No turn yet: a model change alone does not make a session.
             return
+        # Taken before the wait: what comes meanwhile (a title) stays for
+        # the next save, never cleared unsaved (audit after hito 10, S1).
+        batch, self._pending = self._pending, []
         try:
             if self._log is None:
                 self._log = await self._create()
-            await self._log.append(self._pending)
+            await self._log.append(batch)
         except SessionError as exc:
+            # In front: the order of the file is the order of what happened.
+            self._pending[:0] = batch
             self.unsaved = str(exc)
             return
-        self._pending = []
+        except BaseException:
+            self._pending[:0] = batch
+            raise
         self.unsaved = None
 
     async def _create(self) -> SessionLog:
