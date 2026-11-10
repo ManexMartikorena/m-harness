@@ -11,11 +11,11 @@
 hacerlo, **preguntándote antes de cada cambio**. Funciona con el proveedor y
 el modelo que elijas, y te dice en cada turno lo que ha costado.
 
-> 🚧 **En desarrollo: `v0.9.1`.** Ya es usable para trabajar en un
-> proyecto: conversar, leer y cambiar ficheros, ejecutar comandos, guardar y
-> retomar sesiones y ver el coste, con modelos del formato de OpenAI y con
-> Claude; y en scripts, con `maha -p`. Lo que viene, en la [hoja de
-> ruta](#hoja-de-ruta).
+> 🚧 **En desarrollo: `v0.10.0`.** Ya es usable para trabajar en un
+> proyecto: conversar, leer y cambiar ficheros, ejecutar comandos, seguir el
+> `AGENTS.md` del proyecto, guardar y retomar sesiones y ver el coste, con
+> modelos del formato de OpenAI y con Claude; y en scripts, con `maha -p`.
+> Lo que viene, en la [hoja de ruta](#hoja-de-ruta).
 
 ```
 $ maha -m claude-haiku-5-5
@@ -63,6 +63,24 @@ turno cuesta menos.)*
   `list_dir`, `glob`, `grep`; `glob` y `grep` se saltan lo que ignora
   `.gitignore`), los escribe y edita (`write_file`, `edit_file`, con el diff
   a la vista) y ejecuta comandos (`run_command`).
+- **Conoce tu proyecto.** Antes de tu primer mensaje, el modelo lee el
+  `AGENTS.md` del proyecto (o `CLAUDE.md`, si no lo hay), tu
+  `~/.config/maha/AGENTS.md` y dónde trabaja: directorio, raíz git,
+  plataforma y fecha. Al arrancar, `maha` dice qué ficheros de
+  instrucciones ha cargado, y nunca cambian los permisos. `/init` escribe o
+  mejora el `AGENTS.md` del proyecto, y `maha prompt` enseña el system
+  prompt entero.
+
+  ```
+  > /init los tests se lanzan con unittest, nunca con pytest
+    ┌ create AGENTS.md (49 lines)
+    └ Allow? [y] yes · [a] always this session · [n] no: y
+    [AGENTS.md takes effect in the next session: /new]
+  ```
+- **Planifica, y pregunta cuando hace falta.** En un trabajo de varios
+  cambios, el modelo lleva una lista de tareas que ves avanzar (`☑ ▸ ☐`);
+  cuando no puede seguir sin ti, pregunta con opciones, y siempre puedes
+  escribir tu propia respuesta.
 - **Nada cambia sin tu permiso.** Cada escritura y cada comando te preguntan
   antes, con el diff o el comando: una vez, siempre en esta sesión, o no.
   "Siempre" cubre todas las ediciones siguientes dentro del directorio de
@@ -102,7 +120,8 @@ turno cuesta menos.)*
   turno (también la respuesta que cortas), y se retoma desde cualquier
   directorio, también al arrancar (`maha -c`, `maha -r ID`). Se exportan
   en Markdown o JSON y se importan en otro PC. Al retomar, las
-  aprobaciones empiezan de cero.
+  aprobaciones empiezan de cero. Un modelo barato titula cada sesión tras
+  su primer turno; `/rename` le pone el tuyo.
 - **Sabes lo que gastas.** Cada turno dice sus tokens y su coste, y la
   sesión lo que lleva: el coste que da el proveedor (con OpenCode Go, lo
   que cuenta contra tu límite mensual) o, si no lo da, el de un catálogo con
@@ -117,7 +136,7 @@ Necesitas [uv](https://docs.astral.sh/uv/) (instala también Python 3.14 si
 falta).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.9.1
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.10.0
 ```
 
 Después, elige proveedor y modelo:
@@ -140,11 +159,14 @@ maha
 
 Opcional, en el mismo fichero: un modelo de respaldo, cuánto se esfuerza
 el modelo (`effort`: `low`, `medium`, `high`, `xhigh` o `max`; sin él, el
-del modelo) y topes para cada turno.
+del modelo), el modelo que titula las sesiones, más ficheros de
+instrucciones y topes para cada turno.
 
 ```toml
 fallback_model = "glm-5.3"
 effort = "high"
+small_model = "glm-5.3-flash"      # títulos; por defecto, el barato del proveedor
+instructions = ["CONTRIBUTING.md"] # se añaden al system prompt
 
 [limits]
 max_steps = 25       # llamadas al modelo
@@ -210,6 +232,8 @@ effort max, cache 1h]`.
 | `/delete ID` | Borra una sesión y su traza |
 | `/trace [ID]` | Lo que hizo y costó una sesión, turno a turno |
 | `/new` | Una sesión nueva sin salir, con el mismo modelo |
+| `/init [TEXTO]` | Escribe o mejora el `AGENTS.md` del proyecto; TEXTO, lo que destacar |
+| `/rename [TÍTULO]` | Enseña el título de la sesión, o le pone uno |
 | `/export [FICHERO]` | Esta conversación en Markdown; por defecto, `ID.md` |
 | `/exit` | Sale (también Ctrl+D) |
 
@@ -232,6 +256,7 @@ effort max, cache 1h]`.
 | `maha models [--all]` | Los modelos del catálogo, con su formato de API, ventana y precios |
 | `maha sessions` | Las sesiones recientes; `sessions delete ID` borra una |
 | `maha trace [ID]` | Lo que hizo y costó una sesión; sin id, la última de aquí |
+| `maha prompt` | El system prompt que tendría una sesión aquí, sin llamar al modelo |
 | `maha stats [--days N]` | Coste y tokens por día y por modelo |
 | `maha export ID [--format md\|json]` | Una sesión en Markdown o JSON, a stdout |
 | `maha import FICHERO` | Una sesión exportada en JSON, como nueva |
@@ -246,7 +271,11 @@ Con `-p`:
   dentro del directorio. Fuera de él, un secreto o un fichero que ejecuta
   código se deniegan siempre.
 - Con `-p` o sin él: `-m ID` (modelo), `--fallback-model ID`,
-  `--effort NIVEL`, `--max-steps N`, `--max-cost USD`, `--max-tokens N` y `--timeout S`.
+  `--effort NIVEL`, `--max-steps N`, `--max-cost USD`, `--max-tokens N` y `--timeout S`;
+  y para el system prompt, `--append-system-prompt TEXTO`,
+  `--append-system-prompt-file FICHERO` (se añaden al final) y
+  `--system-prompt-file FICHERO` (tu propia base en lugar de la de maha;
+  las instrucciones y el entorno se quedan).
 - Código de salida: 0 bien, 1 error (también si el modelo se niega), 2 uso
   incorrecto, 3 un tope paró el turno (también si la respuesta llegó a la
   salida máxima del modelo o la conversación llenó su ventana de
@@ -274,8 +303,8 @@ tu usuario. Respeta las variables `XDG_*`.
 
 `maha` crece hito a hito hasta la versión 1.0. Lo siguiente:
 
-- **Instrucciones del proyecto** (`AGENTS.md`, `/init`), compactación del
-  contexto y **deshacer** cambios.
+- **Compactación del contexto**, para conversaciones largas, y **deshacer**
+  cambios.
 - **Skills y comandos propios, memoria entre sesiones, sandbox, modos de
   permiso, subagentes, MCP y hooks.**
 - **Web e imágenes.**

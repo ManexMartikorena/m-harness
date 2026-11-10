@@ -11,10 +11,11 @@
 done, **asking you before every change**. It works with the provider and
 model you choose, and tells you what each turn cost.
 
-> 🚧 **In development: `v0.9.1`.** Already usable to work on a project:
-> chat, read and change files, run commands, save and resume sessions and
-> see the cost, with OpenAI-format models and with Claude; and in scripts,
-> with `maha -p`. What comes next is in the [roadmap](#roadmap).
+> 🚧 **In development: `v0.10.0`.** Already usable to work on a project:
+> chat, read and change files, run commands, follow the project's
+> `AGENTS.md`, save and resume sessions and see the cost, with OpenAI-format
+> models and with Claude; and in scripts, with `maha -p`. What comes next
+> is in the [roadmap](#roadmap).
 
 ```
 $ maha -m claude-haiku-5-5
@@ -62,6 +63,23 @@ reads the conversation from the prompt cache, and each turn costs less.)*
   `list_dir`, `glob`, `grep`; `glob` and `grep` skip what `.gitignore`
   ignores), writes and edits them (`write_file`, `edit_file`, showing the
   diff) and runs commands (`run_command`).
+- **It knows your project.** Before your first message, the model reads
+  the project's `AGENTS.md` (or `CLAUDE.md`, if there is none), your own
+  `~/.config/maha/AGENTS.md` and where it works: directory, git root,
+  platform and date. At start, `maha` says which instruction files it
+  loaded, and they never change permissions. `/init` writes or improves the
+  project's `AGENTS.md`, and `maha prompt` shows the whole system prompt.
+
+  ```
+  > /init tests run with unittest, never with pytest
+    ┌ create AGENTS.md (49 lines)
+    └ Allow? [y] yes · [a] always this session · [n] no: y
+    [AGENTS.md takes effect in the next session: /new]
+  ```
+- **It plans, and asks when it must.** In work of several changes, the
+  model keeps a task list that you see as it goes (`☑ ▸ ☐`); when it
+  cannot go on without you, it asks with options, and you can always
+  write your own answer.
 - **Nothing changes without your permission.** Every write and every command
   asks first, showing the diff or the command: once, always in this session,
   or no. "Always" covers every later edit inside the working directory, but
@@ -98,7 +116,8 @@ reads the conversation from the prompt cache, and each turn costs less.)*
   automatically, turn by turn (including an answer you interrupt), and can
   be resumed from any directory, also at start (`maha -c`, `maha -r ID`).
   They export to Markdown or JSON and import on another computer. When you
-  resume, approvals start from scratch.
+  resume, approvals start from scratch. A cheap model titles each session
+  after its first turn; `/rename` gives it your own title.
 - **You know what you spend.** Every turn shows its tokens and cost, and the
   session its total: the cost the provider reports (with OpenCode Go, what
   counts against your monthly limit) or, if it reports none, the one from a
@@ -113,7 +132,7 @@ You need [uv](https://docs.astral.sh/uv/) (it also installs Python 3.14 if
 missing).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.9.1
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.10.0
 ```
 
 Then choose a provider and a model:
@@ -136,11 +155,14 @@ maha
 
 Optional, in the same file: a fallback model, how hard the model works
 (`effort`: `low`, `medium`, `high`, `xhigh` or `max`; without it, the
-model's own) and limits for each turn.
+model's own), the model that titles the sessions, more instruction files,
+and limits for each turn.
 
 ```toml
 fallback_model = "glm-5.3"
 effort = "high"
+small_model = "glm-5.3-flash"      # titles; by default, the provider's cheap one
+instructions = ["CONTRIBUTING.md"] # added to the system prompt
 
 [limits]
 max_steps = 25       # calls to the model
@@ -204,6 +226,8 @@ your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
 | `/delete ID` | Deletes a session and its trace |
 | `/trace [ID]` | What a session did and cost, turn by turn |
 | `/new` | A new session without quitting, with the same model |
+| `/init [TEXT]` | Writes or improves the project's `AGENTS.md`; TEXT, what to stress |
+| `/rename [TITLE]` | Shows the session's title, or gives it one |
 | `/export [FILE]` | This conversation in Markdown; by default, `ID.md` |
 | `/exit` | Quits (also Ctrl+D) |
 
@@ -225,6 +249,7 @@ your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
 | `maha models [--all]` | The models of the catalog, with their API format, window and prices |
 | `maha sessions` | Recent sessions; `sessions delete ID` deletes one |
 | `maha trace [ID]` | What a session did and cost; without id, the last one here |
+| `maha prompt` | The system prompt a session here would have, without calling the model |
 | `maha stats [--days N]` | Cost and tokens by day and model |
 | `maha export ID [--format md\|json]` | A session in Markdown or JSON, to stdout |
 | `maha import FILE` | A session exported in JSON, as a new one |
@@ -239,7 +264,11 @@ With `-p`:
   directory. Outside it, a secret or a file that runs code are always
   denied.
 - With `-p` or without it: `-m ID` (model), `--fallback-model ID`,
-  `--effort LEVEL`, `--max-steps N`, `--max-cost USD`, `--max-tokens N` and `--timeout S`.
+  `--effort LEVEL`, `--max-steps N`, `--max-cost USD`, `--max-tokens N` and `--timeout S`;
+  and for the system prompt, `--append-system-prompt TEXT`,
+  `--append-system-prompt-file FILE` (added at the end) and
+  `--system-prompt-file FILE` (your own base instead of maha's; the
+  instructions and the environment stay).
 - Exit code: 0 fine, 1 error (also when the model declines), 2 wrong usage,
   3 a limit stopped the turn (also when the answer reached the model's
   output limit or the conversation filled its context window), 4 a call was denied; with Ctrl+C or a signal, 128 + the
@@ -266,8 +295,7 @@ user. It honors the `XDG_*` variables.
 
 `maha` grows milestone by milestone up to version 1.0. Next:
 
-- **Project instructions** (`AGENTS.md`, `/init`), context compaction and
-  **undo**.
+- **Context compaction**, for long conversations, and **undo**.
 - **Skills and custom commands, memory across sessions, sandbox, permission
   modes, subagents, MCP and hooks.**
 - **Web and images.**
