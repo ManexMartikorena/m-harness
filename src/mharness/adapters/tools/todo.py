@@ -6,12 +6,12 @@ draws it from there.
 """
 
 from mharness.domain.approval import ApprovalRequest
-from mharness.domain.todo import TodoList
+from mharness.domain.todo import TODO_TOOL, TodoList
 from mharness.domain.tools import Permission
 
 
 class TodoWrite:
-    name = "todo_write"
+    name = TODO_TOOL
     description = (
         "Write your task list for work of several steps: the whole list each "
         "time, which replaces the last. Mark a task in_progress before you "

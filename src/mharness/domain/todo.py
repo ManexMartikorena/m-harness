@@ -14,7 +14,10 @@ The last call of the history is the list, so a resumed session has it back.
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+
+# The tool's name: the terminal draws its calls as a list.
+TODO_TOOL = "todo_write"
 
 type TodoStatus = Literal["pending", "in_progress", "completed", "cancelled"]
 
@@ -66,3 +69,12 @@ class TodoList(BaseModel, frozen=True, extra="forbid"):
             if (count := sum(todo.status == status for todo in self.todos))
         ]
         return f"{total} task{'' if total == 1 else 's'}: {', '.join(counts)}"
+
+
+def todo_list(arguments: str) -> TodoList | None:
+    """The list in a call's arguments; None if they do not hold a valid
+    one (the loop answers the model with the error)."""
+    try:
+        return TodoList.model_validate_json(arguments or "{}")
+    except ValidationError, RecursionError:
+        return None

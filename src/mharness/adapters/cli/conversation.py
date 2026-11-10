@@ -19,6 +19,7 @@ from mharness.adapters.cli.commands import Commands, parse_command
 from mharness.adapters.cli.input import Discard, ReadLine, StdinLines
 from mharness.adapters.cli.spinner import Spinner, use_color
 from mharness.adapters.cli.text import clean, clean_line, usd
+from mharness.adapters.cli.todo import finished_todo, is_todo
 from mharness.application.sessions import Conversation, Resumed, Sessions, Start
 from mharness.domain.agent_events import (
     ApprovalRequested,
@@ -219,7 +220,8 @@ async def _answer(
                         if wrote:
                             print(file=out)
                             wrote = False
-                        print(f"  → {call_line(call)}", file=out, flush=True)
+                        if not is_todo(call.name):
+                            print(f"  → {call_line(call)}", file=out, flush=True)
                     case ApprovalRequested():
                         asking = True
                     case ModelRetry() | ModelFallback():
@@ -232,8 +234,9 @@ async def _answer(
                         spinner.start()
                     case ToolFinished():
                         asking = False
-                        mark = "✗" if event.result.is_error else "✓"
-                        print(f"  {mark} {clean(event.summary)}", file=out, flush=True)
+                        # Styles only on a terminal: never in a pipe or a file.
+                        styled = use_color() and out.isatty()
+                        show_finished(event, out, color=styled)
                         warn_crash(event, err)
                         # The model is called again.
                         spinner.start()
@@ -282,6 +285,20 @@ async def _answer(
         print("  [interrupted]", file=out, flush=True)
     finally:
         await spinner.stop()
+
+
+def show_finished(event: ToolFinished, out: TextIO, *, color: bool = False) -> None:
+    """`✓ 3 lines` after a call; the list after a call to `todo_write`,
+    whose call line was not shown (spec hito 10, §1.10)."""
+    todo = finished_todo(event, color=color)
+    if todo is not None:
+        print("\n".join(todo), file=out, flush=True)
+        return
+    if is_todo(event.call.name):
+        # Failed: shown as any other call, with its error.
+        print(f"  → {call_line(event.call)}", file=out)
+    mark = "✗" if event.result.is_error else "✓"
+    print(f"  {mark} {clean(event.summary)}", file=out, flush=True)
 
 
 def call_line(call: ToolCallBlock) -> str:
