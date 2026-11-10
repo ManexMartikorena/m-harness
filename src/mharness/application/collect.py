@@ -82,7 +82,9 @@ class Accumulator:
                 call = self._call(event)
                 # The id comes once, in the first piece.
                 call.id = call.id or event.id
-                call.name += event.name or ""
+                # The name comes whole, once: a server that repeats it must
+                # not make another (audit after hito 10, B3; as the AI SDK).
+                call.name = call.name or event.name or ""
                 call.arguments += event.arguments
             case MessageEnd():
                 self._end = event
