@@ -630,6 +630,69 @@ base; al retomar desde otra carpeta, el modelo dice la nueva; con
 Ese dato solo estaba en el JSONL de la traza: desde `3163936`, `/trace`
 y `maha trace` lo enseñan (`5899 in (2863 cached)`).
 
+### Resultados (PR 2)
+
+Tres pasadas completas y tres de train, todas del 2026-11-10, en el WSL
+(`~/.local/state/maha/evals/`). Las sesiones de validación no se miraron
+al ajustar.
+
+**Pasada 1** (`f9db6bb`; `20261110-125516-bd6d`): sin ⚠ de éxito; la 23,
+5/5 en cada modelo. Pero Kimi usaba `todo_write` de más: 55 llamadas, en
+10 tareas, también en trabajos de una o dos ediciones (`is_even`,
+`slugify`), con listas de una tarea o con tareas como "Verificar con los
+tests". Frente al PR 1, +12 % de pasos y +21 % de coste. Ninguno de sus
+fallos de train usó la lista.
+
+**El ajuste** (`faf0955`), con sesiones de train y una tarea larga a mano
+en un directorio desechable:
+- la guía y la descripción: solo para trabajo de tres cambios o más; cada
+  tarea es un cambio, nunca una lectura ni una comprobación; cada
+  actualización, en la misma respuesta que la llamada que empieza la
+  siguiente tarea, y la última con el último cambio;
+- GLM y Haiku dejaban la lista sin cerrar en la tarea larga. El resultado
+  de `todo_write` recuerda mantenerla al día mientras quedan tareas, como
+  hace Claude Code. Con eso, los tres modelos terminan la tarea larga con
+  la lista al día.
+- Train, una repetición: Kimi, de 4,71 a 4,17 pasos por ejecución; sin
+  listas en las tareas cortas.
+
+**Pasada 2, de confirmación** (`faf0955`; `20261110-134033-fb60`). Las
+20 tareas de antes, frente a la línea base y a la pasada del PR 1:
+
+| Modelo | Éxito (base → PR 1 → PR 2) | Pasos (base → PR 1 → PR 2) | Coste por ejecución |
+|---|---|---|---|
+| `glm-5.3-flash` | 96 % → 98 % → 93 % (93/100) | 4,4 → 5,1 → 4,9 | ⚠ +78 % (0,0007 → 0,0012 $); −9 % frente al PR 1 |
+| `kimi-k2.7-code` | 97 % → 99 % → 97 % (97/100) | 5,3 → 4,5 → 4,4 | −15 %; +10 % frente al PR 1 |
+| `claude-haiku-5-5` | 100 % → 100 % → 100 % | 3,4 → 3,7 → 3,7 | ⚠ +48 % (0,0029 → 0,0043 $); +11 % frente al PR 1 |
+
+- Las tres tareas nuevas: 5/5 en cada modelo (la 23, de varios pasos,
+  también).
+- Ninguna ⚠ de éxito. GLM, 93 % (p = 0,27, dentro del ruido): sus fallos
+  de train, en la 12, la 13, la 16 y la 20, son de lógica o de la
+  respuesta, y ninguna de esas sesiones usó la lista. Para no quedarse
+  con la duda, su train otra vez con 5 repeticiones
+  (`20261110-145733-8128`): 88/90 (98 %). Juntas, 174/180 (96,7 %); la
+  12 y la 13 son las que GLM ya fallaba antes. Es ruido.
+- `todo_write` en train, por cada 18 ejecuciones: Kimi, de 6,2 llamadas a
+  0,8; GLM, 0,4; Haiku, 0,4.
+- **El coste, frente al PR 1:** +10 % en Kimi y +11 % en Haiku: las dos
+  herramientas nuevas van en cada llamada (sus descripciones y su
+  esquema), la mayoría desde la caché. GLM baja.
+- **Decisión del mantenedor (2026-11-10): se aceptan las dos ⚠ de
+  coste.** Motivo: la mayor parte es el prompt de sistema, ya aceptado en
+  el PR 1; lo que añade este PR son las dos herramientas nuevas en cada
+  llamada, la mayoría leída de la caché; éxito y pasos, sin ⚠. Antes de
+  aceptarlas, el mantenedor pidió no tomar la decisión fácil: de ahí el
+  ajuste de `todo_write` y la pasada de confirmación.
+
+**Verificación a mano del PR 2** (§7, puntos 6 y 7; 2026-11-10, en una
+pseudoterminal y en directorios desechables con git, OpenCode Go): una
+tarea de varios pasos pinta la lista (`▸` la tarea en curso, `☐` las
+pendientes) y la deja al día al terminar; `ask_user` enseña la pregunta
+con sus opciones y "Other"; elegir un número y escribir "Other" con texto
+propio llegan al modelo; Ctrl+C en la pregunta da `[interrupted]`, y en
+el turno siguiente el modelo sabe que quedó sin respuesta.
+
 ## 6. Orden de piezas para el implementador
 
 **PR 1 — las capas** (`feature/hito-10-capas`)
@@ -776,4 +839,27 @@ spec las aprueba):
 
 ## 12. Aprendido al implementar
 
-Se añade al implementar.
+**PR 2 (2026-11-10):**
+- **La lista se pinta al terminar la llamada, no al proponerla** (§3.3
+  decía con `ToolCallProposed`): así solo se ve una lista válida; una
+  llamada que no valida se enseña como cualquier otra, con su error.
+- **El ejemplo de §1.11 no cumple su propio esquema:** `"Base de
+  datos"` tiene 13 caracteres, y el tope de `header` es 12. Lo cazó un
+  test.
+- **Topes que el esquema no decía,** para que el modelo no llene la
+  pantalla: `label` hasta 60 caracteres, `description` hasta 200,
+  `question` hasta 500; las etiquetas de una pregunta y las preguntas, sin
+  repetir; ninguna opción se puede llamar "Other", que la añade maha.
+- **`ask_user` no enseña su línea de llamada:** sus preguntas ya se ven.
+  Si sus argumentos no valen, se enseña la línea con el error.
+- **El reloj del turno se para mientras la persona responde:** el puerto
+  `Tool` gana `waits_for_user`, y el bucle hace con esa herramienta lo
+  mismo que con una aprobación (decisión B4 de la auditoría).
+- **En `-p`, una llamada denegada corta el turno** (spec 5, §1.4): una
+  lista de tareas queda a medias por eso, no por el modelo. Al medir a
+  mano cuánto se cierra la lista, hay que permitir lo que la tarea
+  necesita.
+- **La guía de una herramienta se mide como el prompt:** la primera
+  versión de la de `todo_write` subió los pasos de Kimi un 12 %. Ver §5,
+  "Resultados (PR 2)".
+
