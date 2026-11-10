@@ -290,6 +290,32 @@ def test_an_empty_fallback_model_is_an_error(home: Path, project: Path) -> None:
         load(home, project)
 
 
+# The small model (spec hito 10, §1.12).
+
+
+def test_the_user_and_the_project_set_the_small_model(
+    home: Path, project: Path
+) -> None:
+    write_user(home, 'model = "m"\n')
+    assert load(home, project).small_model is None
+
+    write_user(home, 'model = "m"\nsmall_model = "glm-5.3-flash"\n')
+    assert load(home, project).small_model == "glm-5.3-flash"
+
+    # The project wins, and it is said at start: it may raise the cost.
+    write_project(project, 'small_model = "caro"\n')
+    settings = load(home, project)
+    assert settings.small_model == "caro"
+    assert settings.from_project == {"small_model": "caro"}
+
+
+def test_an_empty_small_model_is_an_error(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\nsmall_model = ""\n')
+
+    with pytest.raises(ConfigError, match="small_model"):
+        load(home, project)
+
+
 def test_without_limits_the_turn_has_the_default_ones(
     home: Path, project: Path
 ) -> None:

@@ -15,6 +15,11 @@ class ModelCatalog(Protocol):
         """The model on that provider, or None if the catalog lacks it."""
         ...
 
+    def small_model(self, provider: str) -> str | None:
+        """The provider's cheap model for side tasks, as titles; None if
+        the catalog names none (spec hito 10, §1.12)."""
+        ...
+
     def models(self) -> list[ModelInfo]:
         """Every model of every provider, for `maha models` (spec hito 8,
         §1.15)."""

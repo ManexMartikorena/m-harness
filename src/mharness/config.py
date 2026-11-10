@@ -111,6 +111,9 @@ class Settings(BaseModel, frozen=True):
     model: str | None
     # Answers when the retries of `model` run out (spec hito 8, §1.14).
     fallback_model: str | None = None
+    # Writes the titles of the sessions; None: the catalog's for the
+    # provider, or the session's (spec hito 10, §1.12).
+    small_model: str | None = None
     # None: the model's own (spec hito 9, §1.7).
     effort: Effort | None = None
     # How long Anthropic's prompt cache lasts (spec hito 9, decision 9).
@@ -150,6 +153,7 @@ class _ProjectFile(BaseModel, extra="forbid"):
     provider: str | None = Field(default=None, min_length=1)
     model: str | None = Field(default=None, min_length=1)
     fallback_model: str | None = Field(default=None, min_length=1)
+    small_model: str | None = Field(default=None, min_length=1)
     effort: Effort | None = None
     cache_ttl: CacheTtl | None = None
     limits: _Limits = _Limits()
@@ -257,6 +261,7 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
         provider=provider,
         model=model,
         fallback_model=project.fallback_model or user.fallback_model,
+        small_model=project.small_model or user.small_model,
         effort=project.effort or user.effort,
         cache_ttl=project.cache_ttl or user.cache_ttl or "5m",
         limits=_stricter(user.limits, project.limits),
@@ -271,7 +276,14 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
         api_key=_api_key(provider_name, provider, env, need=calls_model),
         from_project={
             name: value
-            for name in ("provider", "model", "fallback_model", "effort", "cache_ttl")
+            for name in (
+                "provider",
+                "model",
+                "fallback_model",
+                "small_model",
+                "effort",
+                "cache_ttl",
+            )
             if (value := getattr(project, name)) is not None
         },
     )

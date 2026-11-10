@@ -345,6 +345,7 @@ _CHOICES = {
     "provider": "provider",
     "model": "model",
     "fallback_model": "fallback",
+    "small_model": "titles with",
     "effort": "effort",
     "cache_ttl": "cache",
 }

@@ -8,8 +8,14 @@ from mharness.domain.catalog import ModelInfo
 class MemoryCatalog:
     """Knows exactly the models it is given."""
 
-    def __init__(self, models: Iterable[ModelInfo] = ()) -> None:
+    def __init__(
+        self, models: Iterable[ModelInfo] = (), small: dict[str, str] | None = None
+    ) -> None:
         self._models = {(info.provider, info.model): info for info in models}
+        self._small = small or {}
+
+    def small_model(self, provider: str) -> str | None:
+        return self._small.get(provider)
 
     def get(self, provider: str, model: str) -> ModelInfo | None:
         return self._models.get((provider, model))

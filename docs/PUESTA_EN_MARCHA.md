@@ -125,6 +125,15 @@ antes de `[limits]`; `--fallback-model` lo cambia para una ejecución.
 fallback_model = "glm-5.3"
 ```
 
+Desde el hito 10, también opcional, el modelo que escribe los títulos de
+las sesiones. Sin él, el que el catálogo da al proveedor (en OpenCode Go,
+`glm-5.3-flash`); si tampoco hay, el de la sesión. Un `small_model` en el
+`.maha/config.toml` de un proyecto se avisa al arrancar.
+
+```toml
+small_model = "glm-5.3-flash"
+```
+
 Un proyecto puede tener `.maha/config.toml` con `provider`, `model` y
 `fallback_model`, que ganan a los del usuario, y `[limits]`, de los que vale el más estricto de
 los dos ficheros: un repositorio ajeno no puede aflojar los tuyos. Si declara `[providers]`, `maha` se niega a
