@@ -9,6 +9,38 @@ Para cada hito, además: su spec en `docs/specs/` (decisiones, verificación
 a mano y "Aprendido al implementar"), su nota en `docs/guia/` y su release
 en GitHub.
 
+## Hito 10 (2026-11-04 a 2026-11-10)
+
+- **Hito 10 cerrado, 2026-11-10: `v0.10.0` — System prompt por capas.**
+  Spec IMPLEMENTADA, nota 10 de la guía, los dos README y PROYECTO. PRs:
+  #107 (spec), #108, #109, #110 y el de cierre. Líneas base nuevas con la
+  batería de 24 tareas (`93cd982`): GLM 114/120, Kimi 117/120 y Haiku
+  120/120, sin ⚠ de éxito; las ⚠ de coste, las que el mantenedor aceptó en
+  los PRs 1 y 2. Cierra el pendiente de la spec 6, §1.8 (el modelo no
+  sabía en qué directorio trabajaba tras retomar una sesión de otro): lo
+  resuelve el entorno del prompt (spec 10, §1.2). El mantenedor pidió una
+  auditoría tras el hito, antes del 11.
+- **PR 3, `/init`, títulos y `/rename`** (#110): `/init [TEXTO]` escribe o
+  mejora el `AGENTS.md`; `small_model` de la configuración o del catálogo
+  por proveedor; los títulos en segundo plano tras el primer turno, con su
+  coste en la sesión, en `/trace` y en `maha stats`; `/rename`. Por
+  decisión del mantenedor, la tarea 24 de las evals mide `/init` tal como
+  lo teclea la persona: 15/15.
+- **PR 2, la lista de tareas y las preguntas** (#109): `todo_write`,
+  pintada en la terminal; `ask_user`, solo con alguien que responda, con el
+  reloj del turno parado mientras; la tarea 23 (varios pasos). La primera
+  pasada mostró a Kimi usando la lista de más (+12 % de pasos); el
+  mantenedor pidió no tomar la decisión fácil: la guía se reescribió
+  mirando solo train, y la lista se cierra al terminar. Las ⚠ de coste,
+  aceptadas.
+- **PR 1, las capas** (#108): base, familia, usuario, proyecto, extra y
+  entorno; `AGENTS.md` y, si falta, `CLAUDE.md`; `instructions`; `maha
+  prompt` y las tres opciones del system prompt; la huella del prompt en la
+  traza y en la línea base; las tareas 21 y 22. `maha eval` guarda su
+  informe en `report.txt`; `/trace` enseña los tokens leídos de la caché.
+  Las ⚠ de coste (el prompt va en cada llamada, la mayoría desde la caché),
+  aceptadas.
+
 ## Hito 9 (2026-11-03 a 2026-11-04)
 
 Lo más reciente primero.

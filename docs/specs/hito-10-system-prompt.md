@@ -1,5 +1,6 @@
 Estado: PROPUESTA (2026-11-04) → APROBADA (2026-11-04, por el humano, con la
-decisión 2 revisada a su petición: una capa por familia de modelo, §1.3)
+decisión 2 revisada a su petición: una capa por familia de modelo, §1.3) →
+IMPLEMENTADA (2026-11-10, `v0.10.0`)
 
 # Spec — Hito 10: System prompt por capas
 
@@ -737,6 +738,24 @@ pseudoterminal y en directorios desechables con git, OpenCode Go):
   del turno, en la sesión y en la traza (`title`, 104 tokens de entrada,
   26 de salida). `/rename` lo cambia, y `/sessions` y `maha sessions` lo
   enseñan.
+
+### Líneas base nuevas (cierre)
+
+2026-11-10, con `93cd982` (el `main` tras los tres PRs), la batería de 24
+tareas, 3 modelos y 5 repeticiones (`--save`; sesiones en
+`~/.local/state/maha/evals/20261110-180751-eb95` del WSL):
+
+| Modelo | Éxito | Las cuatro tareas nuevas | Coste por ejecución |
+|---|---|---|---|
+| `glm-5.3-flash` | 95 % (114/120) | 20/20 | 0,0012 $ |
+| `kimi-k2.7-code` | 98 % (117/120) | 20/20 | 0,0054 $ |
+| `claude-haiku-5-5` | 100 % (120/120) | 20/20 | 0,0049 $ |
+
+Frente a las líneas base del 2026-11-04, sin ⚠ de éxito (GLM, 96 % → 94 %
+en las 20 de antes, p = 0,37: sus fallos son los de lógica de la 12 y la
+14, como en las pasadas de los PRs). Las ⚠ de coste (GLM +77 %, Haiku
++48 %) son las que el mantenedor ya aceptó en los PRs 1 y 2. Desde aquí,
+estas son las líneas base: `evals/baselines/2026-11-10-*.json`.
 
 ## 6. Orden de piezas para el implementador
 

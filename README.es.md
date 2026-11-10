@@ -11,20 +11,20 @@
 hacerlo, **preguntándote antes de cada cambio**. Funciona con el proveedor y
 el modelo que elijas, y te dice en cada turno lo que ha costado.
 
-> 🚧 **En desarrollo: `v0.9.1`.** Ya es usable para trabajar en un
-> proyecto: conversar, leer y cambiar ficheros, ejecutar comandos, guardar y
-> retomar sesiones y ver el coste, con modelos del formato de OpenAI y con
-> Claude; y en scripts, con `maha -p`. Lo que viene, en la [hoja de
-> ruta](#hoja-de-ruta).
+> 🚧 **En desarrollo: `v0.10.0`.** Ya es usable para trabajar en un
+> proyecto: conversar, leer y cambiar ficheros, ejecutar comandos, seguir el
+> `AGENTS.md` del proyecto, guardar y retomar sesiones y ver el coste, con
+> modelos del formato de OpenAI y con Claude; y en scripts, con `maha -p`.
+> Lo que viene, en la [hoja de ruta](#hoja-de-ruta).
 
 ```
 $ maha -m claude-haiku-5-5
-maha 0.9.1 · opencode-go · claude-haiku-5-5 · /help for commands
+maha 0.10.0 · opencode-go · claude-haiku-5-5 · /help for commands
 > Lee notas.txt con read_file y dime qué pone, en una frase.
   → read_file(path="notas.txt")
   ✓ 2 lines
-El archivo notas.txt contiene solo dos líneas: "uno" y "dos".
-  [tokens: 4027 in · 82 out · 1 call · $0.0013 · session $0.0013]
+El archivo `notas.txt` tiene dos líneas: "uno" y "dos".
+  [tokens: 8803 in · 82 out · 1 call · $0.0026 · session $0.0026]
 > Cambia la segunda línea de notas.txt por 'tres' con edit_file.
   → edit_file(path="notas.txt", old_string="dos", new_string="tres")
   ┌ edit notas.txt
@@ -34,28 +34,30 @@ El archivo notas.txt contiene solo dos líneas: "uno" y "dos".
   │ +tres
   └ Allow? [y] yes · [a] always this session · [n] no: y
   ✓ 1 replacement
-He cambiado la segunda línea de notas.txt: ahora dice "tres" en lugar de "dos".
-  [tokens: 4419 in · 218 out (79 reasoning) · 1 call · $0.0007 · session $0.0020]
+He cambiado la segunda línea de `notas.txt` por "tres". La primera línea ("uno") no se ha tocado.
+  [tokens: 9115 in · 144 out · 1 call · $0.0007 · session $0.0033]
 > /trace
-  20261104-142320-56bb · claude-haiku-5-5 · 2 turns · 4 model calls · 2 tools
-  1  15:23:20  2 calls · 1 tool · 4027 in · 82 out · $0.0013 · 2.2 s
-  2  15:23:23  2 calls · 1 tool · 4419 in · 218 out · $0.0007 · 3.2 s
-  total: 8446 in · 300 out · $0.0020
-  [trace: ~/.local/share/maha/traces/20261104-142320-56bb.jsonl]
+  20261110-173406-17e4 · claude-haiku-5-5, glm-5.3-flash · 2 turns · 5 model calls · 2 tools
+  1  18:34:06  2 calls · 1 tool · 8803 in (4364 cached) · 82 out · $0.0026 · 1.9 s
+  2  18:34:08  2 calls · 1 tool · 9115 in (8927 cached) · 144 out · $0.0007 · 2.3 s
+  title by glm-5.3-flash · 102 in · 11 out · <$0.0001
+  total: 18020 in (13291 cached) · 237 out · $0.0033
+  [trace: ~/.local/share/maha/traces/20261110-173406-17e4.jsonl]
 > /exit
 $ maha -c -p "¿Qué pone ahora en notas.txt? Una frase." --allow read_file
-  [resumed 20261104-142320-56bb · 8 messages · claude-haiku-5-5]
+  [resumed 20261110-173406-17e4 · 8 messages · claude-haiku-5-5]
   → read_file(path="notas.txt")
   ✓ 2 lines
-  [tokens: 4813 in · 80 out · 1 call · $0.0004 · session $0.0024]
-Ahora notas.txt contiene dos líneas: "uno" y "tres".
+  [tokens: 7845 in · 111 out (29 reasoning) · 1 call · $0.0024 · session $0.0057]
+`notas.txt` ahora contiene dos líneas: "uno" y "tres".
 ```
 
 *(Una sesión real. Los totales son exactos; cada turno se redondea a cuatro
 decimales. Con `-p`, por stdout sale solo la respuesta; las líneas entre
 corchetes y las llamadas van a stderr. Claude Haiku 5.5 por OpenCode Go:
-desde el segundo turno lee la conversación de la caché del prompt, y cada
-turno cuesta menos.)*
+la mayor parte de cada petición sale de la caché del prompt (`cached` en
+`/trace`) y cuesta mucho menos; la línea `title by` es el modelo barato que
+tituló la sesión.)*
 
 ## Qué hace
 
@@ -63,6 +65,24 @@ turno cuesta menos.)*
   `list_dir`, `glob`, `grep`; `glob` y `grep` se saltan lo que ignora
   `.gitignore`), los escribe y edita (`write_file`, `edit_file`, con el diff
   a la vista) y ejecuta comandos (`run_command`).
+- **Conoce tu proyecto.** Antes de tu primer mensaje, el modelo lee el
+  `AGENTS.md` del proyecto (o `CLAUDE.md`, si no lo hay), tu
+  `~/.config/maha/AGENTS.md` y dónde trabaja: directorio, raíz git,
+  plataforma y fecha. Al arrancar, `maha` dice qué ficheros de
+  instrucciones ha cargado, y nunca cambian los permisos. `/init` escribe o
+  mejora el `AGENTS.md` del proyecto, y `maha prompt` enseña el system
+  prompt entero.
+
+  ```
+  > /init los tests se lanzan con unittest, nunca con pytest
+    ┌ create AGENTS.md (49 lines)
+    └ Allow? [y] yes · [a] always this session · [n] no: y
+    [AGENTS.md takes effect in the next session: /new]
+  ```
+- **Planifica, y pregunta cuando hace falta.** En un trabajo de varios
+  cambios, el modelo lleva una lista de tareas que ves avanzar (`☑ ▸ ☐`);
+  cuando no puede seguir sin ti, pregunta con opciones, y siempre puedes
+  escribir tu propia respuesta.
 - **Nada cambia sin tu permiso.** Cada escritura y cada comando te preguntan
   antes, con el diff o el comando: una vez, siempre en esta sesión, o no.
   "Siempre" cubre todas las ediciones siguientes dentro del directorio de
@@ -102,7 +122,8 @@ turno cuesta menos.)*
   turno (también la respuesta que cortas), y se retoma desde cualquier
   directorio, también al arrancar (`maha -c`, `maha -r ID`). Se exportan
   en Markdown o JSON y se importan en otro PC. Al retomar, las
-  aprobaciones empiezan de cero.
+  aprobaciones empiezan de cero. Un modelo barato titula cada sesión tras
+  su primer turno; `/rename` le pone el tuyo.
 - **Sabes lo que gastas.** Cada turno dice sus tokens y su coste, y la
   sesión lo que lleva: el coste que da el proveedor (con OpenCode Go, lo
   que cuenta contra tu límite mensual) o, si no lo da, el de un catálogo con
@@ -117,7 +138,7 @@ Necesitas [uv](https://docs.astral.sh/uv/) (instala también Python 3.14 si
 falta).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.9.1
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.10.0
 ```
 
 Después, elige proveedor y modelo:
@@ -140,11 +161,14 @@ maha
 
 Opcional, en el mismo fichero: un modelo de respaldo, cuánto se esfuerza
 el modelo (`effort`: `low`, `medium`, `high`, `xhigh` o `max`; sin él, el
-del modelo) y topes para cada turno.
+del modelo), el modelo que titula las sesiones, más ficheros de
+instrucciones y topes para cada turno.
 
 ```toml
 fallback_model = "glm-5.3"
 effort = "high"
+small_model = "glm-5.3-flash"      # títulos; por defecto, el barato del proveedor
+instructions = ["CONTRIBUTING.md"] # se añaden al system prompt
 
 [limits]
 max_steps = 25       # llamadas al modelo
@@ -210,6 +234,8 @@ effort max, cache 1h]`.
 | `/delete ID` | Borra una sesión y su traza |
 | `/trace [ID]` | Lo que hizo y costó una sesión, turno a turno |
 | `/new` | Una sesión nueva sin salir, con el mismo modelo |
+| `/init [TEXTO]` | Escribe o mejora el `AGENTS.md` del proyecto; TEXTO, lo que destacar |
+| `/rename [TÍTULO]` | Enseña el título de la sesión, o le pone uno |
 | `/export [FICHERO]` | Esta conversación en Markdown; por defecto, `ID.md` |
 | `/exit` | Sale (también Ctrl+D) |
 
@@ -232,6 +258,7 @@ effort max, cache 1h]`.
 | `maha models [--all]` | Los modelos del catálogo, con su formato de API, ventana y precios |
 | `maha sessions` | Las sesiones recientes; `sessions delete ID` borra una |
 | `maha trace [ID]` | Lo que hizo y costó una sesión; sin id, la última de aquí |
+| `maha prompt` | El system prompt que tendría una sesión aquí, sin llamar al modelo |
 | `maha stats [--days N]` | Coste y tokens por día y por modelo |
 | `maha export ID [--format md\|json]` | Una sesión en Markdown o JSON, a stdout |
 | `maha import FICHERO` | Una sesión exportada en JSON, como nueva |
@@ -246,7 +273,11 @@ Con `-p`:
   dentro del directorio. Fuera de él, un secreto o un fichero que ejecuta
   código se deniegan siempre.
 - Con `-p` o sin él: `-m ID` (modelo), `--fallback-model ID`,
-  `--effort NIVEL`, `--max-steps N`, `--max-cost USD`, `--max-tokens N` y `--timeout S`.
+  `--effort NIVEL`, `--max-steps N`, `--max-cost USD`, `--max-tokens N` y `--timeout S`;
+  y para el system prompt, `--append-system-prompt TEXTO`,
+  `--append-system-prompt-file FICHERO` (se añaden al final) y
+  `--system-prompt-file FICHERO` (tu propia base en lugar de la de maha;
+  las instrucciones y el entorno se quedan).
 - Código de salida: 0 bien, 1 error (también si el modelo se niega), 2 uso
   incorrecto, 3 un tope paró el turno (también si la respuesta llegó a la
   salida máxima del modelo o la conversación llenó su ventana de
@@ -274,8 +305,8 @@ tu usuario. Respeta las variables `XDG_*`.
 
 `maha` crece hito a hito hasta la versión 1.0. Lo siguiente:
 
-- **Instrucciones del proyecto** (`AGENTS.md`, `/init`), compactación del
-  contexto y **deshacer** cambios.
+- **Compactación del contexto**, para conversaciones largas, y **deshacer**
+  cambios.
 - **Skills y comandos propios, memoria entre sesiones, sandbox, modos de
   permiso, subagentes, MCP y hooks.**
 - **Web e imágenes.**

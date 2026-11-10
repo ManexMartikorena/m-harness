@@ -1,26 +1,23 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-10. **Hito 9 cerrado: `v0.9.0` y `v0.9.1`
-(auditoría profunda). En curso: el hito 10 (system prompt por capas). Los
-PRs 1 (las capas), 2 (`todo_write` y `ask_user`) y 3 (`/init`, títulos y
-`/rename`) están terminados, con evals y verificación a mano; sigue el
-cierre del hito.**
+Última actualización: 2026-11-10. **Hito 10 cerrado: `v0.10.0` (system
+prompt por capas). En curso: la auditoría tras el hito 10, pedida por el
+mantenedor para empezar el hito 11 con cero deuda.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 ## Fase actual
 
-**Desarrollo. Hitos 1 a 9 cerrados, y la auditoría profunda que se pidió
-antes del hito 10 (system prompt por capas), también. Plan: 23 hitos hasta
-la 1.0 (DESIGN §14).**
+**Desarrollo. Hitos 1 a 10 cerrados; en curso, la auditoría tras el hito
+10, antes del hito 11 (gestión del contexto). Plan: 23 hitos hasta la 1.0
+(DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.9.1` — Auditoría profunda tras el hito 9**
-  (2026-11-04):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.9.1
-- Ramas abiertas: `feature/hito-10-init-titulos` (el PR 3 del hito 10),
-  hasta que se integre. Las integradas se conservan en GitHub.
+- Última versión: **`v0.10.0` — System prompt por capas** (2026-11-10):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.0
+- Ramas abiertas: `fix/auditoria-hito-10`, la auditoría, hasta que se
+  integre. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -46,21 +43,23 @@ spec, su nota de la guía y su release.
 | 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
 | 8 | Evals (20 tareas, dos modelos, línea base), `maha -p`, reintentos con respaldo y comandos de línea; auditoría con tres revisiones independientes | `v0.8.0` (2026-10-30), `v0.8.1` (2026-11-03) |
 | 9 | Formato de Anthropic (Claude, MiniMax y Qwen por OpenCode; la API directa), el formato de cada modelo, razonamiento devuelto intacto, effort y caché del prompt; auditoría profunda con cinco revisores y una revisión de los arreglos | `v0.9.0` (2026-11-03), `v0.9.1` (2026-11-04) |
+| 10 | System prompt por capas (`AGENTS.md`, entorno, `maha prompt`), `todo_write`, `ask_user`, `/init`, títulos de sesión y `/rename`; evals con 24 tareas y líneas base nuevas | `v0.10.0` (2026-11-10) |
 
 ## Siguiente paso
 
-Al abrir: contrastar con GitHub (`gh pr list`) si el PR 3 del hito 10
-(`feature/hito-10-init-titulos`) ya está integrado. Si sigue abierto, se
-integra primero (merge commit, CI en verde). Después, `git switch main &&
-git pull`, `uv sync`, y comprobar tests, mypy y lint-imports en verde
-(2371 tests).
+Al abrir: contrastar con GitHub (`gh pr list`) en qué punto está la
+auditoría (rama `fix/auditoria-hito-10`), y trabajar en esa rama: `git
+fetch && git switch fix/auditoria-hito-10 && git pull`, `uv sync`, y
+comprobar tests, mypy y lint-imports en verde.
 
-1. **Agente:** el cierre del hito 10, en `feature/hito-10-cierre` desde
-   `main` (spec §6, "Cierre"): líneas base nuevas con la batería de 24
-   tareas (`maha eval --models glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5
-   --repeat 5 --retry-errors --save`, unos 1,5 $ y 55 minutos), nota 10 de
-   la guía, los dos README, PROYECTO, HISTORIAL, MAPA, spec IMPLEMENTADA,
-   milestone cerrado y `v0.10.0`.
+1. **Agente:** la auditoría tras el hito 10 (spec
+   `docs/specs/mejora-2026-11-10-auditoria-hito-10.md`). Cinco revisores
+   independientes del código entero y tres agentes que evaluaron las
+   mejoras de producto; decisiones del mantenedor ya tomadas (`/init` en
+   una subcarpeta, pegar texto con *bracketed paste*, esperar siempre al
+   título al salir, y hacer las mejoras que los agentes vean buenas). Cada
+   fallo con su test primero; después, una revisión independiente de los
+   arreglos, las evals contra las líneas base del 2026-11-10 y `v0.10.1`.
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
@@ -91,7 +90,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.9.1`).
+   `maha 0.10.0`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -141,8 +140,6 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 - canal de distribución (hito 23).
 
 **Con hito asignado** (salieron de hitos anteriores; cada uno, de su spec):
-- **Hito 10:** el modelo no sabe en qué directorio trabaja tras retomar una
-  sesión de otro (spec 6, §1.8). Lo resuelve la spec 10, §1.2.
 - **Hito 11:** los `AGENTS.md` de subcarpetas, cargados al leer un fichero
   de allí (spec 10, decisión 6); el coste en tokens de las
   herramientas en cada llamada (~700 con las cuatro del hito 4; hoy son
@@ -246,7 +243,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
   `v0.8.1` (2026-11-03, la auditoría)
 - [x] 9. Adaptador de Anthropic. `v0.9.0` (2026-11-03) y el arreglo
   `v0.9.1` (2026-11-04, la auditoría profunda)
-- [ ] 10. System prompt por capas. `v0.10.0`
+- [x] 10. System prompt por capas. `v0.10.0` (2026-11-10)
 - [ ] 11. Gestión del contexto. `v0.11.0`
 - [ ] 12. Deshacer y puntos de control. `v0.12.0` *(nuevo, 2026-10-27)*
 - [ ] 13. Skills y comandos personalizados. `v0.13.0`
