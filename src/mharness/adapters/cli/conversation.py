@@ -159,6 +159,7 @@ async def _turns(
         commands.tell_resumed(resumed)
     else:
         commands.note_model()
+        commands.note_prompt()
     for note in notes:
         print(f"  {note}", file=out, flush=True)
     while True:

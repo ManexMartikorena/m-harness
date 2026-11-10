@@ -119,8 +119,11 @@ Las capas de ANALISIS §5 que faltan (skills y memoria) llegan en los hitos
 ### 1.2 Una vez por sesión
 
 El prompt se construye al crear el agente de una sesión (al arrancar, con
-`/new` y con `/resume`) y **no cambia** hasta la siguiente. `/model` no lo
-toca.
+`/new` y con `/resume`) y **no cambia** hasta la siguiente. `/model` solo
+cambia la capa de familia. *(Corregido al implementarlo: decía "`/model`
+no lo toca", pero con la capa de familia otro modelo puede necesitar otra;
+la caché del proveedor es de cada modelo, así que cambiar de modelo ya la
+pierde. Las instrucciones siguen las del principio de la sesión.)*
 - **Por qué:** si cambia, la caché del proveedor se pierde en cada
   llamada (§1.0). Claude Code hace lo mismo.
 - **Consecuencia:** un `AGENTS.md` editado a mitad de sesión (también por
@@ -538,6 +541,94 @@ El prompt cambia el comportamiento del agente en todo: la batería entera.
 - **Líneas base nuevas** al final del hito, con la batería de 23.
 
 El resultado se anota aquí al implementar.
+
+### Resultados (PR 1)
+
+**Pasada 1, 2026-11-04** (`b82ec5c`, prompt base sin capas de familia;
+3 modelos, 5 repeticiones, 22 tareas, contra las líneas base del
+2026-11-04; sesiones en `~/.local/state/maha/evals/20261104-182436-daa8`
+del WSL):
+
+| Modelo | Éxito | Pasos por ejecución | Coste por ejecución |
+|---|---|---|---|
+| `glm-5.3-flash` | 96 % → 98 % (108/110) | 4,4 → 7,2 (⚠ +65 %) | ⚠ +129 % (0,0007 → 0,0015 $) |
+| `kimi-k2.7-code` | 97 % → 98 % (108/110) | 5,3 → 6,5 (+22 %, ruido) | +32 % (ruido) |
+| `claude-haiku-5-5` | 100 % → 99 % (109/110, ruido) | 3,4 → 4,3 (⚠ +26 %) | ⚠ +56 % (0,0029 → 0,0045 $) |
+
+- Las tareas 21 y 22 (`AGENTS.md` y `CLAUDE.md`): 15/15 en cada modelo.
+- Ninguna ⚠ de éxito; las de pasos y coste, explicadas: en las sesiones de
+  train, GLM buscaba cómo lanzar los tests sin `run_command` y escribía
+  tests que nadie pidió (tarea 10, de 3 a 9 pasos; tarea 06, "no tengo
+  herramienta para ejecutar comandos"). La base pedía "run the tests"
+  aunque no hubiera con qué. Arreglado en la base (`d9367e7`): comprobar
+  solo con las herramientas que hay; lanzar los tests, en la línea de
+  `run_command`.
+
+**Iteración, 2026-11-04** (`d9367e7`; solo train, 1 repetición): pasos por
+ejecución en train, GLM 6,6 → 4,5, Kimi 6,0 → 4,4 y Haiku 4,1 → 3,7, ya
+cerca de los de la línea base sin prompt (4,4, 5,3 y 3,4); el coste baja
+igual. Fallo: GLM, la 08, una vez (lógica).
+
+**Capas de familia:** en los fallos de train de la pasada 1 no hay un
+patrón de una familia (GLM, un nombre sin definir en la 12; Kimi, una
+respuesta equivocada en la 13; Haiku, ninguno en train). El único patrón
+era de la base, y se arregló en la base. Sin un fallo que corregir, ninguna
+capa: el mecanismo queda listo y sin ficheros (§1.3).
+
+**Pasada 2 (confirmación)**: la del 2026-11-04 (18:49) se cortó con 164
+de 330 ejecuciones y no vale (`20261104-184916-c436`). Repetida el
+**2026-11-10** con `9a9333d` (el prompt y el bucle, los de `d9367e7`;
+`9a9333d` solo guarda el informe en `report.txt`); 3 modelos, 5
+repeticiones, 22 tareas, contra las líneas base del 2026-11-04; sesiones,
+`runs.json` (330 ejecuciones) y `report.txt` en
+`~/.local/state/maha/evals/20261110-105014-44f6` del WSL. Siete errores
+del proveedor (`ReadError`, 120 s sin datos), repetidos con
+`--retry-errors`; ninguno queda en el resultado.
+
+Las 20 tareas de antes, frente a la línea base y a la pasada 1:
+
+| Modelo | Éxito | Pasos por ejecución (base → pasada 1 → 2) | Coste por ejecución |
+|---|---|---|---|
+| `glm-5.3-flash` | 96 % → 98 % (98/100) | 4,4 → 7,2 → 5,1 (+16 %) | ⚠ +95 % (0,0007 → 0,0013 $) |
+| `kimi-k2.7-code` | 97 % → 99 % (99/100) | 5,3 → 6,5 → 4,5 (−17 %) | −23 % (0,0055 → 0,0043 $) |
+| `claude-haiku-5-5` | 100 % → 100 % (100/100) | 3,4 → 4,3 → 3,7 (+7 %) | ⚠ +34 % (0,0029 → 0,0039 $) |
+
+- Las tareas 21 y 22: 5/5 en cada modelo.
+- Ninguna ⚠ de éxito ni de pasos. Fallos, los tres de lógica: GLM en la
+  18 y la 20, Kimi en la 14.
+- **Las dos ⚠ de coste, con números** (por ejecución, de las trazas; la
+  línea base de GLM es la pasada `20261104-140237-e95c` y la de Haiku,
+  `20261104-134120-732d`):
+  - **GLM:** entrada 6.617 → 10.541 tokens (en caché 4.791 → 7.316),
+    salida 469 → 1.017, de ellos razonamiento 68 → 658. Unos 0,0003 $
+    de la subida son el prompt (más entrada por llamada); los otros
+    0,0003 $, que GLM razona más (en la pasada 1, con casi el mismo
+    prompt, eran 195 tokens). En dinero: 0,0006 $ más por ejecución.
+  - **Haiku:** escribe en caché 1.508 → 3.642 tokens por ejecución. Cada
+    ejecución de las evals es una sesión nueva: la primera llamada paga
+    escribir el prompt en la caché, y las siguientes lo leen (el 68 % de
+    la entrada sale de la caché). En una conversación, esa escritura se
+    paga una vez por sesión, no por turno. 0,0010 $ más por ejecución.
+- El prompt base: 2.285 bytes (traza de la verificación, 2026-11-10),
+  unos 600 tokens a 4 bytes por token, una estimación; por debajo del
+  objetivo de 1.500.
+- **Decisión del mantenedor (2026-11-10): se aceptan las dos ⚠ de
+  coste.** Motivo: el prompt cuesta tokens en cada llamada, la mayoría
+  leídos de la caché; la escritura en caché de Haiku se paga una vez por
+  sesión, y cada ejecución de las evals es una sesión; el resto de la
+  subida de GLM es razonamiento, que varía entre pasadas. Éxito y pasos,
+  sin ⚠.
+
+**Verificación a mano del PR 1** (§7, puntos 1 a 4 y 9; 2026-11-10, en
+un directorio desechable con git, OpenCode Go): todos bien. Sin
+`AGENTS.md`, el modelo acierta el directorio y la fecha; con `AGENTS.md`,
+y luego con solo `CLAUDE.md`, la línea `[instructions: …]` lo nombra y
+el modelo lo sigue; `maha prompt` enseña las capas,
+`--append-system-prompt` va al final y `--system-prompt-file` cambia la
+base; al retomar desde otra carpeta, el modelo dice la nueva; con
+`claude-haiku-5-5`, la segunda llamada lee 2.863 tokens de la caché.
+Ese dato solo estaba en el JSONL de la traza: desde `3163936`, `/trace`
+y `maha trace` lo enseñan (`5899 in (2863 cached)`).
 
 ## 6. Orden de piezas para el implementador
 

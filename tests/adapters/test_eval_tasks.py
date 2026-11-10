@@ -189,6 +189,35 @@ def append(path: Path, text: str) -> None:
         file.write(text)
 
 
+COUNT = """
+
+def contar(citas: list[str]) -> int:
+    \"\"\"Cuántas citas hay.\"\"\"
+    return len(citas)
+"""
+ABSOLUTE_ZERO = """def a_fahrenheit(celsius: float) -> float:
+    \"\"\"Grados Celsius en grados Fahrenheit.\"\"\"
+    if celsius < -273.15:
+        raise ValueError("a_fahrenheit: below absolute zero")
+    return celsius * 9 / 5 + 32
+"""
+
+
+def count_appointments(repo: Path) -> None:
+    append(repo / "citas.py", COUNT)
+    edit(
+        repo / "CHANGELOG.md",
+        "## Sin publicar\n",
+        "## Sin publicar\n\n- Añadir contar().\n",
+    )
+
+
+def reject_below_zero(repo: Path) -> None:
+    path = repo / "conversor.py"
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text[: text.index("def a_fahrenheit")] + ABSOLUTE_ZERO)
+
+
 # What a model that gets it right would leave, and answer.
 SOLUTIONS: dict[str, tuple[Callable[[Path], object], str]] = {
     "01-version": (lambda repo: None, "La versión es 1.4.2."),
@@ -244,6 +273,8 @@ SOLUTIONS: dict[str, tuple[Callable[[Path], object], str]] = {
     "18-parse-duration": (lambda repo: append(repo / "utils.py", DURATION), "Added."),
     "19-inventory-fix": (inventory_fix, "Fixed."),
     "20-total-value": (total_value, "Added."),
+    "21-convenciones-agents": (count_appointments, "Hecho."),
+    "22-convenciones-claude": (reject_below_zero, "Hecho."),
 }
 
 
@@ -256,7 +287,7 @@ def evaluator(suite: TomlEvalSuite) -> Evaluator:
     return Evaluator(suite, no_runs, LocalCommandRunner(), env)  # type: ignore[arg-type]
 
 
-async def test_the_battery_has_twenty_tasks_four_for_validation() -> None:
+async def test_the_battery_and_its_validation_tasks() -> None:
     tasks = await TomlEvalSuite(EVALS).tasks()
 
     assert [task.id for task in tasks] == list(SOLUTIONS)

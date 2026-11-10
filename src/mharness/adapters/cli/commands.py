@@ -19,7 +19,8 @@ from mharness.application.sessions import (
     TraceReport,
 )
 from mharness.application.traces import TraceSummary, TurnSummary
-from mharness.domain.model import EFFORTS
+from mharness.domain.model import EFFORTS, Usage
+from mharness.domain.prompt import INSTRUCTION_KINDS, SystemPrompt
 from mharness.domain.session import SessionError, SessionNotFound
 from mharness.domain.trace import TraceError
 from mharness.ports.catalog import ModelCatalog
@@ -133,6 +134,12 @@ class Commands:
             note = f"\x1b[33m{note}\x1b[0m"
         self._say(note)
 
+    def note_prompt(self) -> None:
+        """Which instruction files the session's prompt holds, and what
+        could not be read (spec hito 10, §1.8)."""
+        for note in prompt_notes(self.conversation.prompt):
+            self._say(note)
+
     def warn_trace(self) -> None:
         warn_trace(self.conversation, self._err)
 
@@ -161,6 +168,7 @@ class Commands:
         for note in resumed_notes(resumed, self._sessions.cwd, self._home):
             self._say(note)
         self.note_model()
+        self.note_prompt()
 
     async def _delete(self, session: str | None) -> None:
         if session is None:
@@ -231,6 +239,8 @@ class Commands:
         self.conversation = fresh
         self._warn_lost(left, old.unsaved)
         self._say("[new session]")
+        # Built again: an AGENTS.md edited since counts from here (§1.2).
+        self.note_prompt()
 
     def _warn_lost(self, left: str | None, unsaved: str | None) -> None:
         """The session left behind could not save its last turns."""
@@ -347,6 +357,22 @@ def project_note(chosen: Mapping[str, str]) -> str | None:
     return clean_line(f"[from .maha/config.toml: {said}]")
 
 
+def prompt_notes(prompt: SystemPrompt | None) -> list[str]:
+    """`[instructions: AGENTS.md · ~/.config/maha/AGENTS.md]`, and a line
+    for each file not read or cut: nothing enters the prompt unseen (spec
+    hito 10, §1.6 and §1.8). Nothing without instruction files."""
+    if prompt is None:
+        return []
+    sources = [
+        clean_line(layer.source)
+        for layer in prompt.layers
+        if layer.kind in INSTRUCTION_KINDS
+    ]
+    notes = [f"[instructions: {' · '.join(sources)}]"] if sources else []
+    notes += [f"[warning: {clean_line(warning)}]" for warning in prompt.warnings]
+    return notes
+
+
 def model_note(catalog: ModelCatalog, provider: str, model: str) -> str | None:
     """What the catalog says of `model`: not in it, or it may train on the
     data (ANALISIS §9). The model is used anyway: a new one may not be in
@@ -396,15 +422,23 @@ def _summary_lines(summary: TraceSummary) -> list[str]:
         cost = "cost unknown"
     else:
         cost = ("≥" if summary.uncosted_turns else "") + usd(summary.cost)
-    lines.append(f"total: {usage.input_tokens} in · {usage.output_tokens} out · {cost}")
+    lines.append(f"total: {_tokens_in(usage)} · {usage.output_tokens} out · {cost}")
     return lines
+
+
+def _tokens_in(usage: Usage) -> str:
+    """`N in`, and the part read from the cache, if any: already inside N
+    (spec hito 10, §7.9)."""
+    if usage.cache_read_tokens:
+        return f"{usage.input_tokens} in ({usage.cache_read_tokens} cached)"
+    return f"{usage.input_tokens} in"
 
 
 def _turn_line(turn: TurnSummary) -> str:
     parts = [
         _count(turn.model_calls, "call"),
         _count(turn.tools, "tool"),
-        f"{turn.usage.input_tokens} in",
+        _tokens_in(turn.usage),
         f"{turn.usage.output_tokens} out",
     ]
     if turn.cost is not None:

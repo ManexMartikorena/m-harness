@@ -1,0 +1,16 @@
+# Seguir el AGENTS.md del proyecto: la instrucción no dice que hay que
+# apuntar el cambio, el AGENTS.md sí (spec del hito 10, §5).
+instruction = "Añade a citas.py una función contar(citas) que diga cuántas citas hay."
+fixture = "citas"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = '''python3 -c "
+import citas
+assert citas.contar([]) == 0
+assert citas.contar(['a', 'b']) == 2
+text = open('CHANGELOG.md', encoding='utf-8').read()
+unreleased = text.split('## Sin publicar', 1)[1].split('## 1.0.0', 1)[0]
+lines = [line for line in unreleased.splitlines() if line.startswith('- ')]
+assert any('contar' in line for line in lines), unreleased
+"'''

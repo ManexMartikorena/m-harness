@@ -1,6 +1,7 @@
 """`maha` end to end: configuration, adapter, `Agent` and terminal, no
 network."""
 
+import asyncio
 import contextlib
 import io
 import json
@@ -14,14 +15,16 @@ import tempfile
 import time
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
 import respx
 
-from mharness import bootstrap
+from mharness import bootstrap, config
+from mharness.adapters.catalog import TomlCatalog
 from mharness.adapters.cli import StdinLines
-from mharness.bootstrap import main
+from mharness.bootstrap import _eval_prompt, _eval_tools, _prompt, _tools, main
 from mharness.domain.evals import TaskRun
 from mharness.domain.limits import TurnLimits
 
@@ -63,6 +66,16 @@ def stdin() -> Iterator[Callable[[str], None]]:
     os.close(saved)
 
 
+def conversation(body: bytes) -> list[dict[str, Any]]:
+    """The messages of a request, after its system prompt, which goes first
+    in every one (spec hito 10)."""
+    messages: list[dict[str, Any]] = json.loads(body)["messages"]
+    system, *rest = messages
+    assert system["role"] == "system"
+    assert "You are maha" in str(system["content"])
+    return rest
+
+
 def streamed(text: str, prompt_tokens: int, completion_tokens: int) -> bytes:
     """An SSE body: the text, the finish reason, the usage and [DONE]."""
     chunks = [
@@ -84,6 +97,49 @@ def sse_response(body: bytes) -> respx.MockResponse:
     return respx.MockResponse(
         headers={"content-type": "text/event-stream"}, content=body
     )
+
+
+@respx.mock
+def test_the_projects_agents_md_reaches_the_model(
+    workspace: Path, stdin: Callable[[str], None], capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Spec hito 10, §1.4: what the project tells its agents, in every call.
+    write_user_config(workspace, 'provider = "opencode-go"\nmodel = "glm-5.3-flash"\n')
+    (workspace / "project" / "AGENTS.md").write_text(
+        "Los tests: `uv run pytest`.\n", encoding="utf-8"
+    )
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Vale.", 12, 3))
+    )
+    stdin("Hola\n/exit\n")
+
+    assert main([]) == 0
+
+    # Said at the start: nothing enters the prompt unseen (§1.8).
+    assert "  [instructions: AGENTS.md]\n" in capsys.readouterr().out
+    system = json.loads(route.calls.last.request.content)["messages"][0]
+    assert system["role"] == "system"
+    assert (
+        '<instructions source="AGENTS.md">\n'
+        "Los tests: `uv run pytest`.\n</instructions>" in system["content"]
+    )
+    assert f"Working directory: {workspace / 'project'}" in system["content"]
+
+
+@respx.mock
+def test_print_says_the_instructions_on_stderr(
+    workspace: Path, stdin: Callable[[str], None], capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_user_config(workspace, 'provider = "opencode-go"\nmodel = "glm-5.3-flash"\n')
+    (workspace / "project" / "CLAUDE.md").write_text("x\n", encoding="utf-8")
+    respx.post(GO_ENDPOINT).mock(return_value=sse_response(streamed("Vale.", 12, 3)))
+    stdin("")
+
+    assert main(["-p", "Hola"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out == "Vale.\n"
+    assert "  [instructions: CLAUDE.md]\n" in captured.err
 
 
 @respx.mock
@@ -111,9 +167,9 @@ def test_two_turns_resend_the_history(
         "Te llamas Ane.\n  [tokens: 31 in · 5 out · <$0.0001 · session <$0.0001]" in out
     )
 
-    first, second = (json.loads(call.request.content) for call in route.calls)
-    assert len(first["messages"]) == 1
-    assert second["messages"] == [
+    first, second = (conversation(call.request.content) for call in route.calls)
+    assert len(first) == 1
+    assert second == [
         {"role": "user", "content": "Hola, soy Ane"},
         {"role": "assistant", "content": "Hola, Ane."},
         {"role": "user", "content": "¿Cómo me llamo?"},
@@ -155,8 +211,9 @@ def test_a_cut_stream_shows_the_error_and_the_next_turn_works(
     ) in captured.out
     assert captured.err.startswith("error: the connection to the provider failed")
     # The cut turn was not kept.
-    second = json.loads(route.calls.last.request.content)
-    assert second["messages"] == [{"role": "user", "content": "Hola otra vez"}]
+    assert conversation(route.calls.last.request.content) == [
+        {"role": "user", "content": "Hola otra vez"}
+    ]
 
 
 @respx.mock
@@ -225,7 +282,7 @@ def test_a_tool_call_reads_a_real_file(
         "Dice: comprar pan.\n"
         "  [tokens: 430 in · 29 out · 1 call · $0.0001 · session $0.0001]"
     ) in out
-    second = json.loads(route.calls.last.request.content)["messages"]
+    second = conversation(route.calls.last.request.content)
     assert second[-1] == {
         "role": "tool",
         "tool_call_id": "call_e2e",
@@ -321,7 +378,7 @@ def test_without_a_terminal_a_write_is_denied_without_asking(
     out = capsys.readouterr().out
     assert code == 0
     # The "y" was not an answer: it reached the model as the next message.
-    last = json.loads(route.calls.last.request.content)["messages"][-1]
+    last = conversation(route.calls.last.request.content)[-1]
     assert last == {"role": "user", "content": "y"}
     assert "  (denied: input is not a terminal)\n" in out
     assert "  [denied: tell maha how to continue]\n" in out
@@ -382,7 +439,7 @@ def test_in_a_terminal_a_command_asks_and_runs_without_the_key(
     assert code == 0
     assert "  (discarded typed input)\n  ┌ run: env\n" in out
     assert "  ✓ exit code 0\n" in out
-    result = json.loads(route.calls.last.request.content)["messages"][-1]
+    result = conversation(route.calls.last.request.content)[-1]
     assert result["role"] == "tool"
     assert "PATH=" in result["content"]
     assert KEY not in result["content"]
@@ -426,11 +483,16 @@ def test_a_turn_leaves_a_trace_with_its_cost_and_without_the_key(
     events = [json.loads(line)["event"] for line in text.splitlines()]
     assert [event["type"] for event in events] == [
         "turn_started",
+        # The system prompt of the session, with its first turn (spec hito
+        # 10, §1.13): its fingerprint and where its layers came from.
+        "prompt",
         "model_call_finished",
         "turn_finished",
     ]
+    assert len(events[1]["fingerprint"]) == 12
+    assert [layer["kind"] for layer in events[1]["layers"]] == ["base", "environment"]
     # 1000 * 0.15 + 100 * 0.50, per million.
-    assert events[1]["cost"] == "0.0002"
+    assert events[2]["cost"] == "0.0002"
     assert KEY not in text
     assert "[redacted]" in text
 
@@ -458,7 +520,7 @@ def test_a_second_maha_resumes_the_first_one(
 
     out = capsys.readouterr().out
     assert " · 2 messages · glm-5.3-flash]\n" in out
-    assert json.loads(route.calls.last.request.content)["messages"] == [
+    assert conversation(route.calls.last.request.content) == [
         {"role": "user", "content": "Hola, soy Ane"},
         {"role": "assistant", "content": "Hola, Ane."},
         {"role": "user", "content": "¿Cómo me llamo?"},
@@ -749,7 +811,7 @@ def test_print_answers_on_stdout_and_saves_the_session(
     captured = capsys.readouterr()
     assert (code, captured.out) == (0, "Dos palabras.\n")
     assert captured.err == "  [tokens: 12 in · 3 out · <$0.0001 · session <$0.0001]\n"
-    messages = json.loads(route.calls.last.request.content)["messages"]
+    messages = conversation(route.calls.last.request.content)
     [message] = messages
     assert message["role"] == "user"
     assert re.fullmatch(
@@ -869,9 +931,7 @@ def test_continue_with_print_follows_a_print_session(
     captured = capsys.readouterr()
     assert captured.out == "Que apuntara 42.\n"
     assert " · 2 messages · glm-5.3-flash]\n" in captured.err
-    assert [
-        m["content"] for m in json.loads(route.calls.last.request.content)["messages"]
-    ] == [
+    assert [m["content"] for m in conversation(route.calls.last.request.content)] == [
         "apunta 42",
         "Apuntado.",
         "¿qué te pedí antes?",
@@ -1195,7 +1255,7 @@ def test_an_exported_session_is_imported_and_resumed(
     )
     stdin("")
     assert main(["-r", new, "-p", "¿Sigues?"]) == 0
-    assert json.loads(route.calls.last.request.content)["messages"][:2] == [
+    assert conversation(route.calls.last.request.content)[:2] == [
         {"role": "user", "content": "Hola"},
         {"role": "assistant", "content": "Hola, Ane."},
     ]
@@ -1620,6 +1680,78 @@ def test_eval_into_a_closed_pipe_still_keeps_every_run(
 
 
 @respx.mock
+def test_eval_keeps_its_report_next_to_the_runs(
+    workspace: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Spec hito 10, §5: the report only went to the screen, and there is no
+    # command to make it again from runs.json; the second pass of the evals
+    # needed a `tee` not to lose it.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Es la 1.4.2.", 1000, 10))
+    )
+
+    assert main(["eval", "--tasks", str(evals), "--repeat", "2"]) == 0
+
+    out = capsys.readouterr().out
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    report = (folder / "report.txt").read_text(encoding="utf-8")
+    assert "  total        2/2   100%" in report
+    assert report == out
+
+
+def test_an_interrupted_eval_keeps_the_report_it_had(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    calls = 0
+
+    def answer(request: httpx.Request) -> respx.MockResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            os.kill(os.getpid(), signal.SIGTERM)
+        return sse_response(streamed("Es la 1.4.2.", 1000, 10))
+
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(side_effect=answer)
+
+        result = main(["eval", "--tasks", str(evals), "--repeat", "2", "--jobs", "1"])
+
+    assert result == 143
+    capsys.readouterr()
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    report = (folder / "report.txt").read_text(encoding="utf-8")
+    assert "  ✓ 01-version · glm-5.3-flash #1 · 1 step ·" in report
+    assert report.endswith("\ninterrupted: 1 run kept in " + str(folder) + "\n")
+
+
+@respx.mock
+def test_eval_into_a_closed_pipe_still_keeps_the_report(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Es la 1.4.2.", 10, 5))
+    )
+    monkeypatch.setattr(sys, "stdout", ClosedPipe())
+
+    main(["eval", "--tasks", str(evals), "--repeat", "2", "--jobs", "1"])
+
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    report = (folder / "report.txt").read_text(encoding="utf-8")
+    assert "  total        2/2   100%" in report
+
+
+@respx.mock
 def test_p_says_what_the_project_configuration_chose(
     workspace: Path, stdin: Callable[[str], None], capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1670,3 +1802,127 @@ def test_a_provider_of_anthropics_format_with_its_own_version(
     request = route.calls.last.request
     assert request.headers["anthropic-version"] == "2023-06-01"
     assert json.loads(request.content)["cache_control"] == {"type": "ephemeral"}
+
+
+# Seeing and adjusting the system prompt (spec hito 10, §1.8).
+
+
+def test_maha_prompt_shows_the_prompt_without_calling_the_model(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # No key: it never calls the model.
+    monkeypatch.delenv("OPENCODE_API_KEY")
+    write_user_config(workspace, 'provider = "opencode-go"\nmodel = "glm-5.3-flash"\n')
+    (workspace / "project" / "AGENTS.md").write_text("Usa uv.\n", encoding="utf-8")
+
+    assert main(["prompt", "--append-system-prompt", "Sé breve."]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out.startswith("You are maha")
+    assert "- run_command: " in captured.out
+    assert '<instructions source="AGENTS.md">\nUsa uv.\n</instructions>' in captured.out
+    assert captured.out.endswith("Sé breve.\n")
+    assert captured.err == "  [instructions: AGENTS.md]\n"
+
+
+@respx.mock
+def test_the_users_base_and_what_is_appended_reach_the_model(
+    workspace: Path, stdin: Callable[[str], None]
+) -> None:
+    base = workspace / "mi-base.md"
+    base.write_text("Eres un asistente de pruebas.\n", encoding="utf-8")
+    extra = workspace / "extra.md"
+    extra.write_text("Responde en una línea.\n", encoding="utf-8")
+    write_user_config(
+        workspace,
+        'provider = "opencode-go"\nmodel = "glm-5.3-flash"\n'
+        f"system_prompt_file = {str(base)!r}\n",
+    )
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Vale.", 12, 3))
+    )
+    stdin("")
+
+    code = main(
+        [
+            "-p",
+            "Hola",
+            "--append-system-prompt-file",
+            str(extra),
+            "--append-system-prompt",
+            "Fin.",
+        ]
+    )
+
+    assert code == 0
+    system = json.loads(route.calls.last.request.content)["messages"][0]["content"]
+    assert system.startswith("Eres un asistente de pruebas.\n\n<environment>")
+    assert "You are maha" not in system
+    assert system.endswith("Responde en una línea.\n\nFin.")
+
+
+def test_the_base_of_the_command_line_wins(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mine = workspace / "mine.md"
+    mine.write_text("Configured.\n", encoding="utf-8")
+    once = workspace / "once.md"
+    once.write_text("Just this once.\n", encoding="utf-8")
+    write_user_config(workspace, f'model = "m"\nsystem_prompt_file = {str(mine)!r}\n')
+
+    assert main(["prompt", "--system-prompt-file", str(once)]) == 0
+
+    assert capsys.readouterr().out.startswith("Just this once.\n")
+
+
+@pytest.mark.parametrize(
+    ("content", "says"),
+    [(None, "cannot read it"), (b"\xff", "not UTF-8"), (b" \n", "empty")],
+)
+def test_a_prompt_file_that_cannot_be_used_stops_maha(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    content: bytes | None,
+    says: str,
+) -> None:
+    write_user_config(workspace, 'model = "m"\n')
+    path = workspace / "base.md"
+    if content is not None:
+        path.write_bytes(content)
+
+    assert main(["prompt", "--system-prompt-file", str(path)]) == 1
+
+    assert says in capsys.readouterr().err
+
+
+def test_the_evals_measure_maha_not_the_users_instructions(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Spec hito 10, §5 and §4, test 16: the user's AGENTS.md and the extra
+    # instructions stay out; the task's own files come in.
+    write_user_config(
+        workspace, 'model = "glm-5.3-flash"\ninstructions = ["notas.md"]\n'
+    )
+    (workspace / "xdg" / "maha" / "AGENTS.md").write_text("mine", encoding="utf-8")
+    task = workspace / "task"
+    task.mkdir()
+    (task / "AGENTS.md").write_text("the task's", encoding="utf-8")
+    (task / "notas.md").write_text("extra", encoding="utf-8")
+    monkeypatch.chdir(task)
+    settings = config.load(cwd=task, env=os.environ)
+    catalog = TomlCatalog.load(workspace / "none.toml")
+
+    evals = asyncio.run(
+        _eval_prompt(settings, catalog, task, _eval_tools(task)).build("glm-5.3-flash")
+    )
+    user = asyncio.run(
+        _prompt(settings, catalog, task, _tools(task, {})).build("glm-5.3-flash")
+    )
+
+    assert "the task's" in evals.text
+    assert "mine" not in evals.text
+    assert "extra" not in evals.text
+    assert "run_command" not in evals.text
+    assert "Shell:" not in evals.text
+    assert "mine" in user.text
+    assert "extra" in user.text

@@ -560,3 +560,75 @@ def test_without_calling_the_model_no_model_is_needed(
     )
 
     assert (settings.model, settings.provider_name) == (None, "opencode-go")
+
+
+# Instructions of the system prompt (spec hito 10, §1.4 and §1.5).
+
+
+def test_instructions_of_the_user_and_of_the_project(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\ninstructions = ["~/notas/estilo.md", "/srv/x.md"]\n')
+    write_project(
+        project, 'instructions = ["CONTRIBUTING.md", "docs/*.md", "docs/*.md"]\n'
+    )
+
+    settings = load(home, project)
+
+    assert settings.instructions == ("~/notas/estilo.md", "/srv/x.md")
+    assert settings.project_instructions == ("CONTRIBUTING.md", "docs/*.md")
+
+
+@pytest.mark.parametrize(
+    ("pattern", "problem"),
+    [
+        ("~/.ssh/id_ed25519", "inside the project"),
+        ("/etc/passwd", "inside the project"),
+        ("../otro/AGENTS.md", "inside the project"),
+        ("docs/../../x.md", "inside the project"),
+        (".env", "secret file"),
+        ("config/.aws/credentials", "secret file"),
+    ],
+)
+def test_a_project_cannot_send_what_is_outside_or_secret(
+    home: Path, project: Path, pattern: str, problem: str
+) -> None:
+    # A cloned repository would send the user's key to the provider.
+    write_user(home, 'model = "m"\n')
+    write_project(project, f"instructions = [{pattern!r}]\n")
+
+    with pytest.raises(ConfigError, match=problem):
+        load(home, project)
+
+
+def test_compat_claude_is_on_unless_said(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\n')
+    assert load(home, project).compat_claude is True
+
+    write_user(home, 'model = "m"\ncompat_claude = false\n')
+    assert load(home, project).compat_claude is False
+
+    write_project(project, "compat_claude = true\n")
+    assert load(home, project).compat_claude is True
+
+
+def test_compat_claude_takes_only_a_boolean(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\ncompat_claude = 1\n')
+
+    with pytest.raises(ConfigError, match="compat_claude"):
+        load(home, project)
+
+
+def test_the_users_own_base_of_the_system_prompt(home: Path, project: Path) -> None:
+    # Spec hito 10, §1.3.
+    write_user(home, 'model = "m"\nsystem_prompt_file = "~/prompts/base.md"\n')
+
+    settings = load(home, project)
+
+    assert settings.system_prompt_file == Path("~/prompts/base.md").expanduser()
+
+
+def test_a_project_cannot_replace_the_base(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'system_prompt_file = "evil.md"\n')
+
+    with pytest.raises(ConfigError, match="cannot replace the base"):
+        load(home, project)

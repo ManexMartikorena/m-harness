@@ -224,6 +224,9 @@ class Baseline(BaseModel, frozen=True):
     repeat: int
     tasks: dict[str, Stats]
     total: Stats
+    # The fingerprint of the base prompt it measured (spec hito 10, §1.13);
+    # None in the baselines from before the system prompt.
+    prompt: str | None = None
 
 
 def stats(runs: Sequence[TaskRun]) -> Stats:

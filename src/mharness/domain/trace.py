@@ -86,8 +86,30 @@ class TurnInterrupted(BaseModel, frozen=True):
     type: Literal["interrupted"] = "interrupted"
 
 
+class PromptLayerInfo(BaseModel, frozen=True):
+    """One layer of the system prompt, without its text."""
+
+    kind: str
+    source: str
+    bytes: int
+
+
+class PromptUsed(BaseModel, frozen=True):
+    """The system prompt of the session from this turn on: its
+    fingerprint, and where each layer came from (spec hito 10, §1.13).
+    Not its text: `maha prompt` shows it, and a trace must not hold the
+    AGENTS.md files a second time."""
+
+    type: Literal["prompt"] = "prompt"
+    fingerprint: str
+    # Of the base and family layers: what a baseline of the evals has.
+    base: str
+    layers: tuple[PromptLayerInfo, ...]
+
+
 type TraceEvent = Annotated[
-    TurnStarted
+    PromptUsed
+    | TurnStarted
     | ToolCallProposed
     | ApprovalRequested
     | ToolFinished

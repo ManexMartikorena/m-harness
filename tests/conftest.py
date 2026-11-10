@@ -17,6 +17,18 @@ def data_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture(autouse=True)
+def user_home(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """Each test gets its own `HOME`, apart from its `tmp_path`: the
+    machine's `~/.claude/CLAUDE.md` never enters a test's system prompt
+    (spec hito 10, §1.4)."""
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    return home
+
+
+@pytest.fixture(autouse=True)
 def config_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Each test gets its own `XDG_CONFIG_HOME`: the real `config.toml` and
     `models.toml` of the machine never change a test (spec hito 7, §4)."""

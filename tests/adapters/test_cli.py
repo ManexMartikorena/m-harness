@@ -310,6 +310,11 @@ def test_continue_and_the_limits_go_with_the_conversation() -> None:
         (["-m", "x", "--timeout", "5", "eval"], "eval does not take -m, --timeout"),
         # Decimal("0") == False: 0 is given all the same.
         (["--max-cost", "0", "eval"], "eval does not take --max-cost"),
+        # Spec hito 10, §1.8: maha prompt takes only what changes the prompt.
+        (["-p", "x", "prompt"], "prompt does not take -p"),
+        (["--timeout", "5", "prompt"], "prompt does not take --timeout"),
+        (["--append-system-prompt", "x", "eval"], "eval does not take --append"),
+        (["--append-system-prompt", " "], "empty"),
     ],
 )
 def test_options_that_do_not_go_together_are_a_usage_error(
@@ -425,3 +430,21 @@ def test_import_takes_the_file() -> None:
     options = parse(["import", "s.json"])
     assert isinstance(options, argparse.Namespace)
     assert (options.command, options.file) == ("import", Path("s.json"))
+
+
+def test_the_options_of_the_system_prompt() -> None:
+    # Spec hito 10, §1.8: in the conversation, with -p and with maha prompt.
+    for args in (
+        ["--append-system-prompt", "Sé breve."],
+        ["-p", "x", "--system-prompt-file", "base.md"],
+        ["prompt", "-m", "glm-5.3-flash", "--append-system-prompt-file", "a.md"],
+    ):
+        options = parse(args)
+        assert isinstance(options, argparse.Namespace), args
+
+    options = parse(
+        ["--system-prompt-file", "~/base.md", "--append-system-prompt", "x"]
+    )
+    assert isinstance(options, argparse.Namespace)
+    assert options.system_prompt_file == Path("~/base.md")
+    assert options.append_system_prompt == "x"

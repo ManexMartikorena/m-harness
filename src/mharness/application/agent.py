@@ -92,6 +92,7 @@ class Agent:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         fallback: str | None = None,
         effort: Effort | None = None,
+        system: str | None = None,
     ) -> None:
         self._client = client
         self._tools = tools
@@ -106,6 +107,9 @@ class Agent:
         self.fallback = fallback
         # In every call; /effort changes it (spec hito 9, §1.7).
         self.effort = effort
+        # The session's system prompt, the same in every call; the session
+        # sets it, and /model changes its family layer (spec hito 10, §1.2).
+        self.system = system
         # A resumed session starts with its history (spec hito 6, §1.6); its
         # approvals do not come back (§1.9).
         self._messages: list[Message] = list(history)
@@ -451,10 +455,10 @@ class Agent:
         return None
 
     def _request(self, turn: list[Message], model: str) -> ModelRequest:
-        # No system prompt until hito 10 (spec hito 2, §1.5).
         info = self._catalog.get(self._provider, model)
         return ModelRequest(
             model=model,
+            system=self.system,
             messages=[*self._messages, *turn],
             tools=self._tools.specs(),
             max_tokens=info.max_output if info is not None else None,

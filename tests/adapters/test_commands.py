@@ -11,7 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from mharness.adapters.cli.commands import COMMANDS, Command, parse_command
+from mharness.adapters.cli.commands import (
+    COMMANDS,
+    Command,
+    parse_command,
+    prompt_notes,
+)
 from mharness.adapters.cli.conversation import converse
 from mharness.application.agent import Agent
 from mharness.application.sessions import Sessions
@@ -20,6 +25,7 @@ from mharness.domain.agent_events import ModelCallFinished, TurnFinished, TurnSt
 from mharness.domain.catalog import ModelInfo
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock
 from mharness.domain.model import ModelResponse, Usage
+from mharness.domain.prompt import Layer, SystemPrompt
 from mharness.domain.session import (
     MessageEntry,
     SessionError,
@@ -531,6 +537,28 @@ async def test_trace_shows_each_turn_and_the_total() -> None:
     ) in out
 
 
+async def test_trace_says_what_was_read_from_the_cache() -> None:
+    # Spec hito 10, §7.9: the prompt read from the cache was only in the
+    # JSONL of the trace; /trace did not show it.
+    cached = Usage(input_tokens=2900, output_tokens=40, cache_read_tokens=2863)
+    maha = Maha(
+        MemorySessionStore(),
+        [
+            reply("Uno", usage=Usage(input_tokens=2900, output_tokens=40)),
+            reply("Dos", usage=cached),
+        ],
+    )
+
+    _, out, _ = await maha.run("A", "B", "/trace", "/exit")
+
+    assert f"  1  {clock(NOW)}  1 call · 0 tools · 2900 in · 40 out · 0.0 s\n" in out
+    assert (
+        f"  2  {clock(NOW)}  1 call · 0 tools · 2900 in (2863 cached) · 40 out · "
+        "0.0 s\n"
+    ) in out
+    assert "  total: 5800 in (2863 cached) · 80 out · cost unknown\n" in out
+
+
 async def test_trace_without_any_price_says_the_cost_is_unknown() -> None:
     # "≥$0" would be true and say nothing (revision of PR 5 of hito 8).
     maha = Maha(MemorySessionStore(), [reply("Uno", usage=Usage(input_tokens=5))])
@@ -703,3 +731,32 @@ def test_every_way_a_turn_ends_has_a_name_in_trace() -> None:
     from mharness.application.traces import Ending
 
     assert set(_ENDINGS) | {"end_turn"} == set(get_args(Ending.__value__))
+
+
+# What the system prompt holds, said at the start (spec hito 10, §1.8).
+
+
+def test_prompt_notes_name_the_files_and_the_warnings() -> None:
+    prompt = SystemPrompt(
+        layers=(
+            Layer(kind="base", source="maha", text="b"),
+            Layer(kind="user", source="~/.config/maha/AGENTS.md", text="u"),
+            Layer(kind="project", source="AGENTS.md\x1b[2J", text="p"),
+            Layer(kind="extra", source="CONTRIBUTING.md", text="e"),
+            Layer(kind="environment", source="maha", text="env"),
+        ),
+        warnings=("CLAUDE.md: not UTF-8, not read",),
+    )
+
+    assert prompt_notes(prompt) == [
+        "[instructions: ~/.config/maha/AGENTS.md · AGENTS.md\\x1b[2J"
+        " · CONTRIBUTING.md]",
+        "[warning: CLAUDE.md: not UTF-8, not read]",
+    ]
+
+
+def test_prompt_notes_say_nothing_without_instructions() -> None:
+    prompt = SystemPrompt(layers=(Layer(kind="base", source="maha", text="b"),))
+
+    assert prompt_notes(prompt) == []
+    assert prompt_notes(None) == []

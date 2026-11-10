@@ -1,8 +1,9 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-04. **Hito 9 cerrado: `v0.9.0` — Adaptador
-de Anthropic, y la auditoría profunda publicada como `v0.9.1`. En curso:
-el hito 10 (system prompt por capas), con la spec APROBADA.**
+Última actualización: 2026-11-10. **Hito 9 cerrado: `v0.9.0` y `v0.9.1`
+(auditoría profunda). En curso: el hito 10 (system prompt por capas). El
+PR 1 (las capas) está terminado, con evals y verificación a mano; sigue
+el PR 2 (`todo_write` y `ask_user`).**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -17,7 +18,8 @@ la 1.0 (DESIGN §14).**
 - Última versión: **`v0.9.1` — Auditoría profunda tras el hito 9**
   (2026-11-04):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.9.1
-- Ramas abiertas: `feature/hito-10-capas` (el PR 1 del hito 10). Las integradas se conservan en GitHub.
+- Ramas abiertas: `feature/hito-10-capas` (el PR 1 del hito 10), hasta
+  que se integre. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -46,16 +48,28 @@ spec, su nota de la guía y su release.
 
 ## Siguiente paso
 
-Al abrir en otro PC: `git switch main && git pull`, `uv sync` y comprobar los
-tests, mypy y lint-imports en verde; después, el primer punto sin hacer.
+Al abrir: contrastar con GitHub (`gh pr list`) si el PR 1 del hito 10
+(`feature/hito-10-capas`) ya está integrado. Si sigue abierto, se integra
+primero (merge commit, CI en verde). Después, `git switch main && git
+pull`, `uv sync`, y comprobar tests, mypy y lint-imports en verde (2242
+tests).
 
-1. **Agente:** implementar el PR 1 del hito 10 (`feature/hito-10-capas`,
-   `docs/specs/hito-10-system-prompt.md` §6), pieza a pieza, con las evals
-   de §5 antes del merge. Después, el PR 2 (herramientas) y el PR 3
-   (`/init` y títulos).
-2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+1. **Agente:** el PR 2 del hito 10, en `feature/hito-10-herramientas`
+   desde `main` (spec `docs/specs/hito-10-system-prompt.md`, APROBADA, §6
+   "PR 2"): `todo_write`, `ask_user` y la tarea 23, una pieza por commit;
+   sus evals (§5) y su verificación a mano (§7, puntos 6 y 7). Al
+   terminar, push, PR al milestone "Hito 10 — System prompt por capas" y
+   merge commit.
+2. **Agente:** el PR 3 (`/init`, el modelo pequeño, títulos y `/rename`),
+   y el cierre del hito (§6, "Cierre"): líneas base nuevas con 23 tareas
+   (`--save`), nota 10 de la guía, los dos README, PROYECTO, HISTORIAL,
+   MAPA, spec IMPLEMENTADA y `v0.10.0`.
+3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
+
+Una pasada de `maha eval` deja ya su informe en `report.txt`, junto a
+`runs.json` (desde `9a9333d`): no hace falta `tee`.
 
 ### Al abrir el agente en otro PC
 
@@ -163,6 +177,13 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   y que el error del proveedor diga qué hacer (`/model`, `maha models`):
   hoy da solo `HTTP 400 … Model is unavailable` (prueba del mantenedor,
   2026-11-03).
+- **Por comprobar, en su rama `fix/`:** el coste que cobra OpenCode Go
+  por `claude-haiku-5-5` es unas 3-4 veces el que sale con los precios de
+  `models.toml` (una llamada del 2026-11-10: 2.867 de entrada, 2.863 de
+  ellos escritos en caché, y 95 de salida; OpenCode cobró 0,0016 $ y el
+  catálogo da unos 0,0004 $). Hoy no cambia nada: con OpenCode Go vale el
+  coste del proveedor. Comprobar el precio contra la documentación oficial
+  y corregir el catálogo (decisión del mantenedor, 2026-11-10).
 - **Mejora posible:** refrescar los precios desde models.dev a una caché, a
   petición, si mantener a mano 113 modelos pesa (spec 7, §11). Hoy, con
   OpenCode Go, el coste que vale es el del proveedor.

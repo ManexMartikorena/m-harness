@@ -19,7 +19,9 @@ import tempfile
 import uuid
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
 from datetime import date, datetime
+from importlib import resources
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import TextIO
@@ -30,6 +32,7 @@ from mharness.adapters.catalog import CatalogError, TomlCatalog
 from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.evals import TomlEvalSuite
 from mharness.adapters.models import AnthropicClient, OpenAIChatClient
+from mharness.adapters.project import LocalProject
 from mharness.adapters.storage import JsonlSessionStore
 from mharness.adapters.tools import (
     EditFile,
@@ -45,6 +48,7 @@ from mharness.adapters.tracing import JsonlTraceSink
 from mharness.application.agent import Agent
 from mharness.application.approvals import AllowList
 from mharness.application.evals import Evaluator, choose
+from mharness.application.prompt import PromptTemplates, SystemPromptBuilder
 from mharness.application.routing import ModelRouter
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.tools import ToolRegistry
@@ -60,6 +64,7 @@ from mharness.domain.evals import (
 )
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message
+from mharness.domain.prompt import Layer, sections
 from mharness.domain.trace import known_secrets
 from mharness.ports.approval import ApprovalGate
 from mharness.ports.catalog import ModelCatalog
@@ -144,13 +149,83 @@ def _dispatch(
         )
     if options.command in ("sessions", "trace", "export", "import"):
         return asyncio.run(_sessions_command(settings, catalog, data, options))
-    settings = _with_options(settings, options)
-    start = Start(last=options.last, session=options.session, model=options.model)
+    try:
+        files = _prompt_files(settings, options)
+    except config.ConfigError as exc:
+        json_result = options.prompt is not None and options.output_format != "text"
+        return cli.fail(str(exc), result=json_result)
     # Resolved once: the tools and the sessions name it the same way.
     cwd = Path.cwd().resolve()
+    if options.command == "prompt":
+        model = options.model or settings.model
+        return asyncio.run(_show_prompt(settings, catalog, cwd, files, model))
+    settings = _with_options(settings, options)
+    start = Start(last=options.last, session=options.session, model=options.model)
     if options.prompt is not None:
-        return asyncio.run(_print(settings, catalog, data, cwd, start, options))
-    return asyncio.run(_converse(settings, catalog, data, cwd, start))
+        return asyncio.run(_print(settings, catalog, data, cwd, start, options, files))
+    return asyncio.run(_converse(settings, catalog, data, cwd, start, files))
+
+
+@dataclass(frozen=True)
+class _PromptFiles:
+    """What the command line and the user's configuration put in the system
+    prompt: their own base, and what goes at the end (spec hito 10, §1.8)."""
+
+    base: Layer | None = None
+    append: tuple[Layer, ...] = ()
+
+
+def _prompt_files(
+    settings: config.Settings, options: argparse.Namespace
+) -> _PromptFiles:
+    """Read the files of the options; a `ConfigError` says which and why.
+    The base of the command line wins over the configuration's."""
+    path: Path | None = options.system_prompt_file or settings.system_prompt_file
+    base = None
+    if path is not None:
+        base = Layer(kind="base", source=str(path), text=_read_prompt(path))
+    append: list[Layer] = []
+    if options.append_system_prompt_file is not None:
+        path = options.append_system_prompt_file
+        append.append(Layer(kind="append", source=str(path), text=_read_prompt(path)))
+    if options.append_system_prompt is not None:
+        append.append(
+            Layer(
+                kind="append",
+                source="--append-system-prompt",
+                text=options.append_system_prompt,
+            )
+        )
+    return _PromptFiles(base, tuple(append))
+
+
+def _read_prompt(path: Path) -> str:
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except UnicodeDecodeError:
+        raise config.ConfigError(f"{path}: not UTF-8") from None
+    except OSError as exc:
+        raise config.ConfigError(f"{path}: cannot read it: {exc.strerror}") from None
+    if not text:
+        raise config.ConfigError(f"{path}: empty")
+    return text
+
+
+async def _show_prompt(
+    settings: config.Settings,
+    catalog: ModelCatalog,
+    cwd: Path,
+    files: _PromptFiles,
+    model: str | None,
+) -> int:
+    """`maha prompt`: the system prompt of a session here, with the tools
+    of a conversation, without calling the model (spec hito 10, §1.8)."""
+    tools = _tools(cwd, {})
+    prompt = await _prompt(settings, catalog, cwd, tools, files).build(model or "")
+    for note in cli.prompt_notes(prompt):
+        print(f"  {note}", file=sys.stderr)
+    print(prompt.text)
+    return 0
 
 
 # The conversation, `-p` (both without a command) and the evals.
@@ -237,6 +312,76 @@ def _tools(cwd: Path, env: Mapping[str, str]) -> ToolRegistry:
             EditFile(workspace),
             RunCommand(workspace.root, LocalCommandRunner(), env),
         ]
+    )
+
+
+# The shell `run_command` runs in: asyncio's subprocess shell.
+COMMAND_SHELL = "/bin/sh"
+
+
+def _templates() -> PromptTemplates:
+    """The prompt templates of the package (spec hito 10, §1.3)."""
+    root = resources.files("mharness") / "prompts"
+    families = root / "families"
+    return PromptTemplates(
+        base=(root / "base.md").read_text(encoding="utf-8"),
+        tools=sections((root / "tools.md").read_text(encoding="utf-8")),
+        families={
+            entry.name.removesuffix(".md"): entry.read_text(encoding="utf-8").strip()
+            for entry in (families.iterdir() if families.is_dir() else ())
+            if entry.name.endswith(".md")
+        },
+    )
+
+
+def _prompt(
+    settings: config.Settings,
+    catalog: ModelCatalog,
+    cwd: Path,
+    tools: ToolRegistry,
+    files: _PromptFiles | None = None,
+) -> SystemPromptBuilder:
+    """The system prompt of the user's sessions (spec hito 10)."""
+    project = LocalProject(
+        cwd,
+        shell=COMMAND_SHELL if tools.get("run_command") is not None else None,
+        home=config.home(),
+        config_dir=config.config_dir(os.environ),
+        compat_claude=settings.compat_claude,
+        extra_user=settings.instructions,
+        extra_project=settings.project_instructions,
+    )
+    files = files or _PromptFiles()
+    return SystemPromptBuilder(
+        project,
+        _templates(),
+        catalog=catalog,
+        provider=settings.provider_name,
+        tools=tools.names(),
+        base=files.base,
+        append=files.append,
+    )
+
+
+def _eval_prompt(
+    settings: config.Settings, catalog: ModelCatalog, cwd: Path, tools: ToolRegistry
+) -> SystemPromptBuilder:
+    """The system prompt of an eval run: only the task's own files, never
+    the user's instructions nor those of the directory maha eval runs in
+    (spec hito 10, §5)."""
+    project = LocalProject(
+        cwd,
+        shell=None,
+        home=config.home(),
+        config_dir=config.config_dir(os.environ),
+        user=False,
+    )
+    return SystemPromptBuilder(
+        project,
+        _templates(),
+        catalog=catalog,
+        provider=settings.provider_name,
+        tools=tools.names(),
     )
 
 
@@ -335,6 +480,7 @@ async def _eval(
                 traces=JsonlTraceSink(run_dir / "traces"),
                 masked=masked,
                 effort=effort,
+                prompt=_eval_prompt(settings, catalog, cwd, tools),
             )
             conversation = await sessions.start()
             try:
@@ -385,11 +531,15 @@ async def _eval(
         done = evaluator.finished
         await asyncio.to_thread(_write_runs, run_dir / "runs.json", done)
         kept = f"{len(done)} run" + ("" if len(done) == 1 else "s")
+        said = [f"\ninterrupted: {kept} kept in {run_dir}"]
+        if options.keep:
+            said.append(f"copies of the repositories: {copies}")
+        out.keep(said)
+        await asyncio.to_thread(out.save, run_dir / "report.txt")
         # A closed window may have taken the terminal: runs.json is written.
         with contextlib.suppress(OSError):
-            print(f"\ninterrupted: {kept} kept in {run_dir}", file=sys.stderr)
-            if options.keep:
-                print(f"copies of the repositories: {copies}", file=sys.stderr)
+            for text in said:
+                print(text, file=sys.stderr)
             sys.stderr.flush()
         if not received:
             raise
@@ -401,8 +551,14 @@ async def _eval(
     # Every run in full, first: the report shows one line of a failure, and
     # may find nobody reading (deep audit, I6).
     await asyncio.to_thread(_write_runs, run_dir / "runs.json", runs)
+    # The base prompt of each model, as its runs had it (spec hito 10, §1.13).
+    here = Path.cwd()
+    builder = _eval_prompt(settings, catalog, here, _eval_tools(here))
+    prompts = {model: builder.base_fingerprint(model) for model in models}
     regressed = out.show(
-        lambda stream: cli.eval_report(runs, baselines, stream, effort=effort)
+        lambda stream: cli.eval_report(
+            runs, baselines, stream, effort=effort, prompts=prompts
+        )
     )
     broken = {
         model: count
@@ -419,6 +575,7 @@ async def _eval(
                 "keep a baseline"
             )
         out.line(f"\nsessions and traces of these runs: {run_dir}")
+        await asyncio.to_thread(out.save, run_dir / "report.txt")
         return 1
     if options.save:
         commit = _commit()
@@ -434,12 +591,16 @@ async def _eval(
                     repeat=options.repeat,
                     tasks=by_task(mine),
                     total=stats(mine),
+                    prompt=prompts[model],
                 )
             )
             out.line(f"\nsaved: {where}")
     out.line(f"\nsessions and traces of these runs: {run_dir}")
     if options.keep:
         out.line(f"copies of the repositories: {copies}")
+    # What was shown, kept: there is no command that makes it again from
+    # runs.json (spec hito 10, §5).
+    await asyncio.to_thread(out.save, run_dir / "report.txt")
     return 1 if regressed else 0
 
 
@@ -450,26 +611,40 @@ _CLOSING = (signal.SIGHUP, signal.SIGTERM)
 class _Out:
     """The stdout of `maha eval` until nobody reads it (`maha eval | head`);
     then nothing more is shown, and the battery goes on: runs.json keeps
-    every run (deep audit, I6)."""
+    every run (deep audit, I6). It keeps a copy of all it shows, for
+    report.txt (spec hito 10, §5)."""
 
     def __init__(self) -> None:
         self._stream: TextIO = sys.stdout
+        self._copy = io.StringIO()
 
     def show[T](self, write: Callable[[TextIO], T]) -> T:
-        """Run `write` on the stream, and return what it returns."""
+        """Run `write`, show what it wrote, and return what it returns."""
+        buffer = io.StringIO()
+        done = write(buffer)
+        text = buffer.getvalue()
+        self._copy.write(text)
         try:
-            done = write(self._stream)
+            self._stream.write(text)
             self._stream.flush()
         except BrokenPipeError:
             cli.drop_output(sys.stdout)
-            # Somewhere to write that nobody reads: the report still has to
-            # say whether there was a regression.
+            # Somewhere to write that nobody reads.
             self._stream = io.StringIO()
-            done = write(self._stream)
         return done
 
     def line(self, text: str) -> None:
         self.show(lambda stream: print(text, file=stream))
+
+    def keep(self, lines: Sequence[str]) -> None:
+        """Add `lines` to the copy only: what went to stderr instead."""
+        for text in lines:
+            print(text, file=self._copy)
+
+    def save(self, path: Path) -> None:
+        """Write the copy to `path`."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(self._copy.getvalue(), encoding="utf-8")
 
 
 def _write_runs(path: Path, runs: Sequence[TaskRun]) -> None:
@@ -518,6 +693,7 @@ def _sessions(
     cwd: Path,
     client: ModelClient,
     gate: ApprovalGate,
+    files: _PromptFiles | None = None,
 ) -> Sessions:
     """The user's sessions, whose agents have the seven tools and `gate`."""
     provider = settings.provider
@@ -552,6 +728,7 @@ def _sessions(
         # reach a trace (spec hito 7, §1.8).
         masked=known_secrets(os.environ, also=[settings.api_key]),
         effort=settings.effort,
+        prompt=_prompt(settings, catalog, cwd, tools, files),
     )
 
 
@@ -638,6 +815,7 @@ async def _print(
     cwd: Path,
     start: Start,
     options: argparse.Namespace,
+    files: _PromptFiles,
 ) -> int:
     """`maha -p` (spec hito 8, §1.10 and §1.11). Nobody to ask: only the
     tools of `--allow` run, and only with a scope (§1.2)."""
@@ -645,7 +823,7 @@ async def _print(
     read_all = None if os.isatty(0) else cli.StdinLines().read_all
     async with _client(settings, catalog) as client:
         sessions = _sessions(
-            settings, catalog, data, cwd, client, AllowList(options.allow)
+            settings, catalog, data, cwd, client, AllowList(options.allow), files
         )
         return await cli.print_mode(
             sessions,
@@ -665,11 +843,12 @@ async def _converse(
     data: Path,
     cwd: Path,
     start: Start,
+    files: _PromptFiles,
 ) -> int:
     # One reader for the conversation and the questions (B3).
     lines = cli.StdinLines()
     async with _client(settings, catalog) as client:
-        sessions = _sessions(settings, catalog, data, cwd, client, _gate(lines))
+        sessions = _sessions(settings, catalog, data, cwd, client, _gate(lines), files)
         return await cli.converse(
             sessions,
             provider=settings.provider_name,
