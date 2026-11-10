@@ -1,9 +1,9 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-04, al cerrar la sesión. **Hito 9 cerrado:
-`v0.9.0` y `v0.9.1` (auditoría profunda). En curso: el hito 10 (system
-prompt por capas), PR 1 con todo el código hecho; faltan las evals de
-confirmación y abrir su PR.**
+Última actualización: 2026-11-10. **Hito 9 cerrado: `v0.9.0` y `v0.9.1`
+(auditoría profunda). En curso: el hito 10 (system prompt por capas). El
+PR 1 (las capas) está terminado, con evals y verificación a mano; sigue
+el PR 2 (`todo_write` y `ask_user`).**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -18,9 +18,8 @@ la 1.0 (DESIGN §14).**
 - Última versión: **`v0.9.1` — Auditoría profunda tras el hito 9**
   (2026-11-04):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.9.1
-- Ramas abiertas: `feature/hito-10-capas` (el PR 1 del hito 10, subida a
-  GitHub, sin PR todavía). Desde otro PC: `git fetch && git switch
-  feature/hito-10-capas && git pull`, y `uv sync`. Las integradas se conservan en GitHub.
+- Ramas abiertas: `feature/hito-10-capas` (el PR 1 del hito 10), hasta
+  que se integre. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -49,50 +48,28 @@ spec, su nota de la guía y su release.
 
 ## Siguiente paso
 
-Al abrir: trabajar en la rama en curso (`feature/hito-10-capas`, ver
-"Ramas abiertas"), no en `main`: `git fetch && git switch
-feature/hito-10-capas && git pull`, `uv sync` y comprobar los tests, mypy y
-lint-imports en verde (2238 tests); después, el primer punto sin hacer.
+Al abrir: contrastar con GitHub (`gh pr list`) si el PR 1 del hito 10
+(`feature/hito-10-capas`) ya está integrado. Si sigue abierto, se integra
+primero (merge commit, CI en verde). Después, `git switch main && git
+pull`, `uv sync`, y comprobar tests, mypy y lint-imports en verde (2242
+tests).
 
-1. **Agente:** terminar el PR 1 del hito 10 (rama `feature/hito-10-capas`,
-   ya en GitHub; spec `docs/specs/hito-10-system-prompt.md`, APROBADA).
-   Hechas las piezas 1 a 12 de §6, cada una con su commit y en verde
-   (2238 tests). Resultados de las evals ya anotados en spec §5
-   ("Resultados (PR 1)"): pasada 1, el arreglo de la base (`d9367e7`) y
-   la decisión de no añadir capas de familia por ahora. Falta, en orden:
-   1. **La pasada 2 de confirmación** (§5): se lanzó el 2026-11-04 a las
-      18:49 en el WSL, con `d9367e7`, y seguía en marcha al cerrar la
-      sesión. Su resultado, en el WSL:
-      `~/.local/state/maha/evals/20261104-184916-c436/`. Vale **solo si**
-      ahí hay un `report.txt` (el informe que `maha eval` escribe en
-      pantalla, copiado al terminar) que acaba con los tres bloques de
-      modelo, y un `runs.json` con 330 ejecuciones (`python3 -c "import
-      json; print(len(json.load(open('runs.json'))))"`). `maha eval` no
-      guarda su informe y no hay comando que lo rehaga desde `runs.json`.
-      Si falta alguno de los dos, o si se trabaja desde otro PC, lanzarla
-      de nuevo (unos 1,4 $ y 50 minutos), guardando lo que escribe:
-      `uv run --env-file .env maha eval --models
-      glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5 --repeat 5
-      --retry-errors --jobs 4 2>&1 | tee pasada2.txt` (fuera del repo, o
-      borrarlo después). Sin `--save`: las líneas base nuevas van al
-      cierre del hito, con 23 tareas.
-   2. Anotarla en la spec §5 (sustituir "Pendiente de anotar"), con la
-      comparación con la línea base: éxito sin ⚠; pasos y coste,
-      comparados también con la pasada 1. Si queda una ⚠ de coste o de
-      pasos, explicarla con números y que decida el mantenedor.
-   3. La pieza 13 de §6: commit "Anotar las evals del system prompt".
-   4. Verificación a mano de lo que toca el PR 1 (§7, puntos 1 a 4 y 9).
-   5. Push, PR al milestone "Hito 10 — System prompt por capas", merge
-      commit con el CI en verde.
-   6. Seguir con el PR 2 (`feature/hito-10-herramientas`: `todo_write`,
-      `ask_user` y la tarea 23) y el PR 3 (`/init`, títulos, `/rename`).
-   Pendiente de decidir con el mantenedor: que `maha eval` guarde su
-   informe junto a `runs.json` (hoy solo sale por pantalla; hizo falta un
-   apaño para no perder el de la pasada 2). Propuesta del agente: sí, un
-   commit pequeño en el PR 1, con su test.
-2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+1. **Agente:** el PR 2 del hito 10, en `feature/hito-10-herramientas`
+   desde `main` (spec `docs/specs/hito-10-system-prompt.md`, APROBADA, §6
+   "PR 2"): `todo_write`, `ask_user` y la tarea 23, una pieza por commit;
+   sus evals (§5) y su verificación a mano (§7, puntos 6 y 7). Al
+   terminar, push, PR al milestone "Hito 10 — System prompt por capas" y
+   merge commit.
+2. **Agente:** el PR 3 (`/init`, el modelo pequeño, títulos y `/rename`),
+   y el cierre del hito (§6, "Cierre"): líneas base nuevas con 23 tareas
+   (`--save`), nota 10 de la guía, los dos README, PROYECTO, HISTORIAL,
+   MAPA, spec IMPLEMENTADA y `v0.10.0`.
+3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
+
+Una pasada de `maha eval` deja ya su informe en `report.txt`, junto a
+`runs.json` (desde `9a9333d`): no hace falta `tee`.
 
 ### Al abrir el agente en otro PC
 
@@ -200,6 +177,13 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   y que el error del proveedor diga qué hacer (`/model`, `maha models`):
   hoy da solo `HTTP 400 … Model is unavailable` (prueba del mantenedor,
   2026-11-03).
+- **Por comprobar, en su rama `fix/`:** el coste que cobra OpenCode Go
+  por `claude-haiku-5-5` es unas 3-4 veces el que sale con los precios de
+  `models.toml` (una llamada del 2026-11-10: 2.867 de entrada, 2.863 de
+  ellos escritos en caché, y 95 de salida; OpenCode cobró 0,0016 $ y el
+  catálogo da unos 0,0004 $). Hoy no cambia nada: con OpenCode Go vale el
+  coste del proveedor. Comprobar el precio contra la documentación oficial
+  y corregir el catálogo (decisión del mantenedor, 2026-11-10).
 - **Mejora posible:** refrescar los precios desde models.dev a una caché, a
   petición, si mantener a mano 113 modelos pesa (spec 7, §11). Hoy, con
   OpenCode Go, el coste que vale es el del proveedor.
