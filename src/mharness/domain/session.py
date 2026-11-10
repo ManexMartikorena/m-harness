@@ -133,6 +133,9 @@ class SessionSummary(BaseModel, frozen=True):
     messages: int
     # Its title, or the first line of the first user message, cut.
     title: str
+    # Why it cannot be read, if it cannot: listed all the same, so that it
+    # can be deleted, and never skipped in silence (audit after hito 10, S2).
+    unreadable: str | None = None
 
 
 class SessionError(Exception):

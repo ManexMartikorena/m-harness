@@ -566,6 +566,27 @@ async def test_trace_says_what_was_read_from_the_cache() -> None:
     assert "  total: 5800 in (2863 cached) · 80 out · cost unknown\n" in out
 
 
+async def test_sessions_lists_one_that_cannot_be_read() -> None:
+    # Audit after hito 10 (S2): listed, so it can be deleted, with why.
+    class WithABrokenOne(MemorySessionStore):
+        async def summaries(self) -> list[SessionSummary]:
+            return [
+                SessionSummary(
+                    id="20261027-091502-dead",
+                    cwd="",
+                    updated_at=NOW,
+                    messages=0,
+                    title="",
+                    unreadable="line 1 is not a header\x1b[2J",
+                )
+            ]
+
+    _, out, _ = await Maha(WithABrokenOne(), []).run("/sessions", "/exit")
+
+    assert "20261027-091502-dead" in out
+    assert "  unreadable  ?  [line 1 is not a header\\x1b[2J]\n" in out
+
+
 # /rename (spec hito 10, §1.12).
 
 

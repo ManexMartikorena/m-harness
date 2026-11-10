@@ -47,6 +47,7 @@ from mharness.domain.session import (
     SessionHeader,
     SessionInUse,
     SessionNotFound,
+    SessionSummary,
     UsageEntry,
 )
 from mharness.domain.trace import PromptUsed, TraceError, TraceRecord, TurnFailed
@@ -543,6 +544,31 @@ async def test_resume_without_an_id_skips_a_session_open_elsewhere() -> None:
     resumed = await world.sessions.resume(None, current=await world.sessions.start())
 
     assert resumed.conversation.id == before
+
+
+async def test_resume_without_an_id_never_skips_an_unreadable_one() -> None:
+    # Audit after hito 10 (S2): `-c` took an older session in silence.
+    store = MemorySessionStore()
+    await saved(store, text="antes")
+
+    class WithABrokenOne(MemorySessionStore):
+        async def summaries(self) -> list[SessionSummary]:
+            broken = SessionSummary(
+                id="20261027-091502-dead",
+                cwd=CWD,
+                updated_at=datetime(2026, 10, 27, tzinfo=UTC),
+                messages=0,
+                title="",
+                unreadable="line 3 is not valid",
+            )
+            return [broken, *await super().summaries()]
+
+    broken = WithABrokenOne()
+    broken.sessions = store.sessions
+    world = World(broken, FakeModelClient([]), tokens=["9999"])
+
+    with pytest.raises(SessionCorrupt, match="20261027-091502-dead, cannot be read"):
+        await world.sessions.resume(None, current=await world.sessions.start())
 
 
 async def test_resume_without_an_id_and_only_the_current_is_not_found() -> None:

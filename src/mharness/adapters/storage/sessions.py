@@ -198,8 +198,8 @@ class JsonlSessionStore:
         return _taken(self._path(session_id))
 
     async def summaries(self) -> list[SessionSummary]:
-        """Every session that can be read, newest first, without locking
-        them: an open one is listed too."""
+        """Every session, newest first, without locking them: an open one
+        is listed too, and one that cannot be read says why."""
         try:
             names = [entry.name for entry in os.scandir(self._folder)]
         except FileNotFoundError:
@@ -211,9 +211,7 @@ class JsonlSessionStore:
             session_id = name.removesuffix(".jsonl")
             if name == session_id or not is_session_id(session_id):
                 continue
-            summary = self._summary(session_id)
-            if summary is not None:
-                found.append(summary)
+            found.append(self._summary(session_id))
         return sorted(found, key=lambda summary: summary.updated_at, reverse=True)
 
     async def delete(self, session_id: str) -> None:
@@ -240,19 +238,25 @@ class JsonlSessionStore:
         finally:
             os.close(fd)
 
-    def _summary(self, session_id: str) -> SessionSummary | None:
-        """The line of /sessions, or None if the file cannot be read."""
+    def _summary(self, session_id: str) -> SessionSummary:
+        """The line of /sessions; one that cannot be read says why, with its
+        directory if its header can be read (audit after hito 10, S2)."""
         path = self._folder / f"{session_id}.jsonl"
+        data = b""
+        updated = datetime.fromtimestamp(0, UTC)
         try:
             fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-        except OSError:
-            return None
+        except OSError as exc:
+            return _unreadable(session_id, b"", updated, exc.strerror or "cannot read")
         try:
-            data = _read(fd)
             updated = datetime.fromtimestamp(os.fstat(fd).st_mtime, UTC)
+            data = _read(fd)
             header, entries, _ = _load(data, session_id)
-        except OSError, SessionError:
-            return None
+        except OSError as exc:
+            return _unreadable(session_id, data, updated, exc.strerror or "cannot read")
+        except SessionError as exc:
+            why = str(exc).removeprefix(f"session {session_id}: ")
+            return _unreadable(session_id, data, updated, why)
         finally:
             os.close(fd)
         return summarize(header, entries, updated)
@@ -325,6 +329,28 @@ def _whole_lines(data: bytes) -> int:
     """How many bytes of `data` are whole lines: a last line without its
     "\n" was cut by a crash, because each write ends in one."""
     return data.rfind(b"\n") + 1
+
+
+def _unreadable(
+    session_id: str, data: bytes, updated: datetime, why: str
+) -> SessionSummary:
+    """The line of a session that cannot be read: its directory from its
+    header if that much can be read, so `-c` knows it was here."""
+    cwd = ""
+    try:
+        first = json.loads(data.split(b"\n", 1)[0])
+        if isinstance(first, dict) and isinstance(first.get("cwd"), str):
+            cwd = first["cwd"]
+    except ValueError, RecursionError:
+        pass
+    return SessionSummary(
+        id=session_id,
+        cwd=cwd,
+        updated_at=updated,
+        messages=0,
+        title="",
+        unreadable=why,
+    )
 
 
 def _load(

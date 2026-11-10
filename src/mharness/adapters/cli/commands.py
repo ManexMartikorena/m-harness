@@ -313,9 +313,13 @@ async def session_lines(sessions: Sessions, home: Path) -> list[str]:
         mark = "*" if sessions.here(summary) else " "
         when = f"{summary.updated_at.astimezone():%Y-%m-%d %H:%M}"
         count = f"{summary.messages} message" + ("" if summary.messages == 1 else "s")
+        title = clean_line(summary.title)
+        if summary.unreadable is not None:
+            count = "unreadable"
+            title = f"[{clean_line(summary.unreadable)}]"
+        where = shown_dir(summary.cwd, home) if summary.cwd else "?"
         lines.append(
-            f"{mark} {clean_line(summary.id)}  {when}  {count}  "
-            f"{shown_dir(summary.cwd, home)}  {clean_line(summary.title)}"
+            f"{mark} {clean_line(summary.id)}  {when}  {count}  {where}  {title}"
         )
     return lines
 

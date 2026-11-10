@@ -34,6 +34,7 @@ from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
     Session,
+    SessionCorrupt,
     SessionEntry,
     SessionError,
     SessionExists,
@@ -869,6 +870,14 @@ class Sessions:
         for summary in await self._store.summaries():
             if not self.here(summary) or _is_current(summary.id, current):
                 continue
+            if summary.unreadable is not None:
+                # Never another one in its place, in silence (audit after
+                # hito 10, S2).
+                raise SessionCorrupt(
+                    f"the last session here, {summary.id}, cannot be read "
+                    f"({summary.unreadable}): /delete it, or resume another "
+                    "by its id"
+                )
             try:
                 return await self._store.open(summary.id)
             except SessionInUse:

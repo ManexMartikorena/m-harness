@@ -457,15 +457,32 @@ async def test_the_list_is_newest_first_with_title_and_messages(folder: Path) ->
     assert found[0].updated_at == datetime.fromtimestamp(2_000, UTC)
 
 
-async def test_the_list_skips_what_it_cannot_read(folder: Path) -> None:
-    await saved(folder, HOLA, ANSWER)
+async def test_the_list_says_what_it_cannot_read(folder: Path) -> None:
+    # Audit after hito 10 (S2): skipped, it could not be deleted from maha,
+    # and `-c` took an older one in silence. What is no session is skipped.
+    path = await saved(folder, HOLA, ANSWER)
     set_lines(file_of(folder, "20261026-091502-0000"), ["no es json"])
+    lines = lines_of(path)
+    other = lines[0].replace(HEADER.id, "20261026-091502-2222")
+    set_lines(file_of(folder, "20261026-091502-2222"), [other, '{"type": "x"}'])
     set_lines(folder / "notas.jsonl", ["{}"])
     set_lines(folder / "20261026-091502-1111.txt", ["{}"])
 
-    found = await JsonlSessionStore(folder).summaries()
+    found = {s.id: s for s in await JsonlSessionStore(folder).summaries()}
 
-    assert [s.id for s in found] == [HEADER.id]
+    assert sorted(found) == [
+        "20261026-091502-0000",
+        "20261026-091502-2222",
+        HEADER.id,
+    ]
+    assert found[HEADER.id].unreadable is None
+    unknown = found["20261026-091502-0000"]
+    assert (unknown.cwd, unknown.unreadable) == ("", "line 1 is not a header")
+    # Its header could be read: the list knows where it was.
+    broken = found["20261026-091502-2222"]
+    assert broken.cwd == HEADER.cwd
+    assert broken.unreadable is not None
+    assert broken.unreadable.startswith("line 2")
 
 
 async def test_an_open_session_is_listed_and_a_broken_history_too(
@@ -672,7 +689,7 @@ async def test_a_nested_header_does_not_break_the_list(folder: Path) -> None:
 
     found = await JsonlSessionStore(folder).summaries()
 
-    assert [s.id for s in found] == [HEADER.id]
+    assert sorted(s.id for s in found) == ["20261026-091502-0000", HEADER.id]
 
 
 async def test_a_file_whose_header_names_another_id_is_corrupt(folder: Path) -> None:
