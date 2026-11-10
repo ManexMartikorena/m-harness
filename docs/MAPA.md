@@ -79,6 +79,7 @@ La batería de `maha eval` (spec hito 8, §1.5 a §1.9). Solo datos inventados.
 | `specs/hito-9-anthropic.md` | Spec del hito 9 (IMPLEMENTADA, `v0.9.0`): el formato de cada modelo en el catálogo, `ModelRouter`, `AnthropicClient`, el razonamiento guardado y devuelto intacto, `max_tokens` por llamada, effort y caché del prompt |
 | `specs/hito-10-system-prompt.md` | Spec del hito 10 (APROBADA): el system prompt por capas (base, familia del modelo, usuario, proyecto, extra y entorno), `AGENTS.md` y `CLAUDE.md`, `maha prompt`, `/init`, `todo_write`, `ask_user`, títulos con el modelo pequeño y `/rename` |
 | `specs/mejora-2026-11-03-auditoria-profunda.md` | La auditoría profunda tras el hito 9 (IMPLEMENTADA, `v0.9.1`): cada hallazgo de los cinco revisores y de la revisión independiente de los arreglos, con su estado y su commit; las evals finales y lo aprendido |
+| `specs/mejora-2026-11-10-auditoria-hito-10.md` | La auditoría tras el hito 10: cinco revisores independientes (B, S, M, H, I), las mejoras de producto evaluadas por tres agentes (P), las decisiones del mantenedor y el estado de cada hallazgo |
 
 ## Código: `src/mharness/`
 
