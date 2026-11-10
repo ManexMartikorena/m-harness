@@ -25,7 +25,6 @@ from mharness.domain.agent_events import (
     TurnFinished,
     TurnStarted,
 )
-from mharness.domain.catalog import add_cost
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
 from mharness.domain.model import Effort, Usage
@@ -207,8 +206,10 @@ class Conversation:
         """`Agent.run()`, and then the turn saved, however it ends."""
         usage = Usage()
         calls = 0
-        # None once a call has no price.
-        cost: Decimal | None = Decimal(0)
+        # By call, as maha stats: what the calls with a price cost, and how
+        # many had none (audit after hito 10, S3).
+        cost = Decimal(0)
+        priced = unpriced = 0
         # Once the turn finished, what comes after is not about it.
         finished = False
         # Whether the turn's cost is already in the session's.
@@ -222,7 +223,11 @@ class Conversation:
                     if isinstance(event, ModelCallFinished):
                         calls += 1
                         usage += event.usage
-                        cost = add_cost(cost, event.cost)
+                        if event.cost is None:
+                            unpriced += 1
+                        else:
+                            priced += 1
+                            cost += event.cost
                     if not isinstance(event, TextDelta):
                         await self._record(event)
                     if isinstance(event, TurnStarted) and self._prompt_untraced:
@@ -232,7 +237,7 @@ class Conversation:
                     if finished and calls:
                         # Before it is shown: the terminal tells the session's
                         # cost with this turn in it.
-                        self._count(cost)
+                        self._count(cost if priced else None, unpriced)
                         counted = True
                     yield event
         except BaseException as exc:
@@ -250,7 +255,11 @@ class Conversation:
                 if paid is not None:
                     calls += 1
                     usage += paid.usage
-                    cost = add_cost(cost, paid.cost)
+                    if paid.cost is None:
+                        unpriced += 1
+                    else:
+                        priced += 1
+                        cost += paid.cost
                     await self._record(paid)
                 await self._record(
                     TurnInterrupted()
@@ -263,9 +272,15 @@ class Conversation:
             self._queued += len(fresh)
             self._pending += [MessageEntry(message=m) for m in fresh]
             if calls:
-                self._pending.append(UsageEntry(usage=usage, cost=cost))
+                self._pending.append(
+                    UsageEntry(usage=usage, cost=cost if priced else None)
+                )
+                if priced and unpriced:
+                    # The calls without a price, as a turn without one: the
+                    # session's cost is then at least what it says.
+                    self._pending.append(UsageEntry(usage=Usage(), cost=None))
                 if not counted:
-                    self._count(cost)
+                    self._count(cost if priced else None, unpriced)
             await self._save()
             await self._sync_trace()
             # Once its file exists: also if the first turn could not be
@@ -339,13 +354,16 @@ class Conversation:
             ),
         )
 
-    def _count(self, cost: Decimal | None) -> None:
-        """Add one turn's cost to the session's; past what an amount in USD
-        can be, the turn counts as one without a cost, as on resuming."""
-        if cost is None or known(self.cost + cost) is None:
-            self.uncosted_turns += 1
-        else:
+    def _count(self, cost: Decimal | None, unpriced: int = 0) -> None:
+        """Add what a turn's calls with a price cost to the session's; with
+        calls without one, the turn counts as one without a cost too. Past
+        what an amount in USD can be, the turn counts as one without a cost,
+        as on resuming."""
+        past = cost is not None and known(self.cost + cost) is None
+        if cost is not None and not past:
             self.cost += cost
+        if cost is None or past or unpriced:
+            self.uncosted_turns += 1
 
     async def switch_model(self, model: str) -> None:
         """Use `model` from the next turn on; the change keeps its place

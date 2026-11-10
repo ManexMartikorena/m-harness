@@ -888,6 +888,29 @@ async def test_a_turn_that_fails_keeps_the_tokens_already_spent() -> None:
     assert conversation.cost == Decimal(1)
 
 
+async def test_a_call_without_price_does_not_hide_what_the_others_cost() -> None:
+    # Audit after hito 10 (S3): the whole turn had no cost, while maha stats
+    # counted the priced call.
+    store = MemorySessionStore()
+    priced = reply("Uno", usage=MILLION)
+    free = priced.model_copy(update={"model": "unknown-model"})
+    echo = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    fake = FakeModelClient([tool_calls(echo, usage=MILLION), free])
+    conversation = await World(store, fake, catalog=PRICED).sessions.start()
+
+    await turn(conversation, "Hola")
+
+    assert conversation.cost == Decimal(1)
+    assert conversation.uncosted_turns == 1
+    assert entries(store)[-2:] == [
+        UsageEntry(usage=MILLION + MILLION, cost=Decimal(1)),
+        UsageEntry(usage=Usage(), cost=None),
+    ]
+    # Read back, the same.
+    session = await store.read(FIRST)
+    assert (session.cost, session.uncosted_turns) == (Decimal(1), 1)
+
+
 async def test_the_conversation_adds_up_the_cost_of_its_turns() -> None:
     store = MemorySessionStore()
     fake = FakeModelClient([reply("Uno", usage=MILLION), reply("Dos", usage=MILLION)])

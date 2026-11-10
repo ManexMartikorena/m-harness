@@ -17,7 +17,6 @@ from mharness.domain.agent_events import (
     TurnFinished,
     TurnStarted,
 )
-from mharness.domain.catalog import add_cost
 from mharness.domain.model import Usage
 from mharness.domain.trace import (
     TitleWritten,
@@ -54,11 +53,14 @@ class TurnSummary:
     failed_tools: int
     denied_tools: int
     usage: Usage
-    # None if a call had no price.
+    # Of its calls with a price; None if none had one.
     cost: Decimal | None
     # From its start to its last record.
     seconds: float
     ended: Ending
+    # Its calls without a price: then `cost` is a lower bound (audit after
+    # hito 10, S3).
+    unpriced: int = 0
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,11 @@ class TraceSummary:
         return sum((cost for cost in self._costs() if cost is not None), Decimal(0))
 
     @property
+    def priced(self) -> bool:
+        """Whether some call had a price."""
+        return any(cost is not None for cost in self._costs())
+
+    @property
     def uncosted_turns(self) -> int:
         return sum(1 for cost in self._costs() if cost is None)
 
@@ -91,7 +98,15 @@ class TraceSummary:
         return sum(turn.model_calls for turn in self.turns) + len(self.titles)
 
     def _costs(self) -> list[Decimal | None]:
-        return [turn.cost for turn in self.turns] + [t.cost for t in self.titles]
+        """A cost per turn and title; None for each that had a call without
+        a price, besides what it had with one (audit after hito 10, S3)."""
+        costs: list[Decimal | None] = []
+        for turn in self.turns:
+            if turn.cost is not None:
+                costs.append(turn.cost)
+            if turn.unpriced:
+                costs.append(None)
+        return costs + [title.cost for title in self.titles]
 
     @property
     def tools(self) -> int:
@@ -125,7 +140,12 @@ def summarize(session: str, records: Sequence[TraceRecord]) -> TraceSummary:
             case ModelCallFinished():
                 current.model_calls += 1
                 current.usage += event.usage
-                current.cost = add_cost(current.cost, event.cost)
+                # By call, as maha stats: a call without a price does not
+                # hide what the others cost (audit after hito 10, S3).
+                if event.cost is None:
+                    current.unpriced += 1
+                else:
+                    current.cost += event.cost
                 if event.model not in models:
                     models.append(event.model)
             case ToolFinished():
@@ -159,7 +179,9 @@ class _Turn:
     failed_tools: int = 0
     denied_tools: int = 0
     usage: Usage = field(default_factory=Usage)
-    cost: Decimal | None = field(default_factory=Decimal)
+    # Of its calls with a price.
+    cost: Decimal = field(default_factory=Decimal)
+    unpriced: int = 0
     ended: Ending = "unfinished"
 
     def summary(self) -> TurnSummary:
@@ -172,7 +194,11 @@ class _Turn:
             failed_tools=self.failed_tools,
             denied_tools=self.denied_tools,
             usage=self.usage,
-            cost=self.cost,
+            # Unknown only if every call it made had no price.
+            cost=None
+            if self.unpriced and self.unpriced == self.model_calls
+            else self.cost,
             seconds=(last - self.started_at).total_seconds(),
             ended=self.ended,
+            unpriced=self.unpriced,
         )

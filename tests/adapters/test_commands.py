@@ -535,8 +535,11 @@ async def test_trace_shows_each_turn_and_the_total() -> None:
     assert (
         f"  {FIRST} · fake-model · 2 turns · 3 model calls · 1 tool\n"
         f"  1  {clock(NOW)}  1 call · 0 tools · 742 in · 31 out · $0.0012 · 0.0 s\n"
-        f"  2  {clock(NOW)}  2 calls · 1 tool · 30 in · 5 out · 0.0 s · 1 failed\n"
-        "  total: 772 in · 36 out · ≥$0.0012\n"
+        # A call without a price does not hide what the other cost (audit
+        # after hito 10, S3): at least that.
+        f"  2  {clock(NOW)}  2 calls · 1 tool · 30 in · 5 out · ≥$0.0001 · 0.0 s"
+        " · 1 failed\n"
+        "  total: 772 in · 36 out · ≥$0.0013\n"
         f"  [trace: /traces/{FIRST}.jsonl]\n"
     ) in out
 

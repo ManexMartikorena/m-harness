@@ -141,7 +141,9 @@ def test_a_turn_stopped_by_a_limit_says_which() -> None:
         assert turn.ended == reason
 
 
-def test_a_turn_without_price_has_no_cost_and_is_counted() -> None:
+def test_a_call_without_price_does_not_hide_the_others() -> None:
+    # Audit after hito 10 (S3): the whole turn had no cost, while maha stats
+    # counted the priced call. Now, by call, as maha stats: at least that.
     records = [
         at(0, TurnStarted(text="A")),
         at(1, model(10, 1, "0.0001")),
@@ -150,13 +152,21 @@ def test_a_turn_without_price_has_no_cost_and_is_counted() -> None:
         at(3, TurnStarted(text="B")),
         at(4, model(10, 1, "0.0002")),
         at(4, finished()),
+        at(5, TurnStarted(text="C")),
+        at(6, model(10, 1, None)),
+        at(6, finished()),
     ]
 
     summary = summarize(SESSION, records)
 
-    assert [turn.cost for turn in summary.turns] == [None, Decimal("0.0002")]
-    assert summary.cost == Decimal("0.0002")
-    assert summary.uncosted_turns == 1
+    assert [turn.cost for turn in summary.turns] == [
+        Decimal("0.0001"),
+        Decimal("0.0002"),
+        None,
+    ]
+    assert [turn.unpriced for turn in summary.turns] == [1, 0, 1]
+    assert summary.cost == Decimal("0.0003")
+    assert summary.uncosted_turns == 2
 
 
 def test_how_a_turn_ended_badly() -> None:

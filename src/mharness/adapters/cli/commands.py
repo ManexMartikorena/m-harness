@@ -449,7 +449,7 @@ def _summary_lines(summary: TraceSummary) -> list[str]:
     lines += [_turn_line(turn) for turn in summary.turns]
     lines += [_title_line(title) for title in summary.titles]
     usage = summary.usage
-    if summary.uncosted_turns == len(summary.turns) + len(summary.titles):
+    if not summary.priced:
         # No turn has a price: "≥$0" would be true and say nothing.
         cost = "cost unknown"
     else:
@@ -486,7 +486,8 @@ def _turn_line(turn: TurnSummary) -> str:
         f"{turn.usage.output_tokens} out",
     ]
     if turn.cost is not None:
-        parts.append(usd(turn.cost))
+        # Some call had no price: at least that (audit after hito 10, S3).
+        parts.append(("≥" if turn.unpriced else "") + usd(turn.cost))
     parts.append(f"{turn.seconds:.1f} s")
     if turn.failed_tools:
         parts.append(f"{turn.failed_tools} failed")
