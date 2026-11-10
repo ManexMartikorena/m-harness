@@ -1680,6 +1680,78 @@ def test_eval_into_a_closed_pipe_still_keeps_every_run(
 
 
 @respx.mock
+def test_eval_keeps_its_report_next_to_the_runs(
+    workspace: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Spec hito 10, §5: the report only went to the screen, and there is no
+    # command to make it again from runs.json; the second pass of the evals
+    # needed a `tee` not to lose it.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Es la 1.4.2.", 1000, 10))
+    )
+
+    assert main(["eval", "--tasks", str(evals), "--repeat", "2"]) == 0
+
+    out = capsys.readouterr().out
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    report = (folder / "report.txt").read_text(encoding="utf-8")
+    assert "  total        2/2   100%" in report
+    assert report == out
+
+
+def test_an_interrupted_eval_keeps_the_report_it_had(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    calls = 0
+
+    def answer(request: httpx.Request) -> respx.MockResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            os.kill(os.getpid(), signal.SIGTERM)
+        return sse_response(streamed("Es la 1.4.2.", 1000, 10))
+
+    with respx.mock:
+        respx.post(GO_ENDPOINT).mock(side_effect=answer)
+
+        result = main(["eval", "--tasks", str(evals), "--repeat", "2", "--jobs", "1"])
+
+    assert result == 143
+    capsys.readouterr()
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    report = (folder / "report.txt").read_text(encoding="utf-8")
+    assert "  ✓ 01-version · glm-5.3-flash #1 · 1 step ·" in report
+    assert report.endswith("\ninterrupted: 1 run kept in " + str(folder) + "\n")
+
+
+@respx.mock
+def test_eval_into_a_closed_pipe_still_keeps_the_report(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / "state"))
+    evals = battery(workspace / "evals")
+    respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Es la 1.4.2.", 10, 5))
+    )
+    monkeypatch.setattr(sys, "stdout", ClosedPipe())
+
+    main(["eval", "--tasks", str(evals), "--repeat", "2", "--jobs", "1"])
+
+    [folder] = (workspace / "state" / "maha" / "evals").iterdir()
+    report = (folder / "report.txt").read_text(encoding="utf-8")
+    assert "  total        2/2   100%" in report
+
+
+@respx.mock
 def test_p_says_what_the_project_configuration_chose(
     workspace: Path, stdin: Callable[[str], None], capsys: pytest.CaptureFixture[str]
 ) -> None:

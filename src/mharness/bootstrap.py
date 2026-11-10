@@ -531,11 +531,15 @@ async def _eval(
         done = evaluator.finished
         await asyncio.to_thread(_write_runs, run_dir / "runs.json", done)
         kept = f"{len(done)} run" + ("" if len(done) == 1 else "s")
+        said = [f"\ninterrupted: {kept} kept in {run_dir}"]
+        if options.keep:
+            said.append(f"copies of the repositories: {copies}")
+        out.keep(said)
+        await asyncio.to_thread(out.save, run_dir / "report.txt")
         # A closed window may have taken the terminal: runs.json is written.
         with contextlib.suppress(OSError):
-            print(f"\ninterrupted: {kept} kept in {run_dir}", file=sys.stderr)
-            if options.keep:
-                print(f"copies of the repositories: {copies}", file=sys.stderr)
+            for text in said:
+                print(text, file=sys.stderr)
             sys.stderr.flush()
         if not received:
             raise
@@ -571,6 +575,7 @@ async def _eval(
                 "keep a baseline"
             )
         out.line(f"\nsessions and traces of these runs: {run_dir}")
+        await asyncio.to_thread(out.save, run_dir / "report.txt")
         return 1
     if options.save:
         commit = _commit()
@@ -593,6 +598,9 @@ async def _eval(
     out.line(f"\nsessions and traces of these runs: {run_dir}")
     if options.keep:
         out.line(f"copies of the repositories: {copies}")
+    # What was shown, kept: there is no command that makes it again from
+    # runs.json (spec hito 10, §5).
+    await asyncio.to_thread(out.save, run_dir / "report.txt")
     return 1 if regressed else 0
 
 
@@ -603,26 +611,40 @@ _CLOSING = (signal.SIGHUP, signal.SIGTERM)
 class _Out:
     """The stdout of `maha eval` until nobody reads it (`maha eval | head`);
     then nothing more is shown, and the battery goes on: runs.json keeps
-    every run (deep audit, I6)."""
+    every run (deep audit, I6). It keeps a copy of all it shows, for
+    report.txt (spec hito 10, §5)."""
 
     def __init__(self) -> None:
         self._stream: TextIO = sys.stdout
+        self._copy = io.StringIO()
 
     def show[T](self, write: Callable[[TextIO], T]) -> T:
-        """Run `write` on the stream, and return what it returns."""
+        """Run `write`, show what it wrote, and return what it returns."""
+        buffer = io.StringIO()
+        done = write(buffer)
+        text = buffer.getvalue()
+        self._copy.write(text)
         try:
-            done = write(self._stream)
+            self._stream.write(text)
             self._stream.flush()
         except BrokenPipeError:
             cli.drop_output(sys.stdout)
-            # Somewhere to write that nobody reads: the report still has to
-            # say whether there was a regression.
+            # Somewhere to write that nobody reads.
             self._stream = io.StringIO()
-            done = write(self._stream)
         return done
 
     def line(self, text: str) -> None:
         self.show(lambda stream: print(text, file=stream))
+
+    def keep(self, lines: Sequence[str]) -> None:
+        """Add `lines` to the copy only: what went to stderr instead."""
+        for text in lines:
+            print(text, file=self._copy)
+
+    def save(self, path: Path) -> None:
+        """Write the copy to `path`."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(self._copy.getvalue(), encoding="utf-8")
 
 
 def _write_runs(path: Path, runs: Sequence[TaskRun]) -> None:
