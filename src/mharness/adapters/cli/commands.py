@@ -36,6 +36,7 @@ COMMANDS = {
     "makes the next call pay its prompt again, without the cache",
     "trace": "/trace [ID] — what a session did and cost; without ID, this one",
     "new": "/new — a new session, with the same model",
+    "rename": "/rename [TITLE] — show the session's title, or give it one",
     "init": "/init [TEXT] — write or improve the project's AGENTS.md; TEXT, what "
     "to stress",
     "export": "/export [FILE] — this conversation in Markdown; by default, ID.md",
@@ -116,6 +117,8 @@ class Commands:
                     await self._export(command.argument)
                 case "new":
                     await self._new()
+                case "rename":
+                    await self._rename(command.argument)
                 case _:
                     self._say(f"unknown command: /{command.name} (see /help)")
         except (SessionError, TraceError) as exc:
@@ -270,6 +273,20 @@ class Commands:
 
     def _shown(self, cwd: str) -> str:
         return shown_dir(cwd, self._home)
+
+    async def _rename(self, title: str | None) -> None:
+        """The session's title by hand; the small model never replaces it
+        (spec hito 10, §1.12)."""
+        conversation = self.conversation
+        if title is None:
+            current = conversation.title
+            if current is None:
+                self._say("[no title yet: /rename TITLE gives it one]")
+            else:
+                self._say(f"[title: {clean_line(current.title)}]")
+            return
+        kept = await conversation.rename(title)
+        self._say(f"[title: {clean_line(kept)}]")
 
     def _say(self, text: str) -> None:
         print(f"  {text}", file=self._out, flush=True)

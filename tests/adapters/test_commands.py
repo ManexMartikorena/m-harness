@@ -89,6 +89,7 @@ def test_the_known_commands() -> None:
         "effort",
         "trace",
         "new",
+        "rename",
         "init",
         "export",
         "help",
@@ -560,6 +561,32 @@ async def test_trace_says_what_was_read_from_the_cache() -> None:
         "0.0 s\n"
     ) in out
     assert "  total: 5800 in (2863 cached) · 80 out · cost unknown\n" in out
+
+
+# /rename (spec hito 10, §1.12).
+
+
+async def test_rename_gives_the_session_its_title() -> None:
+    store = MemorySessionStore()
+    maha = Maha(store, [reply("Hola.")])
+
+    _, out, _ = await maha.run(
+        "/rename", "Hola", "/rename  Mi tarea ", "/rename", "/sessions", "/exit"
+    )
+
+    assert "  [no title yet: /rename TITLE gives it one]\n" in out
+    assert out.count("  [title: Mi tarea]\n") == 2
+    # /sessions shows it.
+    [listed] = [line for line in out.splitlines() if f"* {FIRST}" in line]
+    assert listed.endswith("Mi tarea")
+    [summary] = await store.summaries()
+    assert summary.title == "Mi tarea"
+
+
+async def test_a_title_with_nothing_in_it_is_an_error() -> None:
+    _, _, err = await Maha(MemorySessionStore(), []).run("/rename \x1b", "/exit")
+
+    assert "error: a title needs some text\n" in err
 
 
 def test_trace_shows_the_call_of_the_title() -> None:
