@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from mharness.domain.agent_events import ModelCallFinished
 from mharness.domain.model import Usage
+from mharness.domain.trace import TitleWritten
 from mharness.ports.tracing import TraceSink
 
 
@@ -40,11 +41,14 @@ async def daily(
     `since`, if given. The day is that of `tz` (the local one by default),
     as the person counts them. Raises `TraceError` if a trace cannot be
     read."""
-    calls: dict[tuple[date, str], list[ModelCallFinished]] = defaultdict(list)
+    # The titles are calls too, with their cost (spec hito 10, §1.12).
+    calls: dict[tuple[date, str], list[ModelCallFinished | TitleWritten]] = defaultdict(
+        list
+    )
     for session in await traces.sessions():
         for record in await traces.read(session):
             event = record.event
-            if not isinstance(event, ModelCallFinished):
+            if not isinstance(event, ModelCallFinished | TitleWritten):
                 continue
             day = record.at.astimezone(tz).date()
             if since is None or day >= since:

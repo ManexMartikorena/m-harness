@@ -7,7 +7,7 @@ from decimal import Decimal
 from mharness.application.stats import DayModel, daily
 from mharness.domain.agent_events import ModelCallFinished, TurnStarted
 from mharness.domain.model import Usage
-from mharness.domain.trace import TraceRecord
+from mharness.domain.trace import TitleWritten, TraceRecord
 from tests.fakes.tracing import MemoryTraceSink
 
 A = "20261028-091502-3fa2"
@@ -77,6 +77,25 @@ async def test_calls_add_up_by_day_and_model_over_every_trace() -> None:
             uncosted=0,
         ),
     ]
+
+
+async def test_the_titles_are_calls_too() -> None:
+    # Spec hito 10, §1.12: what writing a title cost is in maha stats.
+    title = TitleWritten(
+        model="glm-5.3-flash", usage=Usage(input_tokens=80), cost=Decimal("0.0001")
+    )
+    traces = await sink(
+        call(at(28), "glm-5.3-flash", 1000, "0.001"),
+        TraceRecord(at=at(28), session=A, event=title),
+    )
+
+    (row,) = await daily(traces, tz=UTC)
+
+    assert (row.calls, row.usage.input_tokens, row.cost) == (
+        2,
+        1080,
+        Decimal("0.0011"),
+    )
 
 
 async def test_calls_without_a_price_are_counted_apart() -> None:

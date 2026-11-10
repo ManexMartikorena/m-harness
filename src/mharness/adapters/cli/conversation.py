@@ -353,6 +353,12 @@ def retry_note(event: ModelRetry | ModelFallback) -> str:
     return f"[{model} keeps failing ({error}); {clean_line(event.fallback)} goes on]"
 
 
+def title_failed(kind: str) -> None:
+    """A title the small model could not write: only to maha.log, by its
+    kind; the session keeps its first line (spec hito 10, §1.12)."""
+    _log.warning("session title not written: %s", kind)
+
+
 def warn_crash(event: ToolFinished, err: TextIO) -> None:
     """A tool that crashed is a bug of ours: said, and logged."""
     if not event.internal_error:

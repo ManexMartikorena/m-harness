@@ -53,6 +53,7 @@ from mharness.application.evals import Evaluator, choose
 from mharness.application.prompt import PromptTemplates, SystemPromptBuilder
 from mharness.application.routing import ModelRouter
 from mharness.application.sessions import Conversation, Sessions, Start
+from mharness.application.titles import Titler, small_model
 from mharness.application.tools import ToolRegistry
 from mharness.domain.environment import command_env
 from mharness.domain.evals import (
@@ -724,6 +725,7 @@ def _sessions(
     gate: ApprovalGate,
     files: _PromptFiles | None = None,
     questions: UserQuestions | None = None,
+    titler: Titler | None = None,
 ) -> Sessions:
     """The user's sessions, whose agents have the tools of a session and
     `gate`; `ask_user`, with `questions`."""
@@ -760,6 +762,7 @@ def _sessions(
         masked=known_secrets(os.environ, also=[settings.api_key]),
         effort=settings.effort,
         prompt=_prompt(settings, catalog, cwd, tools, files),
+        titler=titler,
     )
 
 
@@ -868,6 +871,27 @@ async def _print(
         )
 
 
+def _titler(
+    settings: config.Settings, catalog: ModelCatalog, client: ModelClient
+) -> Titler:
+    """Who names the sessions of a conversation: the small model (spec hito
+    10, §1.12). Not in `-p` nor in the evals."""
+    assert settings.model is not None
+    template = (resources.files("mharness") / "prompts" / "title.md").read_text(
+        encoding="utf-8"
+    )
+    return Titler(
+        client,
+        model=small_model(
+            settings.small_model, catalog, settings.provider_name, settings.model
+        ),
+        template=template,
+        catalog=catalog,
+        provider=settings.provider_name,
+        failed=cli.title_failed,
+    )
+
+
 def _init(cwd: Path) -> cli.Init:
     """What `/init` needs: its template, and where AGENTS.md goes, the
     project's root (spec hito 10, §1.9)."""
@@ -897,6 +921,7 @@ async def _converse(
             _gate(lines),
             files,
             questions=_questions(lines),
+            titler=_titler(settings, catalog, client),
         )
         return await cli.converse(
             sessions,

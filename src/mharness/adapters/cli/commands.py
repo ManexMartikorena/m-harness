@@ -22,7 +22,7 @@ from mharness.application.traces import TraceSummary, TurnSummary
 from mharness.domain.model import EFFORTS, Usage
 from mharness.domain.prompt import INSTRUCTION_KINDS, SystemPrompt
 from mharness.domain.session import SessionError, SessionNotFound
-from mharness.domain.trace import TraceError
+from mharness.domain.trace import TitleWritten, TraceError
 from mharness.ports.catalog import ModelCatalog
 
 # What each command does, for /help.
@@ -406,7 +406,8 @@ def trace_lines(report: TraceReport, home: Path) -> list[str]:
     if report.location is None:
         return ["(no trace for this session)"]
     summary = report.summary
-    lines = _summary_lines(summary) if summary.turns else ["(no turns in the trace)"]
+    shown = summary.turns or summary.titles
+    lines = _summary_lines(summary) if shown else ["(no turns in the trace)"]
     return [*lines, f"[trace: {shown_dir(report.location, home)}]"]
 
 
@@ -419,14 +420,27 @@ def _summary_lines(summary: TraceSummary) -> list[str]:
         f"{_count(summary.tools, 'tool')}"
     ]
     lines += [_turn_line(turn) for turn in summary.turns]
+    lines += [_title_line(title) for title in summary.titles]
     usage = summary.usage
-    if summary.uncosted_turns == len(summary.turns):
+    if summary.uncosted_turns == len(summary.turns) + len(summary.titles):
         # No turn has a price: "≥$0" would be true and say nothing.
         cost = "cost unknown"
     else:
         cost = ("≥" if summary.uncosted_turns else "") + usd(summary.cost)
     lines.append(f"total: {_tokens_in(usage)} · {usage.output_tokens} out · {cost}")
     return lines
+
+
+def _title_line(title: TitleWritten) -> str:
+    """The call that wrote the title (spec hito 10, §1.12)."""
+    parts = [
+        f"title by {clean_line(title.model)}",
+        _tokens_in(title.usage),
+        f"{title.usage.output_tokens} out",
+    ]
+    if title.cost is not None:
+        parts.append(usd(title.cost))
+    return " · ".join(parts)
 
 
 def _tokens_in(usage: Usage) -> str:

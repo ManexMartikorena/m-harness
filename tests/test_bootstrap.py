@@ -117,7 +117,7 @@ def test_the_projects_agents_md_reaches_the_model(
 
     # Said at the start: nothing enters the prompt unseen (§1.8).
     assert "  [instructions: AGENTS.md]\n" in capsys.readouterr().out
-    system = json.loads(route.calls.last.request.content)["messages"][0]
+    system = json.loads(last_turn(route))["messages"][0]
     assert system["role"] == "system"
     assert (
         '<instructions source="AGENTS.md">\n'
@@ -211,7 +211,7 @@ def test_a_cut_stream_shows_the_error_and_the_next_turn_works(
     ) in captured.out
     assert captured.err.startswith("error: the connection to the provider failed")
     # The cut turn was not kept.
-    assert conversation(route.calls.last.request.content) == [
+    assert conversation(last_turn(route)) == [
         {"role": "user", "content": "Hola otra vez"}
     ]
 
@@ -226,7 +226,7 @@ def test_maha_offers_its_tools(workspace: Path, stdin: Callable[[str], None]) ->
 
     main([])
 
-    tools = json.loads(route.calls.last.request.content)["tools"]
+    tools = json.loads(last_turn(route))["tools"]
     assert [tool["function"]["name"] for tool in tools] == [
         "read_file",
         "list_dir",
@@ -253,7 +253,7 @@ def test_with_a_terminal_the_model_can_ask_the_person(
         )
         main([])
 
-    tools = json.loads(route.calls.last.request.content)["tools"]
+    tools = json.loads(last_turn(route))["tools"]
     assert tools[-1]["function"]["name"] == "ask_user"
 
 
@@ -270,10 +270,19 @@ def test_p_never_offers_ask_user(
 
     main(["-p", "Hola"])
 
-    tools = json.loads(route.calls.last.request.content)["tools"]
+    tools = json.loads(last_turn(route))["tools"]
     names = [tool["function"]["name"] for tool in tools]
     assert "ask_user" not in names
     assert "todo_write" in names
+
+
+def last_turn(route: respx.Route) -> bytes:
+    """The body of the last call of a turn: in a conversation, the title of
+    the session goes in the background, in a call of its own, without
+    streaming (spec hito 10, §1.12)."""
+    turns = [c for c in route.calls if json.loads(c.request.content).get("stream")]
+    content: bytes = turns[-1].request.content
+    return content
 
 
 def tool_call_stream(name: str, arguments: str) -> bytes:
@@ -318,7 +327,7 @@ def test_a_tool_call_reads_a_real_file(
         "Dice: comprar pan.\n"
         "  [tokens: 430 in · 29 out · 1 call · $0.0001 · session $0.0001]"
     ) in out
-    second = conversation(route.calls.last.request.content)
+    second = conversation(last_turn(route))
     assert second[-1] == {
         "role": "tool",
         "tool_call_id": "call_e2e",
@@ -414,7 +423,7 @@ def test_without_a_terminal_a_write_is_denied_without_asking(
     out = capsys.readouterr().out
     assert code == 0
     # The "y" was not an answer: it reached the model as the next message.
-    last = conversation(route.calls.last.request.content)[-1]
+    last = conversation(last_turn(route))[-1]
     assert last == {"role": "user", "content": "y"}
     assert "  (denied: input is not a terminal)\n" in out
     assert "  [denied: tell maha how to continue]\n" in out
@@ -475,7 +484,7 @@ def test_in_a_terminal_a_command_asks_and_runs_without_the_key(
     assert code == 0
     assert "  (discarded typed input)\n  ┌ run: env\n" in out
     assert "  ✓ exit code 0\n" in out
-    result = conversation(route.calls.last.request.content)[-1]
+    result = conversation(last_turn(route))[-1]
     assert result["role"] == "tool"
     assert "PATH=" in result["content"]
     assert KEY not in result["content"]
@@ -556,7 +565,7 @@ def test_a_second_maha_resumes_the_first_one(
 
     out = capsys.readouterr().out
     assert " · 2 messages · glm-5.3-flash]\n" in out
-    assert conversation(route.calls.last.request.content) == [
+    assert conversation(last_turn(route)) == [
         {"role": "user", "content": "Hola, soy Ane"},
         {"role": "assistant", "content": "Hola, Ane."},
         {"role": "user", "content": "¿Cómo me llamo?"},
@@ -806,7 +815,7 @@ def test_eval_says_the_effort_it_runs_with(
 
     first = capsys.readouterr().out.splitlines()[0]
     assert first.endswith(" · effort high")
-    assert json.loads(route.calls.last.request.content)["reasoning_effort"] == "high"
+    assert json.loads(last_turn(route))["reasoning_effort"] == "high"
 
 
 def test_eval_names_a_task_that_does_not_exist(
@@ -847,7 +856,7 @@ def test_print_answers_on_stdout_and_saves_the_session(
     captured = capsys.readouterr()
     assert (code, captured.out) == (0, "Dos palabras.\n")
     assert captured.err == "  [tokens: 12 in · 3 out · <$0.0001 · session <$0.0001]\n"
-    messages = conversation(route.calls.last.request.content)
+    messages = conversation(last_turn(route))
     [message] = messages
     assert message["role"] == "user"
     assert re.fullmatch(
@@ -967,7 +976,7 @@ def test_continue_with_print_follows_a_print_session(
     captured = capsys.readouterr()
     assert captured.out == "Que apuntara 42.\n"
     assert " · 2 messages · glm-5.3-flash]\n" in captured.err
-    assert [m["content"] for m in conversation(route.calls.last.request.content)] == [
+    assert [m["content"] for m in conversation(last_turn(route))] == [
         "apunta 42",
         "Apuntado.",
         "¿qué te pedí antes?",
@@ -1006,7 +1015,7 @@ def test_resume_a_session_of_another_directory_with_another_model(
         f"[this session was in {workspace / 'project'}; tools work in {elsewhere}]"
         in err
     )
-    assert json.loads(route.calls.last.request.content)["model"] == "kimi-k2.7-code"
+    assert json.loads(last_turn(route))["model"] == "kimi-k2.7-code"
 
 
 def test_continue_without_a_session_here_fails(
@@ -1054,7 +1063,7 @@ def test_model_on_the_command_line_names_a_new_session(
     assert main(["-m", "kimi-k2.7-code"]) == 0
 
     assert "· opencode-go · kimi-k2.7-code ·" in capsys.readouterr().out
-    assert json.loads(route.calls.last.request.content)["model"] == "kimi-k2.7-code"
+    assert json.loads(last_turn(route))["model"] == "kimi-k2.7-code"
 
 
 @respx.mock
@@ -1142,7 +1151,7 @@ def test_the_fallback_model_of_the_command_line_wins(
 
     main(["-p", "Hola", "--fallback-model", "kimi-k2.7-code"])
 
-    assert json.loads(route.calls.last.request.content)["model"] == "kimi-k2.7-code"
+    assert json.loads(last_turn(route))["model"] == "kimi-k2.7-code"
 
 
 @respx.mock
@@ -1291,7 +1300,7 @@ def test_an_exported_session_is_imported_and_resumed(
     )
     stdin("")
     assert main(["-r", new, "-p", "¿Sigues?"]) == 0
-    assert conversation(route.calls.last.request.content)[:2] == [
+    assert conversation(last_turn(route))[:2] == [
         {"role": "user", "content": "Hola"},
         {"role": "assistant", "content": "Hola, Ane."},
     ]
@@ -1891,7 +1900,7 @@ def test_the_users_base_and_what_is_appended_reach_the_model(
     )
 
     assert code == 0
-    system = json.loads(route.calls.last.request.content)["messages"][0]["content"]
+    system = json.loads(last_turn(route))["messages"][0]["content"]
     assert system.startswith("Eres un asistente de pruebas.\n\n<environment>")
     assert "You are maha" not in system
     assert system.endswith("Responde en una línea.\n\nFin.")

@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from mharness.application.agent import Agent
 from mharness.application.prompt import SystemPromptBuilder
+from mharness.application.titles import Titler
 from mharness.application.traces import TraceSummary, summarize
 from mharness.domain.agent_events import (
     AgentEvent,
@@ -41,8 +42,10 @@ from mharness.domain.session import (
     SessionInUse,
     SessionNotFound,
     SessionSummary,
+    TitleEntry,
     UsageEntry,
     check_history,
+    clean_title,
     is_session_id,
     session_id,
 )
@@ -50,6 +53,7 @@ from mharness.domain.trace import (
     PromptLayerInfo,
     PromptUsed,
     Secrets,
+    TitleWritten,
     TraceError,
     TraceEvent,
     TraceExists,
@@ -81,6 +85,9 @@ class _Origin:
     masked: Secrets
     # Builds each session's system prompt; None: no system prompt.
     prompt: SystemPromptBuilder | None = None
+    # Names each new session after its first turn; None: no titles (`-p`,
+    # the evals; spec hito 10, §1.12).
+    titler: Titler | None = None
 
 
 class Conversation:
@@ -114,6 +121,7 @@ class Conversation:
         cost: Decimal = Decimal(0),
         uncosted_turns: int = 0,
         prompt: SystemPrompt | None = None,
+        title: TitleEntry | None = None,
     ) -> None:
         self._store = store
         self._agent = agent
@@ -154,6 +162,11 @@ class Conversation:
         agent.system = None if prompt is None else prompt.text
         # Traced with the next turn that starts (spec hito 10, §1.13).
         self._prompt_untraced = prompt is not None
+        # Its title, and the call writing one in the background (§1.12).
+        self.title = title
+        self._titling: asyncio.Task[None] | None = None
+        # The title is saved while a turn may run: one save at a time.
+        self._saving = asyncio.Lock()
 
     @property
     def model(self) -> str:
@@ -196,6 +209,8 @@ class Conversation:
         self._turn = TurnStarted(text=text)
         self._turn_at = self._origin.now()
         self._turn_traced = False
+        # The first turn of a session names it.
+        first = not self._agent.messages
         try:
             async with aclosing(self._agent.run(text)) as events:
                 async for event in events:
@@ -239,6 +254,48 @@ class Conversation:
                     self._count(cost)
             await self._save()
             await self._sync_trace()
+            if first and self._stored:
+                self._name(text)
+
+    def _name(self, first: str) -> None:
+        """Ask for the title in the background: nobody waits for it."""
+        titler = self._origin.titler
+        if titler is None or self.title is not None or self._titling is not None:
+            return
+        self._titling = asyncio.create_task(self._write_title(titler, first))
+
+    async def _write_title(self, titler: Titler, first: str) -> None:
+        title = await titler.title(first)
+        if title is None:
+            return
+        if title.text is not None and (self.title is None or not self.title.manual):
+            self.title = TitleEntry(title=title.text)
+            self._pending.append(self.title)
+        # Paid even if nothing usable came: its cost is the session's.
+        self._pending.append(UsageEntry(usage=title.usage, cost=title.cost))
+        self._count(title.cost)
+        await self._record(
+            TitleWritten(model=title.model, usage=title.usage, cost=title.cost)
+        )
+        await self._save()
+        await self._sync_trace()
+
+    async def titled(self) -> None:
+        """Wait for the title on its way, if any."""
+        if self._titling is not None:
+            await self._titling
+
+    async def rename(self, title: str) -> str:
+        """Give the session `title` by hand; the small model never replaces
+        it. Returns it as kept; raises `SessionError` if nothing is left of
+        it (spec hito 10, §1.12)."""
+        kept = clean_title(title)
+        if kept is None:
+            raise SessionError("a title needs some text")
+        self.title = TitleEntry(title=kept, manual=True)
+        self._pending.append(self.title)
+        await self._save()
+        return kept
 
     def _prompt_used(self) -> PromptUsed:
         assert self.prompt is not None
@@ -277,7 +334,13 @@ class Conversation:
 
     async def close(self) -> None:
         """Save what is still pending, and let other maha resume or delete
-        it. If saving fails again, `unsaved` says so."""
+        it. If saving fails again, `unsaved` says so. A title still on its
+        way is dropped: leaving never waits for it."""
+        if self._titling is not None:
+            self._titling.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._titling
+            self._titling = None
         await self._save()
         if self._log is not None:
             await self._log.close()
@@ -353,6 +416,10 @@ class Conversation:
             self._trace_problem = str(exc)
 
     async def _save(self) -> None:
+        async with self._saving:
+            await self._save_pending()
+
+    async def _save_pending(self) -> None:
         if not self._pending:
             return
         if self._log is None and not any(
@@ -495,6 +562,7 @@ class Sessions:
         token: Callable[[], str] = lambda: secrets.token_hex(2),
         effort: Effort | None = None,
         prompt: SystemPromptBuilder | None = None,
+        titler: Titler | None = None,
     ) -> None:
         self._store = store
         self._new_agent = new_agent
@@ -503,7 +571,7 @@ class Sessions:
         # changes it (spec hito 9, §1.7).
         self.effort = effort
         self._origin = _Origin(
-            cwd, provider, version, now, token, traces, Secrets(masked), prompt
+            cwd, provider, version, now, token, traces, Secrets(masked), prompt, titler
         )
 
     @property
@@ -572,6 +640,7 @@ class Sessions:
             cost=loaded.cost,
             uncosted_turns=loaded.uncosted_turns,
             prompt=prompt,
+            title=loaded.title,
         )
         # The new one is ready: only now is the current one let go.
         await current.close()
@@ -621,6 +690,9 @@ class Sessions:
             )
         if session.usage != Usage() or session.cost:
             entries.append(UsageEntry(usage=session.usage, cost=session.cost))
+        if session.title is not None:
+            # Its title, and whether the person gave it (spec hito 10, §1.12).
+            entries.append(session.title)
         origin = self._origin
         # A trace left without its session keeps its id too, even empty.
         traced = set(await origin.traces.sessions())

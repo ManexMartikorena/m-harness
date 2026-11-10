@@ -19,7 +19,12 @@ from mharness.domain.agent_events import (
 )
 from mharness.domain.catalog import add_cost
 from mharness.domain.model import Usage
-from mharness.domain.trace import TraceRecord, TurnFailed, TurnInterrupted
+from mharness.domain.trace import (
+    TitleWritten,
+    TraceRecord,
+    TurnFailed,
+    TurnInterrupted,
+)
 
 # How a turn ended: as `TurnFinished` says, by an exception, or not at all
 # (maha died, or the trace failed).
@@ -62,23 +67,31 @@ class TraceSummary:
     # The models that answered, in the order they first did.
     models: list[str]
     turns: list[TurnSummary] = field(default_factory=list)
+    # The calls that wrote the session's title, outside the turns (spec
+    # hito 10, §1.12).
+    titles: list[TitleWritten] = field(default_factory=list)
 
     @property
     def usage(self) -> Usage:
-        return sum((turn.usage for turn in self.turns), Usage())
+        usages = [turn.usage for turn in self.turns]
+        return sum([*usages, *(title.usage for title in self.titles)], Usage())
 
     @property
     def cost(self) -> Decimal:
-        """The turns with a cost; `uncosted_turns` says how many had none."""
-        return sum((t.cost for t in self.turns if t.cost is not None), Decimal(0))
+        """The turns and titles with a cost; `uncosted_turns` says how many
+        had none."""
+        return sum((cost for cost in self._costs() if cost is not None), Decimal(0))
 
     @property
     def uncosted_turns(self) -> int:
-        return sum(1 for turn in self.turns if turn.cost is None)
+        return sum(1 for cost in self._costs() if cost is None)
 
     @property
     def model_calls(self) -> int:
-        return sum(turn.model_calls for turn in self.turns)
+        return sum(turn.model_calls for turn in self.turns) + len(self.titles)
+
+    def _costs(self) -> list[Decimal | None]:
+        return [turn.cost for turn in self.turns] + [t.cost for t in self.titles]
 
     @property
     def tools(self) -> int:
@@ -90,9 +103,16 @@ def summarize(session: str, records: Sequence[TraceRecord]) -> TraceSummary:
     the first `TurnStarted` belong to no turn and are left out."""
     models: list[str] = []
     turns: list[TurnSummary] = []
+    titles: list[TitleWritten] = []
     current: _Turn | None = None
     for record in records:
         event = record.event
+        if isinstance(event, TitleWritten):
+            # Written while the next turn may already run: of no turn.
+            titles.append(event)
+            if event.model not in models:
+                models.append(event.model)
+            continue
         if isinstance(event, TurnStarted):
             if current is not None:
                 turns.append(current.summary())
@@ -126,7 +146,7 @@ def summarize(session: str, records: Sequence[TraceRecord]) -> TraceSummary:
                 pass
     if current is not None:
         turns.append(current.summary())
-    return TraceSummary(session=session, models=models, turns=turns)
+    return TraceSummary(session=session, models=models, turns=turns, titles=titles)
 
 
 @dataclass

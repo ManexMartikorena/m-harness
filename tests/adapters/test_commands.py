@@ -16,11 +16,13 @@ from mharness.adapters.cli.commands import (
     Command,
     parse_command,
     prompt_notes,
+    trace_lines,
 )
 from mharness.adapters.cli.conversation import converse
 from mharness.application.agent import Agent
-from mharness.application.sessions import Sessions
+from mharness.application.sessions import Sessions, TraceReport
 from mharness.application.tools import ToolRegistry
+from mharness.application.traces import TraceSummary
 from mharness.domain.agent_events import ModelCallFinished, TurnFinished, TurnStarted
 from mharness.domain.catalog import ModelInfo
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock
@@ -32,7 +34,7 @@ from mharness.domain.session import (
     SessionHeader,
     SessionSummary,
 )
-from mharness.domain.trace import TraceRecord, TurnFailed
+from mharness.domain.trace import TitleWritten, TraceRecord, TurnFailed
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FakeModelClient, reply, tool_calls
@@ -558,6 +560,29 @@ async def test_trace_says_what_was_read_from_the_cache() -> None:
         "0.0 s\n"
     ) in out
     assert "  total: 5800 in (2863 cached) · 80 out · cost unknown\n" in out
+
+
+def test_trace_shows_the_call_of_the_title() -> None:
+    # Spec hito 10, §1.12: outside the turns, in the total.
+    summary = TraceSummary(
+        session=FIRST,
+        models=["glm-5.3-flash"],
+        titles=[
+            TitleWritten(
+                model="glm-5.3-flash",
+                usage=Usage(input_tokens=80, output_tokens=6),
+                cost=Decimal("0.0001"),
+            )
+        ],
+    )
+
+    lines = trace_lines(TraceReport(summary, "/t.jsonl"), HOME)
+
+    assert lines[:3] == [
+        f"{FIRST} · glm-5.3-flash · 0 turns · 1 model call · 0 tools",
+        "title by glm-5.3-flash · 80 in · 6 out · $0.0001",
+        "total: 80 in · 6 out · $0.0001",
+    ]
 
 
 async def test_trace_without_any_price_says_the_cost_is_unknown() -> None:

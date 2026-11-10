@@ -7,6 +7,7 @@ changes. Reading it back gives a `Session`.
 """
 
 import re
+import unicodedata
 from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
@@ -21,8 +22,11 @@ from mharness.domain.money import Usd, known
 # Date and time in UTC, and 4 random hex digits: short to type, sorted by
 # date, and two sessions in the same second do not clash.
 _ID = re.compile(r"\d{8}-\d{6}-[0-9a-f]{4}")
-# What /sessions shows of the first user message.
+# The longest title, and what /sessions shows of the first user message.
 TITLE_MAX = 60
+# Around a title a model may write: quotes, markdown, a full stop.
+_WRAPPING = "\"'`*#_«»\u201c\u201d\u2018\u2019 "
+_LABEL = re.compile(r"^(title|título)\s*:\s*", re.IGNORECASE)
 
 
 def session_id(created_at: datetime, token: str) -> str:
@@ -83,9 +87,19 @@ class ModelEntry(BaseModel, frozen=True):
     provider: str | None = Field(default=None, exclude_if=lambda p: p is None)
 
 
+class TitleEntry(BaseModel, frozen=True):
+    """The session's title from here on (spec hito 10, §1.12): written by
+    the small model after the first turn, or by the person (`/rename`). A
+    title by hand is never replaced by one written by the model."""
+
+    type: Literal["title"] = "title"
+    title: str = Field(min_length=1, max_length=TITLE_MAX)
+    manual: bool = False
+
+
 # Validated by `type`, as the blocks of a message.
 type SessionEntry = Annotated[
-    MessageEntry | UsageEntry | ModelEntry, Field(discriminator="type")
+    MessageEntry | UsageEntry | ModelEntry | TitleEntry, Field(discriminator="type")
 ]
 
 
@@ -106,6 +120,8 @@ class Session(BaseModel, frozen=True):
     # empty in the exports before it. An import takes only `model`, with
     # the header's provider.
     models: dict[str, str] = Field(default_factory=dict)
+    # Its last title, and whether the person gave it; None: none yet.
+    title: TitleEntry | None = None
 
 
 class SessionSummary(BaseModel, frozen=True):
@@ -115,7 +131,7 @@ class SessionSummary(BaseModel, frozen=True):
     cwd: str
     updated_at: datetime
     messages: int
-    # The first line of the first user message, cut.
+    # Its title, or the first line of the first user message, cut.
     title: str
 
 
@@ -205,10 +221,13 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
     usage = Usage()
     cost = Decimal(0)
     uncosted = 0
+    title: TitleEntry | None = None
     for entry in entries:
         match entry:
             case MessageEntry(message=message):
                 messages.append(message)
+            case TitleEntry():
+                title = latest_title(title, entry)
             case ModelEntry(model=changed, provider=provider):
                 models[provider or header.provider] = changed
             case UsageEntry(usage=more, cost=spent, turns=turns):
@@ -228,6 +247,7 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
         cost=cost,
         uncosted_turns=uncosted,
         models=models,
+        title=title,
     )
 
 
@@ -237,10 +257,15 @@ def summarize(
     """The line of /sessions for a session, without checking its history:
     a broken one still shows, so it can be deleted."""
     messages = [entry.message for entry in entries if isinstance(entry, MessageEntry)]
-    first = next((m.text for m in messages if m.role == "user"), "")
-    title = first.split("\n", 1)[0]
-    if len(title) > TITLE_MAX:
-        title = title[: TITLE_MAX - 1] + "…"
+    titled: TitleEntry | None = None
+    for entry in entries:
+        if isinstance(entry, TitleEntry):
+            titled = latest_title(titled, entry)
+    if titled is not None:
+        title = titled.title
+    else:
+        first = next((m.text for m in messages if m.role == "user"), "")
+        title = _cut(first.split("\n", 1)[0])
     return SessionSummary(
         id=header.id,
         cwd=header.cwd,
@@ -248,3 +273,31 @@ def summarize(
         messages=len(messages),
         title=title,
     )
+
+
+def latest_title(current: TitleEntry | None, new: TitleEntry) -> TitleEntry:
+    """The title once `new` comes: a title by hand stays until another one
+    by hand."""
+    if current is not None and current.manual and not new.manual:
+        return current
+    return new
+
+
+def clean_title(text: str) -> str | None:
+    """`text` as a title: its first line with text, without control
+    characters, quotes, markdown or a final full stop, and cut at
+    `TITLE_MAX`; None if nothing is left. What a model writes may hold
+    anything (spec hito 10, §1.12)."""
+    for line in text.splitlines():
+        shown = "".join(
+            " " if unicodedata.category(char).startswith("C") else char for char in line
+        )
+        title = " ".join(shown.split()).strip(_WRAPPING)
+        title = _LABEL.sub("", title).strip(_WRAPPING).rstrip(".").strip(_WRAPPING)
+        if title:
+            return _cut(title)
+    return None
+
+
+def _cut(title: str) -> str:
+    return title if len(title) <= TITLE_MAX else title[: TITLE_MAX - 1] + "…"

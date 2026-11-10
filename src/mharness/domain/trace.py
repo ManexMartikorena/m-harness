@@ -24,6 +24,8 @@ from mharness.domain.agent_events import (
     TurnFinished,
     TurnStarted,
 )
+from mharness.domain.model import Usage
+from mharness.domain.money import Usd
 
 REDACTED = "[redacted]"
 
@@ -107,8 +109,20 @@ class PromptUsed(BaseModel, frozen=True):
     layers: tuple[PromptLayerInfo, ...]
 
 
+class TitleWritten(BaseModel, frozen=True):
+    """The small model wrote the session's title (spec hito 10, §1.12):
+    one call outside any turn, with its tokens and its cost. The title
+    itself is in the session's file."""
+
+    type: Literal["title"] = "title"
+    model: str
+    usage: Usage
+    cost: Usd | None
+
+
 type TraceEvent = Annotated[
     PromptUsed
+    | TitleWritten
     | TurnStarted
     | ToolCallProposed
     | ApprovalRequested
