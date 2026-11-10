@@ -160,6 +160,7 @@ class Conversation:
         # hito 10, §1.2); its warnings are told when it opens.
         self.prompt = prompt
         agent.system = None if prompt is None else prompt.text
+        agent.system_for = self._system_for
         # Traced with the next turn that starts (spec hito 10, §1.13).
         self._prompt_untraced = prompt is not None
         # Its title, and the call writing one in the background (§1.12).
@@ -167,6 +168,12 @@ class Conversation:
         self._titling: asyncio.Task[None] | None = None
         # The title is saved while a turn may run: one save at a time.
         self._saving = asyncio.Lock()
+
+    def _system_for(self, model: str) -> str | None:
+        """The session's prompt for `model`: its own family layer."""
+        if self.prompt is None or self._origin.prompt is None:
+            return None if self.prompt is None else self.prompt.text
+        return self._origin.prompt.for_model(self.prompt, model).text
 
     @property
     def model(self) -> str:

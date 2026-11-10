@@ -113,6 +113,10 @@ class Agent:
         # The session's system prompt, the same in every call; the session
         # sets it, and /model changes its family layer (spec hito 10, §1.2).
         self.system = system
+        # The system prompt of another model of this session (the fallback),
+        # with its own family layer; None: the same text for any model
+        # (audit after hito 10, B5).
+        self.system_for: Callable[[str], str | None] | None = None
         # A resumed session starts with its history (spec hito 6, §1.6); its
         # approvals do not come back (§1.9).
         self._messages: list[Message] = list(history)
@@ -514,9 +518,12 @@ class Agent:
 
     def _request(self, turn: list[Message], model: str) -> ModelRequest:
         info = self._catalog.get(self._provider, model)
+        system = self.system
+        if model != self.model and self.system_for is not None:
+            system = self.system_for(model)
         return ModelRequest(
             model=model,
-            system=self.system,
+            system=system,
             messages=[*self._messages, *turn],
             tools=self._tools.specs(),
             max_tokens=info.max_output if info is not None else None,

@@ -2177,3 +2177,19 @@ async def test_a_call_cut_by_ctrl_c_is_left_for_the_conversation() -> None:
     assert paid.usage == PAID
     # Once.
     assert subject.take_cut_call() is None
+
+
+async def test_the_fallback_gets_its_own_system_prompt() -> None:
+    # Audit after hito 10 (B5): it got the main model's, with the family
+    # layer of the main model.
+    fake = FakeModelClient([ModelUnavailableError("down"), reply("Hecho.")])
+    subject = agent(fake, fallback="kimi-k2.7-code")
+    subject.system = "for the main one"
+    subject.system_for = lambda model: f"for {model}"
+
+    await run(subject)
+
+    assert [r.system for r in fake.requests] == [
+        "for the main one",
+        "for kimi-k2.7-code",
+    ]
