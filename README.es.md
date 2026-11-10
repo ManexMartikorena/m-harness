@@ -19,12 +19,12 @@ el modelo que elijas, y te dice en cada turno lo que ha costado.
 
 ```
 $ maha -m claude-haiku-5-5
-maha 0.9.1 · opencode-go · claude-haiku-5-5 · /help for commands
+maha 0.10.0 · opencode-go · claude-haiku-5-5 · /help for commands
 > Lee notas.txt con read_file y dime qué pone, en una frase.
   → read_file(path="notas.txt")
   ✓ 2 lines
-El archivo notas.txt contiene solo dos líneas: "uno" y "dos".
-  [tokens: 4027 in · 82 out · 1 call · $0.0013 · session $0.0013]
+El archivo `notas.txt` tiene dos líneas: "uno" y "dos".
+  [tokens: 8803 in · 82 out · 1 call · $0.0026 · session $0.0026]
 > Cambia la segunda línea de notas.txt por 'tres' con edit_file.
   → edit_file(path="notas.txt", old_string="dos", new_string="tres")
   ┌ edit notas.txt
@@ -34,28 +34,30 @@ El archivo notas.txt contiene solo dos líneas: "uno" y "dos".
   │ +tres
   └ Allow? [y] yes · [a] always this session · [n] no: y
   ✓ 1 replacement
-He cambiado la segunda línea de notas.txt: ahora dice "tres" en lugar de "dos".
-  [tokens: 4419 in · 218 out (79 reasoning) · 1 call · $0.0007 · session $0.0020]
+He cambiado la segunda línea de `notas.txt` por "tres". La primera línea ("uno") no se ha tocado.
+  [tokens: 9115 in · 144 out · 1 call · $0.0007 · session $0.0033]
 > /trace
-  20261104-142320-56bb · claude-haiku-5-5 · 2 turns · 4 model calls · 2 tools
-  1  15:23:20  2 calls · 1 tool · 4027 in · 82 out · $0.0013 · 2.2 s
-  2  15:23:23  2 calls · 1 tool · 4419 in · 218 out · $0.0007 · 3.2 s
-  total: 8446 in · 300 out · $0.0020
-  [trace: ~/.local/share/maha/traces/20261104-142320-56bb.jsonl]
+  20261110-173406-17e4 · claude-haiku-5-5, glm-5.3-flash · 2 turns · 5 model calls · 2 tools
+  1  18:34:06  2 calls · 1 tool · 8803 in (4364 cached) · 82 out · $0.0026 · 1.9 s
+  2  18:34:08  2 calls · 1 tool · 9115 in (8927 cached) · 144 out · $0.0007 · 2.3 s
+  title by glm-5.3-flash · 102 in · 11 out · <$0.0001
+  total: 18020 in (13291 cached) · 237 out · $0.0033
+  [trace: ~/.local/share/maha/traces/20261110-173406-17e4.jsonl]
 > /exit
 $ maha -c -p "¿Qué pone ahora en notas.txt? Una frase." --allow read_file
-  [resumed 20261104-142320-56bb · 8 messages · claude-haiku-5-5]
+  [resumed 20261110-173406-17e4 · 8 messages · claude-haiku-5-5]
   → read_file(path="notas.txt")
   ✓ 2 lines
-  [tokens: 4813 in · 80 out · 1 call · $0.0004 · session $0.0024]
-Ahora notas.txt contiene dos líneas: "uno" y "tres".
+  [tokens: 7845 in · 111 out (29 reasoning) · 1 call · $0.0024 · session $0.0057]
+`notas.txt` ahora contiene dos líneas: "uno" y "tres".
 ```
 
 *(Una sesión real. Los totales son exactos; cada turno se redondea a cuatro
 decimales. Con `-p`, por stdout sale solo la respuesta; las líneas entre
 corchetes y las llamadas van a stderr. Claude Haiku 5.5 por OpenCode Go:
-desde el segundo turno lee la conversación de la caché del prompt, y cada
-turno cuesta menos.)*
+la mayor parte de cada petición sale de la caché del prompt (`cached` en
+`/trace`) y cuesta mucho menos; la línea `title by` es el modelo barato que
+tituló la sesión.)*
 
 ## Qué hace
 
