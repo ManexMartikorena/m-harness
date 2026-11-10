@@ -51,11 +51,12 @@ class _Unread(Exception):
     """A file that is not read, and why, for the user."""
 
 
-def _read(path: Path, *, inside: Path | None) -> str | None:
-    """The text of an instruction file, None if there is none, or
-    `_Unread`. With `inside`, the file (also through a link) has to be in
-    that directory and not a secret. At most `INSTRUCTIONS_MAX` bytes are
-    read: a bigger file keeps the mark of what is left."""
+def _read(path: Path, *, inside: Path | None) -> tuple[str, int | None] | None:
+    """The text of an instruction file and, if only its start was read,
+    its whole size; None if there is none, or `_Unread`. With `inside`, the
+    file (also through a link) has to be in that directory and not a
+    secret. At most `INSTRUCTIONS_MAX` bytes are read; the mark of what is
+    left is `cap()`'s, once (audit after hito 10, M2)."""
     try:
         if not path.is_file() and not path.is_symlink():
             return None
@@ -92,9 +93,9 @@ def _read(path: Path, *, inside: Path | None) -> str | None:
             raise _Unread("not UTF-8, not read") from None
         text = data[: exc.start].decode("utf-8")
     if cut:
-        more = info.st_size - len(text.encode("utf-8"))
-        return f"{text.rstrip()}\n[truncated: {more} bytes more]"
-    return text.strip() or None
+        return text, info.st_size
+    kept = text.strip()
+    return (kept, None) if kept else None
 
 
 class LocalProject:
@@ -164,14 +165,15 @@ class LocalProject:
             if real in seen:
                 return True
             try:
-                text = _read(path, inside=inside)
+                read = _read(path, inside=inside)
             except _Unread as why:
                 warnings.append(f"{source}: {why}")
                 return True
-            if text is None:
+            if read is None:
                 return False
             seen.add(real)
-            layers.append(Layer(kind=kind, source=source, text=text))
+            text, size = read
+            layers.append(Layer(kind=kind, source=source, text=text, size=size))
             return True
 
         if self._user:

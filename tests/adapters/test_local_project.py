@@ -9,7 +9,7 @@ import pytest
 
 from mharness.adapters.project import LocalProject
 from mharness.adapters.project.local import git_root
-from mharness.domain.prompt import INSTRUCTIONS_MAX
+from mharness.domain.prompt import INSTRUCTIONS_MAX, cap
 from mharness.ports.project import ProjectInfo
 
 TODAY = date(2026, 11, 4)
@@ -254,10 +254,24 @@ async def test_a_big_file_is_read_only_up_to_the_limit(
     text = "a" * (INSTRUCTIONS_MAX - 1) + "ñ" + tail
     write(tmp_path / "AGENTS.md", text)
 
-    [(_, _, read)] = await found(project(tmp_path))
+    [layer] = (await project(tmp_path).instructions()).layers
 
-    more = len(text.encode("utf-8")) - (INSTRUCTIONS_MAX - 1)
-    assert read == "a" * (INSTRUCTIONS_MAX - 1) + f"\n[truncated: {more} bytes more]"
+    # Read up to the limit; the mark is cap()'s, with the size on disk.
+    assert layer.text == "a" * (INSTRUCTIONS_MAX - 1)
+    assert layer.size == len(text.encode("utf-8"))
+
+
+async def test_a_big_file_is_marked_once_with_what_was_left(tmp_path: Path) -> None:
+    # Audit after hito 10 (M2): read with its mark, it passed the limit
+    # again, and cap() cut it once more: "30 bytes more" of 34,464.
+    big = INSTRUCTIONS_MAX + 500
+    write(tmp_path / "AGENTS.md", "a" * big)
+
+    [layer] = (await project(tmp_path).instructions()).layers
+    [kept], [warning] = cap([layer])
+
+    assert kept.text == "a" * INSTRUCTIONS_MAX + "\n[truncated: 500 bytes more]"
+    assert warning.endswith("(500 bytes more)")
 
 
 async def test_a_big_file_that_is_not_utf8_is_skipped(tmp_path: Path) -> None:
