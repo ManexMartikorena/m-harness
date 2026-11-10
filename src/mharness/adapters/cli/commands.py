@@ -19,7 +19,7 @@ from mharness.application.sessions import (
     TraceReport,
 )
 from mharness.application.traces import TraceSummary, TurnSummary
-from mharness.domain.model import EFFORTS
+from mharness.domain.model import EFFORTS, Usage
 from mharness.domain.prompt import INSTRUCTION_KINDS, SystemPrompt
 from mharness.domain.session import SessionError, SessionNotFound
 from mharness.domain.trace import TraceError
@@ -422,15 +422,23 @@ def _summary_lines(summary: TraceSummary) -> list[str]:
         cost = "cost unknown"
     else:
         cost = ("≥" if summary.uncosted_turns else "") + usd(summary.cost)
-    lines.append(f"total: {usage.input_tokens} in · {usage.output_tokens} out · {cost}")
+    lines.append(f"total: {_tokens_in(usage)} · {usage.output_tokens} out · {cost}")
     return lines
+
+
+def _tokens_in(usage: Usage) -> str:
+    """`N in`, and the part read from the cache, if any: already inside N
+    (spec hito 10, §7.9)."""
+    if usage.cache_read_tokens:
+        return f"{usage.input_tokens} in ({usage.cache_read_tokens} cached)"
+    return f"{usage.input_tokens} in"
 
 
 def _turn_line(turn: TurnSummary) -> str:
     parts = [
         _count(turn.model_calls, "call"),
         _count(turn.tools, "tool"),
-        f"{turn.usage.input_tokens} in",
+        _tokens_in(turn.usage),
         f"{turn.usage.output_tokens} out",
     ]
     if turn.cost is not None:

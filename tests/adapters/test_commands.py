@@ -537,6 +537,28 @@ async def test_trace_shows_each_turn_and_the_total() -> None:
     ) in out
 
 
+async def test_trace_says_what_was_read_from_the_cache() -> None:
+    # Spec hito 10, §7.9: the prompt read from the cache was only in the
+    # JSONL of the trace; /trace did not show it.
+    cached = Usage(input_tokens=2900, output_tokens=40, cache_read_tokens=2863)
+    maha = Maha(
+        MemorySessionStore(),
+        [
+            reply("Uno", usage=Usage(input_tokens=2900, output_tokens=40)),
+            reply("Dos", usage=cached),
+        ],
+    )
+
+    _, out, _ = await maha.run("A", "B", "/trace", "/exit")
+
+    assert f"  1  {clock(NOW)}  1 call · 0 tools · 2900 in · 40 out · 0.0 s\n" in out
+    assert (
+        f"  2  {clock(NOW)}  1 call · 0 tools · 2900 in (2863 cached) · 40 out · "
+        "0.0 s\n"
+    ) in out
+    assert "  total: 5800 in (2863 cached) · 80 out · cost unknown\n" in out
+
+
 async def test_trace_without_any_price_says_the_cost_is_unknown() -> None:
     # "≥$0" would be true and say nothing (revision of PR 5 of hito 8).
     maha = Maha(MemorySessionStore(), [reply("Uno", usage=Usage(input_tokens=5))])
