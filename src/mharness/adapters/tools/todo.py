@@ -22,6 +22,7 @@ class TodoWrite:
     )
     params = TodoList
     permission: Permission = "read"
+    waits_for_user = False
 
     async def approval(self, params: TodoList) -> ApprovalRequest | None:
         return None

@@ -30,10 +30,12 @@ class FakeTool:
         permission: Permission = "read",
         requests: list[ApprovalRequest | Exception | None] | None = None,
         gate: asyncio.Event | None = None,
+        waits_for_user: bool = False,
     ) -> None:
         self.name = name
         self.description = f"Echo a text ({name})."
         self.permission: Permission = permission
+        self.waits_for_user = waits_for_user
         self._results = list(results or [])
         self._requests = list(requests or [])
         self._gate = gate

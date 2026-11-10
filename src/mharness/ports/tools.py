@@ -20,6 +20,9 @@ class Tool[P: BaseModel](Protocol):
     description: str
     params: type[P]
     permission: Permission
+    # True if `run` waits for the person (`ask_user`): the turn's clock
+    # stops meanwhile, as while they decide on a call (spec hito 10, §1.11).
+    waits_for_user: bool
 
     async def approval(self, params: P) -> ApprovalRequest | None:
         """What to ask before running, or None. May raise ToolError.

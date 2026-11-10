@@ -270,6 +270,7 @@ class ReadFile:
     )
     params = ReadFileParams
     permission: Permission = "read"
+    waits_for_user = False
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
@@ -409,6 +410,7 @@ class ListDir:
     )
     params = ListDirParams
     permission: Permission = "read"
+    waits_for_user = False
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
@@ -623,6 +625,7 @@ class Glob:
     )
     params = GlobParams
     permission: Permission = "read"
+    waits_for_user = False
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
@@ -696,6 +699,7 @@ class Grep:
     )
     params = GrepParams
     permission: Permission = "read"
+    waits_for_user = False
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
@@ -1356,6 +1360,7 @@ class WriteFile:
     )
     params = WriteFileParams
     permission: Permission = "effect"
+    waits_for_user = False
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
@@ -1566,6 +1571,7 @@ class EditFile:
     )
     params = EditFileParams
     permission: Permission = "effect"
+    waits_for_user = False
 
     def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace

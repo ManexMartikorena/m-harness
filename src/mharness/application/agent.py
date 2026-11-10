@@ -317,6 +317,9 @@ class Agent:
                 elif decision == "deny":
                     turn.denied = True
                     outcome = _error(call, "the user denied this call")
+                elif prepared.tool.waits_for_user:
+                    turn.executed = True
+                    outcome = await self._wait_for_user(turn, call, prepared)
                 else:
                     # Nobody was asked, or "once" or "session".
                     turn.executed = True
@@ -343,6 +346,18 @@ class Agent:
         if turn.deadline is not None:
             turn.deadline += asyncio.get_running_loop().time() - waiting
         return answer
+
+    async def _wait_for_user(
+        self, turn: _Turn, call: ToolCallBlock, ready: _Ready
+    ) -> _Outcome:
+        """Run a tool that waits for the person (`ask_user`). As while they
+        decide on a call, the turn's clock stops: a person reading is no
+        slow model (spec hito 10, §1.11)."""
+        waiting = asyncio.get_running_loop().time()
+        outcome = await self._run(call, ready)
+        if turn.deadline is not None:
+            turn.deadline += asyncio.get_running_loop().time() - waiting
+        return outcome
 
     def _keep_timed_out(self, turn: _Turn) -> None:
         """What a turn stopped by its time limit keeps: as after Ctrl+C,
