@@ -61,7 +61,7 @@ git pull`, `uv sync`, y comprobar tests, mypy y lint-imports en verde
    puntos 5 y 8). Al terminar, push, PR al milestone "Hito 10 — System
    prompt por capas" y merge commit.
 2. **Agente:** el cierre del hito (§6, "Cierre"): líneas base nuevas con
-   23 tareas (`--save`), nota 10 de la guía, los dos README, PROYECTO,
+   24 tareas (`--save`), nota 10 de la guía, los dos README, PROYECTO,
    HISTORIAL, MAPA, spec IMPLEMENTADA y `v0.10.0`.
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo

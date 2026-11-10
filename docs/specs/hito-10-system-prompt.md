@@ -519,6 +519,13 @@ El prompt cambia el comportamiento del agente en todo: la batería entera.
   - `23-varios-pasos` (validation): una tarea de varios pasos (renombrar,
     tests y documentación), donde la lista de tareas puede ayudar. Con
     ella, la validación pasa de 4 a 5 de 23 (22 %).
+  - `24-init` (train): `/init los mensajes de commit van en español`,
+    tal como lo teclea la persona, sobre la tienda; la comprobación mira
+    que el `AGENTS.md` tenga el comando de los tests con su trampa
+    (`PYTHONPATH=src`), cómo lanzar uno solo, lo destacado y menos de 200
+    líneas. *(Añadida el 2026-11-10, por decisión del mantenedor, en el
+    PR 3: la plantilla de `/init` es un prompt, y sin esta tarea nada lo
+    medía. La validación queda en 5 de 24, el 21 %.)*
 - **Capas de familia** (PR 1, §1.3): con el train (las tareas de
   validación no se miran), una repetición al iterar, para cada familia
   medible (`glm`, `kimi`, `claude`): base sola frente a base + capa. Una
@@ -538,7 +545,7 @@ El prompt cambia el comportamiento del agente en todo: la batería entera.
     parte en caché) y la decide el mantenedor;
   - el tamaño de la base, anotado (objetivo, menos de 1.500 tokens).
 - **El conjunto de validación no se mira al escribir el prompt.**
-- **Líneas base nuevas** al final del hito, con la batería de 23.
+- **Líneas base nuevas** al final del hito, con la batería de 24.
 
 El resultado se anota aquí al implementar.
 
@@ -693,6 +700,44 @@ con sus opciones y "Other"; elegir un número y escribir "Other" con texto
 propio llegan al modelo; Ctrl+C en la pregunta da `[interrupted]`, y en
 el turno siguiente el modelo sabe que quedó sin respuesta.
 
+### Resultados (PR 3)
+
+**La tarea 24, `/init`** (añadida en este PR, §5): una instrucción que
+empieza por `/init` se expande en las evals como en la conversación, con
+la plantilla del paquete y la copia de la tarea como raíz. Pasada solo de
+esa tarea, 2026-11-10 (`20261110-173849-f285`), 3 modelos, 5
+repeticiones: 15/15.
+
+| Modelo | Éxito | Pasos | Coste por ejecución |
+|---|---|---|---|
+| `glm-5.3-flash` | 5/5 | 9,4 | 0,0028 $ |
+| `kimi-k2.7-code` | 5/5 | 7,6 | 0,0132 $ |
+| `claude-haiku-5-5` | 5/5 | 5,4 | 0,0153 $ |
+
+Los `AGENTS.md` que dejan, de 56 a 90 líneas, son útiles: los tres dan la
+trampa de `PYTHONPATH=src` y un solo test, y la dirección de los imports
+entre módulos; Haiku, además, ve el fallo a propósito de
+`aplicar_descuento` y pide no "arreglarlo" sin preguntar.
+
+El resto del PR 3 no cambia lo que mide la batería: los títulos no existen
+en las evals (§1.12), y el prompt base, la guía y las herramientas son los
+del PR 2. Las líneas base nuevas del cierre lo confirman con la batería
+entera.
+
+**Verificación a mano del PR 3** (§7, puntos 5 y 8; 2026-11-10, en una
+pseudoterminal y en directorios desechables con git, OpenCode Go):
+- `/init` mira el proyecto (sus ficheros, `README.md` y
+  `pyproject.toml`), pide permiso para escribir y deja un `AGENTS.md` con
+  comandos (también el de un solo test), convenciones y trampas propias
+  del proyecto. `/init los tests se lanzan con unittest, nunca con pytest`
+  lo destaca en el fichero. Al terminar,
+  `[AGENTS.md takes effect in the next session: /new]`, y tras `/new`,
+  `[instructions: AGENTS.md]`.
+- El título automático, "Multiplicación de 17 por 23", unos 2 s después
+  del turno, en la sesión y en la traza (`title`, 104 tokens de entrada,
+  26 de salida). `/rename` lo cambia, y `/sessions` y `maha sessions` lo
+  enseñan.
+
 ## 6. Orden de piezas para el implementador
 
 **PR 1 — las capas** (`feature/hito-10-capas`)
@@ -773,7 +818,7 @@ En un directorio desechable con git, con OpenCode Go:
 - Nada nuevo en `.env`.
 - Opcional, en cada PC: `~/.config/maha/AGENTS.md` con instrucciones
   personales. Va a `docs/PUESTA_EN_MARCHA.md`.
-- `docs/MAPA.md`: los ficheros nuevos de §3.1 y las tareas 21 a 23.
+- `docs/MAPA.md`: los ficheros nuevos de §3.1 y las tareas 21 a 24.
 
 ## 9. Guía
 
@@ -863,3 +908,19 @@ spec las aprueba):
   versión de la de `todo_write` subió los pasos de Kimi un 12 %. Ver §5,
   "Resultados (PR 2)".
 
+**PR 3 (2026-11-10):**
+- **El coste del título va en una `UsageEntry` aparte** de su
+  `TitleEntry`, como el de un turno: la sesión suma su coste sin otra
+  regla. En la traza, `TitleWritten`, fuera de los turnos: `/trace` lo
+  enseña en su propia línea y `maha stats` lo cuenta.
+- **Un solo guardado a la vez:** el título llega mientras puede correr el
+  turno siguiente, y los dos escriben en el mismo fichero.
+- **Salir no espera al título** (§1.12): si llega tarde, la sesión se
+  queda con la primera línea de su primer mensaje. Por eso la plantilla de
+  `/init` empieza con una frase corta que sirve de título.
+- **`/rename` sin texto enseña el título;** un título vacío, o que se
+  queda vacío al limpiarlo, es un error.
+- **`small_model` del catálogo, comprobado al cargarlo:** un id que no
+  está en el catálogo es un error, no un título que nunca llega.
+- **Un fichero de sesión con títulos no lo lee un `maha` anterior:** no
+  conoce la entrada `title`.

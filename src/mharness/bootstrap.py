@@ -525,7 +525,9 @@ async def _eval(
         f"{options.jobs} at once" + (f" · effort {effort}" if effort else "")
     )
     out.line(head)
-    evaluator = Evaluator(suite, open_run, LocalCommandRunner(), env)
+    evaluator = Evaluator(
+        suite, open_run, LocalCommandRunner(), env, expand=_eval_instruction
+    )
 
     def on_run(run: TaskRun) -> None:
         out.line(cli.run_line(run))
@@ -890,6 +892,16 @@ def _titler(
         provider=settings.provider_name,
         failed=cli.title_failed,
     )
+
+
+def _eval_instruction(instruction: str, copy: Path) -> str:
+    """What a task's instruction sends: `/init TEXT` as the conversation
+    sends it, in the task's copy; anything else, as it is (spec hito 10,
+    §5)."""
+    command = cli.parse_command(instruction)
+    if command is None or command.name != "init":
+        return instruction
+    return cli.Init(template=_init(copy).template, root=copy).text(command.argument)
 
 
 def _init(cwd: Path) -> cli.Init:

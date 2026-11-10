@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from mharness import bootstrap
 from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.evals import TomlEvalSuite
 from mharness.application.evals import Evaluator
@@ -259,6 +260,19 @@ def capped_fine(repo: Path) -> None:
     )
 
 
+AGENTS = """# Tienda
+
+## Comandos
+
+- Tests: `PYTHONPATH=src python3 -m unittest`
+- Un solo test: `PYTHONPATH=src python3 -m unittest tests.test_pedidos`
+
+## Convenciones
+
+- Los mensajes de commit van en español.
+"""
+
+
 # What a model that gets it right would leave, and answer.
 SOLUTIONS: dict[str, tuple[Callable[[Path], object], str]] = {
     "01-version": (lambda repo: None, "La versión es 1.4.2."),
@@ -317,6 +331,7 @@ SOLUTIONS: dict[str, tuple[Callable[[Path], object], str]] = {
     "21-convenciones-agents": (count_appointments, "Hecho."),
     "22-convenciones-claude": (reject_below_zero, "Hecho."),
     "23-varios-pasos": (capped_fine, "Hecho."),
+    "24-init": (lambda repo: (repo / "AGENTS.md").write_text(AGENTS), "Hecho."),
 }
 
 
@@ -387,6 +402,34 @@ async def test_the_steps_of_task_23_count_one_by_one(
     change: Callable[[Path], object],
 ) -> None:
     assert not await checked("23-varios-pasos", change, "Hecho.")
+
+
+@pytest.mark.parametrize(
+    "agents",
+    [
+        # Each piece counts: the trap, one test alone, what was stressed.
+        AGENTS.replace("PYTHONPATH=src ", ""),
+        AGENTS.replace(" tests.test_pedidos", ""),
+        AGENTS.replace("- Los mensajes de commit van en español.\n", ""),
+        # Short: under 200 lines.
+        AGENTS + "- Una línea más.\n" * 200,
+    ],
+    ids=["no-pythonpath", "no-single-test", "not-stressed", "too-long"],
+)
+async def test_an_agents_md_that_misses_something_does_not_pass(agents: str) -> None:
+    def write(repo: Path) -> None:
+        (repo / "AGENTS.md").write_text(agents, encoding="utf-8")
+
+    assert not await checked("24-init", write, "Hecho.")
+
+
+def test_init_in_a_task_is_what_the_conversation_sends(tmp_path: Path) -> None:
+    # The eval measures /init as the person types it (spec hito 10, §5).
+    sent = bootstrap._eval_instruction("/init los commits en español", tmp_path)
+
+    assert sent == bootstrap._init(tmp_path).text("los commits en español")
+    assert str(tmp_path) in sent
+    assert bootstrap._eval_instruction("Arregla el IVA", tmp_path) == "Arregla el IVA"
 
 
 async def test_a_cheat_on_the_tests_does_not_pass() -> None:
