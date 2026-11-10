@@ -399,10 +399,7 @@ class Agent:
         """Ask the gate. The turn's clock stops while the person reads and
         decides (deep audit after hito 9, B4, a decision of the
         maintainer); without a person the answer is at once."""
-        waiting = asyncio.get_running_loop().time()
-        answer: object = await self._gate.decide(question)
-        if turn.deadline is not None:
-            turn.deadline += asyncio.get_running_loop().time() - waiting
+        answer: object = await _paused(turn, self._gate.decide(question))
         return answer
 
     async def _wait_for_user(
@@ -411,11 +408,7 @@ class Agent:
         """Run a tool that waits for the person (`ask_user`). As while they
         decide on a call, the turn's clock stops: a person reading is no
         slow model (spec hito 10, §1.11)."""
-        waiting = asyncio.get_running_loop().time()
-        outcome = await self._run(call, ready)
-        if turn.deadline is not None:
-            turn.deadline += asyncio.get_running_loop().time() - waiting
-        return outcome
+        return await _paused(turn, self._run(call, ready))
 
     def _keep_timed_out(self, turn: _Turn) -> None:
         """What a turn stopped by its time limit keeps: as after Ctrl+C,
@@ -541,13 +534,8 @@ class Agent:
         if tool is None:
             available = ", ".join(self._tools.names())
             return _error(call, f'unknown tool "{call.name}". Available: {available}')
-        try:
-            # Some models send "" for a tool without parameters.
-            arguments = json.loads(call.arguments.strip() or "{}")
-        except ValueError, RecursionError:
-            # RecursionError: nested too deep to parse.
-            arguments = None
-        if not isinstance(arguments, dict):
+        arguments = _arguments(call)
+        if arguments is None:
             return _error(call, "arguments are not a valid JSON object")
         try:
             params = tool.params.model_validate(arguments)
@@ -618,6 +606,17 @@ def call_cost(
 
 class _TimedOut(Exception):
     """The turn's time limit passed while the loop waited."""
+
+
+async def _paused[T](turn: _Turn, waiting: Awaitable[T]) -> T:
+    """Wait for `waiting` with the turn's clock stopped: a person is
+    reading (deep audit after hito 9, B4)."""
+    started = asyncio.get_running_loop().time()
+    try:
+        return await waiting
+    finally:
+        if turn.deadline is not None:
+            turn.deadline += asyncio.get_running_loop().time() - started
 
 
 async def _within[T](waiting: Awaitable[T], deadline: float | None) -> T:
@@ -720,13 +719,20 @@ def _ending(stop_reason: StopReason) -> Literal["end_turn", "max_output", "refus
     return "end_turn"
 
 
-def _whole(call: ToolCallBlock) -> bool:
-    """Whether its arguments are a whole JSON object (or none at all)."""
+def _arguments(call: ToolCallBlock) -> dict[str, Any] | None:
+    """Its arguments as a JSON object; None if they are not one. Some
+    models send "" for a tool without parameters."""
     try:
         value = json.loads(call.arguments.strip() or "{}")
     except ValueError, RecursionError:
-        return False
-    return isinstance(value, dict)
+        # RecursionError: nested too deep to parse.
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _whole(call: ToolCallBlock) -> bool:
+    """Whether its arguments are a whole JSON object (or none at all)."""
+    return _arguments(call) is not None
 
 
 def _error(

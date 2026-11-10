@@ -39,12 +39,13 @@ from mharness.domain.events import TextDelta, ToolCallDelta, UsageSoFar
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import ModelRequest, Usage
-from mharness.domain.retry import NO_RETRIES, RetryPolicy
+from mharness.domain.retry import RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
 from tests.fakes.approval import FakeApproval, HangingApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FAKE_MODEL, HANG, FakeModelClient, reply, tool_calls
+from tests.fakes.retry import NO_RETRIES
 from tests.fakes.tools import EchoParams, FakeTool
 
 MODEL = "glm-5.3-flash"

@@ -46,7 +46,3 @@ class RetryPolicy:
             return max(retry_after, 0.0)
         wait = self.base_delay * 2.0 ** (attempt - 1)
         return wait * (1 + self.jitter * self.random())
-
-
-# For whoever must not retry: the tests of a single failure, for example.
-NO_RETRIES = RetryPolicy(max_retries=0)

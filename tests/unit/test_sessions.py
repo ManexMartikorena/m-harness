@@ -36,7 +36,7 @@ from mharness.domain.messages import (
 )
 from mharness.domain.model import Effort, ModelResponse, Usage
 from mharness.domain.prompt import Layer
-from mharness.domain.retry import NO_RETRIES, RetryPolicy
+from mharness.domain.retry import RetryPolicy
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
@@ -54,6 +54,7 @@ from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import HANG, FakeModelClient, reply, tool_calls
 from tests.fakes.project import MemoryProject
+from tests.fakes.retry import NO_RETRIES
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
 from tests.fakes.tools import EchoParams, FakeTool
 from tests.fakes.tracing import MemoryTraceSink

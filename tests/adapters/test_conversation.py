@@ -45,13 +45,14 @@ from mharness.domain.messages import (
     ToolResultBlock,
 )
 from mharness.domain.model import ModelResponse, Usage
-from mharness.domain.retry import NO_RETRIES, RetryPolicy
+from mharness.domain.retry import RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.tools import Tool
 from tests.adapters.test_local_runner import gone, written_pid
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply, tool_calls
+from tests.fakes.retry import NO_RETRIES
 from tests.fakes.sessions import MemorySessionStore
 from tests.fakes.terminal import ScriptedInput
 from tests.fakes.tools import FakeTool
