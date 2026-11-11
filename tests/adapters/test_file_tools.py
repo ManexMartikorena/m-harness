@@ -1696,6 +1696,55 @@ async def test_an_old_string_with_crlf_and_lone_lf_is_adapted(root: Path) -> Non
     assert path.read_bytes() == b"x\r\ny\r\n"
 
 
+@pytest.mark.parametrize(
+    ("old", "new", "after"),
+    [
+        # Second review of the audit after hito 10: an exact match split a
+        # "\r\n", and the file was left with mixed breaks.
+        ("\nb", "\nB1\nB2", b"a\r\nB1\r\nB2\r\nc\r\n"),
+        ("a\r", "z", b"zb\r\nc\r\n"),
+    ],
+)
+async def test_an_old_string_never_matches_half_a_crlf(
+    root: Path, old: str, new: str, after: bytes
+) -> None:
+    # Its break is a whole break, as any other (D9).
+    path = crlf(root, "win.txt", b"a\r\nb\r\nc\r\n")
+
+    _, result = await edit(root, edit_params("win.txt", old, new))
+
+    assert result == "edited win.txt (1 replacement)"
+    assert path.read_bytes() == after
+
+
+@pytest.mark.parametrize(
+    ("text", "old", "new"),
+    [
+        # Exact: the "\r" put before a "\n".
+        (b"a\rb\nc", "\rb", "\r"),
+        # Exact: what was between a "\r" and a "\n", taken out.
+        (b"a\rX\nb", "X", ""),
+        # Adapted: the break of new_string takes the style "\r", before a
+        # "\n" (second review of the audit after hito 10).
+        (b"\ra\n\xc3\xa9\xc3\xa9\r\nbba", "\r\na", "\r"),
+    ],
+)
+async def test_an_edit_never_joins_two_breaks_into_one(
+    root: Path, text: bytes, old: str, new: str
+) -> None:
+    # A "\r" and a "\n" side by side are one break: a line would be lost
+    # without anybody asking for it.
+    path = crlf(root, "mixed.txt", text)
+
+    with pytest.raises(ToolError) as caught:
+        await edit_tool(root).approval(edit_params("mixed.txt", old, new))
+    assert str(caught.value) == (
+        'the edit would join a "\\r" and a "\\n" into one line break in '
+        "mixed.txt; include the line break next to it in old_string"
+    )
+    assert path.read_bytes() == text
+
+
 # With a warning, nothing that depends on the content is told to the model
 # before the user approves (review of PR 2, fix 1).
 

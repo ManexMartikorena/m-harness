@@ -1563,25 +1563,34 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
     without their endings (spec mejora-2026-10-23-deuda-hito-5, D9 and D10;
     it replaces decision 9b). Overlapping matches count (D8).
 
+    An old_string that starts with "\\n" or ends with "\\r" is never matched
+    exactly: it could take half of a "\\r\\n". Its break is a whole break,
+    as any other. And an edit that would put a "\\r" and a "\\n" side by
+    side, one break where there were two, is refused: a line would be lost
+    (second review of the audit after hito 10).
+
     By `str.find` over the text with its breaks made "\\n", not a regex:
     that was O(lines x lines) on a long old_string (audit after hito 10,
     H2).
     """
     old, new = params.old_string, params.new_string
-    found = _occurrences(text, old)
+    found = 0 if old.startswith("\n") or old.endswith("\r") else _occurrences(text, old)
+    spans: list[tuple[int, int, str]] = []
     if found:
         _check_found(found, params)
-        if params.replace_all:
-            return text.replace(old, new), text.count(old)
-        return text.replace(old, new, 1), 1
+        start = text.find(old)
+        # Left to right and without overlaps, as str.replace.
+        while start != -1:
+            spans.append((start, start + len(old), new))
+            if not params.replace_all:
+                break
+            start = text.find(old, start + len(old))
+        return _put(text, spans, params), len(spans)
     if not _BREAK.search(old):
         _check_found(0, params)
     flat, collapsed = _flatten(text)
     wanted = _BREAK.sub("\n", old)
     _check_found(_occurrences(flat, wanted), params)
-    pieces: list[str] = []
-    done = 0
-    count = 0
     start = flat.find(wanted)
     # Left to right and without overlaps, also with replace_all.
     while start != -1:
@@ -1589,14 +1598,33 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
         end = _original(start + len(wanted), collapsed)
         style = _BREAK.search(text, begin, end)
         assert style is not None  # old_string has a break, so does its match
-        pieces += [text[done:begin], style.group().join(_BREAK.split(new))]
-        done = end
-        count += 1
+        spans.append((begin, end, style.group().join(_BREAK.split(new))))
         if not params.replace_all:
             break
         start = flat.find(wanted, start + len(wanted))
-    pieces.append(text[done:])
-    return "".join(pieces), count
+    return _put(text, spans, params), len(spans)
+
+
+def _put(text: str, spans: list[tuple[int, int, str]], params: EditFileParams) -> str:
+    """`text` with each span, in order and apart, replaced by its text;
+    refused if a seam made a "\\r" and a "\\n" one break."""
+    pieces: list[str] = []
+    last = ""
+    done = 0
+    for begin, end, replacement in [*spans, (len(text), len(text), "")]:
+        for piece in (text[done:begin], replacement):
+            if not piece:
+                continue
+            if last == "\r" and piece[0] == "\n":
+                raise ToolError(
+                    'the edit would join a "\\r" and a "\\n" into one line '
+                    f"break in {params.path}; include the line break next to "
+                    "it in old_string"
+                )
+            pieces.append(piece)
+            last = piece[-1]
+        done = end
+    return "".join(pieces)
 
 
 def _check_found(found: int, params: EditFileParams) -> None:
