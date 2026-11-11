@@ -59,12 +59,14 @@ class TerminalApproval:
         # mejora-2026-10-26-deuda-pre-hito-6, A2).
         if self._discard is not None and self._discard():
             print("  (discarded typed input)", file=out)
-        # Nothing is cut: what you approve is seen whole (A3).
+        # Nothing is cut: what you approve is seen whole (A3), now or with
+        # v. The rows on the screen count, not the lines: one huge line is
+        # not a screenful (audit after hito 10, H10).
         _print(out, "  ┌ ", clean_line(request.title))
-        lines = [clean(line) for line in request.detail.splitlines()]
-        for line in lines[:DETAIL_MAX_LINES]:
-            _print(out, "  │ ", line)
-        rest = lines[DETAIL_MAX_LINES:]
+        rows = _rows(request.detail)
+        for row in rows[:DETAIL_MAX_LINES]:
+            print(row, file=out)
+        rest = rows[DETAIL_MAX_LINES:]
         if rest:
             print(f"  │ … [{len(rest)} more lines: v to view them]", file=out)
         if request.warning:
@@ -90,8 +92,8 @@ class TerminalApproval:
             if answer == "a" and always:
                 return "session"
             if answer == "v" and rest:
-                for line in rest:
-                    _print(out, "  │ ", line)
+                for row in rest:
+                    print(row, file=out)
             if answer in _ANSWERS:
                 return _ANSWERS[answer]
 
@@ -102,10 +104,10 @@ def show_covered(request: ApprovalRequest, out: TextIO) -> None:
     if not request.review:
         return
     _print(out, "  ┌ ", f"{clean_line(request.title)} (allowed this session)")
-    lines = [clean(line) for line in request.detail.splitlines()]
-    for line in lines[:DETAIL_MAX_LINES]:
-        _print(out, "  │ ", line)
-    rest = len(lines) - DETAIL_MAX_LINES
+    rows = _rows(request.detail)
+    for row in rows[:DETAIL_MAX_LINES]:
+        print(row, file=out)
+    rest = len(rows) - DETAIL_MAX_LINES
     if rest > 0:
         print(f"  │ … [{rest} more lines]", file=out)
     print("  └", file=out, flush=True)
@@ -113,13 +115,21 @@ def show_covered(request: ApprovalRequest, out: TextIO) -> None:
 
 def _print(out: TextIO, prefix: str, line: str) -> None:
     """`line` in pieces of `DETAIL_MAX_LINE`; the next ones start with ↪."""
+    for row in _pieces(prefix, line):
+        print(row, file=out)
+
+
+def _rows(detail: str) -> list[str]:
+    """The rows of `detail` on the screen, clean, in pieces."""
+    return [row for line in detail.splitlines() for row in _pieces("  │ ", clean(line))]
+
+
+def _pieces(prefix: str, line: str) -> list[str]:
     pieces = [
         line[start : start + DETAIL_MAX_LINE]
         for start in range(0, len(line), DETAIL_MAX_LINE)
     ] or [""]
-    print(f"{prefix}{pieces[0]}", file=out)
-    for piece in pieces[1:]:
-        print(f"  │ ↪ {piece}", file=out)
+    return [f"{prefix}{pieces[0]}", *(f"  │ ↪ {piece}" for piece in pieces[1:])]
 
 
 class DenyAll:

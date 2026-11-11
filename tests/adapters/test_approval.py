@@ -267,3 +267,24 @@ def test_a_long_covered_change_is_cut() -> None:
     show_covered(EDIT.model_copy(update={"review": True, "detail": detail}), out)
 
     assert "  │ … [10 more lines]\n" in out.getvalue()
+
+
+async def test_one_huge_line_does_not_fill_the_question() -> None:
+    # Audit after hito 10, H10: a minified JS of 100,000 characters was
+    # 500 rows. It is seen whole with v.
+    request = EDIT.model_copy(update={"detail": "x" * 100_000})
+
+    _, shown = await ask(request, "n")
+
+    lines = shown.splitlines()
+    # The title, 60 rows, what is left and the question.
+    assert len(lines) == 63
+    assert lines[61] == "  │ … [440 more lines: v to view them]"
+
+
+def test_one_huge_covered_line_is_cut_too() -> None:
+    out = io.StringIO()
+
+    show_covered(EDIT.model_copy(update={"review": True, "detail": "x" * 100_000}), out)
+
+    assert len(out.getvalue().splitlines()) == 63
