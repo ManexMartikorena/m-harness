@@ -124,7 +124,8 @@ async def test_a_cut_and_a_timeout_are_told(tmp_path: Path) -> None:
     empty = await subject.run(RunCommandParams(command="true"))
 
     assert cut == (
-        "killed\nxxxxxxxxxx\n… [output cut at 30000 characters]\n[timed out after 5 s]"
+        "killed\nxxxxxxxxxx\n"
+        "[output cut: its start and its end are kept]\n[timed out after 5 s]"
     )
     assert subject.summary(cut) == "timed out (cut)"
     assert empty == "exit code: 0\n(no output)"

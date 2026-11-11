@@ -12,12 +12,14 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from mharness.domain.approval import ApprovalRequest
-from mharness.domain.commands import OUTPUT_MAX_CHARS, CommandResult
+from mharness.domain.commands import CommandResult
 from mharness.domain.paths import printable
 from mharness.domain.tools import Permission, ToolError
 from mharness.ports.commands import CommandRunner
 
 DEFAULT_TIMEOUT = 120
+# Said at the end when the runner cut the middle of the output.
+CUT = "[output cut: its start and its end are kept]"
 
 
 # extra="forbid" in every tool: an unknown field is an error for the
@@ -83,7 +85,7 @@ class RunCommand:
         first = result.split("\n", 1)[0]
         status = "timed out" if "\n[timed out after " in result else first
         status = status.replace("exit code: ", "exit code ")
-        cut = " (cut)" if "\n… [output cut at " in result else ""
+        cut = " (cut)" if f"\n{CUT}" in result else ""
         return status + cut
 
 
@@ -101,7 +103,7 @@ def _text(result: CommandResult, timeout: int) -> str:
     text = f"{status}\n{result.output or '(no output)'}"
     notes = []
     if result.truncated:
-        notes.append(f"… [output cut at {OUTPUT_MAX_CHARS} characters]")
+        notes.append(CUT)
     if result.timed_out:
         notes.append(f"[timed out after {timeout} s]")
     if result.still_running:

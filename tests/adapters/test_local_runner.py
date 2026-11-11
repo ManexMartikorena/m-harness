@@ -16,7 +16,12 @@ from pathlib import Path
 import pytest
 
 from mharness.adapters.commands import LocalCommandRunner, local
-from mharness.domain.commands import OUTPUT_MAX_CHARS, CommandResult
+from mharness.domain.commands import (
+    OUTPUT_HEAD_CHARS,
+    OUTPUT_MAX_CHARS,
+    OUTPUT_TAIL_CHARS,
+    CommandResult,
+)
 from mharness.domain.environment import command_env
 from mharness.ports.commands import CommandRunner
 
@@ -140,7 +145,36 @@ async def test_a_long_output_is_cut_without_blocking(tmp_path: Path) -> None:
 
     assert result.truncated
     assert result.exit_code == 0
-    assert result.output == "x" * OUTPUT_MAX_CHARS
+    head, _, tail = result.output.partition("\n… [output cut here: ")
+    assert head == "x" * OUTPUT_HEAD_CHARS
+    assert tail.endswith("]\n" + "x" * (OUTPUT_TAIL_CHARS - 1) + "\n")
+    assert len(result.output) < OUTPUT_MAX_CHARS + 100
+
+
+async def test_a_long_output_keeps_its_end(tmp_path: Path) -> None:
+    # Audit after hito 10, H4: the summary of a long pytest is at the end.
+    result = await run("seq 1 200000; echo '3 failed, 97 passed'; exit 1", tmp_path)
+
+    assert result.truncated
+    assert result.output.startswith("1\n2\n3\n")
+    assert result.output.endswith("200000\n3 failed, 97 passed\n")
+    assert "bytes left out]\n" in result.output
+
+
+async def test_a_short_output_is_whole(tmp_path: Path) -> None:
+    result = await run("seq 1 3", tmp_path)
+
+    assert (result.output, result.truncated) == ("1\n2\n3\n", False)
+
+
+async def test_the_end_of_a_long_output_starts_on_a_whole_character(
+    tmp_path: Path,
+) -> None:
+    result = await run(
+        "head -c 300000 /dev/zero | tr '\\0' x; printf 'ñ%.0s' $(seq 1 30000)", tmp_path
+    )
+
+    assert "\ufffd" not in result.output
 
 
 async def test_past_the_time_limit_it_is_killed_keeping_its_output(
