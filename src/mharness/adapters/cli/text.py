@@ -23,8 +23,10 @@ def _escaped(match: re.Match[str]) -> str:
 
 
 def clean(text: str) -> str:
-    """`text` with every unsafe character escaped."""
-    return _UNSAFE.sub(_escaped, text)
+    """`text` with every unsafe character escaped. The "\\r" of a "\\r\\n"
+    goes: it only ends a line, and escaped it marked every line of a CRLF
+    text (audit after hito 10, I10)."""
+    return _UNSAFE.sub(_escaped, text.replace("\r\n", "\n"))
 
 
 def _json_escaped(match: re.Match[str]) -> str:

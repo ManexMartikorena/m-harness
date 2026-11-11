@@ -87,6 +87,10 @@ def test_fail_escapes_control_characters(capsys: pytest.CaptureFixture[str]) -> 
         ("\r\x00\x7f\x9b", "\\x0d\\x00\\x7f\\x9b"),
         ("\u202eabc\u2066\u200f", "\\u202eabc\\u2066\\u200f"),
         ("ñ → ✓ 日本", "ñ → ✓ 日本"),
+        # A CRLF text is not a \x0d on every line (audit after hito 10,
+        # I10); a lone one still is.
+        ("a\r\nb\r\n", "a\nb\n"),
+        ("a\rb\r\r\n", "a\\x0db\\x0d\n"),
     ],
 )
 def test_clean_escapes_only_unsafe_characters(text: str, shown: str) -> None:
