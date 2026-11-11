@@ -744,3 +744,16 @@ def test_without_git_only_the_working_directory_counts(
     inner.mkdir()
 
     assert load(home, inner).model == "m"
+
+
+@pytest.mark.parametrize(
+    "name", ["PGPASSWORD", "MYSQL_PWD", "AWS_ACCESS_KEY_ID", "GITHUB_PAT", "NPM_AUTH"]
+)
+def test_more_credentials_are_not_variables_for_the_commands(
+    home: Path, project: Path, name: str
+) -> None:
+    # Review of the audit after hito 10: only the suffixes were looked at.
+    write_user(home, f'model = "m"\ncommand_env = ["{name}"]\n')
+
+    with pytest.raises(ConfigError, match="credential"):
+        load(home, project)

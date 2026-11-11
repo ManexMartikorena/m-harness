@@ -48,6 +48,21 @@ def is_credential(name: str) -> bool:
     return name.upper().endswith(CREDENTIAL_SUFFIXES)
 
 
+# What gives a credential away in a name the user chooses to pass
+# (`command_env`): anywhere, or as one of its words. A guard, not a
+# guarantee: `DATABASE_URL` may hold a password too (review of the audit).
+_CREDENTIAL_WORDS = ("PASSWORD", "PASSWD", "SECRET", "TOKEN", "CREDENTIAL", "APIKEY")
+_CREDENTIAL_PARTS = frozenset({"KEY", "PWD", "PAT", "PASS", "AUTH"})
+
+
+def looks_like_credential(name: str) -> bool:
+    """Stricter than `is_credential`, for the names the user adds."""
+    upper = name.upper()
+    if is_credential(upper) or any(word in upper for word in _CREDENTIAL_WORDS):
+        return True
+    return bool(_CREDENTIAL_PARTS & set(upper.split("_")))
+
+
 def command_env(
     environ: Mapping[str, str],
     *,

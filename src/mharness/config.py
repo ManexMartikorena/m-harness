@@ -32,7 +32,7 @@ from pydantic import (
 )
 
 from mharness.domain.catalog import SpokenApi
-from mharness.domain.environment import is_credential
+from mharness.domain.environment import looks_like_credential
 from mharness.domain.limits import TurnLimits
 from mharness.domain.model import CacheTtl, Effort
 from mharness.domain.money import Usd
@@ -271,7 +271,7 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
     provider = providers[provider_name]
     keys = {each.api_key_env for each in providers.values() if each.api_key_env}
     for name in user.command_env:
-        if is_credential(name) or name in keys:
+        if looks_like_credential(name) or name in keys:
             raise ConfigError(
                 f"{user_path}: command_env {name!r} looks like a credential: "
                 "the commands, and from their output the model, would see it."
