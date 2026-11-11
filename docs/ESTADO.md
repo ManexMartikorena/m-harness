@@ -1,9 +1,9 @@
 # Estado del proyecto
 
 Última actualización: 2026-11-11. **Hito 10 cerrado: `v0.10.0` (system
-prompt por capas) y `v0.10.1` (la auditoría tras el hito 10, cero deuda).
-Lo siguiente: el hito 11 (gestión del contexto), cuando el mantenedor lo
-diga.**
+prompt por capas), `v0.10.1` (la auditoría tras el hito 10) y `v0.10.2`
+(su segunda revisión, cero deuda). Lo siguiente: el hito 11 (gestión del
+contexto), cuando el mantenedor lo diga.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -11,12 +11,13 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 ## Fase actual
 
 **Desarrollo. Hitos 1 a 10 cerrados, con la auditoría tras el hito 10
-(`v0.10.1`). Lo siguiente, el hito 11 (gestión del contexto). Plan: 23
-hitos hasta la 1.0 (DESIGN §14).**
+(`v0.10.1`) y su segunda revisión (`v0.10.2`). Lo siguiente, el hito 11
+(gestión del contexto). Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.10.1` — Auditoría tras el hito 10** (2026-11-11):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.1
+- Última versión: **`v0.10.2` — Segunda revisión de la auditoría tras el
+  hito 10** (2026-11-11):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.2
 - Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
@@ -43,7 +44,7 @@ spec, su nota de la guía y su release.
 | 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
 | 8 | Evals (20 tareas, dos modelos, línea base), `maha -p`, reintentos con respaldo y comandos de línea; auditoría con tres revisiones independientes | `v0.8.0` (2026-10-30), `v0.8.1` (2026-11-03) |
 | 9 | Formato de Anthropic (Claude, MiniMax y Qwen por OpenCode; la API directa), el formato de cada modelo, razonamiento devuelto intacto, effort y caché del prompt; auditoría profunda con cinco revisores y una revisión de los arreglos | `v0.9.0` (2026-11-03), `v0.9.1` (2026-11-04) |
-| 10 | System prompt por capas (`AGENTS.md`, entorno, `maha prompt`), `todo_write`, `ask_user`, `/init`, títulos de sesión y `/rename`; evals con 24 tareas y líneas base nuevas; auditoría con cinco revisores, mejoras de producto y una revisión independiente de los arreglos | `v0.10.0` (2026-11-10), `v0.10.1` (2026-11-11) |
+| 10 | System prompt por capas (`AGENTS.md`, entorno, `maha prompt`), `todo_write`, `ask_user`, `/init`, títulos de sesión y `/rename`; evals con 24 tareas y líneas base nuevas; auditoría con cinco revisores, mejoras de producto y dos revisiones independientes de los arreglos | `v0.10.0` (2026-11-10), `v0.10.1` y `v0.10.2` (2026-11-11) |
 
 ## Siguiente paso
 
@@ -86,7 +87,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.10.1`).
+   `maha 0.10.2`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -145,6 +146,11 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 - **Hito 12:** bifurcar una sesión (spec 8, §11.8).
 - **Hito 13:** las reglas de instrucciones por ruta, como `.claude/rules/`
   con `paths` (spec 10, decisión 6).
+- **Hito 15:** que un comando no llegue a los *sockets* de la sesión de la
+  persona (D-Bus, el agente SSH): quitar `XDG_RUNTIME_DIR` de su entorno
+  es una defensa más, no una frontera, porque un comando corre como la
+  persona y puede rehacer la ruta; la frontera es el sandbox (segunda
+  revisión de la auditoría tras el hito 10).
 - **Hito 15:** detectar secretos con otro nombre (`credenciales.txt`)
   mirando el contenido (mejora `2026-10-23`, E5); con el sandbox,
   `run_command` en las evals y tareas de "ejecuta y arregla" (spec 8,
@@ -240,8 +246,8 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
   `v0.8.1` (2026-11-03, la auditoría)
 - [x] 9. Adaptador de Anthropic. `v0.9.0` (2026-11-03) y el arreglo
   `v0.9.1` (2026-11-04, la auditoría profunda)
-- [x] 10. System prompt por capas. `v0.10.0` (2026-11-10) y el arreglo
-  `v0.10.1` (2026-11-11, la auditoría)
+- [x] 10. System prompt por capas. `v0.10.0` (2026-11-10) y los arreglos
+  `v0.10.1` y `v0.10.2` (2026-11-11, la auditoría y su segunda revisión)
 - [ ] 11. Gestión del contexto. `v0.11.0`
 - [ ] 12. Deshacer y puntos de control. `v0.12.0` *(nuevo, 2026-10-27)*
 - [ ] 13. Skills y comandos personalizados. `v0.13.0`

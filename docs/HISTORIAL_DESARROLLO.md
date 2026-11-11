@@ -11,6 +11,25 @@ en GitHub.
 
 ## Hito 10 (2026-11-04 a 2026-11-11)
 
+- **Segunda revisión de la auditoría, 2026-11-11: `v0.10.2`** (rama
+  `fix/cierre-auditoria-hito-10`; spec
+  `mejora-2026-11-10-auditoria-hito-10.md`, R17 a R25). Pedida por el
+  mantenedor tras publicar `v0.10.1`, para cerrar el hito 10 de verdad.
+  Dos revisores independientes más, uno de la interfaz y las sesiones y
+  otro de las herramientas, los modelos y la configuración:
+  - **Señales y terminal:** un `kill` o una ventana cerrada con el título
+    en camino ya no esperan al título ni fallan al escribir en la terminal
+    muerta (R17, R18); Ctrl+Z devuelve la terminal y `fg` pide otra vez el
+    *bracketed paste* (R23); un segundo Ctrl+C mientras se para el spinner
+    ya no sale de `maha` (R24); `/resume` dice que espera al título solo
+    cuando lo espera (R19).
+  - **`edit_file`:** no toma medio `\r\n` ni junta dos saltos en uno
+    (R20, R21), probado con 300.000 casos al azar.
+  - **"Siempre":** el texto dice lo que cubre de verdad; la frontera, los
+    ficheros que se ejecutan solos, por decisión del mantenedor (R22).
+  - Un test que no comprobaba lo que decía (R25); la columna `maha` de
+    `docs/COMPARATIVA.md`, al día para la spec del hito 11.
+  - Evals contra las líneas base: en la spec.
 - **Auditoría tras el hito 10, 2026-11-10 y 2026-11-11: `v0.10.1`**
   (rama `fix/auditoria-hito-10`; spec
   `mejora-2026-11-10-auditoria-hito-10.md`). El mantenedor la pidió para

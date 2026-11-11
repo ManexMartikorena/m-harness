@@ -248,7 +248,8 @@ effort max, cache 1h]`.
 - **Ctrl+C** a mitad de una respuesta la corta y vuelve al prompt; el
   modelo sabe que la cortaste. En el prompt, el primero limpia la línea y
   el segundo sale.
-- **Un texto pegado** de varias líneas va como un solo mensaje.
+- **Un texto pegado** de varias líneas va como un solo mensaje, también
+  tras **Ctrl+Z** y `fg`.
 - **Sin terminal** (`maha < instrucciones.txt`), todo lo que tiene efecto
   se deniega. Para scripts, mejor `maha -p`.
 

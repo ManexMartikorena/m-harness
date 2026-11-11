@@ -241,7 +241,8 @@ your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
 - **Ctrl+C** in the middle of an answer interrupts it and returns to the
   prompt; the model knows you interrupted it. At the prompt, the first one
   clears the line and the second one quits.
-- **Pasted text** of several lines goes as one message.
+- **Pasted text** of several lines goes as one message, also after
+  **Ctrl+Z** and `fg`.
 - **Without a terminal** (`maha < instructions.txt`), everything with an
   effect is denied. For scripts, use `maha -p`.
 
