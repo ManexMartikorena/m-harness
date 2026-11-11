@@ -1366,16 +1366,18 @@ class OnceThenHang(HangingApproval):
 
 
 async def test_the_time_limit_is_for_the_whole_turn() -> None:
-    # Three calls of 0.03 s each: no single wait passes 0.05, the turn does.
+    # Three calls of 0.3 s each: no single wait passes 0.5, the turn does.
+    # With room: 0.03 s against 0.05 failed on a loaded machine (review of
+    # the audit after hito 10).
     class SlowTool(FakeTool):
         async def run(self, params: EchoParams) -> str:
-            await asyncio.sleep(0.03)
+            await asyncio.sleep(0.3)
             return await super().run(params)
 
     slow = SlowTool()
     fake = FakeModelClient([tool_calls(call(f"c{i}")) for i in range(3)])
 
-    events = await run(agent(fake, slow, limits=LIMIT))
+    events = await run(agent(fake, slow, limits=TurnLimits(timeout=0.5)))
 
     turn = events[-1]
     assert isinstance(turn, TurnFinished)
