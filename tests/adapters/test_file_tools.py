@@ -3264,3 +3264,34 @@ async def test_reading_a_path_in_a_loop_of_links_says_why(root: Path) -> None:
 
     with pytest.raises(ToolError, match="too many levels of symbolic links"):
         await ReadFile(Workspace(root)).run(ReadFileParams(path="a"))
+
+
+async def test_a_name_too_long_under_a_new_folder_is_refused_before_asking(
+    root: Path,
+) -> None:
+    # Review of the audit after hito 10: stat() says ENOENT there.
+    with pytest.raises(ToolError, match="file name too long"):
+        await WriteFile(Workspace(root)).approval(
+            WriteFileParams(path="nueva/" + "n" * 300, content="x")
+        )
+
+
+async def test_the_search_process_keeps_the_locale(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review of the audit after hito 10: with no locale, the child could
+    # read a path's bytes another way than maha.
+    monkeypatch.setenv("LANG", "es_ES.UTF-8")
+    monkeypatch.setenv("LC_ALL", "C.UTF-8")
+    write(root, "a.txt", "x\n")
+    seen: dict[str, Any] = {}
+    real_exec = asyncio.create_subprocess_exec
+
+    async def spying(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
+        seen.update(kwargs)
+        return await real_exec(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spying)
+    await grep(root, "x")
+
+    assert seen["env"] == {"LANG": "es_ES.UTF-8", "LC_ALL": "C.UTF-8"}

@@ -104,6 +104,10 @@ class Workspace:
             if exc.errno in (errno.ELOOP, errno.ENAMETOOLONG):
                 why = os.strerror(exc.errno).lower()
                 raise ToolError(f"{why}: {raw}") from None
+        # Under a folder that does not exist yet, stat() says only that it
+        # is missing (review of the audit).
+        if any(len(os.fsencode(part)) > _NAME_MAX for part in path.parts):
+            raise ToolError(f"file name too long: {raw}")
         return path
 
     def contains(self, path: Path) -> bool:
@@ -136,6 +140,11 @@ class Workspace:
         if _names(path) > 1:
             found.append(HARD_LINK)
         return "; ".join(warning for warning in found if warning) or None
+
+
+# The longest name of one file or folder on Linux file systems (ext4,
+# btrfs, xfs, tmpfs): 255 bytes.
+_NAME_MAX = 255
 
 
 def _unquoted(raw: str) -> str:
@@ -872,6 +881,8 @@ def search_files(
     return matches
 
 
+# The variables of the search child: none but the locale (H9).
+_LOCALE = ("LANG", "LC_ALL", "LC_CTYPE")
 # What the child may write back at most in one line: the matches of a batch.
 _SEARCH_LINE_LIMIT = 16 * MIB
 
@@ -903,7 +914,8 @@ class _Searcher:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env={},
+            # Only the locale: the child reads the paths' bytes as maha.
+            env={name: os.environ[name] for name in _LOCALE if name in os.environ},
             limit=_SEARCH_LINE_LIMIT,
         )
         return self
