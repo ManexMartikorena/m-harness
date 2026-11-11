@@ -97,6 +97,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     if isinstance(options, int):
         return options
     try:
+        return _main(options)
+    except KeyboardInterrupt:
+        # Ctrl+C where nothing handles it (`maha sessions`, `stats`, the
+        # start of a conversation): quiet, as any program (audit after
+        # hito 10, I2). The conversation and `-p` handle their own.
+        print(file=sys.stderr, flush=True)
+        return 130
+
+
+def _main(options: argparse.Namespace) -> int:
+    try:
         _log_to(config.state_dir(os.environ) / "maha.log")
     except config.ConfigError:
         # No home: the error comes, with what to do, from load() below.

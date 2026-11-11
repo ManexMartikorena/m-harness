@@ -2041,3 +2041,25 @@ def test_the_evals_measure_maha_not_the_users_instructions(
     assert "Shell:" not in evals.text
     assert "mine" in user.text
     assert "extra" in user.text
+
+
+@pytest.mark.parametrize("where", ["_dispatch", "load"])
+def test_ctrl_c_in_any_command_ends_quietly_with_130(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    where: str,
+) -> None:
+    # Audit after hito 10, I2: Ctrl+C in maha sessions, trace, stats,
+    # export, import or prompt, or while the conversation starts, gave a
+    # traceback.
+    write_user_config(workspace, 'model = "m"\n')
+
+    def pressed(*_: object, **__: object) -> int:
+        raise KeyboardInterrupt
+
+    target = bootstrap if where == "_dispatch" else config
+    monkeypatch.setattr(target, where, pressed)
+
+    assert main(["sessions"]) == 130
+    assert capsys.readouterr().err == "\n"
