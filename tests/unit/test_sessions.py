@@ -1822,7 +1822,17 @@ async def test_the_reasoning_is_saved_and_given_back_on_resume() -> None:
     resumed = await world.sessions.resume(FIRST, current=await world.sessions.start())
     await turn(resumed.conversation, "B")
 
-    assert fake.requests[1].messages[1] == thought
+    # Intact, with the model that wrote it (review of the audit after hito
+    # 10): Anthropic's adapter sends its signature as it came.
+    model = fake.requests[0].model
+    assert fake.requests[1].messages[1] == thought.model_copy(
+        update={
+            "blocks": [
+                ReasoningBlock(text="", signature="firma", model=model),
+                TextBlock(text="Uno."),
+            ]
+        }
+    )
 
 
 # The system prompt of each session (spec hito 10, §1.2 and §1.3).

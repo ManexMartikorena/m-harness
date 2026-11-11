@@ -237,7 +237,7 @@ def _to_openai(request: ModelRequest) -> dict[str, Any]:
         # `system`, not `developer`: it is the role compatible servers know.
         messages.append({"role": "system", "content": request.system})
     for message in request.messages:
-        messages.extend(_message_to_openai(message))
+        messages.extend(_message_to_openai(message, request.model))
     body: dict[str, Any] = {"model": request.model, "messages": messages}
     if request.effort is not None:
         # Its name in this format (spec hito 9, §1.7). `max_tokens` is not
@@ -268,7 +268,7 @@ REASONING_INDEX = -2
 INTERRUPTED_MARK = "\n\n[interrupted by the user]"
 
 
-def _message_to_openai(message: Message) -> list[dict[str, Any]]:
+def _message_to_openai(message: Message, model: str) -> list[dict[str, Any]]:
     """One domain message as OpenAI messages: a `tool` message becomes one
     message per result."""
     if message.role == "tool":
@@ -305,6 +305,7 @@ def _message_to_openai(message: Message) -> list[dict[str, Any]]:
         and block.signature is None
         and block.redacted is None
         and block.text
+        and block.model == model
     )
     if thought:
         out["reasoning_content"] = thought

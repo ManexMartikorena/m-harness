@@ -177,11 +177,19 @@ async def test_the_models_own_reasoning_goes_back_as_reasoning_content(
     call = ToolCallBlock(id="c1", name="read_file", arguments='{"path": "a"}')
     answer = Message(
         role="assistant",
-        blocks=[ReasoningBlock(text="Leo a."), TextBlock(text="Voy."), call],
+        blocks=[
+            ReasoningBlock(text="Leo a.", model="kimi-k2.7-code"),
+            TextBlock(text="Voy."),
+            call,
+        ],
     )
     result = Message(role="tool", blocks=[ToolResultBlock(call_id="c1", content="x")])
     plain = Message(
-        role="assistant", blocks=[ReasoningBlock(text="Ya."), TextBlock(text="Es x.")]
+        role="assistant",
+        blocks=[
+            ReasoningBlock(text="Ya.", model="kimi-k2.7-code"),
+            TextBlock(text="Es x."),
+        ],
     )
 
     await client.complete(
@@ -199,6 +207,38 @@ async def test_the_models_own_reasoning_goes_back_as_reasoning_content(
         "content": "Es x.",
         "reasoning_content": "Ya.",
     }
+
+
+@respx.mock
+async def test_another_models_reasoning_does_not_go_back(
+    client: OpenAIChatClient,
+) -> None:
+    # Review of the audit after hito 10: after /model or a fallback, Kimi's
+    # reasoning went to GLM or DeepSeek on every call. Each model gets its
+    # own back (DeepSeek, GLM, Kimi and MiniMax ask for it, 2026-11-11);
+    # one that came with no model, from before, goes to none.
+    route = respx.post(ENDPOINT).respond(json=fixture("completion.json"))
+    kimi = Message(
+        role="assistant",
+        blocks=[
+            ReasoningBlock(text="De Kimi.", model="kimi-k2.7-code"),
+            TextBlock(text="A"),
+        ],
+    )
+    old = Message(
+        role="assistant",
+        blocks=[ReasoningBlock(text="Sin modelo."), TextBlock(text="B")],
+    )
+
+    await client.complete(
+        ModelRequest(
+            model="glm-5.3", messages=[CONVERSATION[0], kimi, CONVERSATION[0], old]
+        )
+    )
+
+    sent = sent_json(route)["messages"]
+    assert "reasoning_content" not in sent[1]
+    assert "reasoning_content" not in sent[3]
 
 
 @respx.mock

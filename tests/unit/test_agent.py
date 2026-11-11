@@ -38,8 +38,14 @@ from mharness.domain.errors import (
 )
 from mharness.domain.events import TextDelta, ToolCallDelta, UsageSoFar
 from mharness.domain.limits import TurnLimits
-from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
-from mharness.domain.model import ModelRequest, Usage
+from mharness.domain.messages import (
+    Message,
+    ReasoningBlock,
+    TextBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+)
+from mharness.domain.model import ModelRequest, ModelResponse, Usage
 from mharness.domain.retry import RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
@@ -2199,3 +2205,28 @@ async def test_the_fallback_gets_its_own_system_prompt() -> None:
         "for the main one",
         "for kimi-k2.7-code",
     ]
+
+
+async def test_the_reasoning_kept_names_the_model_that_wrote_it() -> None:
+    # Review of the audit after hito 10: so that only that model gets it
+    # back.
+    thought = Message(
+        role="assistant",
+        blocks=[ReasoningBlock(text="Pienso."), TextBlock(text="Hola.")],
+    )
+    fake = FakeModelClient(
+        [
+            ModelResponse(
+                message=thought,
+                stop_reason="end_turn",
+                usage=Usage(),
+                model="otro-nombre",
+            )
+        ]
+    )
+    subject = agent(fake, FakeTool())
+
+    await run(subject)
+
+    [_, answer] = subject.messages
+    assert answer.blocks[0] == ReasoningBlock(text="Pienso.", model=subject.model)

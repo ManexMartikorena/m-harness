@@ -37,7 +37,13 @@ from mharness.domain.catalog import add_cost, cost
 from mharness.domain.errors import RetryableModelError
 from mharness.domain.events import ModelEvent, TextDelta, UsageSoFar
 from mharness.domain.limits import TurnLimits
-from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
+from mharness.domain.messages import (
+    Message,
+    ReasoningBlock,
+    TextBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+)
 from mharness.domain.model import (
     Effort,
     ModelRequest,
@@ -315,7 +321,7 @@ class Agent:
         # In the turn before it is told: a turn closed right at
         # ModelCallFinished keeps the answer the person saw (deep
         # audit after hito 9).
-        turn.messages.append(response.message)
+        turn.messages.append(_stamped(response.message, turn.model))
         turn.calls = [
             b for b in response.message.blocks if isinstance(b, ToolCallBlock)
         ]
@@ -749,6 +755,21 @@ def _error(
     text = f"error: {message}"
     result = ToolResultBlock(call_id=call.id, content=text, is_error=True)
     return _Outcome(result=result, summary=text, internal_error=internal_error)
+
+
+def _stamped(message: Message, model: str) -> Message:
+    """`message` with the model that wrote its reasoning, as maha asked for
+    it: in the OpenAI format only that model gets it back (review of the
+    audit after hito 10)."""
+    if not any(isinstance(block, ReasoningBlock) for block in message.blocks):
+        return message
+    blocks = [
+        block.model_copy(update={"model": model})
+        if isinstance(block, ReasoningBlock)
+        else block
+        for block in message.blocks
+    ]
+    return message.model_copy(update={"blocks": blocks})
 
 
 def _interrupted(
