@@ -854,7 +854,10 @@ cierre.
     catálogo gana `cache_write_1h`, `Usage` gana `cache_write_1h_tokens`
     (dentro de `cache_write_tokens`) y el adaptador lo lee de
     `cache_creation.ephemeral_1h_input_tokens`. Con OpenCode no importa:
-    él da el coste.
+    él da el coste. *Cambiado el 2026-11-11 (auditoría tras el hito 10, M4,
+    decisión del mantenedor): un modelo sin `cache_write_1h` ya no cobra
+    esas escrituras al precio de 5 min; la llamada queda sin precio. La
+    documentación de OpenCode no publica ese precio para ningún Claude.*
 14. **El proveedor `anthropic`:** 14 modelos de la página de precios (sin
     los de acceso limitado), con la escritura de una hora; la ventana y la
     salida máxima, de models.dev. Solo Haiku 5.5 tiene tramos.

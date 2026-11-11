@@ -53,6 +53,16 @@ class ApprovalRequested(BaseModel, frozen=True):
     request: ApprovalRequest
 
 
+class ApprovalCovered(BaseModel, frozen=True):
+    """A call runs without asking: the person approved its scope for the
+    session. Its request is still told, to show what changes (audit after
+    hito 10, P4)."""
+
+    type: Literal["approval_covered"] = "approval_covered"
+    call: ToolCallBlock
+    request: ApprovalRequest
+
+
 class ToolFinished(BaseModel, frozen=True):
     """A call ran, or failed; its result goes back to the model."""
 
@@ -141,6 +151,7 @@ type AgentEvent = (
     | TextDelta
     | ToolCallProposed
     | ApprovalRequested
+    | ApprovalCovered
     | ToolFinished
     | ModelCallFinished
     | ModelRetry

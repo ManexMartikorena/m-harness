@@ -121,3 +121,25 @@ async def test_what_the_model_wrote_cannot_fake_the_screen() -> None:
     assert "\x1b" not in out
     assert "  │ 1. A" in out
     assert out.count("\n") == 4
+
+
+async def test_a_digit_that_is_not_ascii_asks_again() -> None:
+    # Audit after hito 10, I5: "²" passed isdigit() and broke the tool.
+    answers, out = await ask("²", "1")
+
+    assert out.count("  └ Choose 1-3: ") == 2
+    assert answers == [Answer(header="Base", choices=("SQLite",))]
+
+
+async def test_a_label_that_is_a_number_wins_over_the_position() -> None:
+    # Audit after hito 10, I6: with options "2" and "4", typing 2 chose 4.
+    numbers = question(
+        options=[
+            {"label": "2", "description": "dos hilos"},
+            {"label": "4", "description": "cuatro hilos"},
+        ]
+    )
+
+    answers, _ = await ask("2", questions=[numbers])
+
+    assert answers == [Answer(header="Base", choices=("2",))]

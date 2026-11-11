@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TextIO
 
 from mharness import __version__
+from mharness.adapters.cli.approval import show_covered
 from mharness.adapters.cli.commands import Commands, parse_command
 from mharness.adapters.cli.init import TAKES_EFFECT, Init
 from mharness.adapters.cli.input import Discard, ReadLine, StdinLines
@@ -23,6 +24,7 @@ from mharness.adapters.cli.text import clean, clean_line, usd
 from mharness.adapters.cli.todo import finished_todo, is_todo
 from mharness.application.sessions import Conversation, Resumed, Sessions, Start
 from mharness.domain.agent_events import (
+    ApprovalCovered,
     ApprovalRequested,
     ModelFallback,
     ModelRetry,
@@ -43,6 +45,8 @@ _log = logging.getLogger(__name__)
 
 # Terminal convention for a program stopped by Ctrl+C: 128 + SIGINT.
 EXIT_INTERRUPTED = 130
+AGAIN_TO_QUIT = "[Ctrl+C again to quit, or /exit]"
+INTERRUPTED = "[interrupted]"
 # A tool call is shown in one line, cut to this length.
 MAX_CALL = 100
 
@@ -109,6 +113,10 @@ async def converse(
     sigint = _Sigint()
 
     def on_sigint() -> None:
+        if sigint.pending:
+            # Not taken yet: a second press would cut what handles the
+            # first, as the save while leaving (review of the audit).
+            return
         sigint.pending = True
         task.cancel()
 
@@ -120,26 +128,42 @@ async def converse(
     for number in CLOSING:
         loop.add_signal_handler(number, on_closing, number)
     try:
-        return await _turns(
+        code = await _turns(
             commands, provider, read, out, err, sigint, opened.resumed, notes, init
         )
     except asyncio.CancelledError:
         if sigint.closing is not None:
             task.uncancel()
-            return 128 + sigint.closing
-        # Ctrl+C at the prompt ends `maha`; an answer handles its own.
-        if not sigint.pending:
-            raise
-        task.uncancel()
-        print(file=out)
-        return EXIT_INTERRUPTED
+            code = 128 + sigint.closing
+        else:
+            # Ctrl+C before the prompt ends `maha`; the prompt, an answer
+            # and a command handle their own.
+            if not sigint.pending:
+                raise
+            task.uncancel()
+            print(file=out)
+            code = EXIT_INTERRUPTED
     finally:
-        loop.remove_signal_handler(signal.SIGINT)
-        for number in CLOSING:
-            loop.remove_signal_handler(number)
-        # What is still pending is saved, and the session let go.
-        await commands.conversation.close()
+        # What is still pending is saved, and the session let go. Ctrl+C
+        # while its title comes skips the title: our handler is still
+        # there, and the rest is saved and told (review of the audit after
+        # hito 10).
+        commands.tell_naming()
+        try:
+            await commands.conversation.close()
+        except asyncio.CancelledError:
+            if sigint.closing is None and not _ours(sigint):
+                raise
+            if sigint.closing is not None:
+                task.uncancel()
+        finally:
+            loop.remove_signal_handler(signal.SIGINT)
+            for number in CLOSING:
+                loop.remove_signal_handler(number)
         commands.warn_unsaved()
+    # A closing signal while leaving says so too (review of the audit after
+    # hito 10).
+    return code if sigint.closing is None else 128 + sigint.closing
 
 
 async def _turns(
@@ -167,6 +191,9 @@ async def _turns(
         commands.note_prompt()
     for note in notes:
         print(f"  {note}", file=out, flush=True)
+    # Ctrl+C at the prompt clears the line and says how to leave; a second
+    # one in a row leaves (audit after hito 10, P1).
+    armed = False
     while True:
         print("> ", end="", file=out, flush=True)
         try:
@@ -174,6 +201,16 @@ async def _turns(
         except EOFError:
             print(file=out)
             return 0
+        except asyncio.CancelledError:
+            if not _ours(sigint):
+                raise
+            print(file=out)
+            if armed:
+                return EXIT_INTERRUPTED
+            armed = True
+            print(f"  {AGAIN_TO_QUIT}", file=out, flush=True)
+            continue
+        armed = False
         if not line:
             continue
         command = parse_command(line)
@@ -184,6 +221,8 @@ async def _turns(
         elif command.name == "exit":
             return 0
         elif command.name == "init" and init is not None:
+            if init.note is not None:
+                print(f"  {init.note}", file=out, flush=True)
             before = init.stamp()
             text = init.text(command.argument)
             await _answer(commands.conversation, text, out, err, sigint)
@@ -193,7 +232,26 @@ async def _turns(
                 # Written or changed: the prompt of this session is fixed.
                 print(f"  {TAKES_EFFECT}", file=out, flush=True)
         else:
-            await commands.run(command)
+            try:
+                await commands.run(command)
+            except asyncio.CancelledError:
+                # It ends the command, not maha (audit after hito 10, I8).
+                if not _ours(sigint):
+                    raise
+                print(f"\n  {INTERRUPTED}", file=out, flush=True)
+
+
+def _ours(sigint: _Sigint) -> bool:
+    """Whether the cancellation is a Ctrl+C to handle here: then it is
+    taken, and the task goes on. A closing signal, or any other
+    cancellation, goes on up."""
+    if not sigint.pending or sigint.closing is not None:
+        return False
+    sigint.pending = False
+    task = asyncio.current_task()
+    assert task is not None
+    task.uncancel()
+    return True
 
 
 async def _answer(
@@ -212,12 +270,19 @@ async def _answer(
     # True while a question waits after "Allow? …:" (spec
     # mejora-2026-10-26-deuda-pre-hito-6, B8).
     asking = False
+    # A "\r" that ended the last piece: with a "\n" next it ends a line,
+    # and is not shown as \x0d (review of the audit after hito 10, I10).
+    held = ""
     # Covers each wait for the model (spec hito 3, §1.12).
     spinner = Spinner(out, color=use_color())
     spinner.start()
     try:
         async with aclosing(conversation.run(line)) as events:
             async for event in events:
+                if held and (not isinstance(event, TextDelta) or event.block != block):
+                    # It did not end a line: shown as what it is.
+                    out.write(clean(held))
+                    held = ""
                 match event:
                     case TextDelta(text=text):
                         await spinner.stop()
@@ -225,7 +290,9 @@ async def _answer(
                         if wrote and other and event.block != block:
                             out.write("\n")
                         block = event.block
-                        out.write(clean(text))
+                        text = held + text
+                        held = "\r" if text.endswith("\r") else ""
+                        out.write(clean(text.removesuffix(held)))
                         out.flush()
                         wrote = True
                     case ToolCallProposed(call=call):
@@ -241,6 +308,8 @@ async def _answer(
                             print(f"  → {call_line(call)}", file=out, flush=True)
                     case ApprovalRequested():
                         asking = True
+                    case ApprovalCovered(request=request):
+                        show_covered(request, out)
                     case ModelRetry() | ModelFallback():
                         await spinner.stop()
                         if wrote:
@@ -289,17 +358,12 @@ async def _answer(
         print(f"error: internal: {detail}", file=err, flush=True)
     except asyncio.CancelledError:
         # A closing signal goes on up: maha ends, not just the answer.
-        if not sigint.pending or sigint.closing is not None:
+        if not _ours(sigint):
             raise
-        sigint.pending = False
-        # Without this, asyncio would keep treating the task as cancelled.
-        task = asyncio.current_task()
-        assert task is not None
-        task.uncancel()
         await spinner.stop()
         if wrote or asking:
             print(file=out)
-        print("  [interrupted]", file=out, flush=True)
+        print(f"  {INTERRUPTED}", file=out, flush=True)
     finally:
         await spinner.stop()
 

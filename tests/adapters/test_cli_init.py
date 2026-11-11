@@ -18,7 +18,7 @@ from tests.fakes.model import FakeModelClient, reply, tool_calls
 from tests.fakes.terminal import ScriptedInput
 from tests.fakes.tools import EchoParams
 
-TEMPLATE = "Write AGENTS.md at {{root}}.{{extra}}"
+TEMPLATE = "Write AGENTS.md at {{root}}.{{scope}}{{extra}}"
 
 
 def test_the_message_names_the_root_and_what_to_stress(tmp_path: Path) -> None:
@@ -44,7 +44,10 @@ def test_the_package_template_fills(tmp_path: Path) -> None:
     assert text.splitlines()[0] == "Write or improve the AGENTS.md of this project."
 
 
-def test_agents_md_goes_to_the_git_root(tmp_path: Path) -> None:
+def test_agents_md_goes_to_the_folder_where_maha_runs(tmp_path: Path) -> None:
+    # Audit after hito 10, I3, decision 1 of the maintainer: in a subfolder,
+    # that folder's AGENTS.md, which maha loads with the root's; it pointed
+    # at the git root, outside the working directory.
     repo = tmp_path / "repo"
     (repo / ".git").mkdir(parents=True)
     inner = repo / "src" / "app"
@@ -52,9 +55,39 @@ def test_agents_md_goes_to_the_git_root(tmp_path: Path) -> None:
     loose = tmp_path / "suelto"
     loose.mkdir()
 
-    assert _init(inner).target == repo / "AGENTS.md"
+    assert _init(repo).target == repo / "AGENTS.md"
+    assert _init(repo).project is None
+    assert _init(inner).target == inner / "AGENTS.md"
+    assert _init(inner).project == repo
     # Without git, where maha runs.
     assert _init(loose).target == loose / "AGENTS.md"
+
+
+def test_in_a_subfolder_the_message_says_so(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    inner = repo / "src"
+    inner.mkdir()
+
+    text = _init(inner).text(None)
+
+    assert f"Write AGENTS.md in {inner}" in text
+    assert f"part of the project at {repo}" in text
+    assert "only what is specific to this folder" in text
+    assert "part of the project" not in _init(repo).text(None)
+
+
+def test_in_a_subfolder_the_person_is_told(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    inner = repo / "src"
+    inner.mkdir()
+
+    assert _init(inner).note == (
+        f"[/init in a subfolder: it writes {inner / 'AGENTS.md'}, loaded with "
+        "the root's]"
+    )
+    assert _init(repo).note is None
 
 
 class WritesAgents:
@@ -113,6 +146,7 @@ async def test_init_is_a_turn_with_the_template(tmp_path: Path) -> None:
         TEMPLATE,
         {
             "root": str(tmp_path),
+            "scope": "",
             "extra": "\n\nThe user wants this stressed:\n<user_notes>\nusa uv"
             "\n</user_notes>",
         },
@@ -139,3 +173,18 @@ async def test_an_agents_md_that_was_already_there_and_changed_is_told(
     out = await init_run(tmp_path, fake, "/init")
 
     assert TAKES_EFFECT in out
+
+
+def test_the_note_of_a_subfolder_is_clean(tmp_path: Path) -> None:
+    # Review of the audit after hito 10: a folder's name from a cloned
+    # repository reached the terminal raw.
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    inner = repo / "a\x1b[2Jb"
+    inner.mkdir()
+
+    note = _init(inner).note
+
+    assert note is not None
+    assert "\x1b" not in note
+    assert "a\\x1b[2Jb" in note

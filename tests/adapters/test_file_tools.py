@@ -829,6 +829,11 @@ async def test_creating_asks_with_a_preview_and_writes(root: Path) -> None:
         title="create notas.txt (3 lines)",
         detail="uno\ndos\ntres",
         scope="write_file",
+        covers=(
+            "every write_file in the working directory, but secrets and files "
+            "that run code"
+        ),
+        review=True,
     )
     assert result == "wrote notas.txt (3 lines)"
     assert tool.summary(result) == "3 lines"
@@ -850,6 +855,11 @@ async def test_the_preview_shows_the_first_20_lines(root: Path) -> None:
         title="create empty.txt (0 lines)",
         detail="(empty file)",
         scope="write_file",
+        covers=(
+            "every write_file in the working directory, but secrets and files "
+            "that run code"
+        ),
+        review=True,
     )
 
 
@@ -889,6 +899,11 @@ async def test_overwriting_asks_with_a_diff(root: Path) -> None:
         title="overwrite notas.txt",
         detail="@@ -1,3 +1,3 @@\n a\n-b\n+B\n c",
         scope="write_file",
+        covers=(
+            "every write_file in the working directory, but secrets and files "
+            "that run code"
+        ),
+        review=True,
     )
     assert result == "wrote notas.txt (3 lines)"
     assert (root / "notas.txt").read_text(encoding="utf-8") == "a\nB\nc\n"
@@ -1287,6 +1302,11 @@ async def test_editing_asks_with_a_diff_and_edits(root: Path) -> None:
         title="edit src/app.py",
         detail="@@ -1,3 +1,3 @@\n def f():\n     x = 0\n-    return 1\n+    return 2",
         scope="edit_file",
+        covers=(
+            "every edit_file in the working directory, but secrets and files "
+            "that run code"
+        ),
+        review=True,
     )
     assert result == "edited src/app.py (1 replacement)"
     assert edit_tool(root).summary(result) == "1 replacement"
@@ -2471,6 +2491,64 @@ async def test_a_change_just_before_writing_in_place_is_not_overwritten(
     assert path.read_text(encoding="utf-8") == "tuyo\n"
 
 
+def test_a_flexible_edit_takes_linear_time() -> None:
+    # Audit after hito 10, H2: the flexible search of an old_string with
+    # line breaks was O(lines x lines), before asking: 800 KB blocked maha
+    # 19 s. 16,000 short lines took a second; now, milliseconds.
+    lines = 16_000
+    text = "x\r\n" * lines
+    params = EditFileParams(
+        path="a", old_string="x\n" * (lines // 4) + "y", new_string="z"
+    )
+    started = time.monotonic()
+
+    with pytest.raises(ToolError, match="not found"):
+        files._replaced(text, params)
+
+    assert time.monotonic() - started < 0.2
+
+
+def test_an_ambiguous_exact_edit_takes_linear_time() -> None:
+    # H2 too: counting every overlap of a long old_string in repeated
+    # lines was quadratic as well: 64,000 short lines, 1.7 s.
+    lines = 64_000
+    params = EditFileParams(path="a", old_string="x\n" * (lines // 4), new_string="z")
+    started = time.monotonic()
+
+    with pytest.raises(ToolError, match="appears"):
+        files._replaced("x\n" * lines, params)
+
+    assert time.monotonic() - started < 0.2
+
+
+def test_a_flexible_edit_keeps_the_breaks_of_the_file() -> None:
+    params = EditFileParams(path="a", old_string="b\nc", new_string="B\nC\nD")
+
+    assert files._replaced("a\r\nb\r\nc\r\nd", params) == (
+        "a\r\nB\r\nC\r\nD\r\nd",
+        1,
+    )
+
+
+def test_a_flexible_edit_replaces_all_with_each_ones_breaks() -> None:
+    params = EditFileParams(
+        path="a", old_string="b\nc", new_string="X\nY", replace_all=True
+    )
+
+    assert files._replaced("b\r\nc b\rc b\r\nc", params) == (
+        "X\r\nY X\rY X\r\nY",
+        3,
+    )
+
+
+def test_two_breaks_do_not_match_one_crlf() -> None:
+    # read_file shows "a\r\nb" as two lines, not three.
+    params = EditFileParams(path="a", old_string="a\n\nb", new_string="z")
+
+    with pytest.raises(ToolError, match="not found"):
+        files._replaced("a\r\nb", params)
+
+
 async def test_overlapping_occurrences_are_ambiguous(root: Path) -> None:
     # D8: "aa" is twice in "aaa", at 0 and at 1: which one is meant?
     write(root, "a.txt", "aaa\n")
@@ -2729,14 +2807,80 @@ async def test_grep_stops_searching_once_it_has_enough_matches(
         return await real_exec(*args, **kwargs)
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", counting)
+    sent = 0
+    real_search = files._Searcher.search
+
+    async def counting_batches(
+        self: Any, batch: list[tuple[str, str]], raw: str | None
+    ) -> list[str]:
+        nonlocal sent
+        sent += 1
+        return await real_search(self, batch, raw)
+
+    monkeypatch.setattr(files._Searcher, "search", counting_batches)
     result = await grep(root, "x")
 
     assert spawned == 1
+    assert sent == 1
     assert result.splitlines() == [
         "f0.txt:1: x",
         "f0.txt:2: x",
         "… [stopped at 2 matches; narrow the search]",
     ]
+
+
+async def test_grep_starts_one_process_for_every_batch(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Audit after hito 10, H3: one Python per batch of files took 0.26 s
+    # each; 10,000 files, 5 s. One child serves every batch.
+    monkeypatch.setattr(files, "GREP_BATCH_FILES", 2)
+    for n in range(7):
+        write(root, f"f{n}.txt", f"x{n}\n")
+    spawned = 0
+    real_exec = asyncio.create_subprocess_exec
+
+    async def counting(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
+        nonlocal spawned
+        spawned += 1
+        return await real_exec(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", counting)
+    result = await grep(root, "x")
+
+    assert spawned == 1
+    assert len(result.splitlines()) == 7
+
+
+async def test_the_search_process_does_not_get_the_environment(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Audit after hito 10, H9: the key of maha is not for the child.
+    monkeypatch.setenv("OPENCODE_API_KEY", "sk-inventada")
+    write(root, "a.txt", "x\n")
+    seen: dict[str, Any] = {}
+    real_exec = asyncio.create_subprocess_exec
+
+    async def spying(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
+        seen.update(kwargs)
+        return await real_exec(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spying)
+    assert await grep(root, "x") == "a.txt:1: x"
+
+    assert "OPENCODE_API_KEY" not in seen["env"]
+
+
+@pytest.mark.parametrize("pattern", ["a{99999999999}", "(" * 2000 + "a" + ")" * 2000])
+async def test_a_pattern_python_cannot_compile_is_an_error_for_the_model(
+    root: Path, pattern: str
+) -> None:
+    # Audit after hito 10, H5: OverflowError and RecursionError were
+    # internal errors.
+    write(root, "a.txt", "a\n")
+
+    with pytest.raises(ToolError, match="invalid regular expression"):
+        await grep(root, pattern)
 
 
 # A read-only file is not replaced (spec mejora-2026-10-26-deuda-pre-hito-6,
@@ -3089,3 +3233,65 @@ def test_a_folder_is_no_hard_link(root: Path) -> None:
     (root / "src").mkdir()
 
     assert Workspace(root).change_warning(root / "src", "src") is None
+
+
+# Audit after hito 10, H11: a path that no call can use failed after the
+# question, so the person approved for nothing.
+
+
+@pytest.mark.parametrize("tail", ["", "/x.txt"])
+async def test_a_path_in_a_loop_of_links_is_refused_before_asking(
+    root: Path, tail: str
+) -> None:
+    (root / "a").symlink_to("b")
+    (root / "b").symlink_to("a")
+
+    with pytest.raises(ToolError, match="too many levels of symbolic links: a"):
+        await WriteFile(Workspace(root)).approval(
+            WriteFileParams(path="a" + tail, content="x")
+        )
+
+
+async def test_a_name_too_long_is_refused_before_asking(root: Path) -> None:
+    with pytest.raises(ToolError, match="file name too long"):
+        await WriteFile(Workspace(root)).approval(
+            WriteFileParams(path="n" * 300, content="x")
+        )
+
+
+async def test_reading_a_path_in_a_loop_of_links_says_why(root: Path) -> None:
+    (root / "a").symlink_to("a")
+
+    with pytest.raises(ToolError, match="too many levels of symbolic links"):
+        await ReadFile(Workspace(root)).run(ReadFileParams(path="a"))
+
+
+async def test_a_name_too_long_under_a_new_folder_is_refused_before_asking(
+    root: Path,
+) -> None:
+    # Review of the audit after hito 10: stat() says ENOENT there.
+    with pytest.raises(ToolError, match="file name too long"):
+        await WriteFile(Workspace(root)).approval(
+            WriteFileParams(path="nueva/" + "n" * 300, content="x")
+        )
+
+
+async def test_the_search_process_keeps_the_locale(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review of the audit after hito 10: with no locale, the child could
+    # read a path's bytes another way than maha.
+    monkeypatch.setenv("LANG", "es_ES.UTF-8")
+    monkeypatch.setenv("LC_ALL", "C.UTF-8")
+    write(root, "a.txt", "x\n")
+    seen: dict[str, Any] = {}
+    real_exec = asyncio.create_subprocess_exec
+
+    async def spying(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
+        seen.update(kwargs)
+        return await real_exec(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spying)
+    await grep(root, "x")
+
+    assert seen["env"] == {"LANG": "es_ES.UTF-8", "LC_ALL": "C.UTF-8"}

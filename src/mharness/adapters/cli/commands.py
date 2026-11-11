@@ -27,7 +27,7 @@ from mharness.ports.catalog import ModelCatalog
 
 # What each command does, for /help.
 COMMANDS = {
-    "sessions": "/sessions — the recent sessions, of every directory",
+    "sessions": "/sessions [all] — the recent sessions, of every directory",
     "resume": "/resume [ID] — resume a session; without ID, the last one here",
     "delete": "/delete ID — delete a session",
     "model": "/model [ID] — show the model, or change it",
@@ -43,6 +43,8 @@ COMMANDS = {
     "help": "/help — this list",
     "exit": "/exit — quit",
 }
+# While leaving a conversation waits for its title.
+NAMING = "[naming the session; Ctrl+C skips it]"
 # What the catalog says of a model (spec hito 7, §1.10).
 NOT_IN_CATALOG = "[model not in the catalog: cost only if the provider reports it]"
 TRAINS_ON_DATA = "[warning: this model may use your data for training]"
@@ -102,7 +104,7 @@ class Commands:
                     for line in COMMANDS.values():
                         self._say(line)
                 case "sessions":
-                    await self._list()
+                    await self._list(command.argument)
                 case "resume":
                     await self._resume(command.argument)
                 case "delete":
@@ -151,12 +153,22 @@ class Commands:
     def warn_unsaved(self) -> None:
         warn_unsaved(self.conversation, self._err)
 
-    async def _list(self) -> None:
-        for line in await session_lines(self._sessions, self._home):
+    async def _list(self, argument: str | None) -> None:
+        if argument not in (None, "all"):
+            self._say("usage: /sessions [all]")
+            return
+        lines = await session_lines(
+            self._sessions,
+            self._home,
+            every=argument == "all",
+            see_all="/sessions all",
+        )
+        for line in lines:
             print(f"  {line}", file=self._out)
         self._out.flush()
 
     async def _resume(self, session: str | None) -> None:
+        self.tell_naming()
         left = self.conversation.id if self.conversation.stored else None
         try:
             resumed = await self._sessions.resume(session, current=self.conversation)
@@ -164,9 +176,20 @@ class Commands:
             if session is None:
                 raise SessionNotFound(f"{exc} (see /sessions)") from None
             raise
-        self.conversation = resumed.conversation
-        self._warn_lost(left, resumed.left_unsaved)
-        self.tell_resumed(resumed)
+        old, self.conversation = self.conversation, resumed.conversation
+        # Switched first: Ctrl+C while the old one's title comes skips the
+        # title, never the switch (review of the audit after hito 10).
+        try:
+            await old.close()
+        finally:
+            self._warn_lost(left, old.unsaved)
+            self.tell_resumed(resumed)
+
+    def tell_naming(self) -> None:
+        """Leaving a conversation waits for its title, if it is on its way
+        (decision of the maintainer, 2026-11-10): said, with the way out."""
+        if self.conversation.naming:
+            self._say(NAMING)
 
     def tell_resumed(self, resumed: Resumed) -> None:
         """What the person should know of the session just resumed."""
@@ -237,15 +260,19 @@ class Commands:
         """A new session without leaving maha (spec hito 8, §1.15). The
         model chosen with /model stays: it is this maha's choice."""
         old = self.conversation
+        self.tell_naming()
         left = old.id if old.stored else None
         fresh = await self._sessions.start(old.model)
-        # The new one is ready: only now is the current one let go.
-        await old.close()
+        # The new one is ready: only now is the current one let go, once
+        # switched (review of the audit after hito 10).
         self.conversation = fresh
-        self._warn_lost(left, old.unsaved)
-        self._say("[new session]")
-        # Built again: an AGENTS.md edited since counts from here (§1.2).
-        self.note_prompt()
+        try:
+            await old.close()
+        finally:
+            self._warn_lost(left, old.unsaved)
+            self._say("[new session]")
+            # Built again: an AGENTS.md edited since counts from here (§1.2).
+            self.note_prompt()
 
     def _warn_lost(self, left: str | None, unsaved: str | None) -> None:
         """The session left behind could not save its last turns."""
@@ -292,21 +319,32 @@ class Commands:
         print(f"  {text}", file=self._out, flush=True)
 
 
-async def session_lines(sessions: Sessions, home: Path) -> list[str]:
+async def session_lines(
+    sessions: Sessions, home: Path, *, every: bool = False, see_all: str = ""
+) -> list[str]:
     """The recent sessions of every directory, one per line, those of this
-    one marked with `*`; or `(no sessions)`."""
-    found = (await sessions.summaries())[:SESSIONS_SHOWN]
-    if not found:
+    one marked with `*`; or `(no sessions)`. Past `SESSIONS_SHOWN`, how
+    many more, and `see_all`, how to see them; with `every`, all (audit
+    after hito 10, P6)."""
+    summaries = await sessions.summaries()
+    if not summaries:
         return ["(no sessions)"]
+    found = summaries if every else summaries[:SESSIONS_SHOWN]
     lines = []
     for summary in found:
         mark = "*" if sessions.here(summary) else " "
         when = f"{summary.updated_at.astimezone():%Y-%m-%d %H:%M}"
         count = f"{summary.messages} message" + ("" if summary.messages == 1 else "s")
+        title = clean_line(summary.title)
+        if summary.unreadable is not None:
+            count = "unreadable"
+            title = f"[{clean_line(summary.unreadable)}]"
+        where = shown_dir(summary.cwd, home) if summary.cwd else "?"
         lines.append(
-            f"{mark} {clean_line(summary.id)}  {when}  {count}  "
-            f"{shown_dir(summary.cwd, home)}  {clean_line(summary.title)}"
+            f"{mark} {clean_line(summary.id)}  {when}  {count}  {where}  {title}"
         )
+    if len(found) < len(summaries):
+        lines.append(f"… {len(summaries) - len(found)} more: {see_all}")
     return lines
 
 
@@ -345,6 +383,11 @@ def resumed_notes(resumed: Resumed, cwd: str, home: Path) -> list[str]:
         )
     if resumed.interrupted:
         notes.append("[the last answer was interrupted]")
+    for session in resumed.unknown:
+        notes.append(
+            f"[session {clean_line(session)} cannot be read and may be the last "
+            "one here: see /sessions]"
+        )
     return notes
 
 
@@ -439,7 +482,7 @@ def _summary_lines(summary: TraceSummary) -> list[str]:
     lines += [_turn_line(turn) for turn in summary.turns]
     lines += [_title_line(title) for title in summary.titles]
     usage = summary.usage
-    if summary.uncosted_turns == len(summary.turns) + len(summary.titles):
+    if not summary.priced:
         # No turn has a price: "≥$0" would be true and say nothing.
         cost = "cost unknown"
     else:
@@ -476,7 +519,8 @@ def _turn_line(turn: TurnSummary) -> str:
         f"{turn.usage.output_tokens} out",
     ]
     if turn.cost is not None:
-        parts.append(usd(turn.cost))
+        # Some call had no price: at least that (audit after hito 10, S3).
+        parts.append(("≥" if turn.unpriced else "") + usd(turn.cost))
     parts.append(f"{turn.seconds:.1f} s")
     if turn.failed_tools:
         parts.append(f"{turn.failed_tools} failed")

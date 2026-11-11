@@ -6,7 +6,8 @@ stricter one wins (spec hito 8, §3.2):
 
 1. built-in providers, in this module;
 2. the user's file, `$XDG_CONFIG_HOME/maha/config.toml`;
-3. the project's file, `.maha/config.toml` in the working directory.
+3. the project's file, the nearest `.maha/config.toml` from the working
+   directory up to the git root (audit after hito 10, P7).
 
 Providers (URL and key variable) can only be declared by the user: a project
 file is untrusted input, and could send the user's key to another server.
@@ -16,8 +17,9 @@ Start-up plumbing: only `mharness.bootstrap` uses it, once, before the core.
 
 import tomllib
 from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path, PurePath
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from pydantic import (
     BaseModel,
@@ -30,8 +32,9 @@ from pydantic import (
 )
 
 from mharness.domain.catalog import SpokenApi
+from mharness.domain.environment import looks_like_credential
 from mharness.domain.limits import TurnLimits
-from mharness.domain.model import Effort
+from mharness.domain.model import CacheTtl, Effort
 from mharness.domain.money import Usd
 from mharness.domain.paths import is_secret
 
@@ -40,7 +43,6 @@ DEFAULT_PROVIDER = "opencode-go"
 
 
 # How long Anthropic's prompt cache lasts.
-type CacheTtl = Literal["5m", "1h"]
 
 
 class ConfigError(Exception):
@@ -59,9 +61,10 @@ class ProviderSettings(BaseModel, frozen=True, extra="forbid"):
     # Name of the environment variable that holds the key; None sends no key.
     api_key_env: str | None = None
     session_header: str | None = None
-    # The version of Anthropic's API it is asked for; the latest by default
-    # (spec hito 9, decision 2).
-    anthropic_version: str = Field(default="2026-10-21", min_length=1)
+    # The version of Anthropic's API it is asked for; None: the adapter's,
+    # the latest (spec hito 9, decision 2). Written once, there (audit after
+    # hito 10, M5).
+    anthropic_version: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _endpoints_are_other_formats(self) -> ProviderSettings:
@@ -130,11 +133,18 @@ class Settings(BaseModel, frozen=True):
     # the project (spec hito 10, §1.5).
     instructions: tuple[str, ...] = ()
     project_instructions: tuple[str, ...] = ()
+    # The folder of the project's `.maha/config.toml`, if there is one:
+    # where its `instructions` start (review of the audit after hito 10).
+    project_dir: Path | None = None
     # Read CLAUDE.md where there is no AGENTS.md (spec hito 10, §1.4).
     compat_claude: bool = True
     # The user's own base of the system prompt, instead of maha's; only
     # from the user's file (spec hito 10, §1.3).
     system_prompt_file: Path | None = None
+    # More variables the shell commands get, as a proxy or `JAVA_HOME`;
+    # only from the user's file, never a credential (audit after hito 10,
+    # P5).
+    command_env: tuple[str, ...] = ()
 
 
 class _Limits(BaseModel, extra="forbid"):
@@ -164,6 +174,7 @@ class _ProjectFile(BaseModel, extra="forbid"):
 class _UserFile(_ProjectFile):
     providers: dict[str, ProviderSettings] = {}
     system_prompt_file: str | None = Field(default=None, min_length=1)
+    command_env: list[Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]] = []
 
 
 def user_config_path(env: Mapping[str, str]) -> Path:
@@ -219,7 +230,7 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
     that never call the model do not need them (`maha sessions`, `stats`…),
     and `model` may be None."""
     user_path = user_config_path(env)
-    project_path = cwd / PROJECT_FILE
+    project_path = project_file(cwd)
 
     user = _validate(_UserFile, _read(user_path), user_path)
     project_data = _read(project_path)
@@ -234,6 +245,11 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
             f"{project_path}: a project cannot replace the base of the system "
             f"prompt (system_prompt_file); it goes only in {user_path}. A "
             "project adds its instructions in AGENTS.md."
+        )
+    if "command_env" in project_data:
+        raise ConfigError(
+            f"{project_path}: a project cannot choose command_env: what the "
+            f"commands see of your environment goes only in {user_path}."
         )
     project = _validate(_ProjectFile, project_data, project_path)
     for pattern in project.instructions:
@@ -256,6 +272,13 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
         )
 
     provider = providers[provider_name]
+    keys = {each.api_key_env for each in providers.values() if each.api_key_env}
+    for name in user.command_env:
+        if looks_like_credential(name) or name in keys:
+            raise ConfigError(
+                f"{user_path}: command_env {name!r} looks like a credential: "
+                "the commands, and from their output the model, would see it."
+            )
     return Settings(
         provider_name=provider_name,
         provider=provider,
@@ -267,12 +290,14 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
         limits=_stricter(user.limits, project.limits),
         instructions=tuple(user.instructions),
         project_instructions=tuple(dict.fromkeys(project.instructions)),
+        project_dir=project_path.parent.parent if project_path.is_file() else None,
         compat_claude=_first(project.compat_claude, user.compat_claude, True),
         system_prompt_file=(
             None
             if user.system_prompt_file is None
             else Path(user.system_prompt_file).expanduser()
         ),
+        command_env=tuple(dict.fromkeys(user.command_env)),
         api_key=_api_key(provider_name, provider, env, need=calls_model),
         from_project={
             name: value
@@ -287,6 +312,35 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
             if (value := getattr(project, name)) is not None
         },
     )
+
+
+def project_file(cwd: Path) -> Path:
+    """The project's `.maha/config.toml`: the nearest one from `cwd` up to
+    the git root, so a subfolder has its project's limits too (audit after
+    hito 10, P7). Never above the root, nor above `cwd` without git: a
+    file of another project, or of the home, is not this one's. If there
+    is none, the one `cwd` would have."""
+    root = _git_root(cwd)
+    if root is not None:
+        for directory in (cwd, *cwd.parents):
+            candidate = directory / PROJECT_FILE
+            with suppress(OSError):
+                if candidate.is_file():
+                    return candidate
+            if directory == root:
+                break
+    return cwd / PROJECT_FILE
+
+
+def _git_root(cwd: Path) -> Path | None:
+    """The nearest directory, `cwd` or above, that holds a `.git`; the same
+    rule as the project adapter's `git_root()`, which config cannot
+    import."""
+    for directory in (cwd, *cwd.parents):
+        with suppress(OSError):
+            if (directory / ".git").exists():
+                return directory
+    return None
 
 
 def _inside_project(pattern: str, path: Path) -> None:

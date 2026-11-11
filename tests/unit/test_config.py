@@ -180,7 +180,8 @@ def test_anthropic_is_a_builtin_provider() -> None:
         "https://api.anthropic.com/v1",
         "ANTHROPIC_API_KEY",
     )
-    assert provider.anthropic_version == "2026-10-21"
+    # The adapter's own, the latest (audit after hito 10, M5).
+    assert provider.anthropic_version is None
 
 
 def test_a_provider_may_ask_for_another_anthropic_version(
@@ -658,3 +659,112 @@ def test_a_project_cannot_replace_the_base(home: Path, project: Path) -> None:
 
     with pytest.raises(ConfigError, match="cannot replace the base"):
         load(home, project)
+
+
+def test_the_user_chooses_more_variables_for_the_commands(
+    home: Path, project: Path
+) -> None:
+    # Audit after hito 10, P5: a proxy or JAVA_HOME, for the commands.
+    write_user(home, 'model = "m"\ncommand_env = ["JAVA_HOME", "HTTPS_PROXY"]\n')
+
+    assert load(home, project).command_env == ("JAVA_HOME", "HTTPS_PROXY")
+
+
+def test_a_project_cannot_choose_variables_for_the_commands(
+    home: Path, project: Path
+) -> None:
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'command_env = ["AWS_SESSION"]\n')
+
+    with pytest.raises(ConfigError, match="command_env"):
+        load(home, project)
+
+
+@pytest.mark.parametrize("name", ["GITHUB_TOKEN", "my_api_key", "DB_PASSWORD"])
+def test_a_credential_is_not_a_variable_for_the_commands(
+    home: Path, project: Path, name: str
+) -> None:
+    write_user(home, f'model = "m"\ncommand_env = ["{name}"]\n')
+
+    with pytest.raises(ConfigError, match="credential"):
+        load(home, project)
+
+
+def test_the_providers_key_is_not_a_variable_for_the_commands(
+    home: Path, project: Path
+) -> None:
+    write_user(home, 'model = "m"\ncommand_env = ["OPENCODE_API_KEY"]\n')
+
+    with pytest.raises(ConfigError, match="credential"):
+        load(home, project)
+
+
+# Audit after hito 10, P7: from a subfolder, the project's file, its limits
+# included, was ignored without a word.
+
+
+def test_the_projects_file_is_found_from_a_subfolder(home: Path, project: Path) -> None:
+    (project / ".git").mkdir()
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'model = "del-proyecto"\n[limits]\nmax_steps = 3\n')
+    inner = project / "src" / "app"
+    inner.mkdir(parents=True)
+
+    settings = load(home, inner)
+
+    assert settings.model == "del-proyecto"
+    assert settings.limits.max_steps == 3
+
+
+def test_the_nearest_projects_file_wins(home: Path, project: Path) -> None:
+    (project / ".git").mkdir()
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'model = "de-la-raiz"\n')
+    inner = project / "web"
+    write_project(inner, 'model = "de-web"\n')
+
+    assert load(home, inner).model == "de-web"
+
+
+def test_no_file_above_the_git_root_is_read(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'model = "de-fuera"\n')
+    repo = project / "repo"
+    (repo / ".git").mkdir(parents=True)
+
+    assert load(home, repo).model == "m"
+
+
+def test_without_git_only_the_working_directory_counts(
+    home: Path, project: Path
+) -> None:
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'model = "de-arriba"\n')
+    inner = project / "sub"
+    inner.mkdir()
+
+    assert load(home, inner).model == "m"
+
+
+@pytest.mark.parametrize(
+    "name", ["PGPASSWORD", "MYSQL_PWD", "AWS_ACCESS_KEY_ID", "GITHUB_PAT", "NPM_AUTH"]
+)
+def test_more_credentials_are_not_variables_for_the_commands(
+    home: Path, project: Path, name: str
+) -> None:
+    # Review of the audit after hito 10: only the suffixes were looked at.
+    write_user(home, f'model = "m"\ncommand_env = ["{name}"]\n')
+
+    with pytest.raises(ConfigError, match="credential"):
+        load(home, project)
+
+
+def test_the_folder_of_the_projects_file_is_known(home: Path, project: Path) -> None:
+    (project / ".git").mkdir()
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'instructions = ["docs/CONV.md"]\n')
+    inner = project / "src"
+    inner.mkdir()
+
+    assert load(home, inner).project_dir == project
+    assert load(home, project / ".git").project_dir == project

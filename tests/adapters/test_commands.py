@@ -8,19 +8,22 @@ import signal
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from mharness.adapters.cli import commands
 from mharness.adapters.cli.commands import (
     COMMANDS,
     Command,
     parse_command,
     prompt_notes,
+    resumed_notes,
     trace_lines,
 )
 from mharness.adapters.cli.conversation import converse
 from mharness.application.agent import Agent
-from mharness.application.sessions import Sessions, TraceReport
+from mharness.application.sessions import Resumed, Sessions, TraceReport
 from mharness.application.tools import ToolRegistry
 from mharness.application.traces import TraceSummary
 from mharness.domain.agent_events import ModelCallFinished, TurnFinished, TurnStarted
@@ -220,6 +223,32 @@ async def test_sessions_lists_every_directory_marking_this_one() -> None:
         "~/web  explícame el router\n"
     ) in out
     assert out.index("b01c") < out.index("3fa2")
+
+
+async def test_sessions_says_how_many_more_and_all_shows_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Audit after hito 10, P6: only 20 were seen, with no way to see more.
+    monkeypatch.setattr(commands, "SESSIONS_SHOWN", 1)
+    store = MemorySessionStore()
+    await Maha(store, [reply("Hola.")]).run("uno", "/exit")
+    await Maha(store, [reply("Vale.")], tokens=("b01c",)).run("dos", "/exit")
+
+    _, few, _ = await Maha(store, [], tokens=("9999",)).run("/sessions", "/exit")
+    _, every, _ = await Maha(store, [], tokens=("9998",)).run("/sessions all", "/exit")
+
+    assert "b01c" in few
+    assert "3fa2" not in few
+    assert "  … 1 more: /sessions all\n" in few
+    assert "b01c" in every
+    assert "3fa2" in every
+    assert "more:" not in every
+
+
+async def test_sessions_with_another_argument_says_how_to_use_it() -> None:
+    _, out, _ = await Maha(MemorySessionStore(), []).run("/sessions todas", "/exit")
+
+    assert "  usage: /sessions [all]\n" in out
 
 
 async def test_resume_continues_a_session_with_its_history() -> None:
@@ -535,8 +564,11 @@ async def test_trace_shows_each_turn_and_the_total() -> None:
     assert (
         f"  {FIRST} · fake-model · 2 turns · 3 model calls · 1 tool\n"
         f"  1  {clock(NOW)}  1 call · 0 tools · 742 in · 31 out · $0.0012 · 0.0 s\n"
-        f"  2  {clock(NOW)}  2 calls · 1 tool · 30 in · 5 out · 0.0 s · 1 failed\n"
-        "  total: 772 in · 36 out · ≥$0.0012\n"
+        # A call without a price does not hide what the other cost (audit
+        # after hito 10, S3): at least that.
+        f"  2  {clock(NOW)}  2 calls · 1 tool · 30 in · 5 out · ≥$0.0001 · 0.0 s"
+        " · 1 failed\n"
+        "  total: 772 in · 36 out · ≥$0.0013\n"
         f"  [trace: /traces/{FIRST}.jsonl]\n"
     ) in out
 
@@ -561,6 +593,27 @@ async def test_trace_says_what_was_read_from_the_cache() -> None:
         "0.0 s\n"
     ) in out
     assert "  total: 5800 in (2863 cached) · 80 out · cost unknown\n" in out
+
+
+async def test_sessions_lists_one_that_cannot_be_read() -> None:
+    # Audit after hito 10 (S2): listed, so it can be deleted, with why.
+    class WithABrokenOne(MemorySessionStore):
+        async def summaries(self) -> list[SessionSummary]:
+            return [
+                SessionSummary(
+                    id="20261027-091502-dead",
+                    cwd="",
+                    updated_at=NOW,
+                    messages=0,
+                    title="",
+                    unreadable="line 1 is not a header\x1b[2J",
+                )
+            ]
+
+    _, out, _ = await Maha(WithABrokenOne(), []).run("/sessions", "/exit")
+
+    assert "20261027-091502-dead" in out
+    assert "  unreadable  ?  [line 1 is not a header\\x1b[2J]\n" in out
 
 
 # /rename (spec hito 10, §1.12).
@@ -813,3 +866,23 @@ def test_prompt_notes_say_nothing_without_instructions() -> None:
 
     assert prompt_notes(prompt) == []
     assert prompt_notes(None) == []
+
+
+def test_a_resume_tells_the_unreadable_sessions_it_may_have_skipped() -> None:
+    # Review of the audit after hito 10 (S2).
+    conversation = SimpleNamespace(id="20261026-091502-3fa2", model="m")
+    resumed = Resumed(
+        conversation=conversation,  # type: ignore[arg-type]
+        messages=2,
+        other_cwd=None,
+        fallback_from=None,
+        interrupted=False,
+        unknown=("20261027-091502-dead",),
+    )
+
+    notes = resumed_notes(resumed, "/home/ane/proyecto", Path("/home/ane"))
+
+    assert notes[-1] == (
+        "[session 20261027-091502-dead cannot be read and may be the last one "
+        "here: see /sessions]"
+    )

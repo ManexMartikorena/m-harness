@@ -127,9 +127,16 @@ def _amount(value: object) -> Decimal | None:
     return Decimal(0) if amount < SMALLEST else amount
 
 
-def count(tokens: int | None) -> int:
-    """A count the provider sent; missing, null or negative is 0."""
-    return max(tokens or 0, 0)
+def whole(value: Any) -> int | None:
+    """A whole number the provider sent; anything else, `true` too, is not
+    one."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def count(tokens: Any) -> int:
+    """A count the provider sent; missing, null, negative or not a whole
+    number is 0. One for both formats (audit after hito 10, M5)."""
+    return max(whole(tokens) or 0, 0)
 
 
 def status_error(response: httpx.Response, api_key: str | None) -> ModelError:

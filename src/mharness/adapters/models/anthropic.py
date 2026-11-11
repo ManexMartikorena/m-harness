@@ -14,7 +14,7 @@ import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
 from decimal import Decimal
 from types import TracebackType
-from typing import Any, Literal, Self
+from typing import Any, Self
 
 import httpx
 
@@ -29,6 +29,7 @@ from mharness.adapters.models.http import (
     safe,
     status_error,
     text,
+    whole,
 )
 from mharness.adapters.models.sse import parse_sse
 from mharness.domain.errors import (
@@ -42,6 +43,7 @@ from mharness.domain.events import (
     ReasoningDelta,
     TextDelta,
     ToolCallDelta,
+    UsageSoFar,
 )
 from mharness.domain.messages import (
     Block,
@@ -51,7 +53,13 @@ from mharness.domain.messages import (
     ToolCallBlock,
     ToolResultBlock,
 )
-from mharness.domain.model import ModelRequest, ModelResponse, StopReason, Usage
+from mharness.domain.model import (
+    CacheTtl,
+    ModelRequest,
+    ModelResponse,
+    StopReason,
+    Usage,
+)
 
 # The latest version, the one Anthropic recommends; a provider may ask for
 # another (spec hito 9, decision 2).
@@ -59,8 +67,6 @@ VERSION = "2026-10-21"
 # The answer's ceiling when the catalog does not know the model's (spec
 # hito 9, §1.6): paid only for what is written.
 DEFAULT_MAX_TOKENS = 32_000
-
-type CacheTtl = Literal["5m", "1h"]
 
 STOP_REASONS: dict[str, StopReason] = {
     "end_turn": "end_turn",
@@ -86,12 +92,12 @@ class AnthropicClient:
         api_key: str | None = None,
         session_header: str | None = None,
         session_id: str | None = None,
-        version: str = VERSION,
+        version: str | None = None,
         cache_ttl: CacheTtl = "5m",
     ) -> None:
         self._api_key = api_key
         self._cache_ttl = cache_ttl
-        headers = {"User-Agent": USER_AGENT, "anthropic-version": version}
+        headers = {"User-Agent": USER_AGENT, "anthropic-version": version or VERSION}
         if api_key:
             # The current form; the old `x-api-key` still works (spec, §1.0).
             headers["Authorization"] = f"Bearer {api_key}"
@@ -224,6 +230,9 @@ class _Stream:
                 message = _dict(event.get("message"))
                 self.model = _str(message.get("model")) or self.model
                 self._count(message.get("usage"))
+                # The input is paid from here, even if the answer is cut
+                # (audit after hito 10, B2).
+                return [UsageSoFar(usage=_usage(self.usage), model=self.model)]
             case "content_block_start":
                 return self._start(_index(event), _dict(event.get("content_block")))
             case "content_block_delta":
@@ -476,17 +485,17 @@ def _refusal(stop_reason: str, details: Any, has_text: bool) -> str | None:
 def _usage(usage: dict[str, Any]) -> Usage:
     """The domain counts the whole prompt, as OpenAI: Anthropic's
     `input_tokens` is only what goes after the last cache point (§1.4)."""
-    read = count(_int(usage.get("cache_read_input_tokens")))
-    written = count(_int(usage.get("cache_creation_input_tokens")))
+    read = count(usage.get("cache_read_input_tokens"))
+    written = count(usage.get("cache_creation_input_tokens"))
     details = _dict(usage.get("output_tokens_details"))
     hour = _dict(usage.get("cache_creation")).get("ephemeral_1h_input_tokens")
     return Usage(
-        input_tokens=count(_int(usage.get("input_tokens"))) + read + written,
-        output_tokens=count(_int(usage.get("output_tokens"))),
+        input_tokens=count(usage.get("input_tokens")) + read + written,
+        output_tokens=count(usage.get("output_tokens")),
         cache_read_tokens=read,
         cache_write_tokens=written,
-        cache_write_1h_tokens=min(count(_int(hour)), written),
-        reasoning_tokens=count(_int(details.get("thinking_tokens"))),
+        cache_write_1h_tokens=min(count(hour), written),
+        reasoning_tokens=count(details.get("thinking_tokens")),
     )
 
 
@@ -513,12 +522,8 @@ def _str(value: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _int(value: Any) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
-
-
 def _index(event: dict[str, Any]) -> int:
-    index = _int(event.get("index"))
+    index = whole(event.get("index"))
     if index is None:
         raise ModelResponseError("an event of the stream came without its index")
     return index

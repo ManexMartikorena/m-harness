@@ -57,6 +57,7 @@ def sessions(
     tools: Sequence[Tool[Any]] | None = None,
     gate: FakeApproval | None = None,
     store: MemorySessionStore | None = None,
+    traces: MemoryTraceSink | None = None,
 ) -> Sessions:
     registry = ToolRegistry(tools or [])
 
@@ -77,7 +78,7 @@ def sessions(
         provider="opencode-go",
         model="glm-5.3-flash",
         version="0.8.0",
-        traces=MemoryTraceSink(),
+        traces=traces or MemoryTraceSink(),
     )
 
 
@@ -125,8 +126,9 @@ async def test_stdout_has_only_the_final_answer() -> None:
 
     assert code == 0
     assert out == "Hay dos ficheros.\n"
-    assert err == (
+    assert err.startswith(
         '  → echo(text="Hola")\n  ✓ 10 chars\n  [tokens: 12 in · 9 out · 1 call]\n'
+        "  [session "
     )
 
 
@@ -411,6 +413,7 @@ async def test_stream_json_is_one_event_per_line_and_the_result_last() -> None:
     lines = [json.loads(line) for line in out.splitlines()]
     assert (code, err) == (0, "")
     assert [line["type"] for line in lines] == [
+        "init",
         "turn_started",
         "model_call_finished",
         "tool_call_proposed",
@@ -421,7 +424,14 @@ async def test_stream_json_is_one_event_per_line_and_the_result_last() -> None:
         "turn_finished",
         "result",
     ]
-    assert lines[0]["text"] == "Hola"
+    # Audit after hito 10, P2: who answers, and in which session, first.
+    assert lines[0] == {
+        "type": "init",
+        "session_id": lines[-1]["session_id"],
+        "model": "glm-5.3-flash",
+        "tools": ["echo"],
+    }
+    assert lines[1]["text"] == "Hola"
     assert lines[-1]["result"] == "Hola."
 
 
@@ -642,7 +652,8 @@ async def test_stream_json_has_the_retry_and_the_fallback() -> None:
 
     lines = [json.loads(line) for line in out.splitlines()]
     assert (code, err) == (0, "")
-    assert lines[1] == {
+    assert lines[0]["type"] == "init"
+    assert lines[2] == {
         "type": "model_retry",
         "model": "glm-5.3-flash",
         "attempt": 1,
@@ -650,7 +661,7 @@ async def test_stream_json_has_the_retry_and_the_fallback() -> None:
         "delay": 1.0,
         "error": "HTTP 503",
     }
-    assert lines[2] == {
+    assert lines[3] == {
         "type": "model_fallback",
         "model": "glm-5.3-flash",
         "fallback": "glm-5.3",
@@ -823,3 +834,28 @@ async def test_in_json_a_failure_before_the_turn_has_no_trace() -> None:
     _, out, _ = await run(sessions(FakeModelClient([])), " ", output_format="json")
 
     assert json.loads(out.splitlines()[-1])["trace_id"] is None
+
+
+async def test_text_says_the_session_at_the_end_on_stderr() -> None:
+    # Audit after hito 10, P2: to resume it with -r.
+    code, out, err = await run(sessions(FakeModelClient([reply("Hola.")])), "Hola")
+
+    assert (code, out) == (0, "Hola.\n")
+    assert re.search(r"  \[session (\S+) · maha -r \1 resumes it\]\n$", err)
+
+
+async def test_stream_json_tells_init_even_without_a_trace() -> None:
+    # Review of the audit after hito 10: without a trace, the id was the
+    # session's only once its file was saved, after the last event.
+    traces = MemoryTraceSink()
+    traces.open_failures = 5
+    fake = FakeModelClient([reply("Hola.")])
+
+    _, out, _ = await run(
+        sessions(fake, traces=traces), "Hola", output_format="stream-json"
+    )
+
+    lines = [json.loads(line) for line in out.splitlines()]
+    assert [line["type"] for line in lines].count("init") == 1
+    assert lines[-2]["type"] == "init"
+    assert lines[-2]["session_id"] == lines[-1]["session_id"] is not None

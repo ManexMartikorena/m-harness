@@ -2,6 +2,7 @@
 application relies on it (spec hito 6, §1.4; final audit of hito 6, 8): the
 lock, the errors, and the entries going through JSON."""
 
+import asyncio
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -52,6 +53,9 @@ class MemoryLog:
         ]
         stored.entries.extend(done)
         stored.updated_at = datetime.now(UTC)
+        # As a real store may: other tasks run before it returns (audit
+        # after hito 10, S1).
+        await asyncio.sleep(0)
 
     async def close(self) -> None:
         # Only its own lock: closing twice frees nobody else's.

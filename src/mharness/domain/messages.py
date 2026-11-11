@@ -48,6 +48,10 @@ class ReasoningBlock(BaseModel, frozen=True):
     text: str = ""
     signature: str | None = None
     redacted: str | None = None
+    # The model that wrote it, as maha asked for it: in the OpenAI format,
+    # only that model gets it back (review of the audit after hito 10).
+    # None in older sessions: given back to none.
+    model: str | None = Field(default=None, exclude_if=lambda m: m is None)
 
 
 # Validated by `type`, so a message read from JSON gets the right blocks.

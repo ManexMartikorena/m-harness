@@ -21,6 +21,7 @@ from mharness.application.collect import Accumulator
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import (
     AgentEvent,
+    ApprovalCovered,
     ApprovalRequested,
     ModelCallFinished,
     ModelFallback,
@@ -34,9 +35,15 @@ from mharness.domain.agent_events import (
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import add_cost, cost
 from mharness.domain.errors import RetryableModelError
-from mharness.domain.events import ModelEvent, TextDelta
+from mharness.domain.events import ModelEvent, TextDelta, UsageSoFar
 from mharness.domain.limits import TurnLimits
-from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
+from mharness.domain.messages import (
+    Message,
+    ReasoningBlock,
+    TextBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+)
 from mharness.domain.model import (
     Effort,
     ModelRequest,
@@ -58,6 +65,7 @@ CANCELLED = "cancelled by the user"
 INTERRUPTED = "interrupted by an internal error"
 TIMED_OUT = "stopped by the time limit"
 CONTEXT_FULL = "not run: the conversation filled your context window"
+REFUSED = "not run: the provider refused your answer"
 
 # The only answers that run a call that asked, or deny it.
 DECISIONS: tuple[Decision, ...] = ("once", "session", "deny")
@@ -98,6 +106,8 @@ class Agent:
         self._tools = tools
         self._gate = gate
         self._approvals = SessionApprovals()
+        # The call a Ctrl+C cut, for the conversation to count.
+        self._unseen_call: ModelCallFinished | None = None
         self.model = model
         self._catalog = catalog
         self._provider = provider
@@ -110,6 +120,10 @@ class Agent:
         # The session's system prompt, the same in every call; the session
         # sets it, and /model changes its family layer (spec hito 10, §1.2).
         self.system = system
+        # The system prompt of another model of this session (the fallback),
+        # with its own family layer; None: the same text for any model
+        # (audit after hito 10, B5).
+        self.system_for: Callable[[str], str | None] | None = None
         # A resumed session starts with its history (spec hito 6, §1.6); its
         # approvals do not come back (§1.9).
         self._messages: list[Message] = list(history)
@@ -118,6 +132,11 @@ class Agent:
     def messages(self) -> Sequence[Message]:
         """The conversation so far, oldest first."""
         return tuple(self._messages)
+
+    @property
+    def tool_names(self) -> list[str]:
+        """The names of the tools the model has, in their order."""
+        return self._tools.names()
 
     async def run(self, text: str) -> AsyncGenerator[AgentEvent]:
         """Run one turn from a user message, yielding what happens.
@@ -169,6 +188,15 @@ class Agent:
                     self._keep(turn)
                     yield turn.finished("context_full", steps=turn.step)
                     return
+                if response.stop_reason == "content_filter":
+                    # Refused: a call it holds may be cut, and none was
+                    # meant to run; the turn ends (audit after hito 10, B1).
+                    if turn.calls:
+                        refused = [_error(c, REFUSED).result for c in turn.calls]
+                        turn.messages.append(Message(role="tool", blocks=[*refused]))
+                    self._keep(turn)
+                    yield turn.finished("refused", steps=turn.step)
+                    return
                 if not turn.calls:
                     self._keep(turn)
                     yield turn.finished(_ending(response.stop_reason), steps=turn.step)
@@ -197,6 +225,8 @@ class Agent:
                     self._messages.extend(turn.messages)
                 raise turn.failing[0] from None
             self._keep_timed_out(turn)
+            if turn.streaming and (paid := self._cut_call(turn)) is not None:
+                yield paid
             yield turn.finished(
                 "timeout",
                 # The call cut while it answered did not end.
@@ -208,9 +238,43 @@ class Agent:
             # (spec mejora-2026-10-23-deuda-hito-5, E4). Ctrl+C arrives as
             # CancelledError while the loop waits, or as GeneratorExit when
             # the terminal was the one waiting and closes the loop.
-            by_user = isinstance(exc, asyncio.CancelledError | GeneratorExit)
+            by_user = isinstance(
+                exc, asyncio.CancelledError | GeneratorExit | KeyboardInterrupt
+            )
             self._keep_cut(turn, by_user=by_user)
+            paid = self._cut_call(turn) if turn.streaming else None
+            if paid is not None:
+                if by_user:
+                    # Nobody reads the events any more: the conversation
+                    # takes it (`take_cut_call`).
+                    self._unseen_call = paid
+                else:
+                    yield paid
             raise
+
+    def _cut_call(self, turn: _Turn) -> ModelCallFinished | None:
+        """The call in progress, cut: what it used so far, paid all the
+        same (audit after hito 10, B2); None if the provider said nothing.
+        Counted in the turn once."""
+        so_far = turn.accumulator.so_far
+        if so_far is None:
+            return None
+        turn.accumulator.so_far = None
+        cut = ModelResponse(
+            message=Message(role="assistant", blocks=[]),
+            stop_reason="other",
+            usage=so_far.usage,
+            model=so_far.model,
+        )
+        call_cost = self._cost(cut, turn.model)
+        turn.usage += so_far.usage
+        turn.cost = add_cost(turn.cost, call_cost)
+        return ModelCallFinished(usage=so_far.usage, model=so_far.model, cost=call_cost)
+
+    def take_cut_call(self) -> ModelCallFinished | None:
+        """The call a Ctrl+C cut, which no event could tell, once."""
+        paid, self._unseen_call = self._unseen_call, None
+        return paid
 
     def _keep(self, turn: _Turn) -> None:
         """Put the whole turn in the history: it ended."""
@@ -233,6 +297,11 @@ class Agent:
                 except StopAsyncIteration:
                     break
                 if isinstance(event, ModelRetry | ModelFallback):
+                    # The failed try was paid if it got that far.
+                    paid = self._cut_call(turn)
+                    if paid is not None:
+                        yield paid
+                    turn.accumulator = Accumulator()
                     if isinstance(event, ModelFallback):
                         turn.model = event.fallback
                     yield event
@@ -252,7 +321,7 @@ class Agent:
         # In the turn before it is told: a turn closed right at
         # ModelCallFinished keeps the answer the person saw (deep
         # audit after hito 9).
-        turn.messages.append(response.message)
+        turn.messages.append(_stamped(response.message, turn.model))
         turn.calls = [
             b for b in response.message.blocks if isinstance(b, ToolCallBlock)
         ]
@@ -289,8 +358,13 @@ class Agent:
             # None: nobody was asked, or the answer was not valid.
             decision: Decision | None = None
             asked = False
-            cut = call is last or not _whole(call)
-            if stop_reason == "max_tokens" and cut:
+            # By the output limit, the last one may be cut even if it looks
+            # whole; by a reason maha does not know, only one that is not
+            # whole (audit after hito 10, B1, and its review).
+            cut = (
+                stop_reason == "max_tokens" and (call is last or not _whole(call))
+            ) or (stop_reason == "other" and not _whole(call))
+            if cut:
                 # Cut by the output limit: its error says so, or the
                 # model writes the same cut call again (deep audit
                 # after hito 9, B1). The last one, also if its arguments
@@ -302,7 +376,9 @@ class Agent:
                 outcome = prepared
             else:
                 question = prepared.request
-                if question is not None and not self._approvals.covers(question):
+                if question is not None and self._approvals.covers(question):
+                    yield ApprovalCovered(call=call, request=question)
+                elif question is not None:
                     yield ApprovalRequested(call=call, request=question)
                     asked = True
                     answer = await self._decide(turn, question)
@@ -341,10 +417,7 @@ class Agent:
         """Ask the gate. The turn's clock stops while the person reads and
         decides (deep audit after hito 9, B4, a decision of the
         maintainer); without a person the answer is at once."""
-        waiting = asyncio.get_running_loop().time()
-        answer: object = await self._gate.decide(question)
-        if turn.deadline is not None:
-            turn.deadline += asyncio.get_running_loop().time() - waiting
+        answer: object = await _paused(turn, self._gate.decide(question))
         return answer
 
     async def _wait_for_user(
@@ -353,11 +426,7 @@ class Agent:
         """Run a tool that waits for the person (`ask_user`). As while they
         decide on a call, the turn's clock stops: a person reading is no
         slow model (spec hito 10, §1.11)."""
-        waiting = asyncio.get_running_loop().time()
-        outcome = await self._run(call, ready)
-        if turn.deadline is not None:
-            turn.deadline += asyncio.get_running_loop().time() - waiting
-        return outcome
+        return await _paused(turn, self._run(call, ready))
 
     def _keep_timed_out(self, turn: _Turn) -> None:
         """What a turn stopped by its time limit keeps: as after Ctrl+C,
@@ -407,8 +476,11 @@ class Agent:
                 request = self._request(turn, model)
                 async with aclosing(self._client.stream(request)) as events:
                     async for event in events:
-                        began = True
-                        failing.clear()
+                        if not isinstance(event, UsageSoFar):
+                            # Only an answer shown cannot be retried: what
+                            # was used so far is no answer.
+                            began = True
+                            failing.clear()
                         yield event
                 return
             except RetryableModelError as exc:
@@ -457,9 +529,12 @@ class Agent:
 
     def _request(self, turn: list[Message], model: str) -> ModelRequest:
         info = self._catalog.get(self._provider, model)
+        system = self.system
+        if model != self.model and self.system_for is not None:
+            system = self.system_for(model)
         return ModelRequest(
             model=model,
-            system=self.system,
+            system=system,
             messages=[*self._messages, *turn],
             tools=self._tools.specs(),
             max_tokens=info.max_output if info is not None else None,
@@ -477,13 +552,8 @@ class Agent:
         if tool is None:
             available = ", ".join(self._tools.names())
             return _error(call, f'unknown tool "{call.name}". Available: {available}')
-        try:
-            # Some models send "" for a tool without parameters.
-            arguments = json.loads(call.arguments.strip() or "{}")
-        except ValueError, RecursionError:
-            # RecursionError: nested too deep to parse.
-            arguments = None
-        if not isinstance(arguments, dict):
+        arguments = _arguments(call)
+        if arguments is None:
             return _error(call, "arguments are not a valid JSON object")
         try:
             params = tool.params.model_validate(arguments)
@@ -548,12 +618,24 @@ def call_cost(
             amount = cost(response.usage, info.prices)
             # Past what an amount in USD can be, the counts are a provider's
             # bug: unknown, never a broken turn (deep audit after hito 9, S9).
-            return known(amount)
+            # None: a write without a price (audit after hito 10, M4).
+            return None if amount is None else known(amount)
     return None
 
 
 class _TimedOut(Exception):
     """The turn's time limit passed while the loop waited."""
+
+
+async def _paused[T](turn: _Turn, waiting: Awaitable[T]) -> T:
+    """Wait for `waiting` with the turn's clock stopped: a person is
+    reading (deep audit after hito 9, B4)."""
+    started = asyncio.get_running_loop().time()
+    try:
+        return await waiting
+    finally:
+        if turn.deadline is not None:
+            turn.deadline += asyncio.get_running_loop().time() - started
 
 
 async def _within[T](waiting: Awaitable[T], deadline: float | None) -> T:
@@ -656,13 +738,20 @@ def _ending(stop_reason: StopReason) -> Literal["end_turn", "max_output", "refus
     return "end_turn"
 
 
-def _whole(call: ToolCallBlock) -> bool:
-    """Whether its arguments are a whole JSON object (or none at all)."""
+def _arguments(call: ToolCallBlock) -> dict[str, Any] | None:
+    """Its arguments as a JSON object; None if they are not one. Some
+    models send "" for a tool without parameters."""
     try:
         value = json.loads(call.arguments.strip() or "{}")
     except ValueError, RecursionError:
-        return False
-    return isinstance(value, dict)
+        # RecursionError: nested too deep to parse.
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _whole(call: ToolCallBlock) -> bool:
+    """Whether its arguments are a whole JSON object (or none at all)."""
+    return _arguments(call) is not None
 
 
 def _error(
@@ -671,6 +760,21 @@ def _error(
     text = f"error: {message}"
     result = ToolResultBlock(call_id=call.id, content=text, is_error=True)
     return _Outcome(result=result, summary=text, internal_error=internal_error)
+
+
+def _stamped(message: Message, model: str) -> Message:
+    """`message` with the model that wrote its reasoning, as maha asked for
+    it: in the OpenAI format only that model gets it back (review of the
+    audit after hito 10)."""
+    if not any(isinstance(block, ReasoningBlock) for block in message.blocks):
+        return message
+    blocks = [
+        block.model_copy(update={"model": model})
+        if isinstance(block, ReasoningBlock)
+        else block
+        for block in message.blocks
+    ]
+    return message.model_copy(update={"blocks": blocks})
 
 
 def _interrupted(

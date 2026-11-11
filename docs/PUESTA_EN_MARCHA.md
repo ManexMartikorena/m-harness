@@ -134,7 +134,8 @@ las sesiones. Sin él, el que el catálogo da al proveedor (en OpenCode Go,
 small_model = "glm-5.3-flash"
 ```
 
-Un proyecto puede tener `.maha/config.toml` con `provider`, `model` y
+Un proyecto puede tener `.maha/config.toml` (el más cercano desde la
+carpeta actual hasta la raíz git, desde la `v0.10.1`) con `provider`, `model` y
 `fallback_model`, que ganan a los del usuario, y `[limits]`, de los que vale el más estricto de
 los dos ficheros: un repositorio ajeno no puede aflojar los tuyos. Si declara `[providers]`, `maha` se niega a
 arrancar: un repositorio ajeno podría enviar la clave a otro servidor (spec
@@ -160,6 +161,20 @@ checked = 2026-10-27        # la fecha de tus precios
 context = 32_768
 input = 0                   # USD por millón de tokens
 output = 0
+```
+
+Desde la `v0.10.1`, también opcional: más variables de tu entorno para
+los comandos que lanza `run_command`, como un proxy o `JAVA_HOME`. Por
+defecto solo pasan unas pocas (`PATH`, `HOME`, `LANG`…; ver
+`domain/environment.py`). Nunca una con forma de credencial (con `KEY`,
+`TOKEN`, `SECRET`, `PASSWORD`, `PWD`, `PAT` o `AUTH` en el nombre) ni la
+clave del proveedor: `maha` no arranca y lo dice. Es una guarda, no una
+garantía: `DATABASE_URL` o un proxy con `usuario:clave@` llevan una
+contraseña con otro nombre, y no los pongas aquí. Solo en este fichero,
+nunca en el de un proyecto.
+
+```toml
+command_env = ["JAVA_HOME", "HTTPS_PROXY", "NO_PROXY"]
 ```
 
 ### 3.3 `~/.config/maha/AGENTS.md` (opcional)

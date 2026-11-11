@@ -9,7 +9,42 @@ Para cada hito, además: su spec en `docs/specs/` (decisiones, verificación
 a mano y "Aprendido al implementar"), su nota en `docs/guia/` y su release
 en GitHub.
 
-## Hito 10 (2026-11-04 a 2026-11-10)
+## Hito 10 (2026-11-04 a 2026-11-11)
+
+- **Auditoría tras el hito 10, 2026-11-10 y 2026-11-11: `v0.10.1`**
+  (rama `fix/auditoria-hito-10`; spec
+  `mejora-2026-11-10-auditoria-hito-10.md`). El mantenedor la pidió para
+  empezar el hito 11 con cero deuda. Cinco revisores de todo el código y
+  tres agentes Opus para las mejoras de producto:
+  - **Bucle, sesiones y trazas:** B1 a B6 y S1 a S8. Entre ellos, una
+    llamada cortada por un rechazo que se ejecutaba, lo gastado en una
+    llamada cortada, el título al salir (esperarlo siempre, decisión del
+    mantenedor) y las sesiones ilegibles.
+  - **Herramientas y seguridad:** H1 a H13. "always" dice qué cubre;
+    `edit_file` busca en tiempo lineal; un solo proceso de `grep`, sin la
+    clave; el principio y el final de la salida de un comando; más
+    ficheros que ejecutan código; sin `XDG_RUNTIME_DIR`.
+  - **Interfaz y evals:** I1 a I15. Pegar varias líneas en un turno
+    (*bracketed paste*); Ctrl+C sin tracebacks; `/init` en una
+    subcarpeta; `ask_user`, `/export`, `maha import`, la ayuda y las
+    evals.
+  - **Modelos:** M1 a M7, y el catálogo de OpenCode Go y Zen puesto al día
+    con su documentación: nueve modelos nuevos, uno retirado y varios
+    precios.
+  - **Mejoras de producto:** P1 a P8. El primer Ctrl+C limpia la línea;
+    `-p` dice la sesión y `stream-json` empieza con `init`; `run_command`
+    con bash; el diff de lo que pasa por "always"; `command_env`;
+    `sessions --all`; `.maha/config.toml` hasta la raíz git; el
+    razonamiento devuelto a cada modelo (Kimi lo exige).
+  - **Revisión independiente** de los arreglos, con tres agentes nuevos:
+    R1 a R16, todos arreglados. El más serio: Ctrl+C mientras `/new` o
+    `/resume` esperaban el título dejaba `maha` en la sesión cerrada.
+  - **Decisiones del mantenedor, 2026-11-11:** una escritura en la caché
+    de 1 h sin precio queda sin precio (M4); solo *bracketed paste*, sin
+    la unión de respaldo (R15); y aceptar el coste de Kimi.
+  - **Evals contra las líneas base del 2026-11-10:** GLM 119/120, Kimi
+    118/120 y Haiku 120/120, validación 25/25. ⚠ de coste en Kimi (+51 %,
+    P8), aceptada. 2.518 tests.
 
 - **Hito 10 cerrado, 2026-11-10: `v0.10.0` — System prompt por capas.**
   Spec IMPLEMENTADA, nota 10 de la guía, los dos README y PROYECTO. PRs:

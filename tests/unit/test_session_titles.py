@@ -2,19 +2,32 @@
 §4, test 11), with sessions and traces in memory."""
 
 import asyncio
+import contextlib
+import io
+import signal
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
+from mharness.adapters.cli.commands import Commands, parse_command
+from mharness.adapters.cli.conversation import converse
 from mharness.application.sessions import Conversation
-from mharness.application.titles import Titler
+from mharness.application.titles import Title, Titler
 from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.model import ModelRequest, ModelResponse, Usage
-from mharness.domain.session import MessageEntry, SessionError, TitleEntry, UsageEntry
+from mharness.domain.session import (
+    MessageEntry,
+    SessionError,
+    SessionHeader,
+    TitleEntry,
+    UsageEntry,
+)
 from mharness.domain.trace import TitleWritten
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FakeModelClient, reply
-from tests.fakes.sessions import MemorySessionStore
+from tests.fakes.sessions import MemoryLog, MemorySessionStore
+from tests.fakes.terminal import ScriptedInput
 from tests.unit.test_sessions import FIRST, World, entries, turn
 
 TEMPLATE = "Title: {{message}}"
@@ -172,17 +185,107 @@ class NeverAnswers(FakeModelClient):
         raise AssertionError("unreachable")
 
 
-async def test_leaving_never_waits_for_the_title() -> None:
+async def test_leaving_waits_for_the_title() -> None:
+    # Decision of the maintainer (2026-11-10): always wait for it; before,
+    # leaving dropped a title already paid.
+    store = MemorySessionStore()
+    small = AnswersWhenAllowed(titled("Hola"))
+    conversation = await conversation_with(store, small, "Hecho.")
+    await turn(conversation, "Hola")
+    await small.asked.wait()
+
+    closing = asyncio.create_task(conversation.close())
+    await asyncio.sleep(0.01)
+    assert not closing.done()
+    small.allowed.set()
+    await closing
+
+    assert TitleEntry(title="Hola") in entries(store)
+
+
+async def test_ctrl_c_while_leaving_skips_the_title_and_saves_the_rest() -> None:
     store = MemorySessionStore()
     small = NeverAnswers()
     conversation = await conversation_with(store, small, "Hecho.")
     await turn(conversation, "Hola")
     await small.asked.wait()
+    assert conversation.naming
 
-    # The title never comes: leaving drops it, at once.
-    await asyncio.wait_for(conversation.close(), 1)
+    closing = asyncio.create_task(conversation.close())
+    await asyncio.sleep(0.01)
+    closing.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await closing
 
     assert not any(isinstance(entry, TitleEntry) for entry in entries(store))
+    # The session was let go: another maha may resume it.
+    assert FIRST not in store.locked
+
+
+async def test_a_resumed_session_without_a_title_gets_one() -> None:
+    store = MemorySessionStore()
+    first = await conversation_with(store, FakeModelClient([]), "A.")
+    await turn(first, "Arregla el IVA")
+    await first.close()
+
+    small = FakeModelClient([titled("Arreglar el IVA")])
+    world = World(store, FakeModelClient([]), titler=titler(small), tokens=("b01c",))
+    resumed = await world.sessions.resume(FIRST, current=await world.sessions.start())
+    await resumed.conversation.titled()
+    await resumed.conversation.close()
+
+    assert small.requests[0].messages[0].text == "Title: Arregla el IVA"
+    assert TitleEntry(title="Arreglar el IVA") in entries(store)
+
+
+async def test_a_session_whose_first_turn_was_not_saved_is_named_later() -> None:
+    # Audit after hito 10 (S5): it was named only on the first turn.
+    store = MemorySessionStore()
+    small = FakeModelClient([titled("Uno")])
+    fake = FakeModelClient([reply("A."), reply("B.")])
+    world = World(store, fake, titler=titler(small))
+    conversation = await world.sessions.start()
+    real = store.create
+
+    async def full(header: SessionHeader) -> MemoryLog:
+        raise SessionError("cannot save session: No space left on device")
+
+    store.create = full  # type: ignore[method-assign]
+    await turn(conversation, "uno")
+    assert small.requests == []
+    store.create = real  # type: ignore[method-assign]
+    await turn(conversation, "dos")
+    await conversation.titled()
+    await conversation.close()
+
+    assert small.requests[0].messages[0].text == "Title: uno"
+
+
+async def test_a_title_that_breaks_never_stops_leaving() -> None:
+    # Audit after hito 10 (S4): close() ended there, unsaved, still locked.
+    class Broken(Titler):
+        async def title(self, first: str) -> Title | None:
+            raise RuntimeError("a bug")
+
+    store = MemorySessionStore()
+    fake = FakeModelClient([reply("Hecho.")])
+    world = World(
+        store,
+        fake,
+        titler=Broken(
+            FakeModelClient([]),
+            model="m",
+            template=TEMPLATE,
+            catalog=MemoryCatalog(),
+            provider="opencode-go",
+        ),
+    )
+    conversation = await world.sessions.start()
+    await turn(conversation, "Hola")
+
+    await conversation.close()
+
+    assert FIRST not in store.locked
 
 
 async def test_a_title_by_hand_wins() -> None:
@@ -279,3 +382,108 @@ async def test_a_title_that_comes_during_the_next_turn_loses_nothing() -> None:
     # The session reads back whole.
     session = await store.read(FIRST)
     assert session.title == TitleEntry(title="Dos turnos")
+
+
+@pytest.mark.parametrize("line", ["/new", "/resume 20261026-091502-0aaa"])
+async def test_ctrl_c_while_a_command_waits_for_the_title_still_switches(
+    line: str,
+) -> None:
+    # Review of the audit after hito 10: Ctrl+C at "[naming the session…]"
+    # in /new or /resume left maha on the closed session, and the next turn
+    # went to a new id; the resumed one stayed locked.
+    store = MemorySessionStore()
+    other = await conversation_with(store, FakeModelClient([]), "A.")
+    other.id = "20261026-091502-0aaa"
+    await turn(other, "Otra")
+    await other.close()
+    small = NeverAnswers()
+    fake = FakeModelClient([reply("Hecho.")])
+    world = World(store, fake, titler=titler(small), tokens=("b01c", "c0de"))
+    conversation = await world.sessions.start()
+    await turn(conversation, "Hola")
+    await small.asked.wait()
+    commands = Commands(
+        world.sessions,
+        conversation,
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
+        read=ScriptedInput(),
+        discard=None,
+        out=io.StringIO(),
+        err=io.StringIO(),
+        home=Path("/home/ane"),
+    )
+    command = parse_command(line)
+    assert command is not None
+
+    running = asyncio.create_task(commands.run(command))
+    await asyncio.sleep(0.05)
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+
+    assert commands.conversation is not conversation
+    assert conversation.id not in store.locked
+    # The resumed one asks for its title too: skipped the same way.
+    closing = asyncio.create_task(commands.conversation.close())
+    await asyncio.sleep(0.01)
+    closing.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await closing
+    assert store.locked == set()
+
+
+async def test_ctrl_c_while_exit_waits_for_the_title_leaves_cleanly() -> None:
+    # Review of the audit after hito 10: our Ctrl+C handler was gone while
+    # leaving, so a KeyboardInterrupt unwound asyncio; /exit then ended with
+    # 130 and an unsaved session was never told.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+    out = io.StringIO()
+
+    async def press_when_asked() -> None:
+        await small.asked.wait()
+        await asyncio.sleep(0.05)
+        signal.raise_signal(signal.SIGINT)
+
+    pressing = asyncio.create_task(press_when_asked())
+    code = await converse(
+        world.sessions,
+        provider="opencode-go",
+        catalog=MemoryCatalog(),
+        read_line=ScriptedInput("Hola", "/exit"),
+        out=out,
+        err=io.StringIO(),
+    )
+    await pressing
+
+    assert code == 0
+    assert "[naming the session; Ctrl+C skips it]" in out.getvalue()
+    assert FIRST not in store.locked
+
+
+async def test_a_closing_signal_while_exit_waits_for_the_title_says_so() -> None:
+    # Review of the audit after hito 10 (R16): it ended as a plain /exit.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+
+    async def close_window_when_asked() -> None:
+        await small.asked.wait()
+        await asyncio.sleep(0.05)
+        signal.raise_signal(signal.SIGHUP)
+
+    closing = asyncio.create_task(close_window_when_asked())
+    code = await converse(
+        world.sessions,
+        provider="opencode-go",
+        catalog=MemoryCatalog(),
+        read_line=ScriptedInput("Hola", "/exit"),
+        out=io.StringIO(),
+        err=io.StringIO(),
+    )
+    await closing
+
+    assert code == 128 + signal.SIGHUP
+    assert FIRST not in store.locked

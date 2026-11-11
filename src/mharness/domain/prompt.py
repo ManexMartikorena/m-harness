@@ -12,7 +12,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from mharness.domain.paths import printable
 
@@ -90,6 +90,9 @@ class Layer(BaseModel, frozen=True):
     # "~/.config/maha/AGENTS.md", "maha".
     source: str
     text: str
+    # The bytes of the whole file, when only its start was read: `cap()`
+    # marks it, with what was left out (audit after hito 10, M2).
+    size: int | None = Field(default=None, ge=0, exclude_if=lambda s: s is None)
 
 
 class Instructions(BaseModel, frozen=True):
@@ -148,14 +151,16 @@ def cap(
     left = limit
     for layer in layers:
         data = layer.text.encode("utf-8")
-        if layer.kind not in INSTRUCTION_KINDS or len(data) <= left:
+        whole = layer.size is None
+        if layer.kind not in INSTRUCTION_KINDS or (whole and len(data) <= left):
             kept.append(layer)
             if layer.kind in INSTRUCTION_KINDS:
                 left -= len(data)
             continue
-        more = len(data) - left
         # A cut in the middle of a character drops it.
         head = data[:left].decode("utf-8", errors="ignore")
+        # What is left out, of the file as it is on disk.
+        more = (len(data) if whole else layer.size or 0) - len(head.encode("utf-8"))
         mark = f"[truncated: {more} bytes more]"
         text = f"{head}\n{mark}" if head else mark
         kept.append(layer.model_copy(update={"text": text}))

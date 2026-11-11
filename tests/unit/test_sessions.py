@@ -16,6 +16,7 @@ from mharness.application.titles import Titler
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import (
     AgentEvent,
+    ModelCallFinished,
     ModelFallback,
     ModelRetry,
     TurnFinished,
@@ -24,7 +25,7 @@ from mharness.domain.agent_events import (
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.catalog import ModelInfo, Prices
 from mharness.domain.errors import ModelUnavailableError
-from mharness.domain.events import TextDelta
+from mharness.domain.events import TextDelta, UsageSoFar
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import (
     Message,
@@ -35,7 +36,7 @@ from mharness.domain.messages import (
 )
 from mharness.domain.model import Effort, ModelResponse, Usage
 from mharness.domain.prompt import Layer
-from mharness.domain.retry import NO_RETRIES, RetryPolicy
+from mharness.domain.retry import RetryPolicy
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
@@ -46,6 +47,7 @@ from mharness.domain.session import (
     SessionHeader,
     SessionInUse,
     SessionNotFound,
+    SessionSummary,
     UsageEntry,
 )
 from mharness.domain.trace import PromptUsed, TraceError, TraceRecord, TurnFailed
@@ -53,6 +55,7 @@ from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import HANG, FakeModelClient, reply, tool_calls
 from tests.fakes.project import MemoryProject
+from tests.fakes.retry import NO_RETRIES
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
 from tests.fakes.tools import EchoParams, FakeTool
 from tests.fakes.tracing import MemoryTraceSink
@@ -229,6 +232,34 @@ async def test_a_turn_cut_by_ctrl_c_is_saved_without_tokens() -> None:
         MessageEntry(message=user("Cuéntame")),
         MessageEntry(message=cut),
     ]
+
+
+async def test_a_turn_cut_by_ctrl_c_keeps_what_its_call_had_used() -> None:
+    # Audit after hito 10 (B2): Anthropic tells the input at the start; the
+    # cut call was paid, and the session, the trace and maha stats said 0.
+    store = MemorySessionStore()
+    paid = Usage(input_tokens=5000)
+    fake = FakeModelClient(
+        [[UsageSoFar(usage=paid, model="glm-5.3-flash"), TextDelta(text="Medio"), HANG]]
+    )
+    world = World(store, fake)
+    conversation = await world.sessions.start()
+    seen: list[AgentEvent] = []
+
+    async def consume() -> None:
+        async for event in conversation.run("Cuéntame"):
+            seen.append(event)
+
+    task = asyncio.ensure_future(consume())
+    await until(lambda: TextDelta(text="Medio") in seen)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await conversation.close()
+
+    assert entries(store)[-1] == UsageEntry(usage=paid, cost=None)
+    traced = [r.event for r in await world.traces.read(FIRST)]
+    assert ModelCallFinished(usage=paid, model="glm-5.3-flash", cost=None) in traced
 
 
 class BrokenLog(MemoryLog):
@@ -515,6 +546,59 @@ async def test_resume_without_an_id_skips_a_session_open_elsewhere() -> None:
     assert resumed.conversation.id == before
 
 
+async def test_resume_without_an_id_never_skips_an_unreadable_one() -> None:
+    # Audit after hito 10 (S2): `-c` took an older session in silence.
+    store = MemorySessionStore()
+    await saved(store, text="antes")
+
+    class WithABrokenOne(MemorySessionStore):
+        async def summaries(self) -> list[SessionSummary]:
+            broken = SessionSummary(
+                id="20261027-091502-dead",
+                cwd=CWD,
+                updated_at=datetime(2026, 10, 27, tzinfo=UTC),
+                messages=0,
+                title="",
+                unreadable="line 3 is not valid",
+            )
+            return [broken, *await super().summaries()]
+
+    broken = WithABrokenOne()
+    broken.sessions = store.sessions
+    world = World(broken, FakeModelClient([]), tokens=["9999"])
+
+    with pytest.raises(SessionCorrupt, match="20261027-091502-dead, cannot be read"):
+        await world.sessions.resume(None, current=await world.sessions.start())
+
+
+async def test_resume_without_an_id_tells_an_unreadable_one_of_unknown_place() -> None:
+    # Review of the audit after hito 10 (S2): a broken first line hides the
+    # directory, and `-c` took an older one in silence.
+    store = MemorySessionStore()
+    before = await saved(store, text="antes")
+
+    class WithANamelessOne(MemorySessionStore):
+        async def summaries(self) -> list[SessionSummary]:
+            broken = SessionSummary(
+                id="20261027-091502-dead",
+                cwd="",
+                updated_at=datetime(2026, 10, 27, tzinfo=UTC),
+                messages=0,
+                title="",
+                unreadable="its first line is not valid",
+            )
+            return [broken, *await super().summaries()]
+
+    nameless = WithANamelessOne()
+    nameless.sessions = store.sessions
+    world = World(nameless, FakeModelClient([]), tokens=["9999"])
+
+    resumed = await world.sessions.resume(None, current=await world.sessions.start())
+
+    assert resumed.conversation.id == before
+    assert resumed.unknown == ("20261027-091502-dead",)
+
+
 async def test_resume_without_an_id_and_only_the_current_is_not_found() -> None:
     store = MemorySessionStore()
     world = World(store, FakeModelClient([reply("Uno.")]))
@@ -652,9 +736,12 @@ async def test_resume_tells_what_the_session_it_leaves_could_not_save(
     current = await world.sessions.start()
     await turn(current, "A")
 
-    resumed = await world.sessions.resume(target, current=current)
+    await world.sessions.resume(target, current=current)
+    # Its caller closes it, once switched (review of the audit after hito
+    # 10); /resume says what it left unsaved (`_warn_lost`).
+    await current.close()
 
-    assert resumed.left_unsaved == "cannot save session: No space left on device"
+    assert current.unsaved == "cannot save session: No space left on device"
 
 
 async def test_resuming_the_current_session_is_refused() -> None:
@@ -677,16 +764,33 @@ async def test_a_session_open_in_another_maha_is_not_resumed() -> None:
         await world.sessions.resume(FIRST, current=await world.sessions.start())
 
 
-async def test_resuming_closes_the_conversation_it_leaves() -> None:
+async def test_resuming_leaves_the_conversation_it_leaves_to_its_caller() -> None:
+    # Review of the audit after hito 10: closing it here, Ctrl+C while its
+    # title came left /resume on a closed conversation. The caller switches,
+    # then closes it.
     store = MemorySessionStore()
     session_id = await saved(store)
     world = World(store, FakeModelClient([reply("Uno.")]), tokens=["7777"])
     current = await world.sessions.start()
     await turn(current, "A")
 
-    await world.sessions.resume(session_id, current=current)
+    resumed = await world.sessions.resume(session_id, current=current)
 
+    assert "20261026-091502-7777" in store.locked
+    await current.close()
     assert "20261026-091502-7777" not in store.locked
+    await resumed.conversation.close()
+
+
+async def test_opening_a_session_closes_the_fresh_one_it_started() -> None:
+    store = MemorySessionStore()
+    session_id = await saved(store)
+    world = World(store, FakeModelClient([]), tokens=["7777"])
+
+    opened = await world.sessions.open(Start(session=session_id))
+
+    assert store.locked == {session_id}
+    await opened.conversation.close()
 
 
 async def test_approvals_do_not_come_back_with_the_session() -> None:
@@ -856,6 +960,29 @@ async def test_a_turn_that_fails_keeps_the_tokens_already_spent() -> None:
 
     assert entries(store)[-1] == UsageEntry(usage=MILLION, cost=Decimal(1))
     assert conversation.cost == Decimal(1)
+
+
+async def test_a_call_without_price_does_not_hide_what_the_others_cost() -> None:
+    # Audit after hito 10 (S3): the whole turn had no cost, while maha stats
+    # counted the priced call.
+    store = MemorySessionStore()
+    priced = reply("Uno", usage=MILLION)
+    free = priced.model_copy(update={"model": "unknown-model"})
+    echo = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    fake = FakeModelClient([tool_calls(echo, usage=MILLION), free])
+    conversation = await World(store, fake, catalog=PRICED).sessions.start()
+
+    await turn(conversation, "Hola")
+
+    assert conversation.cost == Decimal(1)
+    assert conversation.uncosted_turns == 1
+    assert entries(store)[-2:] == [
+        UsageEntry(usage=MILLION + MILLION, cost=Decimal(1)),
+        UsageEntry(usage=Usage(), cost=None),
+    ]
+    # Read back, the same.
+    session = await store.read(FIRST)
+    assert (session.cost, session.uncosted_turns) == (Decimal(1), 1)
 
 
 async def test_the_conversation_adds_up_the_cost_of_its_turns() -> None:
@@ -1098,6 +1225,28 @@ async def test_a_trace_that_cannot_be_deleted_is_said() -> None:
     with pytest.raises(SessionError, match="deleted, but not its trace"):
         await world.sessions.delete(FIRST, current=current)
     assert FIRST not in store.sessions
+
+
+class UnreadableTraces(StuckTraces):
+    async def read(self, session: str) -> list[TraceRecord]:
+        raise TraceError(f"cannot read the trace of {session}: Permission denied")
+
+
+async def test_a_trace_alone_that_cannot_be_deleted_is_not_said_deleted() -> None:
+    # Audit after hito 10, S6: no session file, a trace that cannot be
+    # read nor deleted. Nothing went: saying "deleted" is false.
+    world = World(
+        MemorySessionStore(),
+        FakeModelClient([]),
+        traces=UnreadableTraces(),
+        tokens=["b01c"],
+    )
+    current = await world.sessions.start()
+
+    with pytest.raises(SessionError) as caught:
+        await world.sessions.delete(FIRST, current=current)
+    assert "deleted" not in str(caught.value).replace("cannot delete", "")
+    assert "Permission denied" in str(caught.value)
 
 
 async def test_an_id_whose_trace_exists_is_not_taken() -> None:
@@ -1701,7 +1850,17 @@ async def test_the_reasoning_is_saved_and_given_back_on_resume() -> None:
     resumed = await world.sessions.resume(FIRST, current=await world.sessions.start())
     await turn(resumed.conversation, "B")
 
-    assert fake.requests[1].messages[1] == thought
+    # Intact, with the model that wrote it (review of the audit after hito
+    # 10): Anthropic's adapter sends its signature as it came.
+    model = fake.requests[0].model
+    assert fake.requests[1].messages[1] == thought.model_copy(
+        update={
+            "blocks": [
+                ReasoningBlock(text="", signature="firma", model=model),
+                TextBlock(text="Uno."),
+            ]
+        }
+    )
 
 
 # The system prompt of each session (spec hito 10, §1.2 and §1.3).

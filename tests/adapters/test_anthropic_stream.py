@@ -19,7 +19,7 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
-from mharness.domain.events import ModelEvent, ReasoningDelta, TextDelta
+from mharness.domain.events import ModelEvent, ReasoningDelta, TextDelta, UsageSoFar
 from mharness.domain.messages import Message, ReasoningBlock, TextBlock, ToolCallBlock
 from mharness.domain.model import ModelRequest, Usage
 from tests.adapters.test_anthropic import (
@@ -111,6 +111,19 @@ async def test_reasoning_text_and_calls_in_their_order(
     ]
     assert response.stop_reason == "tool_use"
     assert response.usage.reasoning_tokens == 40
+
+
+@respx.mock
+async def test_the_input_is_told_at_the_start(client: AnthropicClient) -> None:
+    # Audit after hito 10 (B2): paid from message_start, even if the answer
+    # is cut after it.
+    respx.post(ENDPOINT).mock(return_value=stream_of(START, STOP))
+
+    first = (await events(client))[0]
+
+    assert first == UsageSoFar(
+        usage=Usage(input_tokens=10, output_tokens=1), model=MODEL
+    )
 
 
 @respx.mock

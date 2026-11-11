@@ -10,11 +10,13 @@ from decimal import Decimal
 from typing import cast
 
 import pytest
+from pydantic import BaseModel
 
 from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import (
     AgentEvent,
+    ApprovalCovered,
     ApprovalRequested,
     ModelCallFinished,
     ModelFallback,
@@ -34,16 +36,23 @@ from mharness.domain.errors import (
     ModelResponseError,
     ModelUnavailableError,
 )
-from mharness.domain.events import TextDelta, ToolCallDelta
+from mharness.domain.events import TextDelta, ToolCallDelta, UsageSoFar
 from mharness.domain.limits import TurnLimits
-from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
-from mharness.domain.model import ModelRequest, Usage
-from mharness.domain.retry import NO_RETRIES, RetryPolicy
+from mharness.domain.messages import (
+    Message,
+    ReasoningBlock,
+    TextBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+)
+from mharness.domain.model import ModelRequest, ModelResponse, Usage
+from mharness.domain.retry import RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
 from tests.fakes.approval import FakeApproval, HangingApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FAKE_MODEL, HANG, FakeModelClient, reply, tool_calls
+from tests.fakes.retry import NO_RETRIES
 from tests.fakes.tools import EchoParams, FakeTool
 
 MODEL = "glm-5.3-flash"
@@ -648,6 +657,10 @@ async def test_session_covers_the_same_scope_without_asking() -> None:
     assert [f.decision for f in finished(events)] == ["session", None]
     assert sum(isinstance(e, ApprovalRequested) for e in events) == 1
     assert len(echo.calls) == 2
+    # Told, not asked, before it runs (audit after hito 10, P4).
+    covered = [e for e in events if isinstance(e, ApprovalCovered)]
+    assert covered == [ApprovalCovered(call=call("c2"), request=ask())]
+    assert events.index(covered[0]) < events.index(finished(events)[1])
 
 
 async def test_session_lasts_for_the_next_turns() -> None:
@@ -1338,6 +1351,10 @@ async def test_after_the_answer_the_clock_goes_on() -> None:
     assert (turn.reason, turn.tool_calls) == ("end_turn", 1)
 
 
+class Optional(BaseModel):
+    text: str = "."
+
+
 class OnceThenHang(HangingApproval):
     """Approves the first request; then never answers."""
 
@@ -1349,16 +1366,18 @@ class OnceThenHang(HangingApproval):
 
 
 async def test_the_time_limit_is_for_the_whole_turn() -> None:
-    # Three calls of 0.03 s each: no single wait passes 0.05, the turn does.
+    # Three calls of 0.3 s each: no single wait passes 0.5, the turn does.
+    # With room: 0.03 s against 0.05 failed on a loaded machine (review of
+    # the audit after hito 10).
     class SlowTool(FakeTool):
         async def run(self, params: EchoParams) -> str:
-            await asyncio.sleep(0.03)
+            await asyncio.sleep(0.3)
             return await super().run(params)
 
     slow = SlowTool()
     fake = FakeModelClient([tool_calls(call(f"c{i}")) for i in range(3)])
 
-    events = await run(agent(fake, slow, limits=LIMIT))
+    events = await run(agent(fake, slow, limits=TurnLimits(timeout=0.5)))
 
     turn = events[-1]
     assert isinstance(turn, TurnFinished)
@@ -1938,6 +1957,49 @@ async def test_a_call_cut_by_the_output_limit_is_told_what_happened() -> None:
     assert events[-1].reason == "end_turn"
 
 
+async def test_no_call_of_a_refused_answer_runs() -> None:
+    # Audit after hito 10 (B1): a call cut by a refusal came with "" as its
+    # arguments, ran as "{}" if the tool needed none, and the turn went on.
+    class NoArguments(FakeTool):
+        params = Optional  # type: ignore[assignment]
+
+    cut = ToolCallBlock(id="c1", name="echo", arguments="")
+    answer = tool_calls(cut).model_copy(update={"stop_reason": "content_filter"})
+    tool = NoArguments()
+    subject = agent(FakeModelClient([answer]), tool)
+
+    events = await run(subject)
+
+    assert tool.calls == []
+    turn = events[-1]
+    assert isinstance(turn, TurnFinished)
+    assert turn.reason == "refused"
+    # The history stays one the API takes: the call has its result.
+    *_, results = subject.messages
+    assert results.blocks == [
+        ToolResultBlock(
+            call_id="c1",
+            content="error: not run: the provider refused your answer",
+            is_error=True,
+        )
+    ]
+
+
+async def test_a_call_cut_by_an_unknown_stop_reason_never_runs() -> None:
+    # The last call of an answer that stopped for a reason maha does not
+    # know may be cut too: as with the output limit, if it is not whole.
+    cut = ToolCallBlock(id="c1", name="echo", arguments='{"text": "Ho')
+    answer = tool_calls(cut).model_copy(update={"stop_reason": "other"})
+    tool = FakeTool()
+    subject = agent(FakeModelClient([answer, reply("Hecho.")]), tool)
+
+    events = await run(subject)
+
+    assert tool.calls == []
+    [finished] = [e for e in events if isinstance(e, ToolFinished)]
+    assert "was not run" in finished.result.content
+
+
 async def test_the_last_call_cut_by_the_output_limit_never_runs() -> None:
     # Review of the deep audit: a call cut before any argument came arrives
     # as "{}", whole as JSON, and ran with defaults the model never chose.
@@ -2038,3 +2100,148 @@ async def test_calls_whose_costs_add_up_past_any_amount_give_an_unknown_cost() -
 
     assert isinstance(events[-1], TurnFinished)
     assert (events[-1].reason, events[-1].cost) == ("end_turn", None)
+
+
+# What a cut call used is paid (audit after hito 10, B2).
+
+PAID = Usage(input_tokens=5000, cache_read_tokens=4000)
+
+
+def started(model: str = FAKE_MODEL) -> UsageSoFar:
+    """What Anthropic says at the start: the input, already paid."""
+    return UsageSoFar(usage=PAID, model=model)
+
+
+def pricey() -> MemoryCatalog:
+    return MemoryCatalog([priced(FAKE_MODEL, "1", "1")])
+
+
+async def test_a_call_cut_by_a_failure_still_counts() -> None:
+    subject = agent(
+        FakeModelClient(
+            [[started(), TextDelta(text="Ya"), ModelUnavailableError("down")]]
+        ),
+        catalog=pricey(),
+    )
+    seen: list[AgentEvent] = []
+
+    async def consume() -> None:
+        async for event in subject.run("Hola"):
+            seen.append(event)
+
+    with pytest.raises(ModelUnavailableError):
+        await consume()
+
+    [paid] = [e for e in seen if isinstance(e, ModelCallFinished)]
+    assert paid.usage == PAID
+    assert paid.cost == Decimal("0.005")
+
+
+async def test_a_call_cut_by_the_time_limit_still_counts() -> None:
+    subject = agent(
+        FakeModelClient([[started(), TextDelta(text="Ya est"), HANG]]),
+        limits=LIMIT,
+        catalog=pricey(),
+    )
+
+    events = await run(subject)
+
+    paid, finished = events[-2:]
+    assert isinstance(paid, ModelCallFinished)
+    assert paid.usage == PAID
+    assert isinstance(finished, TurnFinished)
+    assert finished.reason == "timeout"
+    assert finished.usage == PAID
+    assert finished.cost == Decimal("0.005")
+
+
+async def test_a_try_that_failed_after_its_start_is_still_retried_and_counts() -> None:
+    # What was used so far is no answer shown: the call may still be tried
+    # again; the failed try was paid.
+    fake = FakeModelClient(
+        [[started(), ModelUnavailableError("down")], reply("Hecho.", usage=Usage())]
+    )
+    subject = agent(fake, retry=RETRY, sleep=Waits(), catalog=pricey())
+
+    events = await run(subject)
+
+    calls = [e for e in events if isinstance(e, ModelCallFinished)]
+    assert [c.usage for c in calls] == [PAID, Usage()]
+    finished = events[-1]
+    assert isinstance(finished, TurnFinished)
+    assert (finished.reason, finished.usage) == ("end_turn", PAID)
+
+
+async def test_a_call_cut_by_ctrl_c_is_left_for_the_conversation() -> None:
+    subject = agent(FakeModelClient([[started(), TextDelta(text="Medio"), HANG]]))
+    seen: list[AgentEvent] = []
+
+    async def consume() -> None:
+        async for event in subject.run("Hola"):
+            seen.append(event)
+
+    task = asyncio.ensure_future(consume())
+    await until(lambda: any(isinstance(e, TextDelta) for e in seen))
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    paid = subject.take_cut_call()
+    assert paid is not None
+    assert paid.usage == PAID
+    # Once.
+    assert subject.take_cut_call() is None
+
+
+async def test_the_fallback_gets_its_own_system_prompt() -> None:
+    # Audit after hito 10 (B5): it got the main model's, with the family
+    # layer of the main model.
+    fake = FakeModelClient([ModelUnavailableError("down"), reply("Hecho.")])
+    subject = agent(fake, fallback="kimi-k2.7-code")
+    subject.system = "for the main one"
+    subject.system_for = lambda model: f"for {model}"
+
+    await run(subject)
+
+    assert [r.system for r in fake.requests] == [
+        "for the main one",
+        "for kimi-k2.7-code",
+    ]
+
+
+async def test_the_reasoning_kept_names_the_model_that_wrote_it() -> None:
+    # Review of the audit after hito 10: so that only that model gets it
+    # back.
+    thought = Message(
+        role="assistant",
+        blocks=[ReasoningBlock(text="Pienso."), TextBlock(text="Hola.")],
+    )
+    fake = FakeModelClient(
+        [
+            ModelResponse(
+                message=thought,
+                stop_reason="end_turn",
+                usage=Usage(),
+                model="otro-nombre",
+            )
+        ]
+    )
+    subject = agent(fake, FakeTool())
+
+    await run(subject)
+
+    [_, answer] = subject.messages
+    assert answer.blocks[0] == ReasoningBlock(text="Pienso.", model=subject.model)
+
+
+async def test_a_whole_call_with_an_unknown_stop_reason_runs() -> None:
+    # Review of the audit after hito 10: a server that ends a correct call
+    # with "function_call" or "eos" got it refused on every step.
+    whole = ToolCallBlock(id="c1", name="echo", arguments='{"text": "Hola"}')
+    answer = tool_calls(whole).model_copy(update={"stop_reason": "other"})
+    tool = FakeTool()
+    subject = agent(FakeModelClient([answer, reply("Hecho.")]), tool)
+
+    await run(subject)
+
+    assert tool.calls == [EchoParams(text="Hola")]

@@ -23,7 +23,7 @@ import respx
 
 from mharness import bootstrap, config
 from mharness.adapters.catalog import TomlCatalog
-from mharness.adapters.cli import StdinLines
+from mharness.adapters.cli import StdinLines, TerminalApproval
 from mharness.bootstrap import _eval_prompt, _eval_tools, _prompt, _tools, main
 from mharness.domain.evals import TaskRun
 from mharness.domain.limits import TurnLimits
@@ -276,6 +276,34 @@ def test_p_never_offers_ask_user(
     assert "todo_write" in names
 
 
+def turns_and_titles(
+    *turns: httpx.Response,
+) -> Callable[[httpx.Request], httpx.Response]:
+    """Answers each turn's call with the next of `turns`, and the calls
+    that write the session's title (no stream) with a title of their own."""
+    left = list(turns)
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        if not json.loads(request.content).get("stream"):
+            return httpx.Response(
+                200,
+                json={
+                    "model": "glm-5.3-flash",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": "Un título"},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 3},
+                },
+            )
+        return left.pop(0)
+
+    return answer
+
+
 def last_turn(route: respx.Route) -> bytes:
     """The body of the last call of a turn: in a conversation, the title of
     the session goes in the background, in a call of its own, without
@@ -468,15 +496,28 @@ def test_in_a_terminal_a_command_asks_and_runs_without_the_key(
     # Typed ahead: the question drops it (spec
     # mejora-2026-10-26-deuda-pre-hito-6, A2). The answer comes after, as a
     # person seeing the question would type it.
-    terminal("Ejecuta env\ny\n/exit\n")
+    # Lines that arrive together are one turn (audit after hito 10, I4):
+    # what a person types comes one line at a time.
+    terminal("Ejecuta env\n")
     discard = StdinLines.discard
+    readline = StdinLines.readline
 
     def discard_then_answer(self: StdinLines) -> bool:
         dropped = discard(self)
-        terminal("y\n/exit\n")
+        terminal("y\n")
         return dropped
 
+    async def then_exit(self: StdinLines) -> str:
+        line = await readline(self)
+        if line == "Ejecuta env":
+            # Typed while the model answers.
+            terminal("y\n")
+        if line == "y":
+            terminal("/exit\n")
+        return line
+
     monkeypatch.setattr(StdinLines, "discard", discard_then_answer)
+    monkeypatch.setattr(StdinLines, "readline", then_exit)
 
     code = main([])
 
@@ -551,10 +592,10 @@ def test_a_second_maha_resumes_the_first_one(
     # Spec hito 6, §4.8: the history is read back from the disk.
     write_user_config(workspace, 'model = "glm-5.3-flash"\n')
     route = respx.post(GO_ENDPOINT).mock(
-        side_effect=[
+        side_effect=turns_and_titles(
             sse_response(streamed("Hola, Ane.", 12, 9)),
             sse_response(streamed("Te llamas Ane.", 31, 5)),
-        ]
+        )
     )
     stdin("Hola, soy Ane\n/exit\n")
     assert main([]) == 0
@@ -855,7 +896,9 @@ def test_print_answers_on_stdout_and_saves_the_session(
 
     captured = capsys.readouterr()
     assert (code, captured.out) == (0, "Dos palabras.\n")
-    assert captured.err == "  [tokens: 12 in · 3 out · <$0.0001 · session <$0.0001]\n"
+    assert captured.err.startswith(
+        "  [tokens: 12 in · 3 out · <$0.0001 · session <$0.0001]\n  [session "
+    )
     messages = conversation(last_turn(route))
     [message] = messages
     assert message["role"] == "user"
@@ -1870,6 +1913,35 @@ def test_maha_prompt_shows_the_prompt_without_calling_the_model(
     assert captured.err == "  [instructions: AGENTS.md]\n"
 
 
+def test_maha_prompt_cleans_what_it_shows_on_a_terminal(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Audit after hito 10, I1: an AGENTS.md of a foreign repository could
+    # clear the screen or write to the clipboard (OSC 52).
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    evil = "Hola\x1b]52;c;ZWNobyBoYWNr\x07\x1b[2J\n"
+    (workspace / "project" / "AGENTS.md").write_text(evil, encoding="utf-8")
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+
+    assert main(["prompt"]) == 0
+
+    out = capsys.readouterr().out
+    assert "\x1b" not in out
+    assert "Hola\\x1b]52;c;ZWNobyBoYWNr\\x07\\x1b[2J" in out
+
+
+def test_maha_prompt_to_a_pipe_is_the_prompt_as_it_goes(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Data for a program, as with cat: what the model gets, byte for byte.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    (workspace / "project" / "AGENTS.md").write_text("a\x1b[1mb\n", encoding="utf-8")
+
+    assert main(["prompt"]) == 0
+
+    assert "a\x1b[1mb" in capsys.readouterr().out
+
+
 @respx.mock
 def test_the_users_base_and_what_is_appended_reach_the_model(
     workspace: Path, stdin: Callable[[str], None]
@@ -1971,3 +2043,56 @@ def test_the_evals_measure_maha_not_the_users_instructions(
     assert "Shell:" not in evals.text
     assert "mine" in user.text
     assert "extra" in user.text
+
+
+@pytest.mark.parametrize("where", ["_dispatch", "load"])
+def test_ctrl_c_in_any_command_ends_quietly_with_130(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    where: str,
+) -> None:
+    # Audit after hito 10, I2: Ctrl+C in maha sessions, trace, stats,
+    # export, import or prompt, or while the conversation starts, gave a
+    # traceback.
+    write_user_config(workspace, 'model = "m"\n')
+
+    def pressed(*_: object, **__: object) -> int:
+        raise KeyboardInterrupt
+
+    target = bootstrap if where == "_dispatch" else config
+    monkeypatch.setattr(target, where, pressed)
+
+    assert main(["sessions"]) == 130
+    assert capsys.readouterr().err == "\n"
+
+
+def test_the_question_has_no_color_when_stdout_is_not_a_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Audit after hito 10, I11: `maha > log.txt` with a terminal for input
+    # wrote its escapes in the file.
+    monkeypatch.setattr(os, "isatty", lambda fd: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: False)
+
+    gate = bootstrap._gate(StdinLines())
+
+    assert isinstance(gate, TerminalApproval)
+    assert gate._color is False
+
+
+@respx.mock
+def test_print_mode_expands_init(workspace: Path, stdin: Callable[[str], None]) -> None:
+    # Audit after hito 10, I9: `maha -p "/init"` sent the text as it was;
+    # the conversation and the evals expand it.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Nada que escribir.", 12, 3))
+    )
+    stdin("")
+
+    assert main(["-p", "/init usa uv"]) == 0
+
+    sent = conversation(last_turn(route))[-1]["content"]
+    assert sent.startswith("Write or improve the AGENTS.md of this project.")
+    assert "<user_notes>\nusa uv\n</user_notes>" in sent

@@ -18,6 +18,8 @@ type StopReason = Literal[
 # How hard the model works: the levels both formats take (spec hito 9,
 # §1.7). None: the model's own.
 type Effort = Literal["low", "medium", "high", "xhigh", "max"]
+# How long Anthropic's prompt cache lasts (spec hito 9, decision 9).
+type CacheTtl = Literal["5m", "1h"]
 EFFORTS: tuple[Effort, ...] = get_args(Effort.__value__)
 
 

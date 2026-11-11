@@ -211,7 +211,8 @@ base_url = "http://localhost:11434/v1"
 ```
 
 A project can choose its provider, model, fallback, effort and cache in
-`.maha/config.toml`, and tighten the limits (never loosen them), but never
+`.maha/config.toml` (read from any folder of the project, up to its git
+root), and tighten the limits (never loosen them), but never
 declare providers: that way a foreign repository cannot send your key to
 another server. What a project chooses is said at start, so it cannot raise
 your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
@@ -223,7 +224,7 @@ your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
 | `/help` | Lists the commands |
 | `/model [ID]` | Shows the model, or changes it |
 | `/effort [LEVEL]` | Shows or changes how hard the model works; `default` goes back to the model's own |
-| `/sessions` | Recent sessions, from every directory |
+| `/sessions [all]` | Recent sessions, from every directory; `all`, every one |
 | `/resume [ID]` | Resumes a session; without ID, the last one here |
 | `/delete ID` | Deletes a session and its trace |
 | `/trace [ID]` | What a session did and cost, turn by turn |
@@ -238,7 +239,9 @@ your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
   and of the session. In `/trace`, "calls" are the calls to the model.
 - While it waits for the answer, a spinner with "maha" spins.
 - **Ctrl+C** in the middle of an answer interrupts it and returns to the
-  prompt; the model knows you interrupted it. At the prompt, it quits.
+  prompt; the model knows you interrupted it. At the prompt, the first one
+  clears the line and the second one quits.
+- **Pasted text** of several lines goes as one message.
 - **Without a terminal** (`maha < instructions.txt`), everything with an
   effect is denied. For scripts, use `maha -p`.
 
@@ -249,7 +252,7 @@ your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
 | `maha -p "…"` | One instruction and exit; stdin goes below it |
 | `maha -c`, `maha -r ID` | Continue the last session here, or one by its id |
 | `maha models [--all]` | The models of the catalog, with their API format, window and prices |
-| `maha sessions` | Recent sessions; `sessions delete ID` deletes one |
+| `maha sessions [--all]` | Recent sessions, or every one; `sessions delete ID` deletes one |
 | `maha trace [ID]` | What a session did and cost; without id, the last one here |
 | `maha prompt` | The system prompt a session here would have, without calling the model |
 | `maha stats [--days N]` | Cost and tokens by day and model |
@@ -257,11 +260,12 @@ your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
 | `maha import FILE` | A session exported in JSON, as a new one |
 
 With `-p`:
-- `--output-format text|json|stream-json`: only the answer (default; calls
-  and tokens go to stderr), one JSON object at the end, or one JSON event
-  per line. In JSON, `session_id` is the session to continue with `-r`
-  (`null` if the run kept nothing) and `trace_id` is what `maha trace`
-  shows, also of a run that failed.
+- `--output-format text|json|stream-json`: only the answer (default; calls,
+  tokens and the session to continue go to stderr), one JSON object at the
+  end, or one JSON event per line, starting with an `init` event with the
+  session, the model and the tools. In JSON, `session_id` is the session
+  to continue with `-r` (`null` if the run kept nothing) and `trace_id` is
+  what `maha trace` shows, also of a run that failed.
 - `--allow TOOL` (repeatable): that tool runs without asking inside the
   directory. Outside it, a secret or a file that runs code are always
   denied.

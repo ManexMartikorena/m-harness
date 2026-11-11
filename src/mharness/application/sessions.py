@@ -25,7 +25,6 @@ from mharness.domain.agent_events import (
     TurnFinished,
     TurnStarted,
 )
-from mharness.domain.catalog import add_cost
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
 from mharness.domain.model import Effort, Usage
@@ -35,6 +34,7 @@ from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
     Session,
+    SessionCorrupt,
     SessionEntry,
     SessionError,
     SessionExists,
@@ -160,6 +160,7 @@ class Conversation:
         # hito 10, §1.2); its warnings are told when it opens.
         self.prompt = prompt
         agent.system = None if prompt is None else prompt.text
+        agent.system_for = self._system_for
         # Traced with the next turn that starts (spec hito 10, §1.13).
         self._prompt_untraced = prompt is not None
         # Its title, and the call writing one in the background (§1.12).
@@ -167,6 +168,12 @@ class Conversation:
         self._titling: asyncio.Task[None] | None = None
         # The title is saved while a turn may run: one save at a time.
         self._saving = asyncio.Lock()
+
+    def _system_for(self, model: str) -> str | None:
+        """The session's prompt for `model`: its own family layer."""
+        if self.prompt is None or self._origin.prompt is None:
+            return None if self.prompt is None else self.prompt.text
+        return self._origin.prompt.for_model(self.prompt, model).text
 
     @property
     def model(self) -> str:
@@ -188,6 +195,11 @@ class Conversation:
         return self._agent.messages
 
     @property
+    def tools(self) -> list[str]:
+        """The names of the tools the model has."""
+        return self._agent.tool_names
+
+    @property
     def effort(self) -> Effort | None:
         """How hard the model works in each call; None: the model's own."""
         return self._agent.effort
@@ -200,8 +212,10 @@ class Conversation:
         """`Agent.run()`, and then the turn saved, however it ends."""
         usage = Usage()
         calls = 0
-        # None once a call has no price.
-        cost: Decimal | None = Decimal(0)
+        # By call, as maha stats: what the calls with a price cost, and how
+        # many had none (audit after hito 10, S3).
+        cost = Decimal(0)
+        priced = unpriced = 0
         # Once the turn finished, what comes after is not about it.
         finished = False
         # Whether the turn's cost is already in the session's.
@@ -209,15 +223,17 @@ class Conversation:
         self._turn = TurnStarted(text=text)
         self._turn_at = self._origin.now()
         self._turn_traced = False
-        # The first turn of a session names it.
-        first = not self._agent.messages
         try:
             async with aclosing(self._agent.run(text)) as events:
                 async for event in events:
                     if isinstance(event, ModelCallFinished):
                         calls += 1
                         usage += event.usage
-                        cost = add_cost(cost, event.cost)
+                        if event.cost is None:
+                            unpriced += 1
+                        else:
+                            priced += 1
+                            cost += event.cost
                     if not isinstance(event, TextDelta):
                         await self._record(event)
                     if isinstance(event, TurnStarted) and self._prompt_untraced:
@@ -227,17 +243,30 @@ class Conversation:
                     if finished and calls:
                         # Before it is shown: the terminal tells the session's
                         # cost with this turn in it.
-                        self._count(cost)
+                        self._count(cost if priced else None, unpriced)
                         counted = True
                     yield event
         except BaseException as exc:
             if not finished:
                 # Cut before it finished: Ctrl+C (CancelledError while
-                # waiting, KeyboardInterrupt), its reader closing it
-                # (GeneratorExit), or a time limit. Anything else failed.
+                # waiting, KeyboardInterrupt) or its reader closing it
+                # (GeneratorExit). Anything else failed. A time limit
+                # finishes the turn: it never comes here.
                 cut = isinstance(
                     exc, asyncio.CancelledError | GeneratorExit | KeyboardInterrupt
                 )
+                # The call the cut stopped was paid: it counts (audit after
+                # hito 10, B2).
+                paid = self._agent.take_cut_call()
+                if paid is not None:
+                    calls += 1
+                    usage += paid.usage
+                    if paid.cost is None:
+                        unpriced += 1
+                    else:
+                        priced += 1
+                        cost += paid.cost
+                    await self._record(paid)
                 await self._record(
                     TurnInterrupted()
                     if cut
@@ -249,20 +278,31 @@ class Conversation:
             self._queued += len(fresh)
             self._pending += [MessageEntry(message=m) for m in fresh]
             if calls:
-                self._pending.append(UsageEntry(usage=usage, cost=cost))
+                self._pending.append(
+                    UsageEntry(usage=usage, cost=cost if priced else None)
+                )
+                if priced and unpriced:
+                    # The calls without a price, as a turn without one: the
+                    # session's cost is then at least what it says.
+                    self._pending.append(UsageEntry(usage=Usage(), cost=None))
                 if not counted:
-                    self._count(cost)
+                    self._count(cost if priced else None, unpriced)
             await self._save()
             await self._sync_trace()
-            if first and self._stored:
-                self._name(text)
+            # Once its file exists: also if the first turn could not be
+            # saved and a later one was (audit after hito 10, S5).
+            if self._stored:
+                self.name()
 
-    def _name(self, first: str) -> None:
-        """Ask for the title in the background: nobody waits for it."""
+    def name(self) -> None:
+        """Ask for the title in the background, from the first message, if
+        the session has none yet: nobody waits for it."""
         titler = self._origin.titler
         if titler is None or self.title is not None or self._titling is not None:
             return
-        self._titling = asyncio.create_task(self._write_title(titler, first))
+        first = next((m.text for m in self._agent.messages if m.role == "user"), "")
+        if first:
+            self._titling = asyncio.create_task(self._write_title(titler, first))
 
     async def _write_title(self, titler: Titler, first: str) -> None:
         title = await titler.title(first)
@@ -280,10 +320,18 @@ class Conversation:
         await self._save()
         await self._sync_trace()
 
+    @property
+    def naming(self) -> bool:
+        """Whether a title is on its way."""
+        return self._titling is not None and not self._titling.done()
+
     async def titled(self) -> None:
-        """Wait for the title on its way, if any."""
+        """Wait for the title on its way, if any. A title is never worth an
+        error: one that failed in a way nobody expected is left (audit
+        after hito 10, S4)."""
         if self._titling is not None:
-            await self._titling
+            with suppress(Exception):
+                await self._titling
 
     async def rename(self, title: str) -> str:
         """Give the session `title` by hand; the small model never replaces
@@ -312,13 +360,16 @@ class Conversation:
             ),
         )
 
-    def _count(self, cost: Decimal | None) -> None:
-        """Add one turn's cost to the session's; past what an amount in USD
-        can be, the turn counts as one without a cost, as on resuming."""
-        if cost is None or known(self.cost + cost) is None:
-            self.uncosted_turns += 1
-        else:
+    def _count(self, cost: Decimal | None, unpriced: int = 0) -> None:
+        """Add what a turn's calls with a price cost to the session's; with
+        calls without one, the turn counts as one without a cost too. Past
+        what an amount in USD can be, the turn counts as one without a cost,
+        as on resuming."""
+        past = cost is not None and known(self.cost + cost) is None
+        if cost is not None and not past:
             self.cost += cost
+        if cost is None or past or unpriced:
+            self.uncosted_turns += 1
 
     async def switch_model(self, model: str) -> None:
         """Use `model` from the next turn on; the change keeps its place
@@ -333,13 +384,19 @@ class Conversation:
         await self._save()
 
     async def close(self) -> None:
-        """Save what is still pending, and let other maha resume or delete
-        it. If saving fails again, `unsaved` says so. A title still on its
-        way is dropped: leaving never waits for it."""
+        """Wait for a title on its way, save what is still pending, and let
+        other maha resume or delete it. If saving fails again, `unsaved`
+        says so. Ctrl+C while the title comes leaves without it, and the
+        rest is still saved (decision of the maintainer, 2026-11-10)."""
+        cut: asyncio.CancelledError | None = None
         if self._titling is not None:
-            self._titling.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._titling
+            try:
+                await self.titled()
+            except asyncio.CancelledError as exc:
+                cut = exc
+                self._titling.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._titling
             self._titling = None
         await self._save()
         if self._log is not None:
@@ -348,6 +405,8 @@ class Conversation:
         if self._trace is not None:
             await self._trace.close()
             self._trace = None
+        if cut is not None:
+            raise cut
 
     def trace_warning(self) -> str | None:
         """Why the trace failed, the first time it did; then None, even if
@@ -427,14 +486,21 @@ class Conversation:
         ):
             # No turn yet: a model change alone does not make a session.
             return
+        # Taken before the wait: what comes meanwhile (a title) stays for
+        # the next save, never cleared unsaved (audit after hito 10, S1).
+        batch, self._pending = self._pending, []
         try:
             if self._log is None:
                 self._log = await self._create()
-            await self._log.append(self._pending)
+            await self._log.append(batch)
         except SessionError as exc:
+            # In front: the order of the file is the order of what happened.
+            self._pending[:0] = batch
             self.unsaved = str(exc)
             return
-        self._pending = []
+        except BaseException:
+            self._pending[:0] = batch
+            raise
         self.unsaved = None
 
     async def _create(self) -> SessionLog:
@@ -507,9 +573,10 @@ class Resumed:
     fallback_from: str | None
     # Whether the last answer was cut by Ctrl+C.
     interrupted: bool
-    # Why the session left behind could not save what it still had; it is
-    # lost (final audit of hito 6, 5).
-    left_unsaved: str | None = None
+    # Without an id: newer sessions that cannot be read and whose directory
+    # is unknown, so they may be this one's (review of the audit after
+    # hito 10, S2).
+    unknown: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -599,22 +666,31 @@ class Sessions:
         start = start or Start()
         if not start.last and start.session is None:
             return Opened(await self.start(start.model))
-        resumed = await self.resume(start.session, current=await self.start())
+        fresh = await self.start()
+        resumed = await self.resume(start.session, current=fresh)
+        # Nothing to save nor to name: it never had a turn.
+        await fresh.close()
         conversation = resumed.conversation
         if start.model is not None and start.model != conversation.model:
             await conversation.switch_model(start.model)
         return Opened(conversation, resumed)
 
     async def resume(self, session: str | None, *, current: Conversation) -> Resumed:
-        """Open `session` and close `current`. Without id, the newest other
-        session of this directory that no other maha has open. A fresh
-        agent: the approvals do not come back (spec hito 6, §1.9)."""
+        """Open `session`, to leave `current` for it. Without id, the newest
+        other session of this directory that no other maha has open. A
+        fresh agent: the approvals do not come back (spec hito 6, §1.9).
+
+        `current` is not closed here: the caller switches first and closes
+        it after, so that Ctrl+C while its title comes never leaves the
+        caller on a closed conversation (review of the audit after hito
+        10)."""
         if session is None:
-            loaded, log = await self._open_last_here(current)
+            loaded, log, unknown = await self._open_last_here(current)
         else:
             if _is_current(session, current):
                 raise SessionError("this is the current session")
             loaded, log = await self._store.open(session)
+            unknown = ()
         header = loaded.header
         same_provider = header.provider == self._origin.provider
         # Of another provider, the model it chose last, if it ever resumed
@@ -642,8 +718,9 @@ class Sessions:
             prompt=prompt,
             title=loaded.title,
         )
-        # The new one is ready: only now is the current one let go.
-        await current.close()
+        # One left without a title gets it now (decision of the maintainer,
+        # 2026-11-10).
+        conversation.name()
         last = loaded.messages[-1] if loaded.messages else None
         return Resumed(
             conversation=conversation,
@@ -651,7 +728,7 @@ class Sessions:
             other_cwd=None if header.cwd == self._origin.cwd else header.cwd,
             fallback_from=None if same_provider else loaded.model,
             interrupted=last is not None and last.interrupted,
-            left_unsaved=current.unsaved,
+            unknown=unknown,
         )
 
     async def _build(self, model: str, started_in: str | None) -> SystemPrompt | None:
@@ -760,6 +837,10 @@ class Sessions:
             # is that maha's (audit after hito 9, S3).
             raise SessionInUse(f"session {session} is open in another maha") from None
         except TraceError as exc:
+            if not stored:
+                # Only a trace, and it stays: nothing was deleted (audit
+                # after hito 10, S6).
+                raise SessionError(str(exc)) from None
             raise SessionError(
                 f"session {session} deleted, but not its trace: {exc}"
             ) from None
@@ -799,17 +880,32 @@ class Sessions:
 
     async def _open_last_here(
         self, current: Conversation
-    ) -> tuple[Session, SessionLog]:
+    ) -> tuple[Session, SessionLog, tuple[str, ...]]:
         """The newest session of this directory but the current one, skipping
-        those open in another maha (final audit of hito 6, 3)."""
+        those open in another maha (final audit of hito 6, 3); and the newer
+        unreadable ones of unknown directory, to be told."""
         busy = False
+        unknown: list[str] = []
         for summary in await self._store.summaries():
+            if summary.unreadable is not None and not summary.cwd:
+                unknown.append(summary.id)
+                continue
             if not self.here(summary) or _is_current(summary.id, current):
                 continue
+            if summary.unreadable is not None:
+                # Never another one in its place, in silence (audit after
+                # hito 10, S2).
+                raise SessionCorrupt(
+                    f"the last session here, {summary.id}, cannot be read "
+                    f"({summary.unreadable}): /delete it, or resume another "
+                    "by its id"
+                )
             try:
-                return await self._store.open(summary.id)
+                loaded, log = await self._store.open(summary.id)
             except SessionInUse:
                 busy = True
+                continue
+            return loaded, log, tuple(unknown)
         # At the start, the current one is new: there is no "other".
         other = "other " if current.stored else ""
         if busy:

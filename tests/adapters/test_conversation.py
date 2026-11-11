@@ -5,6 +5,7 @@ import json
 import os
 import pty
 import signal
+import termios
 from collections.abc import Iterator, Sequence
 from decimal import Decimal
 from importlib.metadata import version
@@ -21,7 +22,13 @@ from mharness.adapters.cli.conversation import (
     retry_note,
     turn_note,
 )
-from mharness.adapters.cli.input import InputTooLarge, StdinLines
+from mharness.adapters.cli.input import (
+    PASTE_OFF,
+    PASTE_ON,
+    InputTooLarge,
+    StdinLines,
+    bracketed_paste,
+)
 from mharness.adapters.cli.questions import TerminalQuestions
 from mharness.adapters.cli.spinner import CLEAR_LINE
 from mharness.adapters.commands import LocalCommandRunner
@@ -45,13 +52,14 @@ from mharness.domain.messages import (
     ToolResultBlock,
 )
 from mharness.domain.model import ModelResponse, Usage
-from mharness.domain.retry import NO_RETRIES, RetryPolicy
+from mharness.domain.retry import RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.tools import Tool
 from tests.adapters.test_local_runner import gone, written_pid
 from tests.fakes.approval import FakeApproval
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import END, HANG, FakeModelClient, Gate, reply, tool_calls
+from tests.fakes.retry import NO_RETRIES
 from tests.fakes.sessions import MemorySessionStore
 from tests.fakes.terminal import ScriptedInput
 from tests.fakes.tools import FakeTool
@@ -180,7 +188,9 @@ async def test_model_error_goes_to_stderr_and_the_conversation_goes_on() -> None
     assert "Hola.\n" in out
 
 
-async def test_ctrl_c_ends_with_130() -> None:
+async def test_ctrl_c_twice_at_the_prompt_ends_with_130() -> None:
+    # Audit after hito 10, P1: the first one clears the line and says how
+    # to leave; the second one, in a row, leaves.
     async def interrupt() -> str:
         signal.raise_signal(signal.SIGINT)
         await asyncio.Event().wait()  # waits for input that never comes
@@ -206,6 +216,7 @@ async def test_ctrl_c_ends_with_130() -> None:
     )
 
     assert code == EXIT_INTERRUPTED
+    assert out.getvalue().endswith("> \n  [Ctrl+C again to quit, or /exit]\n> \n")
 
 
 @pytest.mark.parametrize(
@@ -378,6 +389,89 @@ async def test_stdin_lines_discards_what_the_terminal_holds() -> None:
     finally:
         os.close(main)
         os.close(side)
+
+
+# Pasting text of several lines (audit after hito 10, I4, decision 2 of
+# the maintainer): one turn, not one per line.
+
+
+async def test_a_bracketed_paste_is_one_line(pipe: tuple[int, int]) -> None:
+    read_fd, write_fd = pipe
+    os.write(write_fd, b"\x1b[200~uno\ndos\ntres\x1b[201~\nsigue\n")
+    lines = StdinLines(read_fd)
+
+    assert await lines.readline() == "uno\ndos\ntres"
+    assert await lines.readline() == "sigue"
+
+
+async def test_text_typed_around_a_paste_goes_with_it(pipe: tuple[int, int]) -> None:
+    read_fd, write_fd = pipe
+    os.write(write_fd, b"mira: \x1b[200~a\nb\x1b[201~ y dime\n")
+
+    assert await StdinLines(read_fd).readline() == "mira: a\nb y dime"
+
+
+async def test_a_paste_waits_for_its_end(pipe: tuple[int, int]) -> None:
+    read_fd, write_fd = pipe
+    lines = StdinLines(read_fd)
+    pending = asyncio.create_task(lines.readline())
+
+    os.write(write_fd, b"\x1b[200~uno\n")
+    await asyncio.sleep(0.02)
+    assert not pending.done()
+    os.write(write_fd, b"dos\x1b[201~\n")
+
+    assert await pending == "uno\ndos"
+
+
+async def test_lines_from_a_pipe_are_still_one_by_one(pipe: tuple[int, int]) -> None:
+    # `maha < notas.txt`: each line is a turn, as always.
+    read_fd, write_fd = pipe
+    os.write(write_fd, b"uno\ndos\n")
+    lines = StdinLines(read_fd)
+
+    assert [await lines.readline(), await lines.readline()] == ["uno", "dos"]
+
+
+async def test_lines_typed_ahead_in_a_terminal_go_one_by_one() -> None:
+    # Review of the audit after hito 10 (R15), decision of the maintainer
+    # (2026-11-11): only what the terminal marks as pasted is one; lines
+    # typed while the model answers ("hola⏎/exit⏎") are each one.
+    main, side = pty.openpty()
+    try:
+        lines = StdinLines(side)
+        os.write(main, b"hola\n/exit\n")
+        await asyncio.sleep(0.05)
+
+        assert await lines.readline() == "hola"
+        assert await lines.readline() == "/exit"
+    finally:
+        os.close(main)
+        os.close(side)
+
+
+def test_bracketed_paste_is_asked_for_and_left_as_it_was() -> None:
+    main, side = pty.openpty()
+    try:
+        before = termios.tcgetattr(side)
+        out = os.fdopen(os.dup(side), "w")
+        with bracketed_paste(side, out):
+            assert not termios.tcgetattr(side)[3] & termios.ECHOCTL
+        out.close()
+        assert termios.tcgetattr(side) == before
+        assert os.read(main, 100) == PASTE_ON.encode() + PASTE_OFF.encode()
+    finally:
+        os.close(main)
+        os.close(side)
+
+
+def test_bracketed_paste_is_not_asked_for_without_a_terminal() -> None:
+    out = io.StringIO()
+
+    with bracketed_paste(0, out):
+        pass
+
+    assert out.getvalue() == ""
 
 
 async def test_stdin_lines_reads_a_regular_file(tmp_path: Path) -> None:
@@ -1473,3 +1567,102 @@ def test_how_the_model_stopped_is_told(reason: TurnEnd, note: str) -> None:
 def test_every_way_a_turn_ends_has_its_name_in_the_trace() -> None:
     # Review of the deep audit: /trace showed a raw key for a new reason.
     assert set(get_args(Ending.__value__)) - {"end_turn"} == set(_ENDINGS)
+
+
+class Typed:
+    """Ctrl+C where a script says CTRL_C, then its lines."""
+
+    def __init__(self, *lines: str) -> None:
+        self._lines = list(lines)
+
+    async def __call__(self) -> str:
+        if not self._lines:
+            raise EOFError
+        line = self._lines.pop(0)
+        if line == CTRL_C:
+            signal.raise_signal(signal.SIGINT)
+            await asyncio.Event().wait()
+        return line
+
+
+CTRL_C = "<ctrl-c>"
+
+
+async def test_a_line_between_two_ctrl_c_keeps_maha_open() -> None:
+    fake = FakeModelClient([reply("Hola.")])
+    out = io.StringIO()
+
+    code = await converse(
+        solo(
+            Agent(
+                fake,
+                ToolRegistry(),
+                gate=FakeApproval(),
+                model="m",
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
+            )
+        ),
+        provider="p",
+        catalog=KNOWN,
+        read_line=Typed(CTRL_C, "Hola", CTRL_C, "/exit"),
+        out=out,
+        err=io.StringIO(),
+    )
+
+    assert code == 0
+    assert out.getvalue().count("[Ctrl+C again to quit, or /exit]") == 2
+
+
+async def test_ctrl_c_during_a_command_goes_back_to_the_prompt() -> None:
+    # Audit after hito 10, I8: Ctrl+C at the question of /delete closed
+    # maha.
+    out = io.StringIO()
+
+    code = await converse(
+        solo(
+            Agent(
+                FakeModelClient([]),
+                ToolRegistry(),
+                gate=FakeApproval(),
+                model="m",
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
+            )
+        ),
+        provider="p",
+        catalog=KNOWN,
+        read_line=Typed("/delete 20261110-000000-abcd", CTRL_C, "/exit"),
+        out=out,
+        err=io.StringIO(),
+    )
+
+    assert code == 0
+    assert "? [y/N]: \n  [interrupted]\n> " in out.getvalue()
+
+
+async def test_a_crlf_split_between_two_pieces_is_not_shown_as_x0d() -> None:
+    # Review of the audit after hito 10 (I10): clean() saw each piece alone.
+    pieces = [TextDelta(text="uno\r"), TextDelta(text="\ndos\r"), TextDelta(text="x")]
+    fake = FakeModelClient([[*pieces, END]])
+
+    _, out, _ = await run(fake, "Hola", "/exit")
+
+    assert "uno\ndos\\x0dx" in out
+
+
+async def test_ctrl_d_right_after_a_line_still_ends() -> None:
+    # Review of the audit after hito 10: looking for lines that came
+    # together took the end of input, and maha did not leave.
+    main, side = pty.openpty()
+    try:
+        lines = StdinLines(side)
+        os.write(main, b"hola\n\x04")
+        await asyncio.sleep(0.05)
+
+        assert await lines.readline() == "hola"
+        with pytest.raises(EOFError):
+            await asyncio.wait_for(lines.readline(), 1)
+    finally:
+        os.close(main)
+        os.close(side)

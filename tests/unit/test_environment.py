@@ -58,3 +58,28 @@ def test_no_editor_opens() -> None:
         "VISUAL": "true",
         "EDITOR": "true",
     }
+
+
+def test_the_runtime_folder_does_not_pass() -> None:
+    # Audit after hito 10, H8: with it, the session bus is reachable (the
+    # keyring, an SSH or GPG agent) at $XDG_RUNTIME_DIR/bus.
+    environ = {"XDG_RUNTIME_DIR": "/run/user/1000", "XDG_DATA_HOME": "/d"}
+
+    assert command_env(environ) == {"XDG_DATA_HOME": "/d", **NO_EDITOR}
+
+
+def test_the_user_adds_variables() -> None:
+    # Audit after hito 10, P5.
+    environ = {"JAVA_HOME": "/opt/java", "HTTPS_PROXY": "http://p", "OTHER": "x"}
+
+    assert command_env(environ, extra=["JAVA_HOME", "HTTPS_PROXY", "MISSING"]) == {
+        "JAVA_HOME": "/opt/java",
+        "HTTPS_PROXY": "http://p",
+        **NO_EDITOR,
+    }
+
+
+def test_an_added_variable_never_lets_the_providers_key_through() -> None:
+    environ = {"MI_CLAVE": "sk-inventada"}
+
+    assert command_env(environ, drop=["MI_CLAVE"], extra=["MI_CLAVE"]) == NO_EDITOR

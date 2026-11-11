@@ -9,7 +9,7 @@ import pytest
 
 from mharness.adapters.project import LocalProject
 from mharness.adapters.project.local import git_root
-from mharness.domain.prompt import INSTRUCTIONS_MAX
+from mharness.domain.prompt import INSTRUCTIONS_MAX, cap
 from mharness.ports.project import ProjectInfo
 
 TODAY = date(2026, 11, 4)
@@ -254,10 +254,24 @@ async def test_a_big_file_is_read_only_up_to_the_limit(
     text = "a" * (INSTRUCTIONS_MAX - 1) + "ñ" + tail
     write(tmp_path / "AGENTS.md", text)
 
-    [(_, _, read)] = await found(project(tmp_path))
+    [layer] = (await project(tmp_path).instructions()).layers
 
-    more = len(text.encode("utf-8")) - (INSTRUCTIONS_MAX - 1)
-    assert read == "a" * (INSTRUCTIONS_MAX - 1) + f"\n[truncated: {more} bytes more]"
+    # Read up to the limit; the mark is cap()'s, with the size on disk.
+    assert layer.text == "a" * (INSTRUCTIONS_MAX - 1)
+    assert layer.size == len(text.encode("utf-8"))
+
+
+async def test_a_big_file_is_marked_once_with_what_was_left(tmp_path: Path) -> None:
+    # Audit after hito 10 (M2): read with its mark, it passed the limit
+    # again, and cap() cut it once more: "30 bytes more" of 34,464.
+    big = INSTRUCTIONS_MAX + 500
+    write(tmp_path / "AGENTS.md", "a" * big)
+
+    [layer] = (await project(tmp_path).instructions()).layers
+    [kept], [warning] = cap([layer])
+
+    assert kept.text == "a" * INSTRUCTIONS_MAX + "\n[truncated: 500 bytes more]"
+    assert warning.endswith("(500 bytes more)")
 
 
 async def test_a_big_file_that_is_not_utf8_is_skipped(tmp_path: Path) -> None:
@@ -295,6 +309,26 @@ async def test_extra_files_and_globs(tmp_path: Path) -> None:
         ("extra", "docs/a.md", "a"),
         ("extra", "docs/b.md", "b"),
     ]
+
+
+async def test_an_absolute_glob_of_the_user_is_read(tmp_path: Path) -> None:
+    # Audit after hito 10 (M1): `relative_to` the working directory raised
+    # ValueError, and maha fell at start.
+    cwd = repo(tmp_path)
+    notes = tmp_path / "notas"
+    write(notes / "estilo.md", "mine")
+    write(notes / "otra" / "mas.md", "more")
+    home = tmp_path / "home"
+
+    info = LocalProject(
+        cwd,
+        shell=None,
+        home=home,
+        config_dir=home / ".config" / "maha",
+        extra_user=[f"{notes}/*.md", f"{notes}/**/*.md"],
+    )
+
+    assert [text for _, _, text in await found(info)] == ["mine", "more"]
 
 
 async def test_a_file_already_loaded_is_not_repeated(tmp_path: Path) -> None:
@@ -369,3 +403,26 @@ async def test_a_glob_stops_at_its_limit(
     result = await info.instructions()
 
     assert result.warnings == ("instructions '**/*.md': stopped after 5 entries",)
+
+
+async def test_the_projects_instructions_go_from_the_folder_of_its_file(
+    tmp_path: Path,
+) -> None:
+    # Review of the audit after hito 10 (P7): a .maha/config.toml found at
+    # the root, from pkg/app, looked for its patterns in pkg/app.
+    cwd = repo(tmp_path)
+    root = tmp_path / "repo"
+    write(root / "docs" / "CONV.md", "conventions")
+    home = tmp_path / "home"
+
+    info = LocalProject(
+        cwd,
+        shell=None,
+        home=home,
+        config_dir=home / ".config" / "maha",
+        extra_project=["docs/CONV.md"],
+        project_base=root,
+    )
+
+    layers = await found(info)
+    assert "conventions" in [text for _, _, text in layers]

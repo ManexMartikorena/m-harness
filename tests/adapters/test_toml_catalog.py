@@ -13,6 +13,8 @@ from mharness.domain.catalog import ModelInfo, Prices, Tier
 from mharness.ports.catalog import ModelCatalog
 
 CHECKED = date(2026, 10, 27)
+# OpenCode's docs, read again in the audit after hito 10.
+OPENCODE_CHECKED = date(2026, 11, 11)
 
 
 @pytest.fixture
@@ -30,12 +32,13 @@ def write(tmp_path: Path, text: str) -> Path:
 
 
 def test_has_every_model_of_each_provider(builtin: TomlCatalog) -> None:
-    # Counted on the providers' docs, 2026-10-27.
+    # Counted on the providers' docs, 2026-11-11 (audit after hito 10, M4
+    # to M7): two more in Go, and in Zen seven more and pulse-alpha-free
+    # gone (deprecated on 2026-11-06).
     providers = [info.provider for info in builtin.models()]
 
-    assert providers.count("opencode-go") == 30
-    # One more on 2026-11-03: pulse-alpha-free (audit of hito 9).
-    assert providers.count("opencode-zen") == 84
+    assert providers.count("opencode-go") == 32
+    assert providers.count("opencode-zen") == 90
     # Counted on Anthropic's pricing page, 2026-11-03 (spec hito 9, §3.3);
     # without the models of limited access.
     assert providers.count("anthropic") == 14
@@ -53,12 +56,10 @@ def test_every_model_has_its_family(builtin: TomlCatalog) -> None:
 
 def test_every_model_has_dated_prices(builtin: TomlCatalog) -> None:
     checked = {"anthropic": date(2026, 11, 3)}
-    # Added in the audit of hito 9, with its own date.
-    later = {("opencode-zen", "pulse-alpha-free")}
     for info in builtin.models():
+        # Checked again in the audit after hito 10.
         assert info.prices is not None, info.model
-        when = date(2026, 11, 3) if (info.provider, info.model) in later else None
-        assert info.prices.checked == (when or checked.get(info.provider, CHECKED))
+        assert info.prices.checked == checked.get(info.provider, OPENCODE_CHECKED)
 
 
 def test_a_model_as_the_docs_publish_it(builtin: TomlCatalog) -> None:
@@ -72,7 +73,7 @@ def test_a_model_as_the_docs_publish_it(builtin: TomlCatalog) -> None:
             input=Decimal("0.15"),
             output=Decimal("0.50"),
             cache_read=Decimal("0.03"),
-            checked=CHECKED,
+            checked=OPENCODE_CHECKED,
         ),
     )
 
@@ -86,7 +87,8 @@ def test_every_anthropic_model_knows_its_longest_answer(builtin: TomlCatalog) ->
         if info.api == "anthropic" or info.provider == "anthropic"
     ]
 
-    assert len(anthropic) == 22 + 14
+    # Claude Fable 5.2 in Zen (audit after hito 10).
+    assert len(anthropic) == 23 + 14
     assert all(info.max_output for info in anthropic)
 
 
@@ -172,7 +174,8 @@ def test_an_hourly_price_takes_the_peak(builtin: TomlCatalog) -> None:
         ("opencode-zen", "nemotron-3-ultra-free"),
         ("opencode-zen", "nemotron-3.5-lightning-free"),
         ("opencode-zen", "nemotron-3.5-super-vl-free"),
-        ("opencode-zen", "pulse-alpha-free"),
+        ("opencode-zen", "iceman-free"),
+        ("opencode-zen", "inkling-2-small-free"),
     ],
 )
 def test_models_that_train_on_the_data(
@@ -187,7 +190,7 @@ def test_models_that_train_on_the_data(
 def test_only_those_train_on_the_data(builtin: TomlCatalog) -> None:
     training = [info for info in builtin.models() if info.trains_on_data]
 
-    assert len(training) == 10
+    assert len(training) == 11
 
 
 def test_an_unknown_model_is_none(builtin: TomlCatalog) -> None:

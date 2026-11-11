@@ -51,11 +51,12 @@ class _Unread(Exception):
     """A file that is not read, and why, for the user."""
 
 
-def _read(path: Path, *, inside: Path | None) -> str | None:
-    """The text of an instruction file, None if there is none, or
-    `_Unread`. With `inside`, the file (also through a link) has to be in
-    that directory and not a secret. At most `INSTRUCTIONS_MAX` bytes are
-    read: a bigger file keeps the mark of what is left."""
+def _read(path: Path, *, inside: Path | None) -> tuple[str, int | None] | None:
+    """The text of an instruction file and, if only its start was read,
+    its whole size; None if there is none, or `_Unread`. With `inside`, the
+    file (also through a link) has to be in that directory and not a
+    secret. At most `INSTRUCTIONS_MAX` bytes are read; the mark of what is
+    left is `cap()`'s, once (audit after hito 10, M2)."""
     try:
         if not path.is_file() and not path.is_symlink():
             return None
@@ -92,16 +93,17 @@ def _read(path: Path, *, inside: Path | None) -> str | None:
             raise _Unread("not UTF-8, not read") from None
         text = data[: exc.start].decode("utf-8")
     if cut:
-        more = info.st_size - len(text.encode("utf-8"))
-        return f"{text.rstrip()}\n[truncated: {more} bytes more]"
-    return text.strip() or None
+        return text, info.st_size
+    kept = text.strip()
+    return (kept, None) if kept else None
 
 
 class LocalProject:
     """A `ProjectInfo` over the directory where `maha` runs.
 
-    `shell` is the one commands run in (`/bin/sh` for `run_command`), or
-    None when there is no tool to run them; `today` gives the date, local.
+    `shell` is the one commands run in (bash or `/bin/sh` for
+    `run_command`), or None when there is no tool to run them; `today`
+    gives the date, local.
     The user's instructions are in `config_dir` (`~/.config/maha`), or
     without them, with `compat_claude`, in `~/.claude/CLAUDE.md`; `user`
     False leaves them out (the evals measure maha, not the user's habits).
@@ -121,6 +123,7 @@ class LocalProject:
         user: bool = True,
         extra_user: Sequence[str] = (),
         extra_project: Sequence[str] = (),
+        project_base: Path | None = None,
         today: Callable[[], date] = date.today,
         platform: str = sys.platform,
     ) -> None:
@@ -131,6 +134,10 @@ class LocalProject:
         self._compat_claude = compat_claude
         self._user = user
         self._extra_user = tuple(extra_user)
+        # Where the project's patterns start: the folder of its
+        # .maha/config.toml, maybe above `cwd` (review of the audit after
+        # hito 10, P7).
+        self._project_base = project_base
         self._extra_project = tuple(extra_project)
         self._today = today
         self._platform = platform
@@ -164,14 +171,15 @@ class LocalProject:
             if real in seen:
                 return True
             try:
-                text = _read(path, inside=inside)
+                read = _read(path, inside=inside)
             except _Unread as why:
                 warnings.append(f"{source}: {why}")
                 return True
-            if text is None:
+            if read is None:
                 return False
             seen.add(real)
-            layers.append(Layer(kind=kind, source=source, text=text))
+            text, size = read
+            layers.append(Layer(kind=kind, source=source, text=text, size=size))
             return True
 
         if self._user:
@@ -209,6 +217,8 @@ class LocalProject:
         without wildcards, at most `GLOB_MAX_SCAN` entries."""
         if pattern.startswith("~/") and inside is None:
             base, pattern = self._home, pattern[2:]
+        elif inside is not None and self._project_base is not None:
+            base = self._project_base
         else:
             base = self._cwd
         parts = PurePath(pattern).parts
@@ -218,6 +228,10 @@ class LocalProject:
         if fixed == len(parts):
             return [base / pattern], None
         start = base.joinpath(*parts[:fixed])
+        # The part with wildcards matches what is under its fixed start: an
+        # absolute pattern, or one with "..", is not under `base` (audit
+        # after hito 10, M1).
+        rest = PurePath(*parts[fixed:]).as_posix()
         found: list[Path] = []
         scanned = 0
         for directory, names, files in os.walk(start):
@@ -228,7 +242,7 @@ class LocalProject:
             here = Path(directory)
             for name in sorted(files):
                 path = here / name
-                if glob_matches(pattern, path.relative_to(base)):
+                if glob_matches(rest, path.relative_to(start)):
                     found.append(path)
         if not found:
             return [], "matches no file"

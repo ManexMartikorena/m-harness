@@ -98,8 +98,11 @@ def add_cost(total: Decimal | None, more: Decimal | None) -> Decimal | None:
     return None if total is None or more is None else known(total + more)
 
 
-def cost(usage: Usage, prices: Prices) -> Decimal:
-    """What one call costs, in USD.
+def cost(usage: Usage, prices: Prices) -> Decimal | None:
+    """What one call costs, in USD; None if it wrote to the one-hour cache
+    and that write has no price: at the 5 min one it came out lower than
+    the real cost (audit after hito 10, M4, a decision of the maintainer,
+    2026-11-11; it changes decision 9 of spec hito 9).
 
     `input_tokens` counts every prompt token, the cached ones included (as
     OpenAI reports them); `output_tokens` already holds the reasoning. Past
@@ -111,12 +114,12 @@ def cost(usage: Usage, prices: Prices) -> Decimal:
             rates = tier
     cache_read = rates.cache_read if rates.cache_read is not None else rates.input
     cache_write = rates.cache_write if rates.cache_write is not None else rates.input
-    hour_write = (
-        rates.cache_write_1h if rates.cache_write_1h is not None else cache_write
-    )
     cached = usage.cache_read_tokens + usage.cache_write_tokens
     plain = max(usage.input_tokens - cached, 0)
     hour = min(usage.cache_write_1h_tokens, usage.cache_write_tokens)
+    if hour and rates.cache_write_1h is None:
+        return None
+    hour_write = rates.cache_write_1h or Decimal(0)
     total = (
         plain * rates.input
         + usage.cache_read_tokens * cache_read

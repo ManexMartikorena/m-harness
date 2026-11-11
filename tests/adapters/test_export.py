@@ -6,7 +6,7 @@ from decimal import Decimal
 from mharness.adapters.cli.export import markdown
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
-from mharness.domain.session import Session, SessionHeader
+from mharness.domain.session import Session, SessionHeader, TitleEntry
 
 HEADER = SessionHeader(
     id="20261030-101500-3fa2",
@@ -159,3 +159,12 @@ def test_without_a_price_the_cost_is_left_out() -> None:
 
     assert "- Tokens: 5 in · 2 out\n" in text
     assert "- Model: `local` (opencode-go)\n" in text
+
+
+def test_the_title_of_the_session_heads_it() -> None:
+    # Audit after hito 10, I7: not its first line.
+    titled = session(user("hola\nmás")).model_copy(
+        update={"title": TitleEntry(title="Saludo a Ane")}
+    )
+
+    assert markdown(titled).startswith("# Saludo a Ane\n")

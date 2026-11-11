@@ -221,3 +221,18 @@ async def test_pieces_of_one_call_with_another_id_each_stay_one() -> None:
     assert response.message.blocks == [
         ToolCallBlock(id="a", name="read_file", arguments='{"path":"x"}'),
     ]
+
+
+def test_a_name_repeated_in_every_piece_is_said_once() -> None:
+    # Audit after hito 10 (B3): a server that repeats the name with the same
+    # id gave "read_fileread_file", a tool that does not exist.
+    gathered = Accumulator()
+    gathered.add(ToolCallDelta(index=0, id="c1", name="read_file", arguments='{"pa'))
+    gathered.add(
+        ToolCallDelta(index=0, id="c1", name="read_file", arguments='th": "a"}')
+    )
+    gathered.add(MessageEnd(stop_reason="tool_use", usage=Usage(), model="m"))
+
+    [call] = gathered.response().message.blocks
+
+    assert call == ToolCallBlock(id="c1", name="read_file", arguments='{"path": "a"}')

@@ -1,6 +1,7 @@
 import pytest
 
-from mharness.domain.retry import NO_RETRIES, RetryPolicy
+from mharness.domain.retry import RetryPolicy
+from tests.fakes.retry import NO_RETRIES
 
 
 def fixed(value: float) -> RetryPolicy:

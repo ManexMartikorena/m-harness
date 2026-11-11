@@ -33,7 +33,12 @@ def markdown(session: Session) -> str:
     """The conversation of `session`, with what it was and what it cost."""
     header = session.header
     first = next((m.text for m in session.messages if m.role == "user"), "")
-    title = first.split("\n", 1)[0].strip() or "Session"
+    # Its title, if it has one (audit after hito 10, I7).
+    title = (
+        session.title.title
+        if session.title is not None
+        else first.split("\n", 1)[0].strip() or "Session"
+    )
     usage = session.usage
     tokens = f"{usage.input_tokens} in · {usage.output_tokens} out"
     cost = _cost(session)

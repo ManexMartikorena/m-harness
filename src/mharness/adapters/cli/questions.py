@@ -103,10 +103,13 @@ def _choices(line: str, labels: list[str], *, multi: bool) -> list[str] | None:
     for part in parts:
         if not part:
             return None
-        if part.isdigit() and 1 <= int(part) <= len(labels) + 1:
-            label = labels[int(part) - 1] if int(part) <= len(labels) else OTHER
-        elif part.casefold() in by_name:
+        # The label first: with options "2" and "4", "2" is the first one
+        # (audit after hito 10, I6). Numbers only in ASCII: "²" is a digit
+        # for isdigit(), and not for int() (I5).
+        if part.casefold() in by_name:
             label = by_name[part.casefold()]
+        elif part.isascii() and part.isdecimal() and 1 <= int(part) <= len(labels) + 1:
+            label = labels[int(part) - 1] if int(part) <= len(labels) else OTHER
         else:
             return None
         if label not in chosen:

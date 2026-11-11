@@ -29,7 +29,7 @@ from typing import Any, TextIO
 from mharness import __version__, config
 from mharness.adapters import cli
 from mharness.adapters.catalog import CatalogError, TomlCatalog
-from mharness.adapters.commands import LocalCommandRunner
+from mharness.adapters.commands import LocalCommandRunner, command_shell
 from mharness.adapters.evals import TomlEvalSuite
 from mharness.adapters.models import AnthropicClient, OpenAIChatClient
 from mharness.adapters.project import LocalProject, git_root
@@ -96,6 +96,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     options = cli.parse(argv, tools=TOOL_NAMES)
     if isinstance(options, int):
         return options
+    try:
+        return _main(options)
+    except KeyboardInterrupt:
+        # Ctrl+C where nothing handles it (`maha sessions`, `stats`, the
+        # start of a conversation): quiet, as any program (audit after
+        # hito 10, I2). The conversation and `-p` handle their own.
+        print(file=sys.stderr, flush=True)
+        return 130
+
+
+def _main(options: argparse.Namespace) -> int:
     try:
         _log_to(config.state_dir(os.environ) / "maha.log")
     except config.ConfigError:
@@ -238,7 +249,7 @@ async def _show_prompt(
     prompt = await _prompt(settings, catalog, cwd, tools, files).build(model or "")
     for note in cli.prompt_notes(prompt):
         print(f"  {note}", file=sys.stderr)
-    print(prompt.text)
+    cli.show_prompt(prompt.text, sys.stdout)
     return 0
 
 
@@ -327,7 +338,7 @@ def _tools(
         Grep(workspace),
         WriteFile(workspace),
         EditFile(workspace),
-        RunCommand(workspace.root, LocalCommandRunner(), env),
+        RunCommand(workspace.root, LocalCommandRunner(COMMAND_SHELL), env),
         TodoWrite(),
     ]
     if questions is not None:
@@ -343,8 +354,9 @@ def _questions(lines: cli.StdinLines) -> UserQuestions | None:
     return cli.TerminalQuestions(lines.readline, sys.stdout, discard=lines.discard)
 
 
-# The shell `run_command` runs in: asyncio's subprocess shell.
-COMMAND_SHELL = "/bin/sh"
+# The shell `run_command` runs in: bash if there is one (audit after hito
+# 10, P3).
+COMMAND_SHELL = command_shell()
 
 
 def _templates() -> PromptTemplates:
@@ -378,6 +390,7 @@ def _prompt(
         compat_claude=settings.compat_claude,
         extra_user=settings.instructions,
         extra_project=settings.project_instructions,
+        project_base=settings.project_dir,
     )
     files = files or _PromptFiles()
     return SystemPromptBuilder(
@@ -474,7 +487,7 @@ async def _eval(
         return cli.fail(str(exc))
     provider = settings.provider
     drop = [provider.api_key_env] if provider.api_key_env else []
-    env = command_env(os.environ, drop=drop)
+    env = command_env(os.environ, drop=drop, extra=settings.command_env)
     masked = known_secrets(os.environ, also=[settings.api_key])
 
     @asynccontextmanager
@@ -526,7 +539,11 @@ async def _eval(
     )
     out.line(head)
     evaluator = Evaluator(
-        suite, open_run, LocalCommandRunner(), env, expand=_eval_instruction
+        suite,
+        open_run,
+        LocalCommandRunner(COMMAND_SHELL),
+        env,
+        expand=_eval_instruction,
     )
 
     def on_run(run: TaskRun) -> None:
@@ -712,8 +729,11 @@ def _gate(lines: cli.StdinLines) -> ApprovalGate:
     """Asks in the terminal; without one (`maha < notes.txt`), denies all:
     the next line of the file could "approve" (spec hito 5, §1.10)."""
     if os.isatty(0):
+        # Styles only on a terminal: never in a file (audit after hito 10,
+        # I11).
+        color = cli.use_color() and sys.stdout.isatty()
         return cli.TerminalApproval(
-            lines.readline, sys.stdout, color=cli.use_color(), discard=lines.discard
+            lines.readline, sys.stdout, color=color, discard=lines.discard
         )
     return cli.DenyAll(sys.stdout)
 
@@ -735,7 +755,8 @@ def _sessions(
     # The variables a command gets; never the provider's key (spec
     # mejora-2026-10-23-deuda-hito-5, E1).
     drop = [provider.api_key_env] if provider.api_key_env else []
-    tools = _tools(cwd, command_env(os.environ, drop=drop), questions)
+    env = command_env(os.environ, drop=drop, extra=settings.command_env)
+    tools = _tools(cwd, env, questions)
 
     def new_agent(model: str, history: Sequence[Message]) -> Agent:
         return Agent(
@@ -802,7 +823,9 @@ async def _sessions_command(
             return await cli.delete_session(
                 sessions, options.id, out=sys.stdout, err=sys.stderr
             )
-        return await cli.list_sessions(sessions, out=sys.stdout, home=Path.home())
+        return await cli.list_sessions(
+            sessions, out=sys.stdout, home=Path.home(), every=options.every
+        )
 
 
 @asynccontextmanager
@@ -863,7 +886,7 @@ async def _print(
         )
         return await cli.print_mode(
             sessions,
-            options.prompt,
+            _expanded(options.prompt, cwd),
             read_all=read_all,
             catalog=catalog,
             provider=settings.provider_name,
@@ -901,16 +924,30 @@ def _eval_instruction(instruction: str, copy: Path) -> str:
     command = cli.parse_command(instruction)
     if command is None or command.name != "init":
         return instruction
-    return cli.Init(template=_init(copy).template, root=copy).text(command.argument)
+    # The copy is the project, wherever the temporary folder is (review of
+    # the audit after hito 10).
+    init = _init(copy)
+    return cli.Init(template=init.template, root=copy).text(command.argument)
+
+
+def _expanded(text: str, cwd: Path) -> str:
+    """`/init TEXT` as the conversation sends it; anything else, as it is.
+    Also in `-p` (audit after hito 10, I9)."""
+    command = cli.parse_command(text)
+    if command is None or command.name != "init":
+        return text
+    return _init(cwd).text(command.argument)
 
 
 def _init(cwd: Path) -> cli.Init:
     """What `/init` needs: its template, and where AGENTS.md goes, the
-    project's root (spec hito 10, §1.9)."""
+    folder where maha runs (spec hito 10, §1.9; audit after hito 10, I3)."""
     template = (resources.files("mharness") / "prompts" / "init.md").read_text(
         encoding="utf-8"
     )
-    return cli.Init(template=template, root=git_root(cwd) or cwd)
+    root = git_root(cwd)
+    project = root if root is not None and root != cwd else None
+    return cli.Init(template=template, root=cwd, project=project)
 
 
 async def _converse(
@@ -935,14 +972,17 @@ async def _converse(
             questions=_questions(lines),
             titler=_titler(settings, catalog, client),
         )
-        return await cli.converse(
-            sessions,
-            provider=settings.provider_name,
-            catalog=catalog,
-            read_line=lines.readline,
-            # Only a terminal has typed-ahead input to drop.
-            discard=lines.discard if os.isatty(0) else None,
-            start=start,
-            notes=_notes(settings),
-            init=_init(cwd),
-        )
+        # A pasted text of several lines is one turn (audit after hito 10,
+        # I4).
+        with cli.bracketed_paste(0, sys.stdout):
+            return await cli.converse(
+                sessions,
+                provider=settings.provider_name,
+                catalog=catalog,
+                read_line=lines.readline,
+                # Only a terminal has typed-ahead input to drop.
+                discard=lines.discard if os.isatty(0) else None,
+                start=start,
+                notes=_notes(settings),
+                init=_init(cwd),
+            )

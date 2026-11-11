@@ -346,7 +346,11 @@ Otro chiste, que se corta aq^C
   petición HTTP, escribe un salto de línea y `  [interrupted]`, y vuelve al
   prompt. El turno no se guarda. *Decisión del mantenedor (2026-10-21, §11,
   duda 3).*
-- **Ctrl+C en el prompt:** sale con 130, como en el hito 2.
+- **Ctrl+C en el prompt:** sale con 130, como en el hito 2. *Cambiado el
+  2026-11-11 (auditoría tras el hito 10, P1): el primero limpia la línea y
+  dice `[Ctrl+C again to quit, or /exit]`; el segundo seguido sale con 130.
+  Y Ctrl+C durante un comando de `maha` (`/delete` preguntando) corta el
+  comando y vuelve al prompt (I8).*
   - **Cambia el hito 2** (spec 2, §1.11 y §7.8), donde siempre salía.
     Descartado seguir saliendo siempre: no sería cancelar, sería cerrar.
 - **Cómo, sin tarea hija:** SIGINT (la señal que manda Ctrl+C) sigue cancelando

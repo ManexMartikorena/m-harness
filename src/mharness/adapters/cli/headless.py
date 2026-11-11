@@ -21,7 +21,7 @@ import json
 import os
 import signal
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, TextIO
@@ -184,9 +184,8 @@ async def _print(
             shown.note(line)
         for line in notes:
             shown.note(line)
-        result = await run_once(
-            conversation, text, _watch(shown.output_format, conversation, out, err)
-        )
+        watch = _Watch(shown.output_format, conversation, out, err)
+        result = await run_once(conversation, text, watch)
     except asyncio.CancelledError:
         print("  [interrupted]", file=err, flush=True)
         raise
@@ -215,7 +214,13 @@ async def _print(
         _answer(result.text, out)
         if result.error is not None:
             print(f"error: {clean(result.error)}", file=err, flush=True)
+        if conversation.stored:
+            # To go on with it (audit after hito 10, P2).
+            session = clean(conversation.id)
+            shown.note(f"[session {session} · maha -r {session} resumes it]")
     else:
+        if conversation.stored:
+            watch.tell_init()
         _json_line(result_object(result), out)
     return exit_code(result)
 
@@ -311,21 +316,53 @@ def result_object(result: RunResult) -> dict[str, Any]:
     }
 
 
-def _watch(
-    output_format: OutputFormat, conversation: Conversation, out: TextIO, err: TextIO
-) -> Callable[[AgentEvent], None]:
+class _Watch:
     """What is written of each event as it comes. A tool that crashed is
-    told on stderr in every format: it is a bug of maha."""
-    if output_format == "text":
-        return _Progress(conversation, err).show
+    told on stderr in every format: it is a bug of maha. In `stream-json`,
+    `init` first, once the id is the session's (audit after hito 10, P2)."""
 
-    def watch(event: AgentEvent) -> None:
-        if output_format == "stream-json":
-            _json_line(event.model_dump(mode="json"), out)
+    def __init__(
+        self,
+        output_format: OutputFormat,
+        conversation: Conversation,
+        out: TextIO,
+        err: TextIO,
+    ) -> None:
+        self._format = output_format
+        self._conversation = conversation
+        self._out = out
+        self._err = err
+        self._progress = _Progress(conversation, err)
+        self._told = output_format != "stream-json"
+
+    def __call__(self, event: AgentEvent) -> None:
+        if self._format == "text":
+            self._progress.show(event)
+            return
+        if self._format == "stream-json":
+            if self._conversation.exists:
+                self.tell_init()
+            _json_line(event.model_dump(mode="json"), self._out)
         if isinstance(event, ToolFinished):
-            warn_crash(event, err)
+            warn_crash(event, self._err)
 
-    return watch
+    def tell_init(self) -> None:
+        """`init`, once. Before the result if the trace never opened and
+        only the session's file made the id its own (review of the audit)."""
+        if not self._told:
+            self._told = True
+            _json_line(init_object(self._conversation), self._out)
+
+
+def init_object(conversation: Conversation) -> dict[str, Any]:
+    """The first event of `stream-json`: the session, the model and the
+    tools."""
+    return {
+        "type": "init",
+        "session_id": conversation.id,
+        "model": conversation.model,
+        "tools": conversation.tools,
+    }
 
 
 def _json_line(data: dict[str, Any], out: TextIO) -> None:

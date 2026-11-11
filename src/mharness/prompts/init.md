@@ -7,7 +7,7 @@ First look at the project with your tools: its build, lint and test commands
 (package files, Makefiles, CI workflows), its layout, and its README,
 CONTRIBUTING, AGENTS.md or CLAUDE.md.
 
-Write AGENTS.md at the root of the project, {{root}}:
+Write AGENTS.md in {{root}}:{{scope}}
 - If it already exists, improve it in place: keep what is right, fix what is
   wrong, add what is missing. Never throw it away.
 - If there is only a CLAUDE.md, start from it.

@@ -34,6 +34,12 @@ from mharness.domain.evals import (
 )
 from mharness.domain.limits import TurnLimits
 
+# Left by running a fixture's tests by hand; git does not keep them, so a
+# copy does not either (audit after hito 10, I12).
+_CACHES = shutil.ignore_patterns(
+    "__pycache__", "*.pyc", ".pytest_cache", ".mypy_cache", ".ruff_cache"
+)
+
 
 class TomlEvalSuite:
     def __init__(self, root: Path, *, keep: Path | None = None) -> None:
@@ -65,6 +71,7 @@ class TomlEvalSuite:
                 self._root / "fixtures" / task.fixture,
                 copy,
                 symlinks=True,
+                ignore=_CACHES,
             )
             yield copy
         finally:

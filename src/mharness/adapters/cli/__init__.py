@@ -7,7 +7,7 @@ from mharness.adapters.cli.commands import parse_command, project_note, prompt_n
 from mharness.adapters.cli.conversation import converse, title_failed
 from mharness.adapters.cli.headless import drop_output, print_mode
 from mharness.adapters.cli.init import Init
-from mharness.adapters.cli.input import StdinLines
+from mharness.adapters.cli.input import StdinLines, bracketed_paste
 from mharness.adapters.cli.questions import TerminalQuestions
 from mharness.adapters.cli.reports import eval_report, models_report, run_line
 from mharness.adapters.cli.spinner import use_color
@@ -16,6 +16,7 @@ from mharness.adapters.cli.subcommands import (
     export_session,
     import_session,
     list_sessions,
+    show_prompt,
     show_stats,
     show_trace,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "StdinLines",
     "TerminalApproval",
     "TerminalQuestions",
+    "bracketed_paste",
     "converse",
     "delete_session",
     "drop_output",
@@ -41,6 +43,7 @@ __all__ = [
     "project_note",
     "prompt_notes",
     "run_line",
+    "show_prompt",
     "show_stats",
     "show_trace",
     "title_failed",

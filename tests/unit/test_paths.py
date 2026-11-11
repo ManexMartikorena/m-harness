@@ -180,6 +180,22 @@ def test_change_warning(path: str, warning: str | None) -> None:
         ("docs/config.toml", None),
         ("docs/cargo.md", None),
         ("pth.txt", None),
+        # More CI, hooks and editors (audit after hito 10, H7).
+        (".hg/hgrc", RUNS_CODE),
+        ("Jenkinsfile", RUNS_CODE),
+        (".travis.yml", RUNS_CODE),
+        ("azure-pipelines.yml", RUNS_CODE),
+        ("bitbucket-pipelines.yml", RUNS_CODE),
+        (".buildkite/pipeline.yml", RUNS_CODE),
+        (".drone.yml", RUNS_CODE),
+        (".woodpecker.yml", RUNS_CODE),
+        (".woodpecker/build.yaml", RUNS_CODE),
+        (".nvimrc", RUNS_CODE),
+        (".vimrc", RUNS_CODE),
+        (".gvimrc", RUNS_CODE),
+        ("lefthook.yml", RUNS_CODE),
+        (".lefthook-local.yaml", RUNS_CODE),
+        ("docs/jenkins.md", None),
     ],
 )
 def test_change_warning_of_what_runs_code(path: str, warning: str | None) -> None:
@@ -277,3 +293,11 @@ def test_a_pth_outside_warns_that_it_runs_code() -> None:
     path = PurePath("/home/ane/.local/lib/python3.14/site-packages/x.pth")
 
     assert change_warning(path, ROOT) == f"{OUTSIDE}; {RUNS_CODE}"
+
+
+@pytest.mark.parametrize(
+    "path", ["lefthook.toml", "lefthook.json", ".config/lefthook.yml", ".lefthook.toml"]
+)
+def test_every_config_of_lefthook_runs_code(path: str) -> None:
+    # Review of the audit after hito 10: lefthook reads more than YAML.
+    assert change_warning(ROOT / path, ROOT) == RUNS_CODE

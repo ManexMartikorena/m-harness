@@ -117,6 +117,10 @@ CODE_DIRS = frozenset(
         # included (audit of hito 9, H3).
         ".cursor",
         ".zed",
+        # Mercurial's hooks, and more CI (audit after hito 10, H7).
+        ".hg",
+        ".buildkite",
+        ".woodpecker",
         ".venv",
         "venv",
         "node_modules",
@@ -130,10 +134,28 @@ CODE_FILES = frozenset(
         ".mcp.json",
         ".nvim.lua",
         ".exrc",
+        # Audit after hito 10, H7: more CI, and the files vim and neovim
+        # read from the project with 'exrc'.
+        "jenkinsfile",
+        ".travis.yml",
+        "azure-pipelines.yml",
+        "bitbucket-pipelines.yml",
+        ".drone.yml",
+        ".nvimrc",
+        ".vimrc",
+        ".gvimrc",
     }
 )
-# Anywhere: Python runs the `.pth` files of its site directories.
-CODE_PATTERNS = ("*.pth",)
+# Anywhere: Python runs the `.pth` files of its site directories. And
+# Woodpecker's pipeline and lefthook's hooks, with their variants
+# (`.woodpecker.yaml`, `lefthook-local.yml`; audit after hito 10, H7).
+CODE_PATTERNS = (
+    "*.pth",
+    ".woodpecker.y*ml",
+    # Any of its formats: YAML, TOML or JSON (review of the audit).
+    "lefthook*.*",
+    ".lefthook*.*",
+)
 # A file in a directory: cargo's config can set the build's commands.
 CODE_SUBFILES = frozenset({(".cargo", "config"), (".cargo", "config.toml")})
 MAHA_CONFIG = "maha configuration: it chooses the provider and the model"

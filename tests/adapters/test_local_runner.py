@@ -8,6 +8,7 @@ import errno
 import os
 import pty
 import select
+import shutil
 import signal
 import sys
 import time
@@ -16,7 +17,12 @@ from pathlib import Path
 import pytest
 
 from mharness.adapters.commands import LocalCommandRunner, local
-from mharness.domain.commands import OUTPUT_MAX_CHARS, CommandResult
+from mharness.domain.commands import (
+    OUTPUT_HEAD_CHARS,
+    OUTPUT_MAX_CHARS,
+    OUTPUT_TAIL_CHARS,
+    CommandResult,
+)
 from mharness.domain.environment import command_env
 from mharness.ports.commands import CommandRunner
 
@@ -140,7 +146,36 @@ async def test_a_long_output_is_cut_without_blocking(tmp_path: Path) -> None:
 
     assert result.truncated
     assert result.exit_code == 0
-    assert result.output == "x" * OUTPUT_MAX_CHARS
+    head, _, tail = result.output.partition("\n… [output cut here: ")
+    assert head == "x" * OUTPUT_HEAD_CHARS
+    assert tail.endswith("]\n" + "x" * (OUTPUT_TAIL_CHARS - 1) + "\n")
+    assert len(result.output) < OUTPUT_MAX_CHARS + 100
+
+
+async def test_a_long_output_keeps_its_end(tmp_path: Path) -> None:
+    # Audit after hito 10, H4: the summary of a long pytest is at the end.
+    result = await run("seq 1 200000; echo '3 failed, 97 passed'; exit 1", tmp_path)
+
+    assert result.truncated
+    assert result.output.startswith("1\n2\n3\n")
+    assert result.output.endswith("200000\n3 failed, 97 passed\n")
+    assert "bytes left out]\n" in result.output
+
+
+async def test_a_short_output_is_whole(tmp_path: Path) -> None:
+    result = await run("seq 1 3", tmp_path)
+
+    assert (result.output, result.truncated) == ("1\n2\n3\n", False)
+
+
+async def test_the_end_of_a_long_output_starts_on_a_whole_character(
+    tmp_path: Path,
+) -> None:
+    result = await run(
+        "head -c 300000 /dev/zero | tr '\\0' x; printf 'ñ%.0s' $(seq 1 30000)", tmp_path
+    )
+
+    assert "\ufffd" not in result.output
 
 
 async def test_past_the_time_limit_it_is_killed_keeping_its_output(
@@ -372,3 +407,57 @@ async def test_a_command_that_cannot_be_killed_does_not_hold_the_limit(
         timed_out=True,
         still_running=True,
     )
+
+
+# Audit after hito 10, P3: /bin/sh is dash in Debian and Ubuntu, where
+# `source` and `[[` fail. Bash if there is one; zsh or fish would change
+# the syntax, so not $SHELL.
+
+
+def test_the_shell_is_bash_when_there_is_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    assert local.command_shell() == "/usr/bin/bash"
+
+
+def test_without_bash_the_shell_is_sh(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+
+    assert local.command_shell() == "/bin/sh"
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+async def test_bash_syntax_runs(tmp_path: Path) -> None:
+    result = await LocalCommandRunner(local.command_shell()).run(
+        "[[ -d . ]] && echo $BASH_VERSINFO > /dev/null && echo bash",
+        cwd=tmp_path,
+        time_limit=10,
+        env=ENV,
+    )
+
+    assert (result.exit_code, result.output) == (0, "bash\n")
+
+
+async def test_the_runner_uses_the_shell_it_is_given(tmp_path: Path) -> None:
+    result = await LocalCommandRunner("/bin/sh").run(
+        "echo $0", cwd=tmp_path, time_limit=10, env=ENV
+    )
+
+    assert result.output == "/bin/sh\n"
+
+
+def test_a_relative_bash_is_not_taken(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Review of the audit after hito 10: with an empty entry in PATH, which()
+    # gives "bash", and the project's own ./bash would run every command.
+    monkeypatch.setattr(shutil, "which", lambda name: name)
+
+    assert local.command_shell() == "/bin/sh"
+
+
+async def test_the_bytes_left_out_count_bytes_that_are_not_utf8(
+    tmp_path: Path,
+) -> None:
+    # Review: each U+FFFD counted as three bytes.
+    result = await run("head -c 100000 /dev/zero | tr '\\0' '\\377'", tmp_path)
+
+    assert "[output cut here: 70000 bytes left out]" in result.output

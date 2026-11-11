@@ -216,7 +216,8 @@ base_url = "http://localhost:11434/v1"
 ```
 
 Un proyecto puede elegir su proveedor, su modelo, su respaldo, el effort y
-la caché en `.maha/config.toml`, y apretar los topes (nunca aflojarlos),
+la caché en `.maha/config.toml` (se lee desde cualquier carpeta del
+proyecto, hasta su raíz git), y apretar los topes (nunca aflojarlos),
 pero nunca declarar proveedores: así un repositorio ajeno no puede llevarse
 tu clave a otro servidor. Lo que elige un proyecto se dice al arrancar, para
 que no pueda subirte el coste sin que lo veas: `[from .maha/config.toml:
@@ -229,7 +230,7 @@ effort max, cache 1h]`.
 | `/help` | Lista los comandos |
 | `/model [ID]` | Enseña el modelo, o lo cambia |
 | `/effort [NIVEL]` | Enseña o cambia cuánto se esfuerza el modelo; `default` vuelve al del modelo |
-| `/sessions` | Las sesiones recientes, de todos los directorios |
+| `/sessions [all]` | Las sesiones recientes, de todos los directorios; `all`, todas |
 | `/resume [ID]` | Retoma una sesión; sin ID, la última de este directorio |
 | `/delete ID` | Borra una sesión y su traza |
 | `/trace [ID]` | Lo que hizo y costó una sesión, turno a turno |
@@ -245,7 +246,9 @@ effort max, cache 1h]`.
   las llamadas al modelo.
 - Mientras espera la respuesta, gira un spinner con "maha".
 - **Ctrl+C** a mitad de una respuesta la corta y vuelve al prompt; el
-  modelo sabe que la cortaste. En el prompt, sale.
+  modelo sabe que la cortaste. En el prompt, el primero limpia la línea y
+  el segundo sale.
+- **Un texto pegado** de varias líneas va como un solo mensaje.
 - **Sin terminal** (`maha < instrucciones.txt`), todo lo que tiene efecto
   se deniega. Para scripts, mejor `maha -p`.
 
@@ -256,7 +259,7 @@ effort max, cache 1h]`.
 | `maha -p "…"` | Una instrucción y salir; lo de stdin va debajo |
 | `maha -c`, `maha -r ID` | Seguir la última sesión de aquí, o una por su id |
 | `maha models [--all]` | Los modelos del catálogo, con su formato de API, ventana y precios |
-| `maha sessions` | Las sesiones recientes; `sessions delete ID` borra una |
+| `maha sessions [--all]` | Las sesiones recientes, o todas; `sessions delete ID` borra una |
 | `maha trace [ID]` | Lo que hizo y costó una sesión; sin id, la última de aquí |
 | `maha prompt` | El system prompt que tendría una sesión aquí, sin llamar al modelo |
 | `maha stats [--days N]` | Coste y tokens por día y por modelo |
@@ -265,8 +268,9 @@ effort max, cache 1h]`.
 
 Con `-p`:
 - `--output-format text|json|stream-json`: solo la respuesta (por
-  defecto; las llamadas y los tokens van a stderr), un objeto JSON al
-  final o un evento JSON por línea. En JSON, `session_id` es la sesión
+  defecto; las llamadas, los tokens y la sesión para seguir van a
+  stderr), un objeto JSON al final o un evento JSON por línea, empezando
+  por un evento `init` con la sesión, el modelo y las herramientas. En JSON, `session_id` es la sesión
   que se retoma con `-r` (`null` si la ejecución no guardó nada) y
   `trace_id`, lo que enseña `maha trace`, también de una que falló.
 - `--allow TOOL` (repetible): esa herramienta se ejecuta sin preguntar

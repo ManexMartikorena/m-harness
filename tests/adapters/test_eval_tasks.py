@@ -368,10 +368,10 @@ async def test_each_check_fails_untouched_and_passes_when_solved(task_id: str) -
     subject = evaluator(suite)
 
     async with suite.workspace(task) as repo:
-        assert await subject.check(task, repo, "") is not None
+        assert (await subject.check(task, repo, ""))[1] is not None
     async with suite.workspace(task) as repo:
         solve(repo)
-        assert await subject.check(task, repo, answer) is None
+        assert (await subject.check(task, repo, answer))[1] is None
 
 
 async def checked(task_id: str, change: Callable[[Path], object], answer: str) -> bool:
@@ -380,7 +380,7 @@ async def checked(task_id: str, change: Callable[[Path], object], answer: str) -
     [task] = [task for task in await suite.tasks() if task.id == task_id]
     async with suite.workspace(task) as repo:
         change(repo)
-        return await evaluator(suite).check(task, repo, answer) is None
+        return (await evaluator(suite).check(task, repo, answer))[1] is None
 
 
 def readme_without_cap(repo: Path) -> None:
@@ -523,3 +523,50 @@ async def test_the_typo_is_fixed_without_losing_the_readme() -> None:
         (repo / "README.md").write_text("receive\n", encoding="utf-8")
 
     assert not await checked("09-typo", replace, "Fixed.")
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "- Commit messages are written in Spanish.\n",
+        "- Los commits, en castellano.\n",
+    ],
+)
+async def test_what_was_stressed_counts_in_other_words(said: str) -> None:
+    # Audit after hito 10, I12: the check asked for the word "español".
+    def write(repo: Path) -> None:
+        text = AGENTS.replace("- Los mensajes de commit van en español.\n", said)
+        (repo / "AGENTS.md").write_text(text, encoding="utf-8")
+
+    assert await checked("24-init", write, "Hecho.")
+
+
+async def test_the_copy_of_a_fixture_leaves_its_caches_out(
+    tmp_path: Path,
+) -> None:
+    # Audit after hito 10, I12: running the fixture's tests by hand left a
+    # __pycache__ that went into every copy.
+    root = tmp_path / "evals"
+    fixture = root / "fixtures" / "f"
+    (fixture / "src" / "__pycache__").mkdir(parents=True)
+    (fixture / "src" / "__pycache__" / "a.cpython-314.pyc").write_bytes(b"x")
+    (fixture / ".pytest_cache").mkdir()
+    (fixture / "src" / "a.py").write_text("x = 1\n")
+    task = (await TomlEvalSuite(EVALS).tasks())[0].model_copy(update={"fixture": "f"})
+
+    async with TomlEvalSuite(root).workspace(task) as copy:
+        assert (copy / "src" / "a.py").exists()
+        assert not (copy / "src" / "__pycache__").exists()
+        assert not (copy / ".pytest_cache").exists()
+
+
+def test_init_in_a_task_is_never_a_subfolder(tmp_path: Path) -> None:
+    # Review of the audit after hito 10: with TMPDIR inside a git
+    # repository, the copy got the subfolder's wording.
+    (tmp_path / ".git").mkdir()
+    copy = tmp_path / "tienda"
+    copy.mkdir()
+
+    sent = bootstrap._eval_instruction("/init algo", copy)
+
+    assert "part of the project at" not in sent

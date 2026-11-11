@@ -262,13 +262,23 @@ def test_writes_to_the_hour_cache_go_at_their_own_price() -> None:
     assert cost(usage, prices) == Decimal("0.200")
 
 
-def test_without_their_price_hour_writes_go_as_the_others() -> None:
+def test_without_their_price_hour_writes_have_no_price() -> None:
+    # Audit after hito 10, M4, a decision of the maintainer (2026-11-11):
+    # OpenCode publishes no price for them, and at the 5 min one the cost
+    # came out lower than the real one. Unknown, never wrong.
     usage = Usage(
         input_tokens=1_000_000,
         cache_write_tokens=600_000,
         cache_write_1h_tokens=200_000,
     )
 
+    assert cost(usage, PRICES) is None
+
+
+def test_without_hour_writes_their_missing_price_does_not_matter() -> None:
+    usage = Usage(input_tokens=1_000_000, cache_write_tokens=600_000)
+
+    # 400 000 plain at 0.15 and 600 000 to 5 min at 0.20.
     assert cost(usage, PRICES) == Decimal("0.180")
 
 

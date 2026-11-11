@@ -87,6 +87,10 @@ def test_fail_escapes_control_characters(capsys: pytest.CaptureFixture[str]) -> 
         ("\r\x00\x7f\x9b", "\\x0d\\x00\\x7f\\x9b"),
         ("\u202eabc\u2066\u200f", "\\u202eabc\\u2066\\u200f"),
         ("ñ → ✓ 日本", "ñ → ✓ 日本"),
+        # A CRLF text is not a \x0d on every line (audit after hito 10,
+        # I10); a lone one still is.
+        ("a\r\nb\r\n", "a\nb\n"),
+        ("a\rb\r\r\n", "a\\x0db\\x0d\n"),
     ],
 )
 def test_clean_escapes_only_unsafe_characters(text: str, shown: str) -> None:
@@ -448,3 +452,26 @@ def test_the_options_of_the_system_prompt() -> None:
     assert isinstance(options, argparse.Namespace)
     assert options.system_prompt_file == Path("~/base.md")
     assert options.append_system_prompt == "x"
+
+
+def test_maha_prompt_help_says_what_each_option_does(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Audit after hito 10, I13.
+    assert parse(["prompt", "-h"]) == 0
+
+    shown = " ".join(capsys.readouterr().out.split())
+    assert "the prompt for this model" in shown
+    assert "add this text at the end of the system prompt" in shown
+    assert "use this file as the base of the system prompt" in shown
+
+
+def test_the_help_of_allow_does_not_read_as_letting_secrets_in(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert parse(["-h"]) == 0
+
+    shown = " ".join(capsys.readouterr().out.split())
+    assert (
+        "a secret file or a file that runs code is always denied, also inside" in shown
+    )
