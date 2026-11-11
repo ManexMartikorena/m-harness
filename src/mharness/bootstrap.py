@@ -238,7 +238,7 @@ async def _show_prompt(
     prompt = await _prompt(settings, catalog, cwd, tools, files).build(model or "")
     for note in cli.prompt_notes(prompt):
         print(f"  {note}", file=sys.stderr)
-    print(prompt.text)
+    cli.show_prompt(prompt.text, sys.stdout)
     return 0
 
 

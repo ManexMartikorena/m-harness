@@ -16,6 +16,7 @@ from mharness.adapters.cli.subcommands import (
     export_session,
     import_session,
     list_sessions,
+    show_prompt,
     show_stats,
     show_trace,
 )
@@ -41,6 +42,7 @@ __all__ = [
     "project_note",
     "prompt_notes",
     "run_line",
+    "show_prompt",
     "show_stats",
     "show_trace",
     "title_failed",

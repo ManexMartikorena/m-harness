@@ -1898,6 +1898,35 @@ def test_maha_prompt_shows_the_prompt_without_calling_the_model(
     assert captured.err == "  [instructions: AGENTS.md]\n"
 
 
+def test_maha_prompt_cleans_what_it_shows_on_a_terminal(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Audit after hito 10, I1: an AGENTS.md of a foreign repository could
+    # clear the screen or write to the clipboard (OSC 52).
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    evil = "Hola\x1b]52;c;ZWNobyBoYWNr\x07\x1b[2J\n"
+    (workspace / "project" / "AGENTS.md").write_text(evil, encoding="utf-8")
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+
+    assert main(["prompt"]) == 0
+
+    out = capsys.readouterr().out
+    assert "\x1b" not in out
+    assert "Hola\\x1b]52;c;ZWNobyBoYWNr\\x07\\x1b[2J" in out
+
+
+def test_maha_prompt_to_a_pipe_is_the_prompt_as_it_goes(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Data for a program, as with cat: what the model gets, byte for byte.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    (workspace / "project" / "AGENTS.md").write_text("a\x1b[1mb\n", encoding="utf-8")
+
+    assert main(["prompt"]) == 0
+
+    assert "a\x1b[1mb" in capsys.readouterr().out
+
+
 @respx.mock
 def test_the_users_base_and_what_is_appended_reach_the_model(
     workspace: Path, stdin: Callable[[str], None]

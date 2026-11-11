@@ -138,3 +138,10 @@ async def import_session(
 def _fail(exc: Exception | str, err: TextIO) -> int:
     print(f"error: {clean(str(exc))}", file=err, flush=True)
     return EXIT_ERROR
+
+
+def show_prompt(text: str, out: TextIO) -> None:
+    """`maha prompt`: to a terminal, clean, as an AGENTS.md of a foreign
+    repository could repaint it or write to the clipboard (audit after hito
+    10, I1); to a file or a pipe, as the model gets it, as with `cat`."""
+    print(clean(text) if out.isatty() else text, file=out)
