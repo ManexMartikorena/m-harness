@@ -1,6 +1,6 @@
-Estado: EN CURSO (2026-11-11). Hechos: B, S, H, I, M1 a M3, P1, P4, P5 y
-P8. Faltan M4 a M7, P2, P3, P6 y P7, la revisión independiente de los
-arreglos, las evals y `v0.10.1`.
+Estado: EN CURSO (2026-11-11). Hechos: B, S, H, I, M y P, salvo M4, que
+espera una decisión del mantenedor. Faltan la revisión independiente de
+los arreglos, las evals y `v0.10.1`.
 
 # Auditoría tras el hito 10
 
@@ -89,16 +89,14 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   ARREGLADO (`65630f2`).
 - **M4.** A los modelos Claude de OpenCode Go y Zen les falta
   `cache_write_1h`. Hay que comprobar el precio en la documentación de
-  OpenCode. POR ARREGLAR.
+  OpenCode. DECISIÓN pendiente: la documentación de OpenCode (2026-11-11) no da precio de escritura en caché de 1 h para ningún Claude, así que no se puede añadir; hoy esas escrituras se cuentan al precio de 5 min (spec 9, decisión 9).
 - **M5.** Deuda: `_int` en los dos adaptadores (ya hay `count` en
-  `http.py`), `CacheTtl` y la versión de Anthropic escritos dos veces. POR
-  ARREGLAR.
+  `http.py`), `CacheTtl` y la versión de Anthropic escritos dos veces. ARREGLADO (`b75aa5e`).
 - **M6.** `opencode-zen/jev-1.13`: entrada de pago y salida gratis, sin
-  `context` ni `max_output`. Por comprobar en la documentación de Zen. POR
-  ARREGLAR.
+  `context` ni `max_output`. Por comprobar en la documentación de Zen. COMPROBADO (documentación de Zen, 2026-11-11): entrada 0,042 $, salida gratis, sin caché, sin contexto ni salida máxima publicados; es un modelo «System One» que no habla los formatos de `maha`. NO ES FALLO.
 - **M7.** El precio de `claude-haiku-5-5` en OpenCode (pendiente de
   ESTADO): las cuentas encajan con 0,50/2,50 $ por millón sin descuento de
-  caché. Por comprobar en la documentación de OpenCode Go. POR ARREGLAR.
+  caché. Por comprobar en la documentación de OpenCode Go. COMPROBADO (documentación de Go, 2026-11-11): 0,10/0,50 $ hasta 100K y 0,50/2,50 $ por encima, como el catálogo; la diferencia es de lo que cobra OpenCode, no del catálogo. Con Go vale el coste del proveedor. Al repasar la documentación, el catálogo de Go y Zen estaba desfasado (nueve modelos, precios y descuentos): puesto al día (`7dd8e25`).
 
 ## Herramientas y seguridad (H)
 
@@ -175,21 +173,21 @@ motivo de la mayoría.
   que fijó la spec 3, §1.10. HECHO (`579cf52`).
 - **P2.** `-p`: el id de la sesión en stderr al terminar; `stream-json`,
   un evento inicial con el id, el modelo y las herramientas, cuando el id
-  ya es suyo (2 de 3). POR HACER.
+  ya es suyo (2 de 3). HECHO (`2d1eb35`).
 - **P3.** `run_command` con bash si lo hay, y si no `/bin/sh` (3 de 3):
   `/bin/sh` es dash en Debian y Ubuntu, y `source` o `[[` fallan. Bash, no
   `$SHELL` (zsh o fish cambian la sintaxis). El `cd` que dura entre
-  comandos, al hito 15. POR HACER.
+  comandos, al hito 15. HECHO (`f760beb`).
 - **P4.** Enseñar el diff de una edición que pasa sin preguntar por un
   "always" (3 de 3). HECHO (`344c76d`).
 - **P5.** Una lista de variables de entorno para los comandos, solo en la
   configuración del usuario (proxy, `JAVA_HOME`…), sin las que tienen
   forma de credencial (2 de 3; el tercero, al hito 15). HECHO (`87cac93`).
 - **P6.** `maha sessions --all` y `/sessions all`: hoy solo se ven 20 (3
-  de 3). POR HACER.
+  de 3). HECHO (`9050201`).
 - **P7.** Buscar `.maha/config.toml` de la carpeta actual a la raíz git
   (3 de 3): desde una subcarpeta, la configuración del proyecto, límites
-  incluidos, se ignoraba sin avisar. POR HACER.
+  incluidos, se ignoraba sin avisar. HECHO (`a245c18`).
 - **P8.** Si Kimi o GLM exigen que se les devuelva su `reasoning_content`
   en un bucle con herramientas, es un fallo del adaptador de OpenAI (los
   tres piden comprobarlo en la documentación oficial antes). COMPROBADO: la documentación de Kimi (2026-11-10) dice, para `kimi-k2.7-code`, "you must therefore (not optionally) keep the `reasoning_content` of historical assistant messages", y OpenCode Go lo manda. ARREGLADO (`69f16ec`).
