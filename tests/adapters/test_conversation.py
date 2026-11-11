@@ -433,17 +433,18 @@ async def test_lines_from_a_pipe_are_still_one_by_one(pipe: tuple[int, int]) -> 
     assert [await lines.readline(), await lines.readline()] == ["uno", "dos"]
 
 
-async def test_lines_that_reach_a_terminal_together_are_one() -> None:
-    # The fallback without bracketed paste: no one types two lines at once.
+async def test_lines_typed_ahead_in_a_terminal_go_one_by_one() -> None:
+    # Review of the audit after hito 10 (R15), decision of the maintainer
+    # (2026-11-11): only what the terminal marks as pasted is one; lines
+    # typed while the model answers ("hola⏎/exit⏎") are each one.
     main, side = pty.openpty()
     try:
         lines = StdinLines(side)
-        os.write(main, b"uno\ndos\ntres\n")
+        os.write(main, b"hola\n/exit\n")
         await asyncio.sleep(0.05)
 
-        assert await lines.readline() == "uno\ndos\ntres"
-        os.write(main, b"sola\n")
-        assert await lines.readline() == "sola"
+        assert await lines.readline() == "hola"
+        assert await lines.readline() == "/exit"
     finally:
         os.close(main)
         os.close(side)

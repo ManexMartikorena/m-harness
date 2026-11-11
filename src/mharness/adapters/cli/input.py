@@ -51,8 +51,9 @@ class StdinLines:
     async def readline(self) -> str:
         """The next line. A paste of several lines is one (audit after hito
         10, I4, decision 2 of the maintainer): what the terminal marks as
-        pasted (bracketed paste) and, in a terminal, the lines that arrive
-        together, as nobody types two lines at once."""
+        pasted (bracketed paste). Lines that only arrive together are not
+        joined: those typed ahead during an answer would become one turn
+        (R15, decision of the maintainer, 2026-11-11)."""
         line = await self._line()
         if PASTE_START in line:
             while PASTE_END not in line.rpartition(PASTE_START)[2]:
@@ -62,12 +63,6 @@ class StdinLines:
                     self._ended = True
                     break
             return line.replace(PASTE_START, "").replace(PASTE_END, "")
-        while self._together():
-            try:
-                line += "\n" + await self._line()
-            except EOFError:
-                self._ended = True
-                break
         return line
 
     async def _line(self) -> str:
@@ -85,16 +80,6 @@ class StdinLines:
         line, _, self._buffer = self._buffer.partition(b"\n")
         # Splitting bytes at b"\n" never cuts a UTF-8 character.
         return line.decode("utf-8", errors="replace").removesuffix("\r")
-
-    def _together(self) -> bool:
-        """Whether another line came with the last one, in a terminal: from
-        a pipe or a file each line is a turn (`maha < notes.txt`)."""
-        if not _is_terminal(self._fd):
-            return False
-        if b"\n" in self._buffer:
-            return True
-        ready, _, _ = select.select([self._fd], [], [], 0)
-        return bool(ready)
 
     async def read_all(self, limit: int) -> str:
         """Everything until the end (`git diff | maha -p …`), as text; more
@@ -149,15 +134,6 @@ class StdinLines:
         finally:
             loop.remove_reader(self._fd)
         return os.read(self._fd, size)
-
-
-def _is_terminal(fd: int) -> bool:
-    """Whether `fd` is a terminal, by its settings: a pipe has none."""
-    try:
-        termios.tcgetattr(fd)
-    except termios.error, OSError:
-        return False
-    return True
 
 
 @contextlib.contextmanager
