@@ -1,5 +1,5 @@
-Estado: EN CURSO (2026-11-10). Hechos: B1 a B6, S1 a S5 y S7 a S8, M1 a M3
-y P8. Faltan S6, M4 a M7, H, I, P1 a P7, la revisión independiente de los
+Estado: EN CURSO (2026-11-11). Hechos: B, S, H, M1 a M3, P4, P5 y P8.
+Faltan I, M4 a M7, P1 a P3 y P6 a P7, la revisión independiente de los
 arreglos, las evals y `v0.10.1`.
 
 # Auditoría tras el hito 10
@@ -72,7 +72,7 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 - **S5.** Si el primer turno no se pudo guardar, la sesión no recibe
   título nunca. ARREGLADO (`687bb09`).
 - **S6.** `/delete` de una sesión que no existe, con una traza ilegible,
-  dice que se borró. ARREGLADO (este commit).
+  dice que se borró. ARREGLADO (`3de7cd4`).
 - **S7.** El título cancelado al salir se paga y no queda registrado.
   DECISIÓN 3. ARREGLADO (`687bb09`).
 - **S8.** `Conversation.titled()` solo lo usan los tests. Con la decisión
@@ -103,10 +103,10 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 ## Herramientas y seguridad (H)
 
 - **H1.** `[a] always this session` no dice qué cubre: en una edición,
-  todas las ediciones del directorio. POR ARREGLAR.
+  todas las ediciones del directorio. ARREGLADO (`344c76d`).
 - **H2.** `edit_file`: la búsqueda flexible de un `old_string` de varias
   líneas es O(líneas × líneas) y corre antes de preguntar; 800 KB bloquean
-  `maha` 19 s sin atender a Ctrl+C. POR ARREGLAR.
+  `maha` 19 s sin atender a Ctrl+C. ARREGLADO (`a2997a2`).
 - **H3.** `grep` lanza un Python por cada lote de 500 ficheros (0,26 s cada
   uno): 10.000 ficheros, 5 s; en WSL puede pasar su tiempo límite. POR
   ARREGLAR.
@@ -114,35 +114,35 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   resumen de fallos de un `pytest` largo nunca llega al modelo. POR
   ARREGLAR.
 - **H5.** `grep` con `a{99999999999}` o un anidamiento enorme sale como
-  error interno (`OverflowError`, `RecursionError`). POR ARREGLAR.
+  error interno (`OverflowError`, `RecursionError`). ARREGLADO (`0fc152e`).
 - **H6.** El ámbito "always" de `run_command` no incluye el tiempo límite
-  que la pregunta enseña. POR ARREGLAR.
+  que la pregunta enseña. ARREGLADO (`e37e115`).
 - **H7.** Faltan en la lista de lo que ejecuta código: `.hg/hgrc`,
   `Jenkinsfile`, `.travis.yml`, `azure-pipelines.yml`,
   `bitbucket-pipelines.yml`, `.buildkite/`, `.drone.yml`, `.woodpecker*`,
-  `.nvimrc`, `.vimrc`, `.gvimrc` y `lefthook.yml`. POR ARREGLAR.
+  `.nvimrc`, `.vimrc`, `.gvimrc` y `lefthook.yml`. ARREGLADO (`0fc152e`).
 - **H8.** `XDG_RUNTIME_DIR` llega a los comandos y abre el bus de sesión
-  (llavero, agente SSH). POR ARREGLAR.
+  (llavero, agente SSH). ARREGLADO (`344c76d`).
 - **H9.** El proceso de búsqueda hereda el entorno completo de `maha`,
-  clave incluida. POR ARREGLAR.
+  clave incluida. ARREGLADO (`6c52678`).
 - **H10.** Una línea enorme (un JS minificado) llena la pregunta de
-  aprobación de `write_file`. POR ARREGLAR.
+  aprobación de `write_file`. ARREGLADO (`2b838b0`).
 - **H11.** Una ruta en un bucle de enlaces o con un nombre demasiado largo
-  se pregunta y falla después. POR ARREGLAR.
+  se pregunta y falla después. ARREGLADO (`0fc152e`).
 - **H12.** El comentario de `ApprovalRequest.title` dice que se corta, y no
-  se corta (A3). POR ARREGLAR.
-- **H13.** `_check_grep` devuelve una regex que nadie usa. POR ARREGLAR.
+  se corta (A3). ARREGLADO (`309f248`).
+- **H13.** `_check_grep` devuelve una regex que nadie usa. ARREGLADO (`caf2abb`).
 
 ## Interfaz y evals (I)
 
 - **I1.** `maha prompt` saca sin limpiar el texto de los `AGENTS.md` a la
   terminal: uno de un repo ajeno puede borrar la pantalla o escribir en el
-  portapapeles (OSC 52). POR ARREGLAR.
+  portapapeles (OSC 52). ARREGLADO (`344c76d`).
 - **I2.** Ctrl+C en `maha sessions`, `trace`, `stats`, `export`, `import`
   o `prompt`, o al arrancar la conversación, da un traceback. POR
   ARREGLAR.
 - **I3.** `/init` en una subcarpeta apunta a la raíz git, fuera del
-  directorio de trabajo. DECISIÓN 1. POR ARREGLAR.
+  directorio de trabajo. DECISIÓN 1. ARREGLADO (`0fc152e`).
 - **I4.** Un texto de varias líneas pegado se manda como un turno por
   línea. DECISIÓN 2. POR ARREGLAR.
 - **I5.** `ask_user`: `"²"` pasa `isdigit()` y rompe la herramienta. POR
@@ -186,10 +186,10 @@ motivo de la mayoría.
   `$SHELL` (zsh o fish cambian la sintaxis). El `cd` que dura entre
   comandos, al hito 15. POR HACER.
 - **P4.** Enseñar el diff de una edición que pasa sin preguntar por un
-  "always" (3 de 3). POR HACER.
+  "always" (3 de 3). HECHO (`344c76d`).
 - **P5.** Una lista de variables de entorno para los comandos, solo en la
   configuración del usuario (proxy, `JAVA_HOME`…), sin las que tienen
-  forma de credencial (2 de 3; el tercero, al hito 15). POR HACER.
+  forma de credencial (2 de 3; el tercero, al hito 15). HECHO (`87cac93`).
 - **P6.** `maha sessions --all` y `/sessions all`: hoy solo se ven 20 (3
   de 3). POR HACER.
 - **P7.** Buscar `.maha/config.toml` de la carpeta actual a la raíz git
