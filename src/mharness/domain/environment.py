@@ -4,7 +4,9 @@ B4 and E1).
 A list of allowed names, not the environment minus the known secrets: a
 credential with an unexpected name (`MI_CLAVE`) would reach the command,
 and from its output, the model. `SSH_AUTH_SOCK` stays out too: it gives the
-command your SSH keys.
+command your SSH keys, and so does `XDG_RUNTIME_DIR`: its `bus` is the
+session bus, with the keyring and maybe an SSH or GPG agent (audit after
+hito 10, H8).
 
 No editor opens: a command has no terminal, so an editor fails with its
 screen codes in the output, or waits for a window (`code --wait`).
@@ -31,6 +33,8 @@ ALLOWED = frozenset(
     }
 )
 ALLOWED_PREFIXES = ("LC_", "XDG_")
+# Never, even under an allowed prefix.
+DENIED = frozenset({"XDG_RUNTIME_DIR"})
 # `true` ends at once leaving the text empty, and git stops with a clear
 # error. GIT_EDITOR goes before core.editor, VISUAL and EDITOR (git-var(1),
 # git 2.53, checked on 2026-10-27).
@@ -51,6 +55,7 @@ def command_env(
         for name, value in environ.items()
         if (name in ALLOWED or name.startswith(ALLOWED_PREFIXES))
         and name not in dropped
+        and name not in DENIED
         and not name.upper().endswith(CREDENTIAL_SUFFIXES)
     }
     return {**allowed, **NO_EDITOR}

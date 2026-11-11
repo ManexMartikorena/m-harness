@@ -58,3 +58,11 @@ def test_no_editor_opens() -> None:
         "VISUAL": "true",
         "EDITOR": "true",
     }
+
+
+def test_the_runtime_folder_does_not_pass() -> None:
+    # Audit after hito 10, H8: with it, the session bus is reachable (the
+    # keyring, an SSH or GPG agent) at $XDG_RUNTIME_DIR/bus.
+    environ = {"XDG_RUNTIME_DIR": "/run/user/1000", "XDG_DATA_HOME": "/d"}
+
+    assert command_env(environ) == {"XDG_DATA_HOME": "/d", **NO_EDITOR}
