@@ -829,6 +829,11 @@ async def test_creating_asks_with_a_preview_and_writes(root: Path) -> None:
         title="create notas.txt (3 lines)",
         detail="uno\ndos\ntres",
         scope="write_file",
+        covers=(
+            "every write_file in the working directory, but secrets and files "
+            "that run code"
+        ),
+        review=True,
     )
     assert result == "wrote notas.txt (3 lines)"
     assert tool.summary(result) == "3 lines"
@@ -850,6 +855,11 @@ async def test_the_preview_shows_the_first_20_lines(root: Path) -> None:
         title="create empty.txt (0 lines)",
         detail="(empty file)",
         scope="write_file",
+        covers=(
+            "every write_file in the working directory, but secrets and files "
+            "that run code"
+        ),
+        review=True,
     )
 
 
@@ -889,6 +899,11 @@ async def test_overwriting_asks_with_a_diff(root: Path) -> None:
         title="overwrite notas.txt",
         detail="@@ -1,3 +1,3 @@\n a\n-b\n+B\n c",
         scope="write_file",
+        covers=(
+            "every write_file in the working directory, but secrets and files "
+            "that run code"
+        ),
+        review=True,
     )
     assert result == "wrote notas.txt (3 lines)"
     assert (root / "notas.txt").read_text(encoding="utf-8") == "a\nB\nc\n"
@@ -1287,6 +1302,11 @@ async def test_editing_asks_with_a_diff_and_edits(root: Path) -> None:
         title="edit src/app.py",
         detail="@@ -1,3 +1,3 @@\n def f():\n     x = 0\n-    return 1\n+    return 2",
         scope="edit_file",
+        covers=(
+            "every edit_file in the working directory, but secrets and files "
+            "that run code"
+        ),
+        review=True,
     )
     assert result == "edited src/app.py (1 replacement)"
     assert edit_tool(root).summary(result) == "1 replacement"

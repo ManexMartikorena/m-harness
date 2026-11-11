@@ -4,7 +4,7 @@ import io
 
 import pytest
 
-from mharness.adapters.cli.approval import DenyAll, TerminalApproval
+from mharness.adapters.cli.approval import DenyAll, TerminalApproval, show_covered
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.ports.approval import ApprovalGate
 from tests.fakes.terminal import ScriptedInput
@@ -218,3 +218,52 @@ async def test_a_title_with_line_breaks_stays_on_one_line() -> None:
     assert len(lines[0]) <= len("  ┌ ") + 201
     assert lines[2] == "  │ ! uno\\ndos\\tfin"
     assert len(lines) == 4
+
+
+async def test_always_says_what_it_covers() -> None:
+    # Audit after hito 10, H1.
+    request = EDIT.model_copy(update={"covers": "every edit_file in here"})
+
+    _, shown = await ask(request, "n")
+
+    assert "  │ [a] covers every edit_file in here\n" + WITH_ALWAYS in shown
+
+
+async def test_without_always_nothing_is_said_of_what_it_covers() -> None:
+    request = OUTSIDE.model_copy(update={"covers": "every read_file"})
+
+    _, shown = await ask(request, "n")
+
+    assert "covers" not in shown
+
+
+def test_a_covered_change_is_shown_without_a_question() -> None:
+    # Audit after hito 10, P4: the diff of an edit "always" lets run.
+    out = io.StringIO()
+
+    show_covered(EDIT.model_copy(update={"review": True}), out)
+
+    assert out.getvalue() == (
+        "  ┌ edit notas.txt (allowed this session)\n"
+        "  │ @@ -1 +1 @@\n"
+        "  │ -Comprar pan\n"
+        "  │ +Comprar pan y leche\n"
+        "  └\n"
+    )
+
+
+def test_a_covered_call_without_review_shows_nothing() -> None:
+    out = io.StringIO()
+
+    show_covered(EDIT, out)
+
+    assert out.getvalue() == ""
+
+
+def test_a_long_covered_change_is_cut() -> None:
+    out = io.StringIO()
+    detail = "\n".join(f"+{n}" for n in range(70))
+
+    show_covered(EDIT.model_copy(update={"review": True, "detail": detail}), out)
+
+    assert "  │ … [10 more lines]\n" in out.getvalue()

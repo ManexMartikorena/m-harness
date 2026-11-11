@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from mharness.adapters.tools import RunCommand
-from mharness.adapters.tools.shell import RunCommandParams
+from mharness.adapters.tools.shell import DEFAULT_TIMEOUT, RunCommandParams
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.commands import CommandResult
 from mharness.domain.tools import ToolError
@@ -69,8 +69,20 @@ async def test_it_asks_with_the_command_and_its_exact_scope(tmp_path: Path) -> N
         detail=(
             f"in {tmp_path}\nwith your permissions: it can change any file you can"
         ),
-        scope="run_command:uv run pytest -q",
+        scope=f"run_command:{DEFAULT_TIMEOUT}:uv run pytest -q",
+        covers="this exact command, with this time limit",
     )
+
+
+async def test_always_does_not_cover_another_time_limit(tmp_path: Path) -> None:
+    # Audit after hito 10, H6: the question shows the time limit, so the
+    # approval is of the command with it.
+    subject, _ = tool(tmp_path)
+
+    short = await subject.approval(RunCommandParams(command="make"))
+    long = await subject.approval(RunCommandParams(command="make", timeout=600))
+
+    assert short.scope != long.scope
 
 
 async def test_a_timeout_that_is_not_the_default_is_shown(tmp_path: Path) -> None:

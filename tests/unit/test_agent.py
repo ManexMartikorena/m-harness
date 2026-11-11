@@ -16,6 +16,7 @@ from mharness.application.agent import Agent
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import (
     AgentEvent,
+    ApprovalCovered,
     ApprovalRequested,
     ModelCallFinished,
     ModelFallback,
@@ -650,6 +651,10 @@ async def test_session_covers_the_same_scope_without_asking() -> None:
     assert [f.decision for f in finished(events)] == ["session", None]
     assert sum(isinstance(e, ApprovalRequested) for e in events) == 1
     assert len(echo.calls) == 2
+    # Told, not asked, before it runs (audit after hito 10, P4).
+    covered = [e for e in events if isinstance(e, ApprovalCovered)]
+    assert covered == [ApprovalCovered(call=call("c2"), request=ask())]
+    assert events.index(covered[0]) < events.index(finished(events)[1])
 
 
 async def test_session_lasts_for_the_next_turns() -> None:

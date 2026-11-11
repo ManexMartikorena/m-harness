@@ -73,6 +73,9 @@ class TerminalApproval:
                 warning = f"{YELLOW}{warning}{RESET}"
             print(f"  │ {warning}", file=out)
         always = request.scope is not None
+        if always and request.covers:
+            # What [a] lets run from now on (audit after hito 10, H1).
+            print(f"  │ [a] covers {clean_line(request.covers)}", file=out)
         choices = WITH_ALWAYS if always else WITHOUT_ALWAYS
         if rest:
             choices += VIEW_ALL
@@ -91,6 +94,21 @@ class TerminalApproval:
                     _print(out, "  │ ", line)
             if answer in _ANSWERS:
                 return _ANSWERS[answer]
+
+
+def show_covered(request: ApprovalRequest, out: TextIO) -> None:
+    """A change that runs without asking, by an earlier "always": seen,
+    not asked (audit after hito 10, P4). Only what is worth reviewing."""
+    if not request.review:
+        return
+    _print(out, "  ┌ ", f"{clean_line(request.title)} (allowed this session)")
+    lines = [clean(line) for line in request.detail.splitlines()]
+    for line in lines[:DETAIL_MAX_LINES]:
+        _print(out, "  │ ", line)
+    rest = len(lines) - DETAIL_MAX_LINES
+    if rest > 0:
+        print(f"  │ … [{rest} more lines]", file=out)
+    print("  └", file=out, flush=True)
 
 
 def _print(out: TextIO, prefix: str, line: str) -> None:

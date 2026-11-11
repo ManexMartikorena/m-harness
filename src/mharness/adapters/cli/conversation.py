@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TextIO
 
 from mharness import __version__
+from mharness.adapters.cli.approval import show_covered
 from mharness.adapters.cli.commands import Commands, parse_command
 from mharness.adapters.cli.init import TAKES_EFFECT, Init
 from mharness.adapters.cli.input import Discard, ReadLine, StdinLines
@@ -23,6 +24,7 @@ from mharness.adapters.cli.text import clean, clean_line, usd
 from mharness.adapters.cli.todo import finished_todo, is_todo
 from mharness.application.sessions import Conversation, Resumed, Sessions, Start
 from mharness.domain.agent_events import (
+    ApprovalCovered,
     ApprovalRequested,
     ModelFallback,
     ModelRetry,
@@ -242,6 +244,8 @@ async def _answer(
                             print(f"  → {call_line(call)}", file=out, flush=True)
                     case ApprovalRequested():
                         asking = True
+                    case ApprovalCovered(request=request):
+                        show_covered(request, out)
                     case ModelRetry() | ModelFallback():
                         await spinner.stop()
                         if wrote:

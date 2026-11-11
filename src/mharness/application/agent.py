@@ -21,6 +21,7 @@ from mharness.application.collect import Accumulator
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import (
     AgentEvent,
+    ApprovalCovered,
     ApprovalRequested,
     ModelCallFinished,
     ModelFallback,
@@ -360,7 +361,9 @@ class Agent:
                 outcome = prepared
             else:
                 question = prepared.request
-                if question is not None and not self._approvals.covers(question):
+                if question is not None and self._approvals.covers(question):
+                    yield ApprovalCovered(call=call, request=question)
+                elif question is not None:
                     yield ApprovalRequested(call=call, request=question)
                     asked = True
                     answer = await self._decide(turn, question)

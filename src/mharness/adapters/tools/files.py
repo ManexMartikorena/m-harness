@@ -1404,6 +1404,8 @@ class WriteFile:
             title=title,
             detail=detail,
             scope=self.name if warning is None else None,
+            covers=_COVERS.format(tool=self.name) if warning is None else None,
+            review=True,
             warning=warning,
         )
 
@@ -1426,6 +1428,12 @@ class WriteFile:
     def summary(self, result: str) -> str:
         # "wrote notas.txt (3 lines)" → "3 lines".
         return result[result.rfind("(") + 1 : -1]
+
+
+# What "always this session" covers for a change (audit after hito 10, H1):
+# a file with a warning (a secret, one that runs code, outside) is still
+# asked one by one.
+_COVERS = "every {tool} in the working directory, but secrets and files that run code"
 
 
 def _blind_question(
@@ -1612,6 +1620,8 @@ class EditFile:
             title=f"edit {shown}",
             detail=detail,
             scope=self.name if warning is None else None,
+            covers=_COVERS.format(tool=self.name) if warning is None else None,
+            review=True,
             warning=warning,
         )
 

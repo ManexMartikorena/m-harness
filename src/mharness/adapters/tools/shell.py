@@ -63,8 +63,10 @@ class RunCommand:
             tool=self.name,
             title=f"run: {params.command}",
             detail="\n".join(lines),
-            # Only this exact command (spec hito 5, §1.3).
-            scope=f"{self.name}:{params.command}",
+            # Only this exact command (spec hito 5, §1.3), with the time
+            # limit the question shows (audit after hito 10, H6).
+            scope=f"{self.name}:{params.timeout}:{params.command}",
+            covers="this exact command, with this time limit",
         )
 
     async def run(self, params: RunCommandParams) -> str:
