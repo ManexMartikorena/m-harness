@@ -824,6 +824,10 @@ class Sessions:
             # is that maha's (audit after hito 9, S3).
             raise SessionInUse(f"session {session} is open in another maha") from None
         except TraceError as exc:
+            if not stored:
+                # Only a trace, and it stays: nothing was deleted (audit
+                # after hito 10, S6).
+                raise SessionError(str(exc)) from None
             raise SessionError(
                 f"session {session} deleted, but not its trace: {exc}"
             ) from None

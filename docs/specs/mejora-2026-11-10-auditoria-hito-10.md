@@ -60,19 +60,19 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
 
 - **S1.** Carrera entre el título y el turno: lo que entra en `_pending`
   durante el `await` del guardado se borra al vaciarla. Hoy no ocurre
-  porque el adaptador JSONL no cede, pero el puerto es asíncrono. POR
-  ARREGLAR.
+  porque el adaptador JSONL no cede, pero el puerto es asíncrono.
+  ARREGLADO (`8d3a4f9`).
 - **S2.** `-c` y `/resume` sin id saltan en silencio una sesión ilegible y
-  retoman otra más antigua; `/sessions` no la enseña. ARREGLADO (`8d3a4f9`).
+  retoman otra más antigua; `/sessions` no la enseña. ARREGLADO (`c93f049`).
 - **S3.** El coste de la sesión y `/trace` dan "sin precio" al turno entero
   si una de sus llamadas no tiene precio; `maha stats` suma por llamada.
-  ARREGLADO (`c93f049`).
+  ARREGLADO (`c73d447`).
 - **S4.** `close()` se corta si la tarea del título acabó con una
-  excepción que no es `CancelledError`. ARREGLADO (`c73d447`).
+  excepción que no es `CancelledError`. ARREGLADO (`687bb09`).
 - **S5.** Si el primer turno no se pudo guardar, la sesión no recibe
   título nunca. ARREGLADO (`687bb09`).
 - **S6.** `/delete` de una sesión que no existe, con una traza ilegible,
-  dice que se borró. ARREGLADO (`687bb09`).
+  dice que se borró. ARREGLADO (este commit).
 - **S7.** El título cancelado al salir se paga y no queda registrado.
   DECISIÓN 3. ARREGLADO (`687bb09`).
 - **S8.** `Conversation.titled()` solo lo usan los tests. Con la decisión

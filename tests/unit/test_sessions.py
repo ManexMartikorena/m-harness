@@ -1179,6 +1179,28 @@ async def test_a_trace_that_cannot_be_deleted_is_said() -> None:
     assert FIRST not in store.sessions
 
 
+class UnreadableTraces(StuckTraces):
+    async def read(self, session: str) -> list[TraceRecord]:
+        raise TraceError(f"cannot read the trace of {session}: Permission denied")
+
+
+async def test_a_trace_alone_that_cannot_be_deleted_is_not_said_deleted() -> None:
+    # Audit after hito 10, S6: no session file, a trace that cannot be
+    # read nor deleted. Nothing went: saying "deleted" is false.
+    world = World(
+        MemorySessionStore(),
+        FakeModelClient([]),
+        traces=UnreadableTraces(),
+        tokens=["b01c"],
+    )
+    current = await world.sessions.start()
+
+    with pytest.raises(SessionError) as caught:
+        await world.sessions.delete(FIRST, current=current)
+    assert "deleted" not in str(caught.value).replace("cannot delete", "")
+    assert "Permission denied" in str(caught.value)
+
+
 async def test_an_id_whose_trace_exists_is_not_taken() -> None:
     # Another maha started in the same second with the same token.
     traces = MemoryTraceSink()
