@@ -921,7 +921,13 @@ def _eval_instruction(instruction: str, copy: Path) -> str:
     """What a task's instruction sends: `/init TEXT` as the conversation
     sends it, in the task's copy; anything else, as it is (spec hito 10,
     §5)."""
-    return _expanded(instruction, copy)
+    command = cli.parse_command(instruction)
+    if command is None or command.name != "init":
+        return instruction
+    # The copy is the project, wherever the temporary folder is (review of
+    # the audit after hito 10).
+    init = _init(copy)
+    return cli.Init(template=init.template, root=copy).text(command.argument)
 
 
 def _expanded(text: str, cwd: Path) -> str:

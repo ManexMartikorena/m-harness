@@ -558,3 +558,15 @@ async def test_the_copy_of_a_fixture_leaves_its_caches_out(
         assert (copy / "src" / "a.py").exists()
         assert not (copy / "src" / "__pycache__").exists()
         assert not (copy / ".pytest_cache").exists()
+
+
+def test_init_in_a_task_is_never_a_subfolder(tmp_path: Path) -> None:
+    # Review of the audit after hito 10: with TMPDIR inside a git
+    # repository, the copy got the subfolder's wording.
+    (tmp_path / ".git").mkdir()
+    copy = tmp_path / "tienda"
+    copy.mkdir()
+
+    sent = bootstrap._eval_instruction("/init algo", copy)
+
+    assert "part of the project at" not in sent
