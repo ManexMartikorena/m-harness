@@ -18,7 +18,9 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 - Última versión: **`v0.10.2` — Segunda revisión de la auditoría tras el
   hito 10** (2026-11-11):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.2
-- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
+- Ramas abiertas: `fix/cierre-auditoria-hito-10` (la segunda revisión de
+  la auditoría, R17 a R25, sin PR todavía). Las integradas se conservan en
+  GitHub.
 
 ## Para la release
 
@@ -51,6 +53,15 @@ spec, su nota de la guía y su release.
 Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
 trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
+0. **Agente, en `fix/cierre-auditoria-hito-10`:** cerrar `v0.10.2`. Los
+   arreglos y los documentos están commiteados; falta: (a) relanzar las
+   evals (`maha eval --models glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5
+   --repeat 5 --retry-errors`): la pasada del 2026-11-11 se cortó al
+   cerrar la sesión, sin regresión hasta entonces (GLM 115/120, Kimi
+   118/119, Haiku 25/25); (b) anotarlas en la spec, sección "Evals", y en
+   HISTORIAL; (c) versión 0.10.2 en `pyproject.toml` y `uv.lock`; (d) PR,
+   merge con el CI en verde, tag `v0.10.2` y release (el mantenedor ya dio
+   permiso el 2026-11-11); (e) ESTADO sin esta rama abierta.
 1. **Mantenedor:** decir cuándo se empieza el hito 11 (gestión del
    contexto). Hasta entonces, el agente no empieza su spec (decisión del
    mantenedor, 2026-11-11).
