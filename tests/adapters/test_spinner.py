@@ -64,7 +64,7 @@ async def test_spins_on_a_terminal_and_erases_the_line() -> None:
 
     spinner.start()
     await asyncio.sleep(0.25)
-    await spinner.stop()
+    spinner.stop()
 
     text = out.getvalue()
     assert f"\r{frame(0, color=False)}" in text
@@ -78,7 +78,7 @@ async def test_draws_nothing_when_not_a_terminal() -> None:
 
     spinner.start()
     await asyncio.sleep(0.15)
-    await spinner.stop()
+    spinner.stop()
 
     assert out.getvalue() == ""
 
@@ -86,11 +86,28 @@ async def test_draws_nothing_when_not_a_terminal() -> None:
 async def test_stop_twice_and_stop_without_start() -> None:
     out = FakeTerminal()
     never_started = Spinner(out, color=False)
-    await never_started.stop()
+    never_started.stop()
     assert out.getvalue() == ""
 
     spinner = Spinner(out, color=False)
     spinner.start()
-    await spinner.stop()
-    await spinner.stop()
+    spinner.stop()
+    spinner.stop()
     assert out.getvalue().count(CLEAR_LINE) == 1
+
+
+async def test_stop_never_waits_and_nothing_is_drawn_after_it() -> None:
+    # Second review of the audit after hito 10: stop() awaited the spinner,
+    # so a second Ctrl+C while an answer was being cut, in that wait, left
+    # the answer and ended maha. Now there is nothing to wait for.
+    out = FakeTerminal()
+    spinner = Spinner(out, color=False)
+    spinner.start()
+    await asyncio.sleep(0.05)
+
+    # Not a coroutine: erased before anything else runs.
+    spinner.stop()
+    assert out.getvalue().endswith(CLEAR_LINE)
+    await asyncio.sleep(0.25)
+
+    assert out.getvalue().endswith(CLEAR_LINE)

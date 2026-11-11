@@ -298,7 +298,7 @@ async def _answer(
                     held = ""
                 match event:
                     case TextDelta(text=text):
-                        await spinner.stop()
+                        spinner.stop()
                         other = event.block is not None and block is not None
                         if wrote and other and event.block != block:
                             out.write("\n")
@@ -309,7 +309,7 @@ async def _answer(
                         out.flush()
                         wrote = True
                     case ToolCallProposed(call=call):
-                        await spinner.stop()
+                        spinner.stop()
                         if wrote:
                             print(file=out)
                             wrote = False
@@ -324,7 +324,7 @@ async def _answer(
                     case ApprovalCovered(request=request):
                         show_covered(request, out)
                     case ModelRetry() | ModelFallback():
-                        await spinner.stop()
+                        spinner.stop()
                         if wrote:
                             print(file=out)
                             wrote = False
@@ -340,7 +340,7 @@ async def _answer(
                         # The model is called again.
                         spinner.start()
                     case TurnFinished():
-                        await spinner.stop()
+                        spinner.stop()
                         if wrote:
                             print(file=out)
                             wrote = False
@@ -356,7 +356,7 @@ async def _answer(
                             print(f"  {tokens}", file=out)
                         out.flush()
     except ModelError as exc:
-        await spinner.stop()
+        spinner.stop()
         # The text already shown stays; the error starts on a new line.
         if wrote:
             print(file=out)
@@ -364,7 +364,7 @@ async def _answer(
     except Exception as exc:
         # A bug, or the terminal failing: the agent already kept what ran,
         # and maha goes on (spec mejora-2026-10-26-deuda-pre-hito-6, B1).
-        await spinner.stop()
+        spinner.stop()
         if wrote:
             print(file=out)
         detail = clean(f"{type(exc).__name__}: {exc}")
@@ -373,12 +373,12 @@ async def _answer(
         # A closing signal goes on up: maha ends, not just the answer.
         if not _ours(sigint):
             raise
-        await spinner.stop()
+        spinner.stop()
         if wrote or asking:
             print(file=out)
         print(f"  {INTERRUPTED}", file=out, flush=True)
     finally:
-        await spinner.stop()
+        spinner.stop()
 
 
 def show_finished(event: ToolFinished, out: TextIO, *, color: bool = False) -> None:
