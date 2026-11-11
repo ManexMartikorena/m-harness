@@ -257,7 +257,7 @@ y esta spec. Cada hallazgo, comprobado y con su test primero:
   (`hola⏎/exit⏎`). DECISIÓN pendiente del mantenedor.
 - **R16.** Una señal de cierre (SIGTERM) mientras la salida espera el
   título termina con el código de la salida normal, no con 128 + la
-  señal. Lo demás se guarda. ARREGLADO (este commit).
+  señal. Lo demás se guarda. ARREGLADO (`26cdd0f`).
 
 ## Aprendido al implementar
 
