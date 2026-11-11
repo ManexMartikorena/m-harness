@@ -3,8 +3,10 @@
 
 import asyncio
 import contextlib
+import errno
 import io
 import signal
+from collections.abc import Coroutine
 from decimal import Decimal
 from pathlib import Path
 
@@ -493,6 +495,110 @@ async def test_a_closing_signal_while_exit_waits_for_the_title_says_so() -> None
         read_line=ScriptedInput("Hola", "/exit"),
         out=io.StringIO(),
         err=io.StringIO(),
+    )
+    await closing
+
+    assert code == 128 + signal.SIGHUP
+    assert FIRST not in store.locked
+
+
+class WaitsAtThePrompt:
+    """What the person types, then a prompt that waits for ever."""
+
+    def __init__(self, *lines: str) -> None:
+        self._lines = list(lines)
+
+    async def __call__(self) -> str:
+        if self._lines:
+            return self._lines.pop(0)
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+class HungUp(io.StringIO):
+    """A terminal whose window was closed: writing to it fails with EIO."""
+
+    dead = False
+
+    def write(self, text: str) -> int:
+        if self.dead:
+            raise OSError(errno.EIO, "Input/output error")
+        return super().write(text)
+
+
+async def promptly(leaving: Coroutine[None, None, int]) -> int:
+    """What `leaving` returns, if it ends within two seconds. Not wait_for:
+    its cancel would end a wait for the title, as a second signal does."""
+    task = asyncio.create_task(leaving)
+    done, _ = await asyncio.wait([task], timeout=2)
+    if not done:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        pytest.fail("maha waited for the title")
+    return task.result()
+
+
+@pytest.mark.parametrize("number", [signal.SIGTERM, signal.SIGHUP])
+async def test_a_closing_signal_at_the_prompt_does_not_wait_for_the_title(
+    number: signal.Signals,
+) -> None:
+    # Second review of the audit after hito 10: the signal was spent on the
+    # prompt, and leaving then waited for the title with nothing to cut it,
+    # up to the HTTP time limit, with nobody left to press Ctrl+C.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+
+    async def signal_when_asked() -> None:
+        await small.asked.wait()
+        await asyncio.sleep(0.05)
+        signal.raise_signal(number)
+
+    sending = asyncio.create_task(signal_when_asked())
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=WaitsAtThePrompt("Hola"),
+            out=io.StringIO(),
+            err=io.StringIO(),
+        )
+    )
+    await sending
+
+    assert code == 128 + number
+    saved = [e.message.text for e in entries(store) if isinstance(e, MessageEntry)]
+    assert saved == ["Hola", "Hecho."]
+    assert FIRST not in store.locked
+
+
+async def test_a_closed_window_while_a_title_comes_still_closes_the_session() -> None:
+    # Second review of the audit after hito 10: "naming the session" was
+    # written to the dead terminal before closing, and its EIO left the
+    # session unclosed, with a traceback instead of 129.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+    out = HungUp()
+
+    async def close_the_window() -> None:
+        await small.asked.wait()
+        await asyncio.sleep(0.05)
+        out.dead = True
+        signal.raise_signal(signal.SIGHUP)
+
+    closing = asyncio.create_task(close_the_window())
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=WaitsAtThePrompt("Hola"),
+            out=out,
+            err=out,
+        )
     )
     await closing
 

@@ -383,20 +383,25 @@ class Conversation:
         self._pending.append(ModelEntry(model=model, provider=self._origin.provider))
         await self._save()
 
-    async def close(self) -> None:
+    async def close(self, *, title: bool = True) -> None:
         """Wait for a title on its way, save what is still pending, and let
         other maha resume or delete it. If saving fails again, `unsaved`
         says so. Ctrl+C while the title comes leaves without it, and the
-        rest is still saved (decision of the maintainer, 2026-11-10)."""
+        rest is still saved (decision of the maintainer, 2026-11-10).
+        `title=False` does not wait for it: a closing signal asked to end
+        now (second review of the audit after hito 10)."""
         cut: asyncio.CancelledError | None = None
         if self._titling is not None:
             try:
-                await self.titled()
+                if title:
+                    await self.titled()
             except asyncio.CancelledError as exc:
                 cut = exc
-                self._titling.cancel()
-                with suppress(asyncio.CancelledError):
-                    await self._titling
+            self._titling.cancel()
+            # Ended already, maybe with an error nobody expected: a title
+            # is never worth one (S4).
+            with suppress(asyncio.CancelledError, Exception):
+                await self._titling
             self._titling = None
         await self._save()
         if self._log is not None:

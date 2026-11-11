@@ -9,7 +9,7 @@ import json
 import logging
 import signal
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import aclosing
 from pathlib import Path
 from typing import TextIO
@@ -147,10 +147,13 @@ async def converse(
         # What is still pending is saved, and the session let go. Ctrl+C
         # while its title comes skips the title: our handler is still
         # there, and the rest is saved and told (review of the audit after
-        # hito 10).
-        commands.tell_naming()
+        # hito 10). A closing signal does not wait for the title, nor
+        # writes to a terminal that may be gone (second review).
+        closing = sigint.closing is not None
         try:
-            await commands.conversation.close()
+            if not closing:
+                commands.tell_naming()
+            await commands.conversation.close(title=not closing)
         except asyncio.CancelledError:
             if sigint.closing is None and not _ours(sigint):
                 raise
@@ -160,10 +163,20 @@ async def converse(
             loop.remove_signal_handler(signal.SIGINT)
             for number in CLOSING:
                 loop.remove_signal_handler(number)
-        commands.warn_unsaved()
+        _tell_if_heard(commands.warn_unsaved, closed=sigint.closing is not None)
     # A closing signal while leaving says so too (review of the audit after
     # hito 10).
     return code if sigint.closing is None else 128 + sigint.closing
+
+
+def _tell_if_heard(tell: Callable[[], None], *, closed: bool) -> None:
+    """Tell the person something on the way out; after a closing signal the
+    terminal may be gone (a closed window), and its error ends nothing."""
+    try:
+        tell()
+    except OSError:
+        if not closed:
+            raise
 
 
 async def _turns(
