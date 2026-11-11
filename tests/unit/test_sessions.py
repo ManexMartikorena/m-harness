@@ -708,9 +708,12 @@ async def test_resume_tells_what_the_session_it_leaves_could_not_save(
     current = await world.sessions.start()
     await turn(current, "A")
 
-    resumed = await world.sessions.resume(target, current=current)
+    await world.sessions.resume(target, current=current)
+    # Its caller closes it, once switched (review of the audit after hito
+    # 10); /resume says what it left unsaved (`_warn_lost`).
+    await current.close()
 
-    assert resumed.left_unsaved == "cannot save session: No space left on device"
+    assert current.unsaved == "cannot save session: No space left on device"
 
 
 async def test_resuming_the_current_session_is_refused() -> None:
@@ -733,16 +736,33 @@ async def test_a_session_open_in_another_maha_is_not_resumed() -> None:
         await world.sessions.resume(FIRST, current=await world.sessions.start())
 
 
-async def test_resuming_closes_the_conversation_it_leaves() -> None:
+async def test_resuming_leaves_the_conversation_it_leaves_to_its_caller() -> None:
+    # Review of the audit after hito 10: closing it here, Ctrl+C while its
+    # title came left /resume on a closed conversation. The caller switches,
+    # then closes it.
     store = MemorySessionStore()
     session_id = await saved(store)
     world = World(store, FakeModelClient([reply("Uno.")]), tokens=["7777"])
     current = await world.sessions.start()
     await turn(current, "A")
 
-    await world.sessions.resume(session_id, current=current)
+    resumed = await world.sessions.resume(session_id, current=current)
 
+    assert "20261026-091502-7777" in store.locked
+    await current.close()
     assert "20261026-091502-7777" not in store.locked
+    await resumed.conversation.close()
+
+
+async def test_opening_a_session_closes_the_fresh_one_it_started() -> None:
+    store = MemorySessionStore()
+    session_id = await saved(store)
+    world = World(store, FakeModelClient([]), tokens=["7777"])
+
+    opened = await world.sessions.open(Start(session=session_id))
+
+    assert store.locked == {session_id}
+    await opened.conversation.close()
 
 
 async def test_approvals_do_not_come_back_with_the_session() -> None:

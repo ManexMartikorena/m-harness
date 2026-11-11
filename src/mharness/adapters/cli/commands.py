@@ -176,9 +176,14 @@ class Commands:
             if session is None:
                 raise SessionNotFound(f"{exc} (see /sessions)") from None
             raise
-        self.conversation = resumed.conversation
-        self._warn_lost(left, resumed.left_unsaved)
-        self.tell_resumed(resumed)
+        old, self.conversation = self.conversation, resumed.conversation
+        # Switched first: Ctrl+C while the old one's title comes skips the
+        # title, never the switch (review of the audit after hito 10).
+        try:
+            await old.close()
+        finally:
+            self._warn_lost(left, old.unsaved)
+            self.tell_resumed(resumed)
 
     def tell_naming(self) -> None:
         """Leaving a conversation waits for its title, if it is on its way
@@ -258,13 +263,16 @@ class Commands:
         self.tell_naming()
         left = old.id if old.stored else None
         fresh = await self._sessions.start(old.model)
-        # The new one is ready: only now is the current one let go.
-        await old.close()
+        # The new one is ready: only now is the current one let go, once
+        # switched (review of the audit after hito 10).
         self.conversation = fresh
-        self._warn_lost(left, old.unsaved)
-        self._say("[new session]")
-        # Built again: an AGENTS.md edited since counts from here (§1.2).
-        self.note_prompt()
+        try:
+            await old.close()
+        finally:
+            self._warn_lost(left, old.unsaved)
+            self._say("[new session]")
+            # Built again: an AGENTS.md edited since counts from here (§1.2).
+            self.note_prompt()
 
     def _warn_lost(self, left: str | None, unsaved: str | None) -> None:
         """The session left behind could not save its last turns."""

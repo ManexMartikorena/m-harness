@@ -2,10 +2,14 @@
 §4, test 11), with sessions and traces in memory."""
 
 import asyncio
+import contextlib
+import io
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
+from mharness.adapters.cli.commands import Commands, parse_command
 from mharness.application.sessions import Conversation
 from mharness.application.titles import Title, Titler
 from mharness.domain.errors import ModelUnavailableError
@@ -21,6 +25,7 @@ from mharness.domain.trace import TitleWritten
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FakeModelClient, reply
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
+from tests.fakes.terminal import ScriptedInput
 from tests.unit.test_sessions import FIRST, World, entries, turn
 
 TEMPLATE = "Title: {{message}}"
@@ -375,3 +380,52 @@ async def test_a_title_that_comes_during_the_next_turn_loses_nothing() -> None:
     # The session reads back whole.
     session = await store.read(FIRST)
     assert session.title == TitleEntry(title="Dos turnos")
+
+
+@pytest.mark.parametrize("line", ["/new", "/resume 20261026-091502-0aaa"])
+async def test_ctrl_c_while_a_command_waits_for_the_title_still_switches(
+    line: str,
+) -> None:
+    # Review of the audit after hito 10: Ctrl+C at "[naming the session…]"
+    # in /new or /resume left maha on the closed session, and the next turn
+    # went to a new id; the resumed one stayed locked.
+    store = MemorySessionStore()
+    other = await conversation_with(store, FakeModelClient([]), "A.")
+    other.id = "20261026-091502-0aaa"
+    await turn(other, "Otra")
+    await other.close()
+    small = NeverAnswers()
+    fake = FakeModelClient([reply("Hecho.")])
+    world = World(store, fake, titler=titler(small), tokens=("b01c", "c0de"))
+    conversation = await world.sessions.start()
+    await turn(conversation, "Hola")
+    await small.asked.wait()
+    commands = Commands(
+        world.sessions,
+        conversation,
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
+        read=ScriptedInput(),
+        discard=None,
+        out=io.StringIO(),
+        err=io.StringIO(),
+        home=Path("/home/ane"),
+    )
+    command = parse_command(line)
+    assert command is not None
+
+    running = asyncio.create_task(commands.run(command))
+    await asyncio.sleep(0.05)
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+
+    assert commands.conversation is not conversation
+    assert conversation.id not in store.locked
+    # The resumed one asks for its title too: skipped the same way.
+    closing = asyncio.create_task(commands.conversation.close())
+    await asyncio.sleep(0.01)
+    closing.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await closing
+    assert store.locked == set()

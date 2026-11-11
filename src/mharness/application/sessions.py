@@ -575,7 +575,6 @@ class Resumed:
     interrupted: bool
     # Why the session left behind could not save what it still had; it is
     # lost (final audit of hito 6, 5).
-    left_unsaved: str | None = None
 
 
 @dataclass(frozen=True)
@@ -665,16 +664,24 @@ class Sessions:
         start = start or Start()
         if not start.last and start.session is None:
             return Opened(await self.start(start.model))
-        resumed = await self.resume(start.session, current=await self.start())
+        fresh = await self.start()
+        resumed = await self.resume(start.session, current=fresh)
+        # Nothing to save nor to name: it never had a turn.
+        await fresh.close()
         conversation = resumed.conversation
         if start.model is not None and start.model != conversation.model:
             await conversation.switch_model(start.model)
         return Opened(conversation, resumed)
 
     async def resume(self, session: str | None, *, current: Conversation) -> Resumed:
-        """Open `session` and close `current`. Without id, the newest other
-        session of this directory that no other maha has open. A fresh
-        agent: the approvals do not come back (spec hito 6, §1.9)."""
+        """Open `session`, to leave `current` for it. Without id, the newest
+        other session of this directory that no other maha has open. A
+        fresh agent: the approvals do not come back (spec hito 6, §1.9).
+
+        `current` is not closed here: the caller switches first and closes
+        it after, so that Ctrl+C while its title comes never leaves the
+        caller on a closed conversation (review of the audit after hito
+        10)."""
         if session is None:
             loaded, log = await self._open_last_here(current)
         else:
@@ -708,8 +715,6 @@ class Sessions:
             prompt=prompt,
             title=loaded.title,
         )
-        # The new one is ready: only now is the current one let go.
-        await current.close()
         # One left without a title gets it now (decision of the maintainer,
         # 2026-11-10).
         conversation.name()
@@ -720,7 +725,6 @@ class Sessions:
             other_cwd=None if header.cwd == self._origin.cwd else header.cwd,
             fallback_from=None if same_provider else loaded.model,
             interrupted=last is not None and last.interrupted,
-            left_unsaved=current.unsaved,
         )
 
     async def _build(self, model: str, started_in: str | None) -> SystemPrompt | None:
