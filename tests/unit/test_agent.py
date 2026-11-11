@@ -1985,8 +1985,8 @@ async def test_no_call_of_a_refused_answer_runs() -> None:
 
 async def test_a_call_cut_by_an_unknown_stop_reason_never_runs() -> None:
     # The last call of an answer that stopped for a reason maha does not
-    # know may be cut too: as with the output limit.
-    cut = ToolCallBlock(id="c1", name="echo", arguments="{}")
+    # know may be cut too: as with the output limit, if it is not whole.
+    cut = ToolCallBlock(id="c1", name="echo", arguments='{"text": "Ho')
     answer = tool_calls(cut).model_copy(update={"stop_reason": "other"})
     tool = FakeTool()
     subject = agent(FakeModelClient([answer, reply("Hecho.")]), tool)
@@ -2230,3 +2230,16 @@ async def test_the_reasoning_kept_names_the_model_that_wrote_it() -> None:
 
     [_, answer] = subject.messages
     assert answer.blocks[0] == ReasoningBlock(text="Pienso.", model=subject.model)
+
+
+async def test_a_whole_call_with_an_unknown_stop_reason_runs() -> None:
+    # Review of the audit after hito 10: a server that ends a correct call
+    # with "function_call" or "eos" got it refused on every step.
+    whole = ToolCallBlock(id="c1", name="echo", arguments='{"text": "Hola"}')
+    answer = tool_calls(whole).model_copy(update={"stop_reason": "other"})
+    tool = FakeTool()
+    subject = agent(FakeModelClient([answer, reply("Hecho.")]), tool)
+
+    await run(subject)
+
+    assert tool.calls == [EchoParams(text="Hola")]

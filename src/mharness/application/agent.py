@@ -358,9 +358,13 @@ class Agent:
             # None: nobody was asked, or the answer was not valid.
             decision: Decision | None = None
             asked = False
-            cut = call is last or not _whole(call)
-            # An unknown reason may have cut it too (audit after hito 10, B1).
-            if stop_reason in ("max_tokens", "other") and cut:
+            # By the output limit, the last one may be cut even if it looks
+            # whole; by a reason maha does not know, only one that is not
+            # whole (audit after hito 10, B1, and its review).
+            cut = (
+                stop_reason == "max_tokens" and (call is last or not _whole(call))
+            ) or (stop_reason == "other" and not _whole(call))
+            if cut:
                 # Cut by the output limit: its error says so, or the
                 # model writes the same cut call again (deep audit
                 # after hito 9, B1). The last one, also if its arguments
