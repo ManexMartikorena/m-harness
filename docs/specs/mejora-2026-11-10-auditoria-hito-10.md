@@ -211,6 +211,54 @@ modelos 5.x ya razonan sin pedirlo; solo los 4.x del catálogo, mejora
 menor con documentación y evals); `retry-after-ms` (no consta que un
 proveedor lo mande); Windows nativo (DESIGN §7 fija Linux y WSL2).
 
+## Revisión independiente de los arreglos (2026-11-11)
+
+Tres agentes nuevos, uno por área (herramientas y seguridad; interfaz;
+núcleo, sesiones y modelos), que solo vieron el código, AGENTS.md, DESIGN
+y esta spec. Cada hallazgo, comprobado y con su test primero:
+
+- **R1.** Ctrl+C mientras `/new` o `/resume` esperan el título dejaba
+  `maha` en la sesión cerrada (lo vieron dos revisores). ARREGLADO
+  (`500a6b8`): quien cambia de sesión lo hace antes de cerrar la vieja.
+- **R2.** Ctrl+C mientras la salida espera el título llegaba sin nuestro
+  manejador: `/exit` salía con 130 y no se avisaba de lo no guardado.
+  ARREGLADO (`9fc2a77`).
+- **R3.** Las `instructions` de un `.maha/config.toml` encontrado más
+  arriba (P7) se buscaban desde la carpeta actual. ARREGLADO (`8bfef94`).
+- **R4.** El razonamiento de un modelo iba a otro tras `/model` o un
+  respaldo (P8). ARREGLADO (`72f7ace`): cada modelo recibe solo el suyo;
+  DeepSeek, GLM, Kimi y MiniMax lo piden (documentación, 2026-11-11).
+- **R5.** Un motivo de parada desconocido rechazaba siempre la última
+  llamada, aunque llegara entera (B1). ARREGLADO (`1b39619`).
+- **R6.** `-c` saltaba sin avisar una sesión ilegible de carpeta
+  desconocida (S2). ARREGLADO (`2ce59be`).
+- **R7.** Sin traza, `stream-json` no daba `init` (P2). ARREGLADO
+  (`6f18655`).
+- **R8.** Un `\r\n` partido entre dos trozos del stream se veía con
+  `\x0d` (I10), y un Ctrl+D justo tras una línea no cerraba `maha` (I4).
+  ARREGLADO (`68b9f37`).
+- **R9.** El aviso de `/init` en una subcarpeta sacaba la ruta sin
+  limpiar. ARREGLADO (`64473cf`). Y en las evals, con `TMPDIR` dentro de
+  un repo, la tarea 24 recibía el texto de subcarpeta. ARREGLADO
+  (`f631689`).
+- **R10.** Con una entrada vacía en `PATH`, `which("bash")` podía dar el
+  `./bash` del proyecto (P3); y los bytes dejados fuera de una salida
+  cortada se contaban mal sin UTF-8 (H4). ARREGLADO (`7013aae`).
+- **R11.** Un nombre largo bajo una carpeta nueva se preguntaba y fallaba
+  después (H11); el hijo de `grep` sin locale (H9). ARREGLADO
+  (`3fa6f7b`).
+- **R12.** lefthook en TOML o JSON (H7). ARREGLADO (`7339fe2`).
+- **R13.** `command_env` solo miraba el final del nombre (P5). ARREGLADO
+  (`54a15be`); es una guarda, no una garantía (PUESTA_EN_MARCHA §3.1).
+- **R14.** Un test del tiempo límite del turno fallaba con la máquina
+  cargada. ARREGLADO (`a9dd73a`).
+- **R15.** Con la decisión 2, las líneas tecleadas por adelantado durante
+  una respuesta llegan juntas a la terminal y se unen en un turno
+  (`hola⏎/exit⏎`). DECISIÓN pendiente del mantenedor.
+- **R16.** Una señal de cierre (SIGTERM) mientras la salida espera el
+  título termina con el código de la salida normal, no con 128 + la
+  señal. Lo demás se guarda. Menor; DECISIÓN pendiente.
+
 ## Aprendido al implementar
 
 *Se añade al implementar.*
