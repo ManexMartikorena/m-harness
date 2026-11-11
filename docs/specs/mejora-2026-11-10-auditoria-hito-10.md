@@ -89,7 +89,7 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
   ARREGLADO (`65630f2`).
 - **M4.** A los modelos Claude de OpenCode Go y Zen les falta
   `cache_write_1h`. Hay que comprobar el precio en la documentación de
-  OpenCode. DECISIÓN pendiente: la documentación de OpenCode (2026-11-11) no da precio de escritura en caché de 1 h para ningún Claude, así que no se puede añadir; hoy esas escrituras se cuentan al precio de 5 min (spec 9, decisión 9).
+  OpenCode. DECISIÓN del mantenedor (2026-11-11, "lo más profesional"): la documentación de OpenCode no da precio de escritura en caché de 1 h para ningún Claude, así que no se puede añadir; una llamada que escribe en ella sin precio queda sin precio, en vez de contarse al de 5 min, por debajo del real (cambia la spec 9, aprendido 13). ARREGLADO (este commit).
 - **M5.** Deuda: `_int` en los dos adaptadores (ya hay `count` en
   `http.py`), `CacheTtl` y la versión de Anthropic escritos dos veces. ARREGLADO (`b75aa5e`).
 - **M6.** `opencode-zen/jev-1.13`: entrada de pago y salida gratis, sin

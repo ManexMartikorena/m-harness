@@ -618,7 +618,8 @@ def call_cost(
             amount = cost(response.usage, info.prices)
             # Past what an amount in USD can be, the counts are a provider's
             # bug: unknown, never a broken turn (deep audit after hito 9, S9).
-            return known(amount)
+            # None: a write without a price (audit after hito 10, M4).
+            return None if amount is None else known(amount)
     return None
 
 
