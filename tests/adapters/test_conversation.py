@@ -465,6 +465,50 @@ def test_bracketed_paste_is_asked_for_and_left_as_it_was() -> None:
         os.close(side)
 
 
+async def test_bracketed_paste_is_given_back_on_ctrl_z_and_asked_again_on_fg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Second review of the audit after hito 10: asked once, at the start.
+    # After Ctrl+Z, the shell turns it off and gives ECHOCTL back, and on
+    # `fg` a paste of several lines was a turn per line.
+    main, side = pty.openpty()
+    stopped: list[tuple[int, bytes]] = []
+
+    def stop() -> None:
+        # What the shell finds while maha is stopped.
+        stopped.append((termios.tcgetattr(side)[3], os.read(main, 100)))
+
+    monkeypatch.setattr("mharness.adapters.cli.input._stop", stop)
+    try:
+        before = termios.tcgetattr(side)
+        out = os.fdopen(os.dup(side), "w")
+        with bracketed_paste(side, out):
+            assert os.read(main, 100) == PASTE_ON.encode()
+            signal.raise_signal(signal.SIGTSTP)
+            await asyncio.sleep(0.05)
+            [(flags, written)] = stopped
+            assert flags == before[3]
+            assert written == PASTE_OFF.encode()
+            # Back with `fg`: asked again.
+            assert not termios.tcgetattr(side)[3] & termios.ECHOCTL
+            assert os.read(main, 100) == PASTE_ON.encode()
+
+            # Stopped from outside (`kill -STOP`), the shell may change the
+            # terminal too: SIGCONT asks again.
+            termios.tcsetattr(side, termios.TCSANOW, before)
+            signal.raise_signal(signal.SIGCONT)
+            await asyncio.sleep(0.05)
+            assert not termios.tcgetattr(side)[3] & termios.ECHOCTL
+            assert os.read(main, 100) == PASTE_ON.encode()
+        out.close()
+        assert termios.tcgetattr(side) == before
+        # Ctrl+Z is the default again.
+        assert signal.getsignal(signal.SIGTSTP) == signal.SIG_DFL
+    finally:
+        os.close(main)
+        os.close(side)
+
+
 def test_bracketed_paste_is_not_asked_for_without_a_terminal() -> None:
     out = io.StringIO()
 

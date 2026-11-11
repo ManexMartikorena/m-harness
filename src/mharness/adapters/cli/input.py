@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import os
 import select
+import signal
 import termios
 from collections.abc import Awaitable, Callable, Iterator
 from typing import TextIO
@@ -136,12 +137,21 @@ class StdinLines:
         return os.read(self._fd, size)
 
 
+def _stop() -> None:
+    """Stop maha as Ctrl+Z would; it goes on here after `fg`."""
+    os.kill(os.getpid(), signal.SIGSTOP)
+
+
 @contextlib.contextmanager
 def bracketed_paste(fd: int, out: TextIO) -> Iterator[None]:
     """Ask the terminal to mark what is pasted, while the conversation lasts
     (audit after hito 10, I4). Its marks are not echoed as `^[[200~`: the
     terminal ignores them, as it ignores every escape it does not know.
-    Only with a terminal on both sides; everything is left as it was."""
+    Only with a terminal on both sides; everything is left as it was.
+
+    Ctrl+Z gives the terminal back as it was before stopping, and `fg`
+    asks again, as editors do: the shell turns the marks off in between
+    (second review of the audit after hito 10)."""
     if not (os.isatty(fd) and out.isatty()):
         yield
         return
@@ -152,14 +162,38 @@ def bracketed_paste(fd: int, out: TextIO) -> Iterator[None]:
         return
     quiet = list(before)
     quiet[3] = before[3] & ~termios.ECHOCTL
-    termios.tcsetattr(fd, termios.TCSANOW, quiet)
-    out.write(PASTE_ON)
-    out.flush()
-    try:
-        yield
-    finally:
+
+    def ask() -> None:
+        with contextlib.suppress(termios.error):
+            termios.tcsetattr(fd, termios.TCSANOW, quiet)
+        with contextlib.suppress(OSError, ValueError):
+            out.write(PASTE_ON)
+            out.flush()
+
+    def give_back() -> None:
         with contextlib.suppress(OSError, ValueError):
             out.write(PASTE_OFF)
             out.flush()
         with contextlib.suppress(termios.error):
             termios.tcsetattr(fd, termios.TCSANOW, before)
+
+    def suspend() -> None:
+        give_back()
+        _stop()
+        ask()
+
+    try:
+        loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    ask()
+    if loop is not None:
+        loop.add_signal_handler(signal.SIGTSTP, suspend)
+        loop.add_signal_handler(signal.SIGCONT, ask)
+    try:
+        yield
+    finally:
+        if loop is not None:
+            loop.remove_signal_handler(signal.SIGTSTP)
+            loop.remove_signal_handler(signal.SIGCONT)
+        give_back()
