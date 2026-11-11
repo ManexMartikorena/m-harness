@@ -1492,7 +1492,14 @@ class WriteFile:
 # What "always this session" covers for a change (audit after hito 10, H1):
 # a file with a warning (a secret, one that runs code, outside) is still
 # asked one by one.
-_COVERS = "every {tool} in the working directory, but secrets and files that run code"
+# The files that run code by themselves; a Makefile or a test runs only
+# with a command, which asks first (or was allowed with its exact text):
+# the line any source file is on (second review of the audit after hito 10,
+# decision of the maintainer). Hito 15's sandbox bounds what they run.
+_COVERS = (
+    "every {tool} in the working directory, but secrets and files that run "
+    "code by themselves (hooks, CI, editor tasks)"
+)
 
 
 def _blind_question(

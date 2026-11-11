@@ -831,7 +831,7 @@ async def test_creating_asks_with_a_preview_and_writes(root: Path) -> None:
         scope="write_file",
         covers=(
             "every write_file in the working directory, but secrets and files "
-            "that run code"
+            "that run code by themselves (hooks, CI, editor tasks)"
         ),
         review=True,
     )
@@ -857,7 +857,7 @@ async def test_the_preview_shows_the_first_20_lines(root: Path) -> None:
         scope="write_file",
         covers=(
             "every write_file in the working directory, but secrets and files "
-            "that run code"
+            "that run code by themselves (hooks, CI, editor tasks)"
         ),
         review=True,
     )
@@ -901,7 +901,7 @@ async def test_overwriting_asks_with_a_diff(root: Path) -> None:
         scope="write_file",
         covers=(
             "every write_file in the working directory, but secrets and files "
-            "that run code"
+            "that run code by themselves (hooks, CI, editor tasks)"
         ),
         review=True,
     )
@@ -1290,6 +1290,30 @@ def test_edit_file_params_describe_each_field() -> None:
     assert fields["replace_all"].default is False
 
 
+@pytest.mark.parametrize(
+    "name", ["Makefile", "package.json", "pyproject.toml", "conftest.py", "setup.py"]
+)
+async def test_always_covers_files_that_run_only_when_a_command_runs(
+    root: Path, name: str
+) -> None:
+    # Decision of the maintainer (2026-11-11, "the most professional"), from
+    # the second review of the audit after hito 10: the boundary is the
+    # files that run by themselves (hooks, CI, editor tasks). These run
+    # only with a command, which asks first; any source file runs code
+    # that way too, so asking for them would leave "always" empty. What
+    # [a] covers says so.
+    write(root, name, "uno\n")
+
+    request, _ = await edit(root, edit_params(name, "uno", "dos"))
+
+    assert request.scope == "edit_file"
+    assert request.warning is None
+    assert request.covers is not None
+    assert request.covers.endswith(
+        "files that run code by themselves (hooks, CI, editor tasks)"
+    )
+
+
 async def test_editing_asks_with_a_diff_and_edits(root: Path) -> None:
     # No read_file before: the exact old_string is enough (spec §1.8).
     write(root, "src/app.py", "def f():\n    x = 0\n    return 1\n")
@@ -1304,7 +1328,7 @@ async def test_editing_asks_with_a_diff_and_edits(root: Path) -> None:
         scope="edit_file",
         covers=(
             "every edit_file in the working directory, but secrets and files "
-            "that run code"
+            "that run code by themselves (hooks, CI, editor tasks)"
         ),
         review=True,
     )
