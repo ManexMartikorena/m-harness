@@ -57,6 +57,7 @@ def sessions(
     tools: Sequence[Tool[Any]] | None = None,
     gate: FakeApproval | None = None,
     store: MemorySessionStore | None = None,
+    traces: MemoryTraceSink | None = None,
 ) -> Sessions:
     registry = ToolRegistry(tools or [])
 
@@ -77,7 +78,7 @@ def sessions(
         provider="opencode-go",
         model="glm-5.3-flash",
         version="0.8.0",
-        traces=MemoryTraceSink(),
+        traces=traces or MemoryTraceSink(),
     )
 
 
@@ -841,3 +842,20 @@ async def test_text_says_the_session_at_the_end_on_stderr() -> None:
 
     assert (code, out) == (0, "Hola.\n")
     assert re.search(r"  \[session (\S+) · maha -r \1 resumes it\]\n$", err)
+
+
+async def test_stream_json_tells_init_even_without_a_trace() -> None:
+    # Review of the audit after hito 10: without a trace, the id was the
+    # session's only once its file was saved, after the last event.
+    traces = MemoryTraceSink()
+    traces.open_failures = 5
+    fake = FakeModelClient([reply("Hola.")])
+
+    _, out, _ = await run(
+        sessions(fake, traces=traces), "Hola", output_format="stream-json"
+    )
+
+    lines = [json.loads(line) for line in out.splitlines()]
+    assert [line["type"] for line in lines].count("init") == 1
+    assert lines[-2]["type"] == "init"
+    assert lines[-2]["session_id"] == lines[-1]["session_id"] is not None
