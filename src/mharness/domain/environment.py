@@ -43,19 +43,34 @@ NO_EDITOR = {"GIT_EDITOR": "true", "VISUAL": "true", "EDITOR": "true"}
 CREDENTIAL_SUFFIXES = ("_KEY", "_TOKEN", "_SECRET", "_PASSWORD")
 
 
+def is_credential(name: str) -> bool:
+    """Whether a variable is named as a credential (compared without case)."""
+    return name.upper().endswith(CREDENTIAL_SUFFIXES)
+
+
 def command_env(
-    environ: Mapping[str, str], *, drop: Iterable[str] = ()
+    environ: Mapping[str, str],
+    *,
+    drop: Iterable[str] = (),
+    extra: Iterable[str] = (),
 ) -> dict[str, str]:
     """The variables of `environ` a command may see; `drop` names more that
-    it may not, as the variable of the provider's key. The editor is
-    always `NO_EDITOR`'s."""
+    it may not, as the variable of the provider's key, and `extra` more that
+    it may, chosen by the user (audit after hito 10, P5). A credential never
+    passes. The editor is always `NO_EDITOR`'s."""
     dropped = frozenset(drop)
+    added = frozenset(extra)
     allowed = {
         name: value
         for name, value in environ.items()
-        if (name in ALLOWED or name.startswith(ALLOWED_PREFIXES))
+        if (
+            name in added
+            or (
+                (name in ALLOWED or name.startswith(ALLOWED_PREFIXES))
+                and name not in DENIED
+            )
+        )
         and name not in dropped
-        and name not in DENIED
-        and not name.upper().endswith(CREDENTIAL_SUFFIXES)
+        and not is_credential(name)
     }
     return {**allowed, **NO_EDITOR}

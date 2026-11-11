@@ -474,7 +474,7 @@ async def _eval(
         return cli.fail(str(exc))
     provider = settings.provider
     drop = [provider.api_key_env] if provider.api_key_env else []
-    env = command_env(os.environ, drop=drop)
+    env = command_env(os.environ, drop=drop, extra=settings.command_env)
     masked = known_secrets(os.environ, also=[settings.api_key])
 
     @asynccontextmanager
@@ -735,7 +735,8 @@ def _sessions(
     # The variables a command gets; never the provider's key (spec
     # mejora-2026-10-23-deuda-hito-5, E1).
     drop = [provider.api_key_env] if provider.api_key_env else []
-    tools = _tools(cwd, command_env(os.environ, drop=drop), questions)
+    env = command_env(os.environ, drop=drop, extra=settings.command_env)
+    tools = _tools(cwd, env, questions)
 
     def new_agent(model: str, history: Sequence[Message]) -> Agent:
         return Agent(

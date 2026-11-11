@@ -162,6 +162,17 @@ input = 0                   # USD por millón de tokens
 output = 0
 ```
 
+Desde la `v0.10.1`, también opcional: más variables de tu entorno para
+los comandos que lanza `run_command`, como un proxy o `JAVA_HOME`. Por
+defecto solo pasan unas pocas (`PATH`, `HOME`, `LANG`…; ver
+`domain/environment.py`). Nunca una con forma de credencial (`*_KEY`,
+`*_TOKEN`, `*_SECRET`, `*_PASSWORD`) ni la clave del proveedor: `maha` no
+arranca y lo dice. Solo en este fichero, nunca en el de un proyecto.
+
+```toml
+command_env = ["JAVA_HOME", "HTTPS_PROXY", "NO_PROXY"]
+```
+
 ### 3.3 `~/.config/maha/AGENTS.md` (opcional)
 
 Desde el hito 10. Instrucciones personales para todas las sesiones de ese

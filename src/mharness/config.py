@@ -30,6 +30,7 @@ from pydantic import (
 )
 
 from mharness.domain.catalog import SpokenApi
+from mharness.domain.environment import is_credential
 from mharness.domain.limits import TurnLimits
 from mharness.domain.model import Effort
 from mharness.domain.money import Usd
@@ -135,6 +136,10 @@ class Settings(BaseModel, frozen=True):
     # The user's own base of the system prompt, instead of maha's; only
     # from the user's file (spec hito 10, §1.3).
     system_prompt_file: Path | None = None
+    # More variables the shell commands get, as a proxy or `JAVA_HOME`;
+    # only from the user's file, never a credential (audit after hito 10,
+    # P5).
+    command_env: tuple[str, ...] = ()
 
 
 class _Limits(BaseModel, extra="forbid"):
@@ -164,6 +169,7 @@ class _ProjectFile(BaseModel, extra="forbid"):
 class _UserFile(_ProjectFile):
     providers: dict[str, ProviderSettings] = {}
     system_prompt_file: str | None = Field(default=None, min_length=1)
+    command_env: list[Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]] = []
 
 
 def user_config_path(env: Mapping[str, str]) -> Path:
@@ -235,6 +241,11 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
             f"prompt (system_prompt_file); it goes only in {user_path}. A "
             "project adds its instructions in AGENTS.md."
         )
+    if "command_env" in project_data:
+        raise ConfigError(
+            f"{project_path}: a project cannot choose command_env: what the "
+            f"commands see of your environment goes only in {user_path}."
+        )
     project = _validate(_ProjectFile, project_data, project_path)
     for pattern in project.instructions:
         _inside_project(pattern, project_path)
@@ -256,6 +267,13 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
         )
 
     provider = providers[provider_name]
+    keys = {each.api_key_env for each in providers.values() if each.api_key_env}
+    for name in user.command_env:
+        if is_credential(name) or name in keys:
+            raise ConfigError(
+                f"{user_path}: command_env {name!r} looks like a credential: "
+                "the commands, and from their output the model, would see it."
+            )
     return Settings(
         provider_name=provider_name,
         provider=provider,
@@ -273,6 +291,7 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
             if user.system_prompt_file is None
             else Path(user.system_prompt_file).expanduser()
         ),
+        command_env=tuple(dict.fromkeys(user.command_env)),
         api_key=_api_key(provider_name, provider, env, need=calls_model),
         from_project={
             name: value

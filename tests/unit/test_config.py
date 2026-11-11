@@ -658,3 +658,41 @@ def test_a_project_cannot_replace_the_base(home: Path, project: Path) -> None:
 
     with pytest.raises(ConfigError, match="cannot replace the base"):
         load(home, project)
+
+
+def test_the_user_chooses_more_variables_for_the_commands(
+    home: Path, project: Path
+) -> None:
+    # Audit after hito 10, P5: a proxy or JAVA_HOME, for the commands.
+    write_user(home, 'model = "m"\ncommand_env = ["JAVA_HOME", "HTTPS_PROXY"]\n')
+
+    assert load(home, project).command_env == ("JAVA_HOME", "HTTPS_PROXY")
+
+
+def test_a_project_cannot_choose_variables_for_the_commands(
+    home: Path, project: Path
+) -> None:
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'command_env = ["AWS_SESSION"]\n')
+
+    with pytest.raises(ConfigError, match="command_env"):
+        load(home, project)
+
+
+@pytest.mark.parametrize("name", ["GITHUB_TOKEN", "my_api_key", "DB_PASSWORD"])
+def test_a_credential_is_not_a_variable_for_the_commands(
+    home: Path, project: Path, name: str
+) -> None:
+    write_user(home, f'model = "m"\ncommand_env = ["{name}"]\n')
+
+    with pytest.raises(ConfigError, match="credential"):
+        load(home, project)
+
+
+def test_the_providers_key_is_not_a_variable_for_the_commands(
+    home: Path, project: Path
+) -> None:
+    write_user(home, 'model = "m"\ncommand_env = ["OPENCODE_API_KEY"]\n')
+
+    with pytest.raises(ConfigError, match="credential"):
+        load(home, project)
