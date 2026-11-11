@@ -368,10 +368,10 @@ async def test_each_check_fails_untouched_and_passes_when_solved(task_id: str) -
     subject = evaluator(suite)
 
     async with suite.workspace(task) as repo:
-        assert await subject.check(task, repo, "") is not None
+        assert (await subject.check(task, repo, ""))[1] is not None
     async with suite.workspace(task) as repo:
         solve(repo)
-        assert await subject.check(task, repo, answer) is None
+        assert (await subject.check(task, repo, answer))[1] is None
 
 
 async def checked(task_id: str, change: Callable[[Path], object], answer: str) -> bool:
@@ -380,7 +380,7 @@ async def checked(task_id: str, change: Callable[[Path], object], answer: str) -
     [task] = [task for task in await suite.tasks() if task.id == task_id]
     async with suite.workspace(task) as repo:
         change(repo)
-        return await evaluator(suite).check(task, repo, answer) is None
+        return (await evaluator(suite).check(task, repo, answer))[1] is None
 
 
 def readme_without_cap(repo: Path) -> None:

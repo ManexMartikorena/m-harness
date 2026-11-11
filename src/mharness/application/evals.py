@@ -158,8 +158,7 @@ class Evaluator:
             if result.reason == "error":
                 return _failed(task, model, attempt, result)
             try:
-                restored = await self._suite.restore_tests(task, path)
-                detail = await self._checked(task, path, result.text)
+                restored, detail = await self.check(task, path, result.text)
             except Exception as exc:
                 # With what the run spent, already paid (review of the
                 # audit of hito 8).
@@ -171,13 +170,16 @@ class Evaluator:
         run = _run(task, model, attempt, result, outcome, detail)
         return run.model_copy(update={"restored": restored})
 
-    async def check(self, task: Task, path: Path, answer: str) -> str | None:
-        """Why a run of `task`, with the copy at `path` and its final
-        `answer`, does not pass its check; None if it passes. The test
-        files of the fixture are put back first: the check runs the
-        fixture's tests, not the agent's (deep audit, I1)."""
-        await self._suite.restore_tests(task, path)
-        return await self._checked(task, path, answer)
+    async def check(
+        self, task: Task, path: Path, answer: str
+    ) -> tuple[list[str], str | None]:
+        """The test files the run had changed, and why a run of `task`, with
+        the copy at `path` and its final `answer`, does not pass its check;
+        None if it passes. The test files of the fixture are put back first:
+        the check runs the fixture's tests, not the agent's (deep audit,
+        I1). The one way a run is checked (audit after hito 10, I14)."""
+        restored = await self._suite.restore_tests(task, path)
+        return restored, await self._checked(task, path, answer)
 
     async def _checked(self, task: Task, path: Path, answer: str) -> str | None:
         check = task.check
