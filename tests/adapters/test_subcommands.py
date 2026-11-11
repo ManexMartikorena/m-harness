@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from mharness.adapters.cli import subcommands
 from mharness.adapters.cli.subcommands import (
     delete_session,
     export_session,
@@ -423,3 +424,19 @@ async def test_export_and_import_keep_every_field_over_the_real_store(
     assert (new.model, new.header.provider) == ("claude-x", "anthropic")
     # What is the new session's own: its id, when and where it was made.
     assert (new.header.cwd, new.header.created_at) == ("/home/ana/web", NOW)
+
+
+async def test_import_of_a_file_too_large_fails_without_reading_it_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Audit after hito 10, I15: it was read whole, with no limit.
+    monkeypatch.setattr(subcommands, "IMPORT_MAX_BYTES", 10)
+    world = World(MemorySessionStore(), FakeModelClient([]))
+    file = tmp_path / "s.json"
+    await asyncio.to_thread(file.write_bytes, b"{" + b" " * 20 + b"}")
+    err = io.StringIO()
+
+    code = await import_session(world.sessions, file, out=io.StringIO(), err=err)
+
+    assert code == 1
+    assert err.getvalue() == f"error: {file} is larger than 10 bytes\n"

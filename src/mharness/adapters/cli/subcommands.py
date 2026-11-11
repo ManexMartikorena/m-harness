@@ -117,9 +117,11 @@ async def import_session(
     """`maha import FILE`: a session of `maha export --format json`, as a
     new session of this directory."""
     try:
-        data = await asyncio.to_thread(file.read_bytes)
+        data = await asyncio.to_thread(_read_at_most, file, IMPORT_MAX_BYTES)
     except OSError as exc:
         return _fail(f"cannot read {file}: {exc.strerror}", err)
+    if len(data) > IMPORT_MAX_BYTES:
+        return _fail(f"{file} is larger than {_size(IMPORT_MAX_BYTES)}", err)
     try:
         session = Session.model_validate_json(data)
     except ValidationError as exc:
@@ -133,6 +135,22 @@ async def import_session(
         return _fail(exc, err)
     print(f"imported as {new} · maha -r {new} resumes it", file=out)
     return EXIT_OK
+
+
+# The largest file `maha import` reads: a long session with its tool
+# results is a few MiB (audit after hito 10, I15).
+IMPORT_MAX_BYTES = 64 * 1024 * 1024
+
+
+def _read_at_most(file: Path, limit: int) -> bytes:
+    """The bytes of `file`, at most one more than `limit`."""
+    with file.open("rb") as stream:
+        return stream.read(limit + 1)
+
+
+def _size(limit: int) -> str:
+    mib, rest = divmod(limit, 1024 * 1024)
+    return f"{mib} MiB" if mib and not rest else f"{limit} bytes"
 
 
 def _fail(exc: Exception | str, err: TextIO) -> int:
