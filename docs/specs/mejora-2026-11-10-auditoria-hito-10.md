@@ -1,6 +1,6 @@
-Estado: EN CURSO (2026-11-11). Hechos: B, S, H, I, M y P, la revisión
-independiente (R1 a R16) y las evals, con las decisiones del mantenedor.
-Falta el cierre: `v0.10.1`.
+Estado: IMPLEMENTADA (2026-11-11). Hechos: B, S, H, I, M y P, la
+revisión independiente (R1 a R16) y las evals, con las decisiones del
+mantenedor. Sale en `v0.10.1`.
 
 # Auditoría tras el hito 10
 
@@ -275,6 +275,9 @@ y esta spec. Cada hallazgo, comprobado y con su test primero:
 | kimi-k2.7-code | 117 → 118 / 120 | 4,77 → 5,41 | 11.871 → 15.758 | 0,0054 → 0,0082 $ (⚠ +51 %) |
 | claude-haiku-5-5 | 120 → 120 / 120 | 3,93 → 3,88 | 16.933 → 16.750 | 0,0049 → 0,0049 $ |
 
+- M4 y R15 se aplicaron después de la pasada: no cambian lo que miden
+  (el coste de Go lo da el proveedor; la entrada de la terminal no entra
+  en las evals).
 - Validación: 25/25 con los tres. Los fallos sueltos (GLM 13, Kimi 8 y
   12) quedan dentro del ruido (p = 0,5).
 - **Kimi sale ⚠ por coste:** es P8. Su documentación exige devolverle su
@@ -287,4 +290,44 @@ y esta spec. Cada hallazgo, comprobado y con su test primero:
 
 ## Aprendido al implementar
 
-*Se añade al implementar.*
+- **Los hashes se anotan después del commit, nunca a la vez.** Los de S1
+  a S6 quedaron desplazados en una sesión, y un reemplazo automático de
+  "POR ARREGLAR." marcó mal otros, porque el estado a veces está partido
+  en dos líneas. Se corrigió buscando cada hallazgo por su bloque.
+- **Lo cuadrático se esconde en lo "flexible".** La búsqueda de
+  `edit_file` era una regex con alternativas, y el conteo de solapes, un
+  `find` desde cada posición: 64.000 líneas cortas, casi 2 s, antes de
+  preguntar. Con el texto aplanado a `"\n"` y `str.find`, milisegundos.
+  Un test con un tope de tiempo holgado lo fija.
+- **Un proceso por lote cuesta más que la búsqueda.** El arranque de
+  Python (0,26 s) pesaba más que leer los ficheros. Un hijo por `grep`,
+  con una línea de JSON por lote, conserva el aislamiento (ReDoS, Ctrl+C)
+  sin ese coste.
+- **El final de una salida importa más que su principio.** `pytest`,
+  `cargo` o `tsc` dicen qué falló al final; guardar solo el principio
+  dejaba al modelo sin el resumen.
+- **Cerrar lo viejo antes de cambiar a lo nuevo es frágil con Ctrl+C.**
+  `/new` y `/resume` cerraban la sesión que dejaban y luego cambiaban; un
+  Ctrl+C en la espera del título cortaba entre medias. Primero se cambia,
+  luego se cierra (R1). Y el manejador de Ctrl+C tiene que seguir
+  mientras se sale (R2).
+- **Unir lo que llega junto no distingue pegar de teclear por
+  adelantado.** El *bracketed paste* sí; por eso el mantenedor quitó el
+  respaldo (R15). Para que las marcas no se vean como `^[[200~`, se
+  apaga `ECHOCTL` mientras dura la conversación: una flecha pulsada en el
+  prompt mueve el cursor en vez de verse como `^[[A`, hasta la TUI del
+  hito 21.
+- **Devolver el razonamiento es parte del contrato de cada proveedor, y
+  solo del suyo.** DeepSeek da 400 sin él en un bucle con herramientas;
+  Kimi, GLM y MiniMax lo piden. Pero el de un modelo no es de otro: cada
+  bloque guarda quién lo escribió (R4). Cuesta tokens: Kimi, +51 % por
+  ejecución, aceptado por el mantenedor.
+- **El catálogo envejece en dos semanas.** Al comprobar M6 y M7, nueve
+  modelos nuevos, un modelo retirado y varios precios y descuentos
+  cambiados. Un test fija el número de modelos de cada proveedor y la
+  fecha de la comprobación.
+- **Un precio que no se conoce no se inventa** (M4): sin precio de la
+  caché de 1 h, la llamada queda sin precio en vez de salir más barata.
+- **Las revisiones independientes encuentran lo que el autor no ve.** Dos
+  de los tres revisores dieron por separado con R1; los arreglos de la
+  propia auditoría trajeron 16 fallos nuevos, todos con su test.

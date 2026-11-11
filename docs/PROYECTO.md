@@ -104,7 +104,7 @@ debe. El detalle: [`DESIGN.md`](DESIGN.md); dónde está cada fichero:
 | 7 | Trazas y coste | ✅ `v0.7.0` (y `v0.7.1`) |
 | 8 | Evals y modo no interactivo | ✅ `v0.8.0` (y `v0.8.1`) |
 | 9 | Adaptador de Anthropic | ✅ `v0.9.0` (y `v0.9.1`) |
-| 10 | System prompt por capas | ✅ `v0.10.0` |
+| 10 | System prompt por capas | ✅ `v0.10.0` (y `v0.10.1`) |
 | 11 | Gestión del contexto | ⬜ |
 | 12 | Deshacer y puntos de control | ⬜ |
 | 13 | Skills y comandos personalizados | ⬜ |

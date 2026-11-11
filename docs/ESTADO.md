@@ -1,16 +1,17 @@
 # Estado del proyecto
 
 Última actualización: 2026-11-11. **Hito 10 cerrado: `v0.10.0` (system
-prompt por capas). En curso: la auditoría tras el hito 10, pedida por el
-mantenedor para empezar el hito 11 con cero deuda.**
+prompt por capas). La auditoría tras el hito 10 está hecha y commiteada en
+`fix/auditoria-hito-10`: falta su PR, el merge y `v0.10.1`. Después, el
+hito 11.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 ## Fase actual
 
-**Desarrollo. Hitos 1 a 10 cerrados; en curso, la auditoría tras el hito
-10, antes del hito 11 (gestión del contexto). Plan: 23 hitos hasta la 1.0
+**Desarrollo. Hitos 1 a 10 cerrados; la auditoría tras el hito 10, hecha
+y por integrar, antes del hito 11 (gestión del contexto). Plan: 23 hitos hasta la 1.0
 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
@@ -43,7 +44,7 @@ spec, su nota de la guía y su release.
 | 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
 | 8 | Evals (20 tareas, dos modelos, línea base), `maha -p`, reintentos con respaldo y comandos de línea; auditoría con tres revisiones independientes | `v0.8.0` (2026-10-30), `v0.8.1` (2026-11-03) |
 | 9 | Formato de Anthropic (Claude, MiniMax y Qwen por OpenCode; la API directa), el formato de cada modelo, razonamiento devuelto intacto, effort y caché del prompt; auditoría profunda con cinco revisores y una revisión de los arreglos | `v0.9.0` (2026-11-03), `v0.9.1` (2026-11-04) |
-| 10 | System prompt por capas (`AGENTS.md`, entorno, `maha prompt`), `todo_write`, `ask_user`, `/init`, títulos de sesión y `/rename`; evals con 24 tareas y líneas base nuevas | `v0.10.0` (2026-11-10) |
+| 10 | System prompt por capas (`AGENTS.md`, entorno, `maha prompt`), `todo_write`, `ask_user`, `/init`, títulos de sesión y `/rename`; evals con 24 tareas y líneas base nuevas; auditoría con cinco revisores, mejoras de producto y una revisión independiente de los arreglos | `v0.10.0` (2026-11-10), `v0.10.1` (2026-11-11) |
 
 ## Siguiente paso
 
@@ -52,23 +53,14 @@ auditoría (rama `fix/auditoria-hito-10`), y trabajar en esa rama: `git
 fetch && git switch fix/auditoria-hito-10 && git pull`, `uv sync`, y
 comprobar tests, mypy y lint-imports en verde.
 
-1. **Mantenedor:** decidir lo que queda abierto de la auditoría tras el
-   hito 10 (spec `docs/specs/mejora-2026-11-10-auditoria-hito-10.md`):
-   - **M4:** la escritura en caché de 1 h de los Claude de OpenCode no
-     tiene precio publicado; hoy se cuenta al de 5 min. Recomendado:
-     "sin precio" en esa llamada.
-   - **R15:** con la decisión 2, las líneas tecleadas por adelantado
-     durante una respuesta se unen en un turno. Recomendado: solo
-     *bracketed paste*, sin la unión de respaldo.
-   - **Evals:** Kimi cuesta +51 % por ejecución (P8: su documentación
-     exige devolverle su razonamiento), con una tarea más resuelta.
-     Recomendado: aceptarlo, anotado en la spec.
-
-   Hecho y commiteado, cada uno con su test: B, S, H, I, M y P, el
-   catálogo de OpenCode al día, la revisión independiente (R1 a R16) y
-   la pasada de evals (2026-11-11).
-2. **Agente, tras las decisiones:** aplicarlas, spec IMPLEMENTADA,
-   ESTADO, HISTORIAL, PR, merge y `v0.10.1`.
+1. **Humano:** revisar los commits de `fix/auditoria-hito-10` (`git log
+   main..` y el diff), hacer push y abrir el PR (o pedírselo al agente);
+   integrarlo con merge commit con el CI en verde. Después, el tag
+   anotado `v0.10.1` sobre ese merge y su push, que crea la release.
+   Todo lo de la auditoría está hecho, con las decisiones del mantenedor
+   del 2026-11-11 (spec, IMPLEMENTADA).
+2. **Agente, tras la release:** ESTADO a `v0.10.1` y empezar la spec del
+   hito 11 (gestión del contexto), en su rama `docs/spec-hito-11-…`.
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
@@ -253,7 +245,8 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
   `v0.8.1` (2026-11-03, la auditoría)
 - [x] 9. Adaptador de Anthropic. `v0.9.0` (2026-11-03) y el arreglo
   `v0.9.1` (2026-11-04, la auditoría profunda)
-- [x] 10. System prompt por capas. `v0.10.0` (2026-11-10)
+- [x] 10. System prompt por capas. `v0.10.0` (2026-11-10) y el arreglo
+  `v0.10.1` (2026-11-11, la auditoría)
 - [ ] 11. Gestión del contexto. `v0.11.0`
 - [ ] 12. Deshacer y puntos de control. `v0.12.0` *(nuevo, 2026-10-27)*
 - [ ] 13. Skills y comandos personalizados. `v0.13.0`

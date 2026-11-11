@@ -224,7 +224,7 @@ your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
 | `/help` | Lists the commands |
 | `/model [ID]` | Shows the model, or changes it |
 | `/effort [LEVEL]` | Shows or changes how hard the model works; `default` goes back to the model's own |
-| `/sessions` | Recent sessions, from every directory |
+| `/sessions [all]` | Recent sessions, from every directory; `all`, every one |
 | `/resume [ID]` | Resumes a session; without ID, the last one here |
 | `/delete ID` | Deletes a session and its trace |
 | `/trace [ID]` | What a session did and cost, turn by turn |
@@ -239,7 +239,9 @@ your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
   and of the session. In `/trace`, "calls" are the calls to the model.
 - While it waits for the answer, a spinner with "maha" spins.
 - **Ctrl+C** in the middle of an answer interrupts it and returns to the
-  prompt; the model knows you interrupted it. At the prompt, it quits.
+  prompt; the model knows you interrupted it. At the prompt, the first one
+  clears the line and the second one quits.
+- **Pasted text** of several lines goes as one message.
 - **Without a terminal** (`maha < instructions.txt`), everything with an
   effect is denied. For scripts, use `maha -p`.
 
@@ -250,7 +252,7 @@ your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
 | `maha -p "…"` | One instruction and exit; stdin goes below it |
 | `maha -c`, `maha -r ID` | Continue the last session here, or one by its id |
 | `maha models [--all]` | The models of the catalog, with their API format, window and prices |
-| `maha sessions` | Recent sessions; `sessions delete ID` deletes one |
+| `maha sessions [--all]` | Recent sessions, or every one; `sessions delete ID` deletes one |
 | `maha trace [ID]` | What a session did and cost; without id, the last one here |
 | `maha prompt` | The system prompt a session here would have, without calling the model |
 | `maha stats [--days N]` | Cost and tokens by day and model |
