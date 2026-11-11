@@ -6,7 +6,8 @@ stricter one wins (spec hito 8, §3.2):
 
 1. built-in providers, in this module;
 2. the user's file, `$XDG_CONFIG_HOME/maha/config.toml`;
-3. the project's file, `.maha/config.toml` in the working directory.
+3. the project's file, the nearest `.maha/config.toml` from the working
+   directory up to the git root (audit after hito 10, P7).
 
 Providers (URL and key variable) can only be declared by the user: a project
 file is untrusted input, and could send the user's key to another server.
@@ -16,6 +17,7 @@ Start-up plumbing: only `mharness.bootstrap` uses it, once, before the core.
 
 import tomllib
 from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path, PurePath
 from typing import Annotated, Any
 
@@ -225,7 +227,7 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
     that never call the model do not need them (`maha sessions`, `stats`…),
     and `model` may be None."""
     user_path = user_config_path(env)
-    project_path = cwd / PROJECT_FILE
+    project_path = project_file(cwd)
 
     user = _validate(_UserFile, _read(user_path), user_path)
     project_data = _read(project_path)
@@ -306,6 +308,35 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
             if (value := getattr(project, name)) is not None
         },
     )
+
+
+def project_file(cwd: Path) -> Path:
+    """The project's `.maha/config.toml`: the nearest one from `cwd` up to
+    the git root, so a subfolder has its project's limits too (audit after
+    hito 10, P7). Never above the root, nor above `cwd` without git: a
+    file of another project, or of the home, is not this one's. If there
+    is none, the one `cwd` would have."""
+    root = _git_root(cwd)
+    if root is not None:
+        for directory in (cwd, *cwd.parents):
+            candidate = directory / PROJECT_FILE
+            with suppress(OSError):
+                if candidate.is_file():
+                    return candidate
+            if directory == root:
+                break
+    return cwd / PROJECT_FILE
+
+
+def _git_root(cwd: Path) -> Path | None:
+    """The nearest directory, `cwd` or above, that holds a `.git`; the same
+    rule as the project adapter's `git_root()`, which config cannot
+    import."""
+    for directory in (cwd, *cwd.parents):
+        with suppress(OSError):
+            if (directory / ".git").exists():
+                return directory
+    return None
 
 
 def _inside_project(pattern: str, path: Path) -> None:

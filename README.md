@@ -211,7 +211,8 @@ base_url = "http://localhost:11434/v1"
 ```
 
 A project can choose its provider, model, fallback, effort and cache in
-`.maha/config.toml`, and tighten the limits (never loosen them), but never
+`.maha/config.toml` (read from any folder of the project, up to its git
+root), and tighten the limits (never loosen them), but never
 declare providers: that way a foreign repository cannot send your key to
 another server. What a project chooses is said at start, so it cannot raise
 your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.

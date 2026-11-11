@@ -216,7 +216,8 @@ base_url = "http://localhost:11434/v1"
 ```
 
 Un proyecto puede elegir su proveedor, su modelo, su respaldo, el effort y
-la caché en `.maha/config.toml`, y apretar los topes (nunca aflojarlos),
+la caché en `.maha/config.toml` (se lee desde cualquier carpeta del
+proyecto, hasta su raíz git), y apretar los topes (nunca aflojarlos),
 pero nunca declarar proveedores: así un repositorio ajeno no puede llevarse
 tu clave a otro servidor. Lo que elige un proyecto se dice al arrancar, para
 que no pueda subirte el coste sin que lo veas: `[from .maha/config.toml:

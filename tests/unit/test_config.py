@@ -697,3 +697,50 @@ def test_the_providers_key_is_not_a_variable_for_the_commands(
 
     with pytest.raises(ConfigError, match="credential"):
         load(home, project)
+
+
+# Audit after hito 10, P7: from a subfolder, the project's file, its limits
+# included, was ignored without a word.
+
+
+def test_the_projects_file_is_found_from_a_subfolder(home: Path, project: Path) -> None:
+    (project / ".git").mkdir()
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'model = "del-proyecto"\n[limits]\nmax_steps = 3\n')
+    inner = project / "src" / "app"
+    inner.mkdir(parents=True)
+
+    settings = load(home, inner)
+
+    assert settings.model == "del-proyecto"
+    assert settings.limits.max_steps == 3
+
+
+def test_the_nearest_projects_file_wins(home: Path, project: Path) -> None:
+    (project / ".git").mkdir()
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'model = "de-la-raiz"\n')
+    inner = project / "web"
+    write_project(inner, 'model = "de-web"\n')
+
+    assert load(home, inner).model == "de-web"
+
+
+def test_no_file_above_the_git_root_is_read(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'model = "de-fuera"\n')
+    repo = project / "repo"
+    (repo / ".git").mkdir(parents=True)
+
+    assert load(home, repo).model == "m"
+
+
+def test_without_git_only_the_working_directory_counts(
+    home: Path, project: Path
+) -> None:
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'model = "de-arriba"\n')
+    inner = project / "sub"
+    inner.mkdir()
+
+    assert load(home, inner).model == "m"

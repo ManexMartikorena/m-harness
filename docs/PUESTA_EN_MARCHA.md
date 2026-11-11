@@ -134,7 +134,8 @@ las sesiones. Sin él, el que el catálogo da al proveedor (en OpenCode Go,
 small_model = "glm-5.3-flash"
 ```
 
-Un proyecto puede tener `.maha/config.toml` con `provider`, `model` y
+Un proyecto puede tener `.maha/config.toml` (el más cercano desde la
+carpeta actual hasta la raíz git, desde la `v0.10.1`) con `provider`, `model` y
 `fallback_model`, que ganan a los del usuario, y `[limits]`, de los que vale el más estricto de
 los dos ficheros: un repositorio ajeno no puede aflojar los tuyos. Si declara `[providers]`, `maha` se niega a
 arrancar: un repositorio ajeno podría enviar la clave a otro servidor (spec
