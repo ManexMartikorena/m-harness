@@ -2749,14 +2749,80 @@ async def test_grep_stops_searching_once_it_has_enough_matches(
         return await real_exec(*args, **kwargs)
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", counting)
+    sent = 0
+    real_search = files._Searcher.search
+
+    async def counting_batches(
+        self: Any, batch: list[tuple[str, str]], raw: str | None
+    ) -> list[str]:
+        nonlocal sent
+        sent += 1
+        return await real_search(self, batch, raw)
+
+    monkeypatch.setattr(files._Searcher, "search", counting_batches)
     result = await grep(root, "x")
 
     assert spawned == 1
+    assert sent == 1
     assert result.splitlines() == [
         "f0.txt:1: x",
         "f0.txt:2: x",
         "… [stopped at 2 matches; narrow the search]",
     ]
+
+
+async def test_grep_starts_one_process_for_every_batch(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Audit after hito 10, H3: one Python per batch of files took 0.26 s
+    # each; 10,000 files, 5 s. One child serves every batch.
+    monkeypatch.setattr(files, "GREP_BATCH_FILES", 2)
+    for n in range(7):
+        write(root, f"f{n}.txt", f"x{n}\n")
+    spawned = 0
+    real_exec = asyncio.create_subprocess_exec
+
+    async def counting(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
+        nonlocal spawned
+        spawned += 1
+        return await real_exec(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", counting)
+    result = await grep(root, "x")
+
+    assert spawned == 1
+    assert len(result.splitlines()) == 7
+
+
+async def test_the_search_process_does_not_get_the_environment(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Audit after hito 10, H9: the key of maha is not for the child.
+    monkeypatch.setenv("OPENCODE_API_KEY", "sk-inventada")
+    write(root, "a.txt", "x\n")
+    seen: dict[str, Any] = {}
+    real_exec = asyncio.create_subprocess_exec
+
+    async def spying(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
+        seen.update(kwargs)
+        return await real_exec(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spying)
+    assert await grep(root, "x") == "a.txt:1: x"
+
+    assert "OPENCODE_API_KEY" not in seen["env"]
+
+
+@pytest.mark.parametrize("pattern", ["a{99999999999}", "(" * 2000 + "a" + ")" * 2000])
+async def test_a_pattern_python_cannot_compile_is_an_error_for_the_model(
+    root: Path, pattern: str
+) -> None:
+    # Audit after hito 10, H5: OverflowError and RecursionError were
+    # internal errors.
+    write(root, "a.txt", "a\n")
+
+    with pytest.raises(ToolError, match="invalid regular expression"):
+        await grep(root, pattern)
 
 
 # A read-only file is not replaced (spec mejora-2026-10-26-deuda-pre-hito-6,

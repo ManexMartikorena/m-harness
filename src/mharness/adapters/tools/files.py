@@ -728,44 +728,37 @@ class Grep:
         base = self._workspace.resolve(params.path)
         self._asked.check(params, params.path, base, self._warning(base, params.path))
         _check_grep(params, base)
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + GREP_TIME_LIMIT
-        if base.is_file():
-            shown = self._workspace.shown(base)
-            found = await _search_apart(
-                params.pattern, [(str(base), shown)], params.path, GREP_TIME_LIMIT
-            )
-            return _grep_result(found, stopped_early=False)
-        # The walk stays here: its perimeter, secrets and .gitignore rules
-        # are not the child's to decide. It goes in batches, and stops once
-        # there are enough matches.
-        walk = _Walk(self._workspace, base)
-        matches: list[str] = []
-        batch: list[tuple[str, str]] = []
-        async for file in walk.files():
-            if params.glob and not _glob_matches(file.in_base, params.glob):
-                continue
-            batch.append((str(file.real), file.shown))
-            if len(batch) == GREP_BATCH_FILES:
-                time_left = deadline - loop.time()
-                matches += await _search_apart(params.pattern, batch, None, time_left)
-                batch = []
-                if len(matches) > GREP_MAX_MATCHES:
-                    return _grep_result(matches, stopped_early=False)
-        if batch:
-            time_left = deadline - loop.time()
-            matches += await _search_apart(params.pattern, batch, None, time_left)
-        return _grep_result(matches, stopped_early=walk.stopped_early)
+        async with _Searcher(params.pattern) as searcher:
+            if base.is_file():
+                shown = self._workspace.shown(base)
+                found = await searcher.search([(str(base), shown)], params.path)
+                return _grep_result(found, stopped_early=False)
+            # The walk stays here: its perimeter, secrets and .gitignore
+            # rules are not the child's to decide. It goes in batches, and
+            # stops once there are enough matches.
+            walk = _Walk(self._workspace, base)
+            matches: list[str] = []
+            batch: list[tuple[str, str]] = []
+            async for file in walk.files():
+                if params.glob and not _glob_matches(file.in_base, params.glob):
+                    continue
+                batch.append((str(file.real), file.shown))
+                if len(batch) == GREP_BATCH_FILES:
+                    matches += await searcher.search(batch, None)
+                    batch = []
+                    if len(matches) > GREP_MAX_MATCHES:
+                        return _grep_result(matches, stopped_early=False)
+            if batch:
+                matches += await searcher.search(batch, None)
+            return _grep_result(matches, stopped_early=walk.stopped_early)
 
     def summary(self, result: str) -> str:
         return _count_lines(result, "(no matches)", "match", "matches")
 
 
-def _check_grep(params: GrepParams, base: Path) -> re.Pattern[str]:
-    try:
-        regex = re.compile(params.pattern)
-    except re.error as exc:
-        raise ToolError(f"invalid regular expression: {exc}") from None
+def _check_grep(params: GrepParams, base: Path) -> None:
+    """What would make the search fail, found before asking."""
+    compile_pattern(params.pattern)
     if params.glob:
         _check_pattern(params.glob)
     if not base.exists():
@@ -775,7 +768,16 @@ def _check_grep(params: GrepParams, base: Path) -> re.Pattern[str]:
     if base.is_file():
         with _reading(params.path):
             _check_search_size(base.stat().st_size, params.path)
-    return regex
+
+
+def compile_pattern(pattern: str) -> re.Pattern[str]:
+    """The model's regex, or an error for it. A repeat too large or a
+    nesting too deep is not an `re.error`, and was an internal error
+    (audit after hito 10, H5)."""
+    try:
+        return re.compile(pattern)
+    except (re.error, OverflowError, RecursionError) as exc:
+        raise ToolError(f"invalid regular expression: {exc}") from None
 
 
 def _check_search_size(size: int, raw: str, max_bytes: int | None = None) -> None:
@@ -833,17 +835,16 @@ def _search(
 
 
 def search_files(
-    pattern: str,
+    regex: re.Pattern[str],
     files: list[tuple[str, str]],
     raw: str | None,
     max_bytes: int,
     max_matches: int,
 ) -> list[str]:
-    """The matches of `pattern` in `files` (resolved path, shown path), at
+    """The matches of `regex` in `files` (resolved path, shown path), at
     most one more than `max_matches`. With `raw`, the one file the model
     asked for, and its failures are errors. It runs in the child process of
-    `_search_apart`."""
-    regex = re.compile(pattern)
+    `_Searcher`."""
     matches: list[str] = []
     for real, shown in files:
         if raw is not None:
@@ -861,51 +862,87 @@ def search_files(
     return matches
 
 
-async def _search_apart(
-    pattern: str, files: list[tuple[str, str]], raw: str | None, time_left: float
-) -> list[str]:
-    """`search_files` in a child process, killed after `time_left` seconds or
-    on Ctrl+C: a regex of the model can take exponential time (ReDoS), and in
-    this process it would freeze the loop (final audit, 2026-10-23, decision
-    of the maintainer)."""
-    request = json.dumps(
-        {
-            "pattern": pattern,
+# What the child may write back at most in one line: the matches of a batch.
+_SEARCH_LINE_LIMIT = 16 * MIB
+
+
+class _Searcher:
+    """`search_files` in a child process, killed when `GREP_TIME_LIMIT` is
+    over or on Ctrl+C: a regex of the model can take exponential time
+    (ReDoS), and in this process it would freeze the loop (final audit,
+    2026-10-23, decision of the maintainer).
+
+    One child for the whole search, one JSON line per batch each way:
+    starting a Python per batch cost 0.26 s each (audit after hito 10, H3).
+    It gets no environment: the key of maha is not its own (H9).
+    """
+
+    def __init__(self, pattern: str) -> None:
+        self._pattern = pattern
+        self._process: asyncio.subprocess.Process | None = None
+        self._deadline = 0.0
+
+    async def __aenter__(self) -> _Searcher:
+        loop = asyncio.get_running_loop()
+        self._deadline = loop.time() + GREP_TIME_LIMIT
+        self._process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-I",
+            "-m",
+            "mharness.adapters.tools.search_worker",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={},
+            limit=_SEARCH_LINE_LIMIT,
+        )
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        process = self._process
+        if process is None:
+            return
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+
+    async def search(self, files: list[tuple[str, str]], raw: str | None) -> list[str]:
+        process = self._process
+        assert process is not None
+        assert process.stdin is not None
+        assert process.stdout is not None
+        request = {
+            "pattern": self._pattern,
             "files": files,
             "raw": raw,
             "max_bytes": GREP_MAX_FILE_BYTES,
             "max_matches": GREP_MAX_MATCHES,
         }
-    ).encode()
-    process = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-I",
-        "-m",
-        "mharness.adapters.tools.search_worker",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        async with asyncio.timeout(max(time_left, 0)):
-            out, err = await process.communicate(request)
-    except TimeoutError:
-        raise ToolError(
-            f"search took more than {GREP_TIME_LIMIT} s; "
-            "use a simpler pattern or a narrower path"
-        ) from None
-    finally:
-        if process.returncode is None:
+        time_left = self._deadline - asyncio.get_running_loop().time()
+        try:
+            async with asyncio.timeout(max(time_left, 0)):
+                process.stdin.write(json.dumps(request).encode() + b"\n")
+                await process.stdin.drain()
+                line = await process.stdout.readline()
+        except TimeoutError:
+            raise ToolError(
+                f"search took more than {GREP_TIME_LIMIT} s; "
+                "use a simpler pattern or a narrower path"
+            ) from None
+        except BrokenPipeError, ConnectionResetError:
+            line = b""
+        if not line:
+            # A bug of ours: the loop reports it as an internal error.
             process.kill()
             await process.wait()
-    if process.returncode != 0:
-        # A bug of ours: the loop reports it as an internal error.
-        raise RuntimeError(f"search process failed: {err.decode(errors='replace')}")
-    answer = json.loads(out)
-    if "error" in answer:
-        raise ToolError(answer["error"])
-    matches: list[str] = answer["matches"]
-    return matches
+            assert process.stderr is not None
+            err = await process.stderr.read()
+            raise RuntimeError(f"search process failed: {err.decode(errors='replace')}")
+        answer = json.loads(line)
+        if "error" in answer:
+            raise ToolError(answer["error"])
+        matches: list[str] = answer["matches"]
+        return matches
 
 
 def _grep_result(matches: list[str], *, stopped_early: bool) -> str:
