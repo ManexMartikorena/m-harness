@@ -1,6 +1,6 @@
-Estado: EN CURSO (2026-11-11). Hechos: B, S, H, I, M y P, salvo M4, que
-espera una decisión del mantenedor. Faltan la revisión independiente de
-los arreglos, las evals y `v0.10.1`.
+Estado: EN CURSO (2026-11-11). Hechos: B, S, H, I, M y P, la revisión
+independiente (R1 a R16) y las evals, con las decisiones del mantenedor.
+Falta el cierre: `v0.10.1`.
 
 # Auditoría tras el hito 10
 
@@ -29,7 +29,9 @@ mantenedor), **NO ES FALLO** (comprobado, con el motivo).
    carpeta, que `maha` ya carga de la raíz hacia abajo, y lo dice. Desde la
    raíz, como hasta ahora.
 2. **Pegar texto de varias líneas** (I4): *bracketed paste* ahora, con un
-   respaldo que une las líneas que llegan juntas.
+   respaldo que une las líneas que llegan juntas. *El respaldo se quitó el
+   2026-11-11, por decisión del mantenedor (R15): unía también lo
+   tecleado por adelantado.*
 3. **El título al salir** (S7): esperar siempre al título. Si tarda, `maha`
    dice que espera y Ctrl+C lo salta; al retomar una sesión sin título, se
    pide.
@@ -254,7 +256,8 @@ y esta spec. Cada hallazgo, comprobado y con su test primero:
   cargada. ARREGLADO (`a9dd73a`).
 - **R15.** Con la decisión 2, las líneas tecleadas por adelantado durante
   una respuesta llegan juntas a la terminal y se unen en un turno
-  (`hola⏎/exit⏎`). DECISIÓN pendiente del mantenedor.
+  (`hola⏎/exit⏎`). DECISIÓN del mantenedor (2026-11-11): solo *bracketed
+  paste*, sin la unión de respaldo. ARREGLADO (`f6d7b11`).
 - **R16.** Una señal de cierre (SIGTERM) mientras la salida espera el
   título termina con el código de la salida normal, no con 128 + la
   señal. Lo demás se guarda. ARREGLADO (`26cdd0f`).
@@ -279,6 +282,8 @@ y esta spec. Cada hallazgo, comprobado y con su test primero:
   antes `maha` no lo hacía. Más tokens de entrada por llamada y algún
   paso más, con una tarea más resuelta. DECISIÓN pendiente del
   mantenedor (AGENTS.md: no se integra una regresión sin ella).
+  **Aceptado por el mantenedor (2026-11-11):** es el precio de cumplir el
+  contrato de la API de Kimi.
 
 ## Aprendido al implementar
 
