@@ -92,10 +92,19 @@ class Workspace:
         they go: every check runs on the resolved path.
         """
         try:
-            return (self.root / _unquoted(raw)).resolve()
+            path = (self.root / _unquoted(raw)).resolve()
         except ValueError:
             # A NUL in the path (spec mejora-2026-10-23-deuda-hito-5, A5).
             raise ToolError(f"invalid path: {raw}") from None
+        # A path no call can use is told now, not after the question
+        # (audit after hito 10, H11). Missing is fine: it may be created.
+        try:
+            os.stat(path)
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENAMETOOLONG):
+                why = os.strerror(exc.errno).lower()
+                raise ToolError(f"{why}: {raw}") from None
+        return path
 
     def contains(self, path: Path) -> bool:
         return is_inside(path, self.root)

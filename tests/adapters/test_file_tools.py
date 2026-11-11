@@ -3233,3 +3233,34 @@ def test_a_folder_is_no_hard_link(root: Path) -> None:
     (root / "src").mkdir()
 
     assert Workspace(root).change_warning(root / "src", "src") is None
+
+
+# Audit after hito 10, H11: a path that no call can use failed after the
+# question, so the person approved for nothing.
+
+
+@pytest.mark.parametrize("tail", ["", "/x.txt"])
+async def test_a_path_in_a_loop_of_links_is_refused_before_asking(
+    root: Path, tail: str
+) -> None:
+    (root / "a").symlink_to("b")
+    (root / "b").symlink_to("a")
+
+    with pytest.raises(ToolError, match="too many levels of symbolic links: a"):
+        await WriteFile(Workspace(root)).approval(
+            WriteFileParams(path="a" + tail, content="x")
+        )
+
+
+async def test_a_name_too_long_is_refused_before_asking(root: Path) -> None:
+    with pytest.raises(ToolError, match="file name too long"):
+        await WriteFile(Workspace(root)).approval(
+            WriteFileParams(path="n" * 300, content="x")
+        )
+
+
+async def test_reading_a_path_in_a_loop_of_links_says_why(root: Path) -> None:
+    (root / "a").symlink_to("a")
+
+    with pytest.raises(ToolError, match="too many levels of symbolic links"):
+        await ReadFile(Workspace(root)).run(ReadFileParams(path="a"))
