@@ -439,22 +439,17 @@ def _usage(usage: _Usage | None) -> Usage:
     prompt = _details(_PromptTokensDetails, usage.prompt_tokens_details)
     completion = _details(_CompletionTokensDetails, usage.completion_tokens_details)
     return Usage(
-        input_tokens=count(_int(usage.prompt_tokens)),
-        output_tokens=count(_int(usage.completion_tokens)),
-        cache_read_tokens=count(_int(prompt.cached_tokens)),
-        cache_write_tokens=count(_int(prompt.cache_write_tokens)),
-        reasoning_tokens=count(_int(completion.reasoning_tokens)),
+        input_tokens=count(usage.prompt_tokens),
+        output_tokens=count(usage.completion_tokens),
+        cache_read_tokens=count(prompt.cached_tokens),
+        cache_write_tokens=count(prompt.cache_write_tokens),
+        reasoning_tokens=count(completion.reasoning_tokens),
     )
 
 
 def _details[T: BaseModel](kind: type[T], value: Any) -> T:
     """A details object, or an empty one if it is not an object."""
     return kind.model_validate(value) if isinstance(value, dict) else kind()
-
-
-def _int(value: Any) -> int | None:
-    """A whole number of tokens; anything else is not one."""
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _rate_limited(error: Any) -> bool:

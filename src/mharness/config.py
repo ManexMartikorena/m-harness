@@ -17,7 +17,7 @@ Start-up plumbing: only `mharness.bootstrap` uses it, once, before the core.
 import tomllib
 from collections.abc import Mapping
 from pathlib import Path, PurePath
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from pydantic import (
     BaseModel,
@@ -32,7 +32,7 @@ from pydantic import (
 from mharness.domain.catalog import SpokenApi
 from mharness.domain.environment import is_credential
 from mharness.domain.limits import TurnLimits
-from mharness.domain.model import Effort
+from mharness.domain.model import CacheTtl, Effort
 from mharness.domain.money import Usd
 from mharness.domain.paths import is_secret
 
@@ -41,7 +41,6 @@ DEFAULT_PROVIDER = "opencode-go"
 
 
 # How long Anthropic's prompt cache lasts.
-type CacheTtl = Literal["5m", "1h"]
 
 
 class ConfigError(Exception):
@@ -60,9 +59,10 @@ class ProviderSettings(BaseModel, frozen=True, extra="forbid"):
     # Name of the environment variable that holds the key; None sends no key.
     api_key_env: str | None = None
     session_header: str | None = None
-    # The version of Anthropic's API it is asked for; the latest by default
-    # (spec hito 9, decision 2).
-    anthropic_version: str = Field(default="2026-10-21", min_length=1)
+    # The version of Anthropic's API it is asked for; None: the adapter's,
+    # the latest (spec hito 9, decision 2). Written once, there (audit after
+    # hito 10, M5).
+    anthropic_version: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _endpoints_are_other_formats(self) -> ProviderSettings:

@@ -180,7 +180,8 @@ def test_anthropic_is_a_builtin_provider() -> None:
         "https://api.anthropic.com/v1",
         "ANTHROPIC_API_KEY",
     )
-    assert provider.anthropic_version == "2026-10-21"
+    # The adapter's own, the latest (audit after hito 10, M5).
+    assert provider.anthropic_version is None
 
 
 def test_a_provider_may_ask_for_another_anthropic_version(
