@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-10. **Hito 10 cerrado: `v0.10.0` (system
+Última actualización: 2026-11-11. **Hito 10 cerrado: `v0.10.0` (system
 prompt por capas). En curso: la auditoría tras el hito 10, pedida por el
 mantenedor para empezar el hito 11 con cero deuda.**
 
@@ -52,24 +52,20 @@ auditoría (rama `fix/auditoria-hito-10`), y trabajar en esa rama: `git
 fetch && git switch fix/auditoria-hito-10 && git pull`, `uv sync`, y
 comprobar tests, mypy y lint-imports en verde.
 
-1. **Agente:** seguir la auditoría tras el hito 10 (spec
+1. **Agente:** cerrar la auditoría tras el hito 10 (spec
    `docs/specs/mejora-2026-11-10-auditoria-hito-10.md`; su primera línea
-   dice qué está hecho). Hechos y en GitHub, cada uno con su test: B1 a
-   B6, S1 a S5, S7, S8, M1 a M3 y P8 (Kimi exige que se le devuelva su
-   razonamiento). Faltan, en este orden:
-   1. S6 y los de herramientas (H1 a H13) e interfaz (I1 a I15), cada
-      fallo con su test primero;
-   2. M4 a M7: comprobar en la documentación de OpenCode los precios
-      (Claude con caché de 1 h, `jev-1.13`, Haiku 5.5) y la deuda M5;
-   3. las mejoras P1 a P7, ya evaluadas por tres agentes;
-   4. una revisión independiente de los arreglos (agentes nuevos);
-   5. la pasada de evals contra las líneas base del 2026-11-10 (P8 cambia
-      lo que se manda a Kimi, P3 el shell de `run_command`): unos 1,5 $;
-   6. spec IMPLEMENTADA, ESTADO, HISTORIAL, PR, merge y `v0.10.1`.
-   Decisiones del mantenedor ya tomadas (spec, "Decisiones"): `/init` en
-   una subcarpeta escribe el `AGENTS.md` de esa carpeta; pegar texto con
-   *bracketed paste*; esperar siempre al título (hecho); y hacer las
-   mejoras que los agentes vean buenas.
+   dice qué está hecho). Hechos y commiteados, cada uno con su test: B, S,
+   H, I, M y P (P1 a P8), y el catálogo de OpenCode puesto al día con su
+   documentación (2026-11-11). Faltan, en este orden:
+   1. **Mantenedor:** decidir M4 (la escritura en caché de 1 h de los
+      Claude de OpenCode no tiene precio publicado; hoy se cuenta al de 5
+      min, spec 9, decisión 9);
+   2. la revisión independiente de los arreglos (en marcha el 2026-11-11,
+      tres agentes nuevos) y arreglar lo que encuentre;
+   3. la pasada de evals contra las líneas base del 2026-11-10 (P8 cambia
+      lo que se manda a Kimi, P3 el shell de `run_command`, I3 el mensaje
+      de `/init`): unos 1,5 $;
+   4. spec IMPLEMENTADA, ESTADO, HISTORIAL, PR, merge y `v0.10.1`.
 2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
@@ -181,13 +177,6 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   y que el error del proveedor diga qué hacer (`/model`, `maha models`):
   hoy da solo `HTTP 400 … Model is unavailable` (prueba del mantenedor,
   2026-11-03).
-- **Por comprobar, en su rama `fix/`:** el coste que cobra OpenCode Go
-  por `claude-haiku-5-5` es unas 3-4 veces el que sale con los precios de
-  `models.toml` (una llamada del 2026-11-10: 2.867 de entrada, 2.863 de
-  ellos escritos en caché, y 95 de salida; OpenCode cobró 0,0016 $ y el
-  catálogo da unos 0,0004 $). Hoy no cambia nada: con OpenCode Go vale el
-  coste del proveedor. Comprobar el precio contra la documentación oficial
-  y corregir el catálogo (decisión del mantenedor, 2026-11-10).
 - **Con la batería más larga (hito 11):** volver a medir cuándo usan los
   modelos `todo_write`. Hoy solo la 12 (train) y la 23 (validación) son
   trabajo largo; la guía se ajustó con la 12 y una tarea a mano (spec 10,
@@ -208,6 +197,14 @@ código y los tests cubren los dos casos):
   inválido (spec 4, §10);
 - un `refusal` de OpenCode, que no ha mandado nunca (spec 5, §10);
 - qué campos de coste manda OpenCode Zen; la cuenta es de Go (spec 7, §10);
+- el coste que cobra OpenCode Go por `claude-haiku-5-5` es unas 3-4 veces
+  el que sale con los precios de `models.toml` (una llamada del
+  2026-11-10: 2.867 de entrada, 2.863 de ellos escritos en caché, y 95 de
+  salida; OpenCode cobró 0,0016 $ y el catálogo da unos 0,0004 $; encaja
+  con 0,50/2,50 $ sin descuento de caché). Comprobado el 2026-11-11: la
+  documentación de Go da los precios del catálogo (0,10/0,50 $ hasta 100K),
+  así que la diferencia es de lo que cobra OpenCode, no del catálogo; con
+  Go vale el coste del proveedor (auditoría tras el hito 10, M7);
 - qué mantuvo abierta casi cinco minutos una llamada de Kimi sin contenido
   (probablemente comentarios SSE); ya se corta a los 120 s sin datos (spec
   8, §12.9).
