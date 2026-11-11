@@ -28,7 +28,7 @@ from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FakeModelClient, reply
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
 from tests.fakes.terminal import ScriptedInput
-from tests.unit.test_sessions import FIRST, World, entries, turn
+from tests.unit.test_sessions import FIRST, BrokenLog, World, entries, turn
 
 TEMPLATE = "Title: {{message}}"
 PAID = Usage(input_tokens=80, output_tokens=6)
@@ -203,13 +203,21 @@ async def test_leaving_waits_for_the_title() -> None:
     assert TitleEntry(title="Hola") in entries(store)
 
 
-async def test_ctrl_c_while_leaving_skips_the_title_and_saves_the_rest() -> None:
+async def test_ctrl_c_while_leaving_skips_the_title_and_saves_the_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The turn's save fails, so its messages are still pending when leaving:
+    # they are saved after the cut (second review of the audit after hito
+    # 10: nothing was pending, and the test said nothing of "the rest").
+    monkeypatch.setattr("tests.fakes.sessions.MemoryLog", BrokenLog)
+    monkeypatch.setattr(BrokenLog, "failures", 1)
     store = MemorySessionStore()
     small = NeverAnswers()
     conversation = await conversation_with(store, small, "Hecho.")
     await turn(conversation, "Hola")
     await small.asked.wait()
     assert conversation.naming
+    assert conversation.unsaved is not None
 
     closing = asyncio.create_task(conversation.close())
     await asyncio.sleep(0.01)
@@ -218,6 +226,9 @@ async def test_ctrl_c_while_leaving_skips_the_title_and_saves_the_rest() -> None
         await closing
 
     assert not any(isinstance(entry, TitleEntry) for entry in entries(store))
+    saved = [e.message.text for e in entries(store) if isinstance(e, MessageEntry)]
+    assert saved == ["Hola", "Hecho."]
+    assert conversation.unsaved is None
     # The session was let go: another maha may resume it.
     assert FIRST not in store.locked
 
