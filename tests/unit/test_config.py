@@ -757,3 +757,14 @@ def test_more_credentials_are_not_variables_for_the_commands(
 
     with pytest.raises(ConfigError, match="credential"):
         load(home, project)
+
+
+def test_the_folder_of_the_projects_file_is_known(home: Path, project: Path) -> None:
+    (project / ".git").mkdir()
+    write_user(home, 'model = "m"\n')
+    write_project(project, 'instructions = ["docs/CONV.md"]\n')
+    inner = project / "src"
+    inner.mkdir()
+
+    assert load(home, inner).project_dir == project
+    assert load(home, project / ".git").project_dir == project

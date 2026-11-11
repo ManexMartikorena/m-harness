@@ -403,3 +403,26 @@ async def test_a_glob_stops_at_its_limit(
     result = await info.instructions()
 
     assert result.warnings == ("instructions '**/*.md': stopped after 5 entries",)
+
+
+async def test_the_projects_instructions_go_from_the_folder_of_its_file(
+    tmp_path: Path,
+) -> None:
+    # Review of the audit after hito 10 (P7): a .maha/config.toml found at
+    # the root, from pkg/app, looked for its patterns in pkg/app.
+    cwd = repo(tmp_path)
+    root = tmp_path / "repo"
+    write(root / "docs" / "CONV.md", "conventions")
+    home = tmp_path / "home"
+
+    info = LocalProject(
+        cwd,
+        shell=None,
+        home=home,
+        config_dir=home / ".config" / "maha",
+        extra_project=["docs/CONV.md"],
+        project_base=root,
+    )
+
+    layers = await found(info)
+    assert "conventions" in [text for _, _, text in layers]

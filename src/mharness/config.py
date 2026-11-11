@@ -133,6 +133,9 @@ class Settings(BaseModel, frozen=True):
     # the project (spec hito 10, §1.5).
     instructions: tuple[str, ...] = ()
     project_instructions: tuple[str, ...] = ()
+    # The folder of the project's `.maha/config.toml`, if there is one:
+    # where its `instructions` start (review of the audit after hito 10).
+    project_dir: Path | None = None
     # Read CLAUDE.md where there is no AGENTS.md (spec hito 10, §1.4).
     compat_claude: bool = True
     # The user's own base of the system prompt, instead of maha's; only
@@ -287,6 +290,7 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
         limits=_stricter(user.limits, project.limits),
         instructions=tuple(user.instructions),
         project_instructions=tuple(dict.fromkeys(project.instructions)),
+        project_dir=project_path.parent.parent if project_path.is_file() else None,
         compat_claude=_first(project.compat_claude, user.compat_claude, True),
         system_prompt_file=(
             None

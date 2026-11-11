@@ -390,6 +390,7 @@ def _prompt(
         compat_claude=settings.compat_claude,
         extra_user=settings.instructions,
         extra_project=settings.project_instructions,
+        project_base=settings.project_dir,
     )
     files = files or _PromptFiles()
     return SystemPromptBuilder(

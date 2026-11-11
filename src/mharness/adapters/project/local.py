@@ -123,6 +123,7 @@ class LocalProject:
         user: bool = True,
         extra_user: Sequence[str] = (),
         extra_project: Sequence[str] = (),
+        project_base: Path | None = None,
         today: Callable[[], date] = date.today,
         platform: str = sys.platform,
     ) -> None:
@@ -133,6 +134,10 @@ class LocalProject:
         self._compat_claude = compat_claude
         self._user = user
         self._extra_user = tuple(extra_user)
+        # Where the project's patterns start: the folder of its
+        # .maha/config.toml, maybe above `cwd` (review of the audit after
+        # hito 10, P7).
+        self._project_base = project_base
         self._extra_project = tuple(extra_project)
         self._today = today
         self._platform = platform
@@ -212,6 +217,8 @@ class LocalProject:
         without wildcards, at most `GLOB_MAX_SCAN` entries."""
         if pattern.startswith("~/") and inside is None:
             base, pattern = self._home, pattern[2:]
+        elif inside is not None and self._project_base is not None:
+            base = self._project_base
         else:
             base = self._cwd
         parts = PurePath(pattern).parts
