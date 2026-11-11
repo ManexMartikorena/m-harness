@@ -168,7 +168,6 @@ class Commands:
         self._out.flush()
 
     async def _resume(self, session: str | None) -> None:
-        self.tell_naming()
         left = self.conversation.id if self.conversation.stored else None
         try:
             resumed = await self._sessions.resume(session, current=self.conversation)
@@ -178,17 +177,20 @@ class Commands:
             raise
         old, self.conversation = self.conversation, resumed.conversation
         # Switched first: Ctrl+C while the old one's title comes skips the
-        # title, never the switch (review of the audit after hito 10).
+        # title, never the switch (review of the audit after hito 10). Said
+        # only now, when the wait comes (second review).
+        self.tell_naming(old)
         try:
             await old.close()
         finally:
             self._warn_lost(left, old.unsaved)
             self.tell_resumed(resumed)
 
-    def tell_naming(self) -> None:
-        """Leaving a conversation waits for its title, if it is on its way
-        (decision of the maintainer, 2026-11-10): said, with the way out."""
-        if self.conversation.naming:
+    def tell_naming(self, conversation: Conversation | None = None) -> None:
+        """Leaving a conversation, the current one by default, waits for its
+        title, if it is on its way (decision of the maintainer, 2026-11-10):
+        said, with the way out."""
+        if (conversation or self.conversation).naming:
             self._say(NAMING)
 
     def tell_resumed(self, resumed: Resumed) -> None:
@@ -260,12 +262,12 @@ class Commands:
         """A new session without leaving maha (spec hito 8, §1.15). The
         model chosen with /model stays: it is this maha's choice."""
         old = self.conversation
-        self.tell_naming()
         left = old.id if old.stored else None
         fresh = await self._sessions.start(old.model)
         # The new one is ready: only now is the current one let go, once
-        # switched (review of the audit after hito 10).
+        # switched (review of the audit after hito 10), and the wait said.
         self.conversation = fresh
+        self.tell_naming(old)
         try:
             await old.close()
         finally:

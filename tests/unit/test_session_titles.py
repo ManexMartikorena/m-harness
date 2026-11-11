@@ -446,6 +446,41 @@ async def test_ctrl_c_while_a_command_waits_for_the_title_still_switches(
     assert store.locked == set()
 
 
+async def test_a_resume_that_fails_does_not_say_it_waits_for_the_title() -> None:
+    # Second review of the audit after hito 10: "[naming the session…]" was
+    # said before the step that can fail, and nothing waited after it.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+    conversation = await world.sessions.start()
+    await turn(conversation, "Hola")
+    await small.asked.wait()
+    out, err = io.StringIO(), io.StringIO()
+    commands = Commands(
+        world.sessions,
+        conversation,
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
+        read=ScriptedInput(),
+        discard=None,
+        out=out,
+        err=err,
+        home=Path("/home/ane"),
+    )
+    command = parse_command("/resume 20261026-091502-0bad")
+    assert command is not None
+
+    await asyncio.wait_for(commands.run(command), timeout=2)
+
+    assert err.getvalue().startswith("error: no session")
+    assert "naming the session" not in out.getvalue()
+    assert commands.conversation is conversation
+    assert conversation.naming
+    closing = asyncio.create_task(conversation.close(title=False))
+    await closing
+    assert store.locked == set()
+
+
 async def test_ctrl_c_while_exit_waits_for_the_title_leaves_cleanly() -> None:
     # Review of the audit after hito 10: our Ctrl+C handler was gone while
     # leaving, so a KeyboardInterrupt unwound asyncio; /exit then ended with
