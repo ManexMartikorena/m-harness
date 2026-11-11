@@ -723,8 +723,11 @@ def _gate(lines: cli.StdinLines) -> ApprovalGate:
     """Asks in the terminal; without one (`maha < notes.txt`), denies all:
     the next line of the file could "approve" (spec hito 5, §1.10)."""
     if os.isatty(0):
+        # Styles only on a terminal: never in a file (audit after hito 10,
+        # I11).
+        color = cli.use_color() and sys.stdout.isatty()
         return cli.TerminalApproval(
-            lines.readline, sys.stdout, color=cli.use_color(), discard=lines.discard
+            lines.readline, sys.stdout, color=color, discard=lines.discard
         )
     return cli.DenyAll(sys.stdout)
 

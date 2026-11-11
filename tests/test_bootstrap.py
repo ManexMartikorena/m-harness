@@ -23,7 +23,7 @@ import respx
 
 from mharness import bootstrap, config
 from mharness.adapters.catalog import TomlCatalog
-from mharness.adapters.cli import StdinLines
+from mharness.adapters.cli import StdinLines, TerminalApproval
 from mharness.bootstrap import _eval_prompt, _eval_tools, _prompt, _tools, main
 from mharness.domain.evals import TaskRun
 from mharness.domain.limits import TurnLimits
@@ -2063,3 +2063,17 @@ def test_ctrl_c_in_any_command_ends_quietly_with_130(
 
     assert main(["sessions"]) == 130
     assert capsys.readouterr().err == "\n"
+
+
+def test_the_question_has_no_color_when_stdout_is_not_a_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Audit after hito 10, I11: `maha > log.txt` with a terminal for input
+    # wrote its escapes in the file.
+    monkeypatch.setattr(os, "isatty", lambda fd: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: False)
+
+    gate = bootstrap._gate(StdinLines())
+
+    assert isinstance(gate, TerminalApproval)
+    assert gate._color is False
