@@ -2491,6 +2491,64 @@ async def test_a_change_just_before_writing_in_place_is_not_overwritten(
     assert path.read_text(encoding="utf-8") == "tuyo\n"
 
 
+def test_a_flexible_edit_takes_linear_time() -> None:
+    # Audit after hito 10, H2: the flexible search of an old_string with
+    # line breaks was O(lines x lines), before asking: 800 KB blocked maha
+    # 19 s. 16,000 short lines took a second; now, milliseconds.
+    lines = 16_000
+    text = "x\r\n" * lines
+    params = EditFileParams(
+        path="a", old_string="x\n" * (lines // 4) + "y", new_string="z"
+    )
+    started = time.monotonic()
+
+    with pytest.raises(ToolError, match="not found"):
+        files._replaced(text, params)
+
+    assert time.monotonic() - started < 0.2
+
+
+def test_an_ambiguous_exact_edit_takes_linear_time() -> None:
+    # H2 too: counting every overlap of a long old_string in repeated
+    # lines was quadratic as well: 64,000 short lines, 1.7 s.
+    lines = 64_000
+    params = EditFileParams(path="a", old_string="x\n" * (lines // 4), new_string="z")
+    started = time.monotonic()
+
+    with pytest.raises(ToolError, match="appears"):
+        files._replaced("x\n" * lines, params)
+
+    assert time.monotonic() - started < 0.2
+
+
+def test_a_flexible_edit_keeps_the_breaks_of_the_file() -> None:
+    params = EditFileParams(path="a", old_string="b\nc", new_string="B\nC\nD")
+
+    assert files._replaced("a\r\nb\r\nc\r\nd", params) == (
+        "a\r\nB\r\nC\r\nD\r\nd",
+        1,
+    )
+
+
+def test_a_flexible_edit_replaces_all_with_each_ones_breaks() -> None:
+    params = EditFileParams(
+        path="a", old_string="b\nc", new_string="X\nY", replace_all=True
+    )
+
+    assert files._replaced("b\r\nc b\rc b\r\nc", params) == (
+        "X\r\nY X\rY X\r\nY",
+        3,
+    )
+
+
+def test_two_breaks_do_not_match_one_crlf() -> None:
+    # read_file shows "a\r\nb" as two lines, not three.
+    params = EditFileParams(path="a", old_string="a\n\nb", new_string="z")
+
+    with pytest.raises(ToolError, match="not found"):
+        files._replaced("a\r\nb", params)
+
+
 async def test_overlapping_occurrences_are_ambiguous(root: Path) -> None:
     # D8: "aa" is twice in "aaa", at 0 and at 1: which one is meant?
     write(root, "a.txt", "aaa\n")

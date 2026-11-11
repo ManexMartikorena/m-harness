@@ -8,6 +8,7 @@ disk would keep `maha` from exiting on Ctrl+C (spec hito 2, §12).
 """
 
 import asyncio
+import bisect
 import contextlib
 import difflib
 import errno
@@ -1540,16 +1541,44 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
     take the style of the first break matched: `read_file` shows the lines
     without their endings (spec mejora-2026-10-23-deuda-hito-5, D9 and D10;
     it replaces decision 9b). Overlapping matches count (D8).
+
+    By `str.find` over the text with its breaks made "\\n", not a regex:
+    that was O(lines x lines) on a long old_string (audit after hito 10,
+    H2).
     """
     old, new = params.old_string, params.new_string
-    pattern = re.compile(re.escape(old))
-    flexible = False
-    found = _occurrences(pattern, text)
-    if found == 0 and _BREAK.search(old):
-        parts = (re.escape(part) for part in _BREAK.split(old))
-        pattern = re.compile(f"(?:{_BREAK.pattern})".join(parts))
-        flexible = True
-        found = _occurrences(pattern, text)
+    found = _occurrences(text, old)
+    if found:
+        _check_found(found, params)
+        if params.replace_all:
+            return text.replace(old, new), text.count(old)
+        return text.replace(old, new, 1), 1
+    if not _BREAK.search(old):
+        _check_found(0, params)
+    flat, collapsed = _flatten(text)
+    wanted = _BREAK.sub("\n", old)
+    _check_found(_occurrences(flat, wanted), params)
+    pieces: list[str] = []
+    done = 0
+    count = 0
+    start = flat.find(wanted)
+    # Left to right and without overlaps, also with replace_all.
+    while start != -1:
+        begin = _original(start, collapsed)
+        end = _original(start + len(wanted), collapsed)
+        style = _BREAK.search(text, begin, end)
+        assert style is not None  # old_string has a break, so does its match
+        pieces += [text[done:begin], style.group().join(_BREAK.split(new))]
+        done = end
+        count += 1
+        if not params.replace_all:
+            break
+        start = flat.find(wanted, start + len(wanted))
+    pieces.append(text[done:])
+    return "".join(pieces), count
+
+
+def _check_found(found: int, params: EditFileParams) -> None:
     if found == 0:
         raise ToolError(
             f"old_string not found in {params.path}; "
@@ -1561,25 +1590,34 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
             "add context to make it unique or use replace_all"
         )
 
-    def replacement(match: re.Match[str]) -> str:
-        style = _BREAK.search(match.group()) if flexible else None
-        if style is None:
-            return new
-        return _BREAK.sub(lambda _: style.group(), new)
 
-    # Left to right and without overlaps, also with replace_all.
-    return pattern.subn(replacement, text)
+def _flatten(text: str) -> tuple[str, list[int]]:
+    """`text` with every break made "\\n", and where a "\\r\\n" became one
+    character: the positions, in the flat text, of those "\\n"."""
+    collapsed = [
+        match.start() - shift for shift, match in enumerate(re.finditer("\r\n", text))
+    ]
+    return text.replace("\r\n", "\n").replace("\r", "\n"), collapsed
 
 
-def _occurrences(pattern: re.Pattern[str], text: str) -> int:
-    """Where `pattern` starts in `text`, overlaps included: "aa" is twice in
-    "aaa", and editing one of them is ambiguous (D8)."""
-    found = 0
-    match = pattern.search(text)
-    while match is not None:
-        found += 1
-        match = pattern.search(text, match.start() + 1)
-    return found
+def _original(position: int, collapsed: list[int]) -> int:
+    """The position in the text of `position` in its flat form."""
+    return position + bisect.bisect_left(collapsed, position)
+
+
+def _occurrences(text: str, old: str) -> int:
+    """How many times `old` is in `text`: 0, 1, or more, overlaps included:
+    "aa" is twice in "aaa", and editing one of them is ambiguous (D8).
+
+    Only the first two are looked for one by one; more are counted
+    without overlaps, for the message: counting every overlap was quadratic
+    on repeated lines (audit after hito 10, H2)."""
+    first = text.find(old)
+    if first == -1:
+        return 0
+    if text.find(old, first + 1) == -1:
+        return 1
+    return max(2, text.count(old))
 
 
 def _edited(data: bytes, params: EditFileParams) -> tuple[str, str, int]:
