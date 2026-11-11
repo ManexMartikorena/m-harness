@@ -571,6 +571,34 @@ async def test_resume_without_an_id_never_skips_an_unreadable_one() -> None:
         await world.sessions.resume(None, current=await world.sessions.start())
 
 
+async def test_resume_without_an_id_tells_an_unreadable_one_of_unknown_place() -> None:
+    # Review of the audit after hito 10 (S2): a broken first line hides the
+    # directory, and `-c` took an older one in silence.
+    store = MemorySessionStore()
+    before = await saved(store, text="antes")
+
+    class WithANamelessOne(MemorySessionStore):
+        async def summaries(self) -> list[SessionSummary]:
+            broken = SessionSummary(
+                id="20261027-091502-dead",
+                cwd="",
+                updated_at=datetime(2026, 10, 27, tzinfo=UTC),
+                messages=0,
+                title="",
+                unreadable="its first line is not valid",
+            )
+            return [broken, *await super().summaries()]
+
+    nameless = WithANamelessOne()
+    nameless.sessions = store.sessions
+    world = World(nameless, FakeModelClient([]), tokens=["9999"])
+
+    resumed = await world.sessions.resume(None, current=await world.sessions.start())
+
+    assert resumed.conversation.id == before
+    assert resumed.unknown == ("20261027-091502-dead",)
+
+
 async def test_resume_without_an_id_and_only_the_current_is_not_found() -> None:
     store = MemorySessionStore()
     world = World(store, FakeModelClient([reply("Uno.")]))

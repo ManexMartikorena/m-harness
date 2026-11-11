@@ -573,8 +573,10 @@ class Resumed:
     fallback_from: str | None
     # Whether the last answer was cut by Ctrl+C.
     interrupted: bool
-    # Why the session left behind could not save what it still had; it is
-    # lost (final audit of hito 6, 5).
+    # Without an id: newer sessions that cannot be read and whose directory
+    # is unknown, so they may be this one's (review of the audit after
+    # hito 10, S2).
+    unknown: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -683,11 +685,12 @@ class Sessions:
         caller on a closed conversation (review of the audit after hito
         10)."""
         if session is None:
-            loaded, log = await self._open_last_here(current)
+            loaded, log, unknown = await self._open_last_here(current)
         else:
             if _is_current(session, current):
                 raise SessionError("this is the current session")
             loaded, log = await self._store.open(session)
+            unknown = ()
         header = loaded.header
         same_provider = header.provider == self._origin.provider
         # Of another provider, the model it chose last, if it ever resumed
@@ -725,6 +728,7 @@ class Sessions:
             other_cwd=None if header.cwd == self._origin.cwd else header.cwd,
             fallback_from=None if same_provider else loaded.model,
             interrupted=last is not None and last.interrupted,
+            unknown=unknown,
         )
 
     async def _build(self, model: str, started_in: str | None) -> SystemPrompt | None:
@@ -876,11 +880,16 @@ class Sessions:
 
     async def _open_last_here(
         self, current: Conversation
-    ) -> tuple[Session, SessionLog]:
+    ) -> tuple[Session, SessionLog, tuple[str, ...]]:
         """The newest session of this directory but the current one, skipping
-        those open in another maha (final audit of hito 6, 3)."""
+        those open in another maha (final audit of hito 6, 3); and the newer
+        unreadable ones of unknown directory, to be told."""
         busy = False
+        unknown: list[str] = []
         for summary in await self._store.summaries():
+            if summary.unreadable is not None and not summary.cwd:
+                unknown.append(summary.id)
+                continue
             if not self.here(summary) or _is_current(summary.id, current):
                 continue
             if summary.unreadable is not None:
@@ -892,9 +901,11 @@ class Sessions:
                     "by its id"
                 )
             try:
-                return await self._store.open(summary.id)
+                loaded, log = await self._store.open(summary.id)
             except SessionInUse:
                 busy = True
+                continue
+            return loaded, log, tuple(unknown)
         # At the start, the current one is new: there is no "other".
         other = "other " if current.stored else ""
         if busy:

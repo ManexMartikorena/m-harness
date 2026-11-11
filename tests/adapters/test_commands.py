@@ -8,6 +8,7 @@ import signal
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,11 +18,12 @@ from mharness.adapters.cli.commands import (
     Command,
     parse_command,
     prompt_notes,
+    resumed_notes,
     trace_lines,
 )
 from mharness.adapters.cli.conversation import converse
 from mharness.application.agent import Agent
-from mharness.application.sessions import Sessions, TraceReport
+from mharness.application.sessions import Resumed, Sessions, TraceReport
 from mharness.application.tools import ToolRegistry
 from mharness.application.traces import TraceSummary
 from mharness.domain.agent_events import ModelCallFinished, TurnFinished, TurnStarted
@@ -864,3 +866,23 @@ def test_prompt_notes_say_nothing_without_instructions() -> None:
 
     assert prompt_notes(prompt) == []
     assert prompt_notes(None) == []
+
+
+def test_a_resume_tells_the_unreadable_sessions_it_may_have_skipped() -> None:
+    # Review of the audit after hito 10 (S2).
+    conversation = SimpleNamespace(id="20261026-091502-3fa2", model="m")
+    resumed = Resumed(
+        conversation=conversation,  # type: ignore[arg-type]
+        messages=2,
+        other_cwd=None,
+        fallback_from=None,
+        interrupted=False,
+        unknown=("20261027-091502-dead",),
+    )
+
+    notes = resumed_notes(resumed, "/home/ane/proyecto", Path("/home/ane"))
+
+    assert notes[-1] == (
+        "[session 20261027-091502-dead cannot be read and may be the last one "
+        "here: see /sessions]"
+    )

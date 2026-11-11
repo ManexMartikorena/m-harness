@@ -383,6 +383,11 @@ def resumed_notes(resumed: Resumed, cwd: str, home: Path) -> list[str]:
         )
     if resumed.interrupted:
         notes.append("[the last answer was interrupted]")
+    for session in resumed.unknown:
+        notes.append(
+            f"[session {clean_line(session)} cannot be read and may be the last "
+            "one here: see /sessions]"
+        )
     return notes
 
 
