@@ -523,3 +523,38 @@ async def test_the_typo_is_fixed_without_losing_the_readme() -> None:
         (repo / "README.md").write_text("receive\n", encoding="utf-8")
 
     assert not await checked("09-typo", replace, "Fixed.")
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "- Commit messages are written in Spanish.\n",
+        "- Los commits, en castellano.\n",
+    ],
+)
+async def test_what_was_stressed_counts_in_other_words(said: str) -> None:
+    # Audit after hito 10, I12: the check asked for the word "español".
+    def write(repo: Path) -> None:
+        text = AGENTS.replace("- Los mensajes de commit van en español.\n", said)
+        (repo / "AGENTS.md").write_text(text, encoding="utf-8")
+
+    assert await checked("24-init", write, "Hecho.")
+
+
+async def test_the_copy_of_a_fixture_leaves_its_caches_out(
+    tmp_path: Path,
+) -> None:
+    # Audit after hito 10, I12: running the fixture's tests by hand left a
+    # __pycache__ that went into every copy.
+    root = tmp_path / "evals"
+    fixture = root / "fixtures" / "f"
+    (fixture / "src" / "__pycache__").mkdir(parents=True)
+    (fixture / "src" / "__pycache__" / "a.cpython-314.pyc").write_bytes(b"x")
+    (fixture / ".pytest_cache").mkdir()
+    (fixture / "src" / "a.py").write_text("x = 1\n")
+    task = (await TomlEvalSuite(EVALS).tasks())[0].model_copy(update={"fixture": "f"})
+
+    async with TomlEvalSuite(root).workspace(task) as copy:
+        assert (copy / "src" / "a.py").exists()
+        assert not (copy / "src" / "__pycache__").exists()
+        assert not (copy / ".pytest_cache").exists()
