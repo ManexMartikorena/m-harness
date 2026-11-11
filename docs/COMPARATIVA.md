@@ -28,11 +28,12 @@ referencia con nuestro plan, y propone qué entra y cuándo.
 - **Se comparan capacidades, no se copian diseños.** `maha` sigue siendo un
   agente propio, construido a mano y pieza a pieza (AGENTS.md).
 
-Leyenda de la columna **`maha`**: ✓ hecho (`v0.7.0`) · **hN** planeado en el
-hito N · — no planeado. Columna **Propuesta**: dónde encajaría. Lo principal
-(P1 a P15) está en DESIGN §14; el detalle por áreas es la lista de partida
-de la spec de cada hito, y lo que queda abierto ("o", "mejora pequeña") se
-decide en esa spec.
+Leyenda de la columna **`maha`**: ✓ hecho (hN: en el hito N) · — no hecho
+todavía; dónde se hará, en **Propuesta**. *(Columna al día el 2026-11-11,
+con `v0.10.2`; antes era la foto del 2026-10-27, con `v0.7.0`.)* Columna
+**Propuesta**: dónde encajaría. Lo principal (P1 a P15) está en DESIGN
+§14; el detalle por áreas es la lista de partida de la spec de cada hito,
+y lo que queda abierto ("o", "mejora pequeña") se decide en esa spec.
 
 ## Resumen: lo que se propone
 
@@ -100,14 +101,14 @@ Fuentes: https://opencode.ai/docs/tui/, https://code.claude.com/docs/en/commands
 | Salir | `/exit` | `/exit` | ✓ | — |
 | Elegir modelo | `/models` (lista) | `/model` (selector) | ✓ `/model ID` | h21: selector |
 | Sesiones: listar, retomar, borrar | `/sessions` | `/resume` | ✓ | — |
-| Nueva sesión | `/new` | `/clear` | — | h8 o mejora pequeña |
-| Renombrar sesión | sí | `/rename` | — | h10 *(04/11/2026, spec del hito 10, con los títulos)* |
-| Exportar la conversación | `/export` (Markdown) | `/export` | — | h8 |
+| Nueva sesión | `/new` | `/clear` | ✓ `/new` (h8) | h8 o mejora pequeña |
+| Renombrar sesión | sí | `/rename` | ✓ `/rename` (h10) | h10 *(04/11/2026, spec del hito 10, con los títulos)* |
+| Exportar la conversación | `/export` (Markdown) | `/export` | ✓ `/export` (h8) | h8 |
 | Copiar la última respuesta | sí | `/copy` | — | h21 |
 | Bifurcar la sesión | `--fork` | `/branch`, `/fork` | — | h8 o después |
 | Compactar | `/compact` | `/compact` | — | h11 |
 | Ver qué ocupa el contexto | — | `/context` | — | h11 |
-| Crear `AGENTS.md`/`CLAUDE.md` | `/init` | `/init` | — | h10 |
+| Crear `AGENTS.md`/`CLAUDE.md` | `/init` | `/init` | ✓ `/init` (h10) | h10 |
 | Memoria | — | `/memory` | — | h14 |
 | Deshacer y rehacer | `/undo`, `/redo` | `/rewind` | — | h12 (P8, nuevo) |
 | Coste y uso | `opencode stats` | `/usage` | ✓ `/trace` (por sesión) | h8: `stats` acumulado |
@@ -142,17 +143,17 @@ https://code.claude.com/docs/en/headless.md.
 
 | Capacidad | OpenCode | Claude Code | `maha` | Propuesta |
 |---|---|---|---|---|
-| Una instrucción y salir | `opencode run` | `claude -p` | — | h8 (P1) |
-| Seguir o retomar al arrancar | `-c`, `-s` | `-c`, `-r` | — | h8 |
-| Modelo y agente al arrancar | `-m`, `--agent` | `--model`, `--agent` | — | h8 (agente: h16) |
-| Salida JSON / eventos en JSON | `--format json` | `--output-format json`, `stream-json` | — | h8 |
+| Una instrucción y salir | `opencode run` | `claude -p` | ✓ `-p` (h8) | h8 (P1) |
+| Seguir o retomar al arrancar | `-c`, `-s` | `-c`, `-r` | ✓ `-c`, `-r` (h8) | h8 |
+| Modelo y agente al arrancar | `-m`, `--agent` | `--model`, `--agent` | ✓ `-m` (h8) | h8 (agente: h16) |
+| Salida JSON / eventos en JSON | `--format json` | `--output-format json`, `stream-json` | ✓ `--output-format json`, `stream-json` (h8) | h8 |
 | Entrada por stdin | sí | sí | parcial (`maha < fichero`) | h8 |
 | Tope de pasos y de coste | `steps` | `--max-turns`, `--max-budget-usd` | parcial (25 pasos fijos) | h8 |
-| Permisos sin preguntar en scripts | `--auto` | `--permission-mode`, `--allowedTools` | — (deniega todo) | h8 y h15 |
-| Listar modelos | `opencode models` | — | — | h8 (P2) |
-| Sesiones desde la línea | `session list/delete` | `--resume` | — | h8 |
-| Estadísticas de coste | `opencode stats` | `/usage`, `/insights` | — | h8 |
-| Exportar e importar sesiones | `export`, `import` | `/export` | — | h8 |
+| Permisos sin preguntar en scripts | `--auto` | `--permission-mode`, `--allowedTools` | ✓ `--allow TOOL` (h8); lo demás deniega | h8 y h15 |
+| Listar modelos | `opencode models` | — | ✓ `maha models` (h8) | h8 (P2) |
+| Sesiones desde la línea | `session list/delete` | `--resume` | ✓ `maha sessions` (h8) | h8 |
+| Estadísticas de coste | `opencode stats` | `/usage`, `/insights` | ✓ `maha stats` (h8) | h8 |
+| Exportar e importar sesiones | `export`, `import` | `/export` | ✓ `maha export`, `maha import` (h8) | h8 |
 | Iniciar sesión con un proveedor | `auth login` | `auth login` | — (variable de entorno) | h23 |
 | Actualizar y desinstalar | `upgrade`, `uninstall` | `update`, `install` | — | h23 |
 | Servidor HTTP con API | `serve` | — | — | después de la 1.0 |
@@ -183,8 +184,8 @@ Fuentes: https://opencode.ai/docs/tools/, https://code.claude.com/docs/en/tools-
 | Ejecutar comandos | `bash` | `Bash` | ✓ `run_command` | — |
 | Comandos en segundo plano | V2 | `Monitor`, `ctrl+b` | — | h16 (P11) |
 | Leer y buscar en la web | `webfetch`, `websearch` | `WebFetch`, `WebSearch` | — | h19 |
-| Lista de tareas | `todowrite` | `TaskCreate`… | — | h10 (P5) |
-| Pregunta estructurada al usuario | `question` | `AskUserQuestion` | — | h10 (P5) |
+| Lista de tareas | `todowrite` | `TaskCreate`… | ✓ `todo_write` (h10) | h10 (P5) |
+| Pregunta estructurada al usuario | `question` | `AskUserQuestion` | ✓ `ask_user` (h10) | h10 (P5) |
 | Cargar una skill | `skill` | `Skill` | — | h13 |
 | Lanzar un subagente | `task` | `Agent` | — | h16 |
 | Modo plan | agente Plan | `EnterPlanMode` | — | h15 (P9) |
@@ -235,9 +236,9 @@ Fuentes: https://opencode.ai/docs/rules/, https://code.claude.com/docs/en/memory
 | Capacidad | OpenCode | Claude Code | `maha` | Propuesta |
 |---|---|---|---|---|
 | `AGENTS.md` del proyecto y del usuario | sí | lee `AGENTS.md` | h10 | los de subcarpetas, al leer allí: h11 *(04/11/2026, spec del hito 10)* |
-| Compatibilidad con `CLAUDE.md` | sí | propio | — | h10 (P4) |
-| Instrucciones extra (rutas, URL) | `instructions` | `.claude/rules/` con rutas | — | h10 *(04/11/2026, spec del hito 10: rutas y globs; las URL, h19; las reglas por ruta, h13)* |
-| `/init` | sí | sí | — | h10 |
+| Compatibilidad con `CLAUDE.md` | sí | propio | ✓ (h10) | h10 (P4) |
+| Instrucciones extra (rutas, URL) | `instructions` | `.claude/rules/` con rutas | ✓ `instructions`, rutas y globs (h10) | h10 *(04/11/2026, spec del hito 10: rutas y globs; las URL, h19; las reglas por ruta, h13)* |
+| `/init` | sí | sí | ✓ (h10) | h10 |
 | Compactación automática y manual | sí | sí | h11 | — |
 | Qué sobrevive a la compactación | `prune` | lista documentada | — | h11 |
 | Ver qué ocupa el contexto | — | `/context` | — | h11 |
@@ -255,9 +256,9 @@ https://code.claude.com/docs/en/checkpointing.md.
 | Guardar, listar, retomar, borrar | sí | sí | ✓ | — |
 | De cualquier directorio | — | `ctrl+a` en el selector | ✓ | — |
 | Títulos automáticos | modelo pequeño | sí | parcial (primera línea) | h10 |
-| Renombrar | sí | sí | — | h10 *(04/11/2026, spec del hito 10)* |
+| Renombrar | sí | sí | ✓ (h10) | h10 *(04/11/2026, spec del hito 10)* |
 | Bifurcar | sí | sí | — | h8 o después |
-| Exportar e importar | sí | exportar | — | h8 |
+| Exportar e importar | sí | exportar | ✓ (h8) | h8 |
 | Deshacer cambios en ficheros | `/undo` (git) | puntos de control | — | h12 (P8, nuevo) |
 | Borrado automático de las antiguas | — | 30 días | — | h23 |
 | Trazas por sesión | — | — | ✓ | — |
@@ -275,8 +276,8 @@ https://code.claude.com/docs/en/model-config.md *(sin comprobar del todo)*.
 | Proveedores compatibles propios | sí | pasarelas | ✓ (configuración) | — |
 | Modelos locales (Ollama, LM Studio) | sí | — | ✓ (compatibles con OpenAI) | documentar en h23 |
 | Esfuerzo o variantes de razonamiento | variantes | `/effort` | ✓ (h9) | — |
-| Modelo de respaldo | — | `--fallback-model` | — | h8 (P3) |
-| Modelo pequeño para títulos | `small_model` | — | — | h10 |
+| Modelo de respaldo | — | `--fallback-model` | ✓ `--fallback-model` (h8) | h8 (P3) |
+| Modelo pequeño para títulos | `small_model` | — | ✓ `small_model` (h10) | h10 |
 | Iniciar sesión (OAuth, clave guardada) | `/connect` | `/login` | — | h23 |
 
 ## 12. MCP y conectores
@@ -325,7 +326,7 @@ https://code.claude.com/docs/en/monitoring-usage.md *(sin comprobar del todo)*.
 | Capacidad | OpenCode | Claude Code | `maha` | Propuesta |
 |---|---|---|---|---|
 | Coste por turno y sesión | — (no documentado en V1) | `/usage` | ✓ | — |
-| Coste acumulado por días, modelos | `stats` | `/usage`, `/insights` | — | h8 (P2) |
+| Coste acumulado por días, modelos | `stats` | `/usage`, `/insights` | ✓ `maha stats` (h8) | h8 (P2) |
 | Traza de cada sesión | — | — | ✓ | — |
 | OpenTelemetry | V1 no soportado | sí (métricas, eventos, trazas) | h22 | — |
 | Registro de diagnóstico | `opencode.log` | `--debug` | ✓ `maha.log` | — |

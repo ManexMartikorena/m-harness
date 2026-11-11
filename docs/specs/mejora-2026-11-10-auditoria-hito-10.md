@@ -1,6 +1,7 @@
 Estado: IMPLEMENTADA (2026-11-11). Hechos: B, S, H, I, M y P, la
 revisión independiente (R1 a R16) y las evals, con las decisiones del
-mantenedor. Sale en `v0.10.1`.
+mantenedor. Sale en `v0.10.1`. La segunda revisión, tras publicarla (R17
+a R25), sale en `v0.10.2`.
 
 # Auditoría tras el hito 10
 
@@ -262,6 +263,75 @@ y esta spec. Cada hallazgo, comprobado y con su test primero:
   título termina con el código de la salida normal, no con 128 + la
   señal. Lo demás se guarda. ARREGLADO (`26cdd0f`).
 
+## Segunda revisión, tras `v0.10.1` (2026-11-11)
+
+Pedida por el mantenedor: "asegurarme de que todo esté bien, con 0 deuda
+técnica". Dos revisores independientes más, que solo ven el código del
+merge (`f91f272`): la interfaz y las sesiones; las herramientas, los
+modelos y la configuración. Cada fallo, reproducido por el revisor y otra
+vez por el agente, con su test primero. Rama
+`fix/cierre-auditoria-hito-10`.
+
+- **R17.** Un SIGTERM o un SIGHUP en el prompt, con el título en camino:
+  la cancelación se gastaba en el prompt, y salir esperaba al título sin
+  nada que lo cortara, hasta el tiempo límite HTTP (120 s). Nuevo de S7.
+  Ahora una señal de cierre no espera al título: `close(title=False)`.
+  ARREGLADO (`de9315b`).
+- **R18.** Con la ventana cerrada y el título en camino, el aviso
+  "naming the session" se escribía en la terminal muerta; su EIO dejaba
+  la sesión sin cerrar y salía con un traceback en vez de 129. Tras una
+  señal de cierre ya no se escribe antes de cerrar, y un aviso posterior
+  que falla no cambia nada. ARREGLADO (`de9315b`).
+- **R19.** `/resume` decía que esperaba al título antes del paso que puede
+  fallar (`no session …`). Se dice solo cuando llega la espera; igual en
+  `/new`. ARREGLADO (`3123a8c`).
+- **R20.** `edit_file`: un `old_string` que empieza por `\n` o acaba en
+  `\r` coincidía tal cual con medio `\r\n`, y dejaba saltos mezclados
+  (`a\r\nb`, cambiar `a\r` por `z` → `z\nb`). Venía del hito 5. Ahora no se
+  busca tal cual: su salto es un salto entero, como cualquier otro (D9).
+  ARREGLADO (`ca1e320`).
+- **R21.** `edit_file`, en ficheros con `\r` sueltos: una edición que
+  pone un `\r` junto a un `\n` los junta en un salto, y se pierde una
+  línea sin que nadie lo pida. Se rechaza, con el motivo y qué hacer.
+  Probado con 300.000 casos al azar (100.830 ediciones hechas): el
+  número de saltos del resultado es siempre el esperado. ARREGLADO (`ca1e320`).
+- **R22.** "Siempre" decía que cubre todo "salvo secretos y ficheros que
+  ejecutan código", pero un `Makefile`, `package.json`, `pyproject.toml`,
+  `conftest.py` o `setup.py` no preguntan. DECISIÓN del mantenedor
+  (2026-11-11, "la más profesional"): la frontera son los ficheros que se
+  ejecutan **solos** (hooks, CI, tareas del editor); esos solo se ejecutan
+  con un comando, que pregunta (o se permitió con su texto exacto), igual
+  que cualquier fichero fuente. Preguntar por ellos dejaría "siempre"
+  vacío, y la lista no tendría fin. Lo que se corrige es el texto: "files
+  that run code by themselves (hooks, CI, editor tasks)", con un test que
+  fija la decisión. El README ya lo decía así. Lo que esos ficheros
+  ejecutan lo acota el sandbox del hito 15. ARREGLADO (`fbb83b1`).
+- **R23.** Ctrl+Z y `fg`: el *bracketed paste* se pedía una vez, al
+  empezar; la shell lo apaga mientras `maha` está parado, y al volver un
+  pegado de varias líneas era un turno por línea. Ahora Ctrl+Z devuelve
+  la terminal como estaba y `fg` (SIGCONT) lo pide otra vez, como hacen
+  los editores. Probado también en una pty real. ARREGLADO (`1c15806`).
+- **R24.** Un segundo Ctrl+C justo mientras se paraba el spinner, al
+  cortar una respuesta, salía del manejo del primero y terminaba `maha`.
+  `Spinner.stop()` ya no espera: no queda ese momento. ARREGLADO
+  (`4820be6`).
+- **R25.** El test "Ctrl+C al salir salta el título y guarda el resto" no
+  tenía nada pendiente que guardar. Ahora sí, y falla si se quita el
+  guardado. ARREGLADO (`ca28c78`).
+
+Comprobado y sin cambio:
+- **Coste desconocido con `max_cost`:** con `cache_ttl = "1h"` y un modelo
+  sin precio de esa caché, si el proveedor no da el coste, el tope para
+  el turno tras la primera llamada. Es lo seguro (un tope que no se puede
+  medir no se salta), y lo dice: `[cost limit: the cost of a call is not
+  known]`. Con OpenCode Go no pasa: da el coste. NO ES FALLO.
+- **`XDG_RUNTIME_DIR` fuera del entorno de los comandos** es una defensa
+  más, no una frontera: un comando corre como la persona y puede
+  rehacer la ruta de sus *sockets* (`/run/user/$(id -u)/bus`). La frontera
+  es el sandbox del hito 15; anotado allí, en ESTADO.
+- **`docs/COMPARATIVA.md`:** la columna `maha` era del 2026-10-27; puesta
+  al día con lo hecho en los hitos 8 a 10, para la spec del hito 11.
+
 ## Evals (2026-11-11)
 
 `maha eval --models glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5
@@ -331,3 +401,14 @@ y esta spec. Cada hallazgo, comprobado y con su test primero:
 - **Las revisiones independientes encuentran lo que el autor no ve.** Dos
   de los tres revisores dieron por separado con R1; los arreglos de la
   propia auditoría trajeron 16 fallos nuevos, todos con su test.
+- **Y una segunda revisión, tras publicar, todavía encuentra.** Nueve
+  más (R17 a R25), casi todos en los bordes de las señales y la terminal:
+  un `kill` en el prompt, una ventana cerrada, Ctrl+Z. Las pruebas de
+  señales tienen que mandar la señal en cada momento, no solo en uno.
+- **`wait_for` no sirve para comprobar que algo no espera.** Su cancelación
+  corta la espera del título igual que un segundo Ctrl+C, y el test pasaba
+  con el fallo dentro. Se mide con `asyncio.wait` y un tiempo.
+- **Una espera dentro del manejo de Ctrl+C es un hueco.** Cada `await` en
+  un `except CancelledError` es un sitio por donde un segundo Ctrl+C se
+  escapa; parar el spinner sin esperar lo cierra.
+

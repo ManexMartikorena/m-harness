@@ -309,7 +309,10 @@ fallar antes del arreglo:
     hechos.
 16. D9 y D10 (`909a863`): sustituyen la regla 9b. Cambian dos tests: un
     `old_string` con CRLF ya coincide en un fichero LF, y el caso A1 (saltos
-    mezclados) ya coincide.
+    mezclados) ya coincide. *Afinado el 2026-11-11 (segunda revisión de la
+    auditoría tras el hito 10, R20 y R21): un `old_string` que empieza por
+    `\n` o acaba en `\r` no se busca tal cual, porque tomaba medio `\r\n`;
+    y una edición que juntaría un `\r` y un `\n` en un salto se rechaza.*
 17. D12 (`d6631a1`): `_shift()` corrige los números de línea de la cabecera
     del diff recortado. El texto usa guion (`lines 2-9`), no raya: ruff
     (RUF001) no la admite en el código.
