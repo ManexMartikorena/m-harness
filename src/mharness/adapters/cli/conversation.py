@@ -113,6 +113,10 @@ async def converse(
     sigint = _Sigint()
 
     def on_sigint() -> None:
+        if sigint.pending:
+            # Not taken yet: a second press would cut what handles the
+            # first, as the save while leaving (review of the audit).
+            return
         sigint.pending = True
         task.cancel()
 
@@ -139,12 +143,22 @@ async def converse(
         print(file=out)
         return EXIT_INTERRUPTED
     finally:
-        loop.remove_signal_handler(signal.SIGINT)
-        for number in CLOSING:
-            loop.remove_signal_handler(number)
-        # What is still pending is saved, and the session let go.
+        # What is still pending is saved, and the session let go. Ctrl+C
+        # while its title comes skips the title: our handler is still
+        # there, and the rest is saved and told (review of the audit after
+        # hito 10).
         commands.tell_naming()
-        await commands.conversation.close()
+        try:
+            await commands.conversation.close()
+        except asyncio.CancelledError:
+            if sigint.closing is None and not _ours(sigint):
+                raise
+            if sigint.closing is not None:
+                task.uncancel()
+        finally:
+            loop.remove_signal_handler(signal.SIGINT)
+            for number in CLOSING:
+                loop.remove_signal_handler(number)
         commands.warn_unsaved()
 
 
