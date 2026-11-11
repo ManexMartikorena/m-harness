@@ -293,3 +293,11 @@ def test_a_pth_outside_warns_that_it_runs_code() -> None:
     path = PurePath("/home/ane/.local/lib/python3.14/site-packages/x.pth")
 
     assert change_warning(path, ROOT) == f"{OUTSIDE}; {RUNS_CODE}"
+
+
+@pytest.mark.parametrize(
+    "path", ["lefthook.toml", "lefthook.json", ".config/lefthook.yml", ".lefthook.toml"]
+)
+def test_every_config_of_lefthook_runs_code(path: str) -> None:
+    # Review of the audit after hito 10: lefthook reads more than YAML.
+    assert change_warning(ROOT / path, ROOT) == RUNS_CODE

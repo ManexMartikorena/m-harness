@@ -152,8 +152,9 @@ CODE_FILES = frozenset(
 CODE_PATTERNS = (
     "*.pth",
     ".woodpecker.y*ml",
-    "lefthook*.y*ml",
-    ".lefthook*.y*ml",
+    # Any of its formats: YAML, TOML or JSON (review of the audit).
+    "lefthook*.*",
+    ".lefthook*.*",
 )
 # A file in a directory: cargo's config can set the build's commands.
 CODE_SUBFILES = frozenset({(".cargo", "config"), (".cargo", "config.toml")})
