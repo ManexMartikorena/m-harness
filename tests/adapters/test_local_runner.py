@@ -444,3 +444,20 @@ async def test_the_runner_uses_the_shell_it_is_given(tmp_path: Path) -> None:
     )
 
     assert result.output == "/bin/sh\n"
+
+
+def test_a_relative_bash_is_not_taken(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Review of the audit after hito 10: with an empty entry in PATH, which()
+    # gives "bash", and the project's own ./bash would run every command.
+    monkeypatch.setattr(shutil, "which", lambda name: name)
+
+    assert local.command_shell() == "/bin/sh"
+
+
+async def test_the_bytes_left_out_count_bytes_that_are_not_utf8(
+    tmp_path: Path,
+) -> None:
+    # Review: each U+FFFD counted as three bytes.
+    result = await run("head -c 100000 /dev/zero | tr '\\0' '\\377'", tmp_path)
+
+    assert "[output cut here: 70000 bytes left out]" in result.output

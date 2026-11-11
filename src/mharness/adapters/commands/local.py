@@ -78,7 +78,10 @@ def command_shell() -> str:
     writes bash (`source`, `[[`), and /bin/sh is dash in Debian and Ubuntu.
     Not $SHELL: zsh or fish would change the syntax (audit after hito 10,
     P3)."""
-    return shutil.which("bash") or FALLBACK_SHELL
+    found = shutil.which("bash")
+    # Only an absolute one: with an empty entry in PATH, "bash" would be
+    # the project's own ./bash (review of the audit).
+    return found if found is not None and os.path.isabs(found) else FALLBACK_SHELL
 
 
 class LocalCommandRunner:
@@ -173,22 +176,35 @@ class _Output:
     def text(self) -> tuple[str, bool]:
         """What is kept, and whether it is cut: the start, `cut_here` and
         the end, each on whole characters."""
+        # Decoded keeping each byte that is not UTF-8 apart, so that what is
+        # kept is counted in bytes; shown, each of them is U+FFFD (review of
+        # the audit).
         dropped = self.seen - len(self.head) - len(self.tail)
         if not dropped:
-            whole = (self.head + self.tail).decode("utf-8", errors="replace")
+            whole = (self.head + self.tail).decode("utf-8", errors="surrogateescape")
             if len(whole) <= OUTPUT_MAX_CHARS:
-                return whole, False
+                return _shown(whole), False
             head, tail = whole[:OUTPUT_HEAD_CHARS], whole[-OUTPUT_TAIL_CHARS:]
         else:
-            head = self.head.decode("utf-8", errors="replace")[:OUTPUT_HEAD_CHARS]
+            head = self.head.decode("utf-8", errors="surrogateescape")
+            head = head[:OUTPUT_HEAD_CHARS]
             # The end kept may start inside a character.
             start = 0
             while start < min(3, len(self.tail)) and self.tail[start] & 0xC0 == 0x80:
                 start += 1
-            end = self.tail[start:].decode("utf-8", errors="replace")
+            end = self.tail[start:].decode("utf-8", errors="surrogateescape")
             tail = end[-OUTPUT_TAIL_CHARS:]
-        left_out = self.seen - len(head.encode()) - len(tail.encode())
-        return head + cut_here(max(left_out, 0)) + tail, True
+        kept = len(_raw(head)) + len(_raw(tail))
+        return _shown(head) + cut_here(self.seen - kept) + _shown(tail), True
+
+
+def _raw(text: str) -> bytes:
+    return text.encode("utf-8", errors="surrogateescape")
+
+
+def _shown(text: str) -> str:
+    """`text` with each byte that was not UTF-8 as U+FFFD."""
+    return _raw(text).decode("utf-8", errors="replace")
 
 
 async def _exited(process: asyncio.subprocess.Process) -> None:
