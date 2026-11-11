@@ -878,7 +878,7 @@ async def _print(
         )
         return await cli.print_mode(
             sessions,
-            options.prompt,
+            _expanded(options.prompt, cwd),
             read_all=read_all,
             catalog=catalog,
             provider=settings.provider_name,
@@ -913,19 +913,27 @@ def _eval_instruction(instruction: str, copy: Path) -> str:
     """What a task's instruction sends: `/init TEXT` as the conversation
     sends it, in the task's copy; anything else, as it is (spec hito 10,
     §5)."""
-    command = cli.parse_command(instruction)
+    return _expanded(instruction, copy)
+
+
+def _expanded(text: str, cwd: Path) -> str:
+    """`/init TEXT` as the conversation sends it; anything else, as it is.
+    Also in `-p` (audit after hito 10, I9)."""
+    command = cli.parse_command(text)
     if command is None or command.name != "init":
-        return instruction
-    return cli.Init(template=_init(copy).template, root=copy).text(command.argument)
+        return text
+    return _init(cwd).text(command.argument)
 
 
 def _init(cwd: Path) -> cli.Init:
     """What `/init` needs: its template, and where AGENTS.md goes, the
-    project's root (spec hito 10, §1.9)."""
+    folder where maha runs (spec hito 10, §1.9; audit after hito 10, I3)."""
     template = (resources.files("mharness") / "prompts" / "init.md").read_text(
         encoding="utf-8"
     )
-    return cli.Init(template=template, root=git_root(cwd) or cwd)
+    root = git_root(cwd)
+    project = root if root is not None and root != cwd else None
+    return cli.Init(template=template, root=cwd, project=project)
 
 
 async def _converse(

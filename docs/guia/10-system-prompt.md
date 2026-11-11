@@ -79,7 +79,9 @@ Git repository: yes, root /home/ana/tienda
   ajeno puede pedir cualquier cosa; los permisos son código (guía 05).
 
 `/init` escribe o mejora el `AGENTS.md` del proyecto: el agente mira el
-repo con sus herramientas, pide permiso y escribe.
+repo con sus herramientas, pide permiso y escribe. En una subcarpeta,
+escribe el `AGENTS.md` de esa carpeta, que se carga junto al de la raíz
+(desde la `v0.10.1`).
 
 ```
 > /init los tests se lanzan con unittest, nunca con pytest

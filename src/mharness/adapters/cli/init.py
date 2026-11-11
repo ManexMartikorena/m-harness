@@ -17,10 +17,23 @@ TAKES_EFFECT = "[AGENTS.md takes effect in the next session: /new]"
 
 @dataclass(frozen=True)
 class Init:
-    """What `/init` needs: its template, and the project's root."""
+    """What `/init` needs: its template, and the folder whose AGENTS.md it
+    writes, where maha runs. In a subfolder of a project, `project` is the
+    project's root: that folder's AGENTS.md is loaded with the root's
+    (audit after hito 10, I3, decision 1 of the maintainer)."""
 
     template: str
     root: Path
+    project: Path | None = None
+
+    @property
+    def note(self) -> str | None:
+        """What the person is told in a subfolder, before the turn."""
+        if self.project is None:
+            return None
+        return (
+            f"[/init in a subfolder: it writes {self.target}, loaded with the root's]"
+        )
 
     @property
     def target(self) -> Path:
@@ -33,7 +46,16 @@ class Init:
             if extra
             else ""
         )
-        return render(self.template, {"root": str(self.root), "extra": stressed})
+        scope = (
+            ""
+            if self.project is None
+            else f" this folder is part of the project at {self.project}, whose "
+            "AGENTS.md is loaded with this one: write only what is specific to "
+            "this folder."
+        )
+        return render(
+            self.template, {"root": str(self.root), "scope": scope, "extra": stressed}
+        )
 
     def stamp(self) -> tuple[int, int] | None:
         """When AGENTS.md last changed, and its size; None if it is not

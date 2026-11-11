@@ -2077,3 +2077,20 @@ def test_the_question_has_no_color_when_stdout_is_not_a_terminal(
 
     assert isinstance(gate, TerminalApproval)
     assert gate._color is False
+
+
+@respx.mock
+def test_print_mode_expands_init(workspace: Path, stdin: Callable[[str], None]) -> None:
+    # Audit after hito 10, I9: `maha -p "/init"` sent the text as it was;
+    # the conversation and the evals expand it.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    route = respx.post(GO_ENDPOINT).mock(
+        return_value=sse_response(streamed("Nada que escribir.", 12, 3))
+    )
+    stdin("")
+
+    assert main(["-p", "/init usa uv"]) == 0
+
+    sent = conversation(last_turn(route))[-1]["content"]
+    assert sent.startswith("Write or improve the AGENTS.md of this project.")
+    assert "<user_notes>\nusa uv\n</user_notes>" in sent

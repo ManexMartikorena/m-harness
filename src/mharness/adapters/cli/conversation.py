@@ -203,6 +203,8 @@ async def _turns(
         elif command.name == "exit":
             return 0
         elif command.name == "init" and init is not None:
+            if init.note is not None:
+                print(f"  {init.note}", file=out, flush=True)
             before = init.stamp()
             text = init.text(command.argument)
             await _answer(commands.conversation, text, out, err, sigint)
