@@ -129,8 +129,9 @@ def _conversation_options(
         choices=tools,
         metavar="TOOL",
         help="with -p: run this tool's calls in this directory without "
-        "asking; repeatable. Outside it, secrets and files that run code "
-        f"are always denied. Tools: {', '.join(tools)}",
+        "asking; repeatable. A path outside it, a secret file or a file that "
+        "runs code is always denied, also inside it. Tools: "
+        f"{', '.join(tools)}",
     )
     parser.add_argument(
         "--max-steps", type=_positive, metavar="N", help="calls to the model per turn"
@@ -238,14 +239,37 @@ def _models_parser(commands: Any) -> None:
     )
     # Also after the command; SUPPRESS keeps what came before it.
     keep = argparse.SUPPRESS
-    prompt.add_argument("-m", "--model", type=_text, metavar="ID", default=keep)
+    # What each one does, also here (audit after hito 10, I13).
     prompt.add_argument(
-        "--append-system-prompt", type=_text, metavar="TEXT", default=keep
+        "-m",
+        "--model",
+        type=_text,
+        metavar="ID",
+        default=keep,
+        help="the prompt for this model: its family has a layer of its own",
     )
     prompt.add_argument(
-        "--append-system-prompt-file", type=Path, metavar="FILE", default=keep
+        "--append-system-prompt",
+        type=_text,
+        metavar="TEXT",
+        default=keep,
+        help="add this text at the end of the system prompt",
     )
-    prompt.add_argument("--system-prompt-file", type=Path, metavar="FILE", default=keep)
+    prompt.add_argument(
+        "--append-system-prompt-file",
+        type=Path,
+        metavar="FILE",
+        default=keep,
+        help="add this file at the end of the system prompt",
+    )
+    prompt.add_argument(
+        "--system-prompt-file",
+        type=Path,
+        metavar="FILE",
+        default=keep,
+        help="use this file as the base of the system prompt, instead of "
+        "maha's; the instructions and the environment stay",
+    )
 
 
 def _sessions_parser(commands: Any) -> None:
