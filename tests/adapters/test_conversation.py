@@ -188,7 +188,9 @@ async def test_model_error_goes_to_stderr_and_the_conversation_goes_on() -> None
     assert "Hola.\n" in out
 
 
-async def test_ctrl_c_ends_with_130() -> None:
+async def test_ctrl_c_twice_at_the_prompt_ends_with_130() -> None:
+    # Audit after hito 10, P1: the first one clears the line and says how
+    # to leave; the second one, in a row, leaves.
     async def interrupt() -> str:
         signal.raise_signal(signal.SIGINT)
         await asyncio.Event().wait()  # waits for input that never comes
@@ -214,6 +216,7 @@ async def test_ctrl_c_ends_with_130() -> None:
     )
 
     assert code == EXIT_INTERRUPTED
+    assert out.getvalue().endswith("> \n  [Ctrl+C again to quit, or /exit]\n> \n")
 
 
 @pytest.mark.parametrize(
@@ -1563,3 +1566,75 @@ def test_how_the_model_stopped_is_told(reason: TurnEnd, note: str) -> None:
 def test_every_way_a_turn_ends_has_its_name_in_the_trace() -> None:
     # Review of the deep audit: /trace showed a raw key for a new reason.
     assert set(get_args(Ending.__value__)) - {"end_turn"} == set(_ENDINGS)
+
+
+class Typed:
+    """Ctrl+C where a script says CTRL_C, then its lines."""
+
+    def __init__(self, *lines: str) -> None:
+        self._lines = list(lines)
+
+    async def __call__(self) -> str:
+        if not self._lines:
+            raise EOFError
+        line = self._lines.pop(0)
+        if line == CTRL_C:
+            signal.raise_signal(signal.SIGINT)
+            await asyncio.Event().wait()
+        return line
+
+
+CTRL_C = "<ctrl-c>"
+
+
+async def test_a_line_between_two_ctrl_c_keeps_maha_open() -> None:
+    fake = FakeModelClient([reply("Hola.")])
+    out = io.StringIO()
+
+    code = await converse(
+        solo(
+            Agent(
+                fake,
+                ToolRegistry(),
+                gate=FakeApproval(),
+                model="m",
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
+            )
+        ),
+        provider="p",
+        catalog=KNOWN,
+        read_line=Typed(CTRL_C, "Hola", CTRL_C, "/exit"),
+        out=out,
+        err=io.StringIO(),
+    )
+
+    assert code == 0
+    assert out.getvalue().count("[Ctrl+C again to quit, or /exit]") == 2
+
+
+async def test_ctrl_c_during_a_command_goes_back_to_the_prompt() -> None:
+    # Audit after hito 10, I8: Ctrl+C at the question of /delete closed
+    # maha.
+    out = io.StringIO()
+
+    code = await converse(
+        solo(
+            Agent(
+                FakeModelClient([]),
+                ToolRegistry(),
+                gate=FakeApproval(),
+                model="m",
+                catalog=MemoryCatalog(),
+                provider="opencode-go",
+            )
+        ),
+        provider="p",
+        catalog=KNOWN,
+        read_line=Typed("/delete 20261110-000000-abcd", CTRL_C, "/exit"),
+        out=out,
+        err=io.StringIO(),
+    )
+
+    assert code == 0
+    assert "? [y/N]: \n  [interrupted]\n> " in out.getvalue()

@@ -45,6 +45,8 @@ _log = logging.getLogger(__name__)
 
 # Terminal convention for a program stopped by Ctrl+C: 128 + SIGINT.
 EXIT_INTERRUPTED = 130
+AGAIN_TO_QUIT = "[Ctrl+C again to quit, or /exit]"
+INTERRUPTED = "[interrupted]"
 # A tool call is shown in one line, cut to this length.
 MAX_CALL = 100
 
@@ -129,7 +131,8 @@ async def converse(
         if sigint.closing is not None:
             task.uncancel()
             return 128 + sigint.closing
-        # Ctrl+C at the prompt ends `maha`; an answer handles its own.
+        # Ctrl+C before the prompt ends `maha`; the prompt, an answer and a
+        # command handle their own.
         if not sigint.pending:
             raise
         task.uncancel()
@@ -170,6 +173,9 @@ async def _turns(
         commands.note_prompt()
     for note in notes:
         print(f"  {note}", file=out, flush=True)
+    # Ctrl+C at the prompt clears the line and says how to leave; a second
+    # one in a row leaves (audit after hito 10, P1).
+    armed = False
     while True:
         print("> ", end="", file=out, flush=True)
         try:
@@ -177,6 +183,16 @@ async def _turns(
         except EOFError:
             print(file=out)
             return 0
+        except asyncio.CancelledError:
+            if not _ours(sigint):
+                raise
+            print(file=out)
+            if armed:
+                return EXIT_INTERRUPTED
+            armed = True
+            print(f"  {AGAIN_TO_QUIT}", file=out, flush=True)
+            continue
+        armed = False
         if not line:
             continue
         command = parse_command(line)
@@ -196,7 +212,26 @@ async def _turns(
                 # Written or changed: the prompt of this session is fixed.
                 print(f"  {TAKES_EFFECT}", file=out, flush=True)
         else:
-            await commands.run(command)
+            try:
+                await commands.run(command)
+            except asyncio.CancelledError:
+                # It ends the command, not maha (audit after hito 10, I8).
+                if not _ours(sigint):
+                    raise
+                print(f"\n  {INTERRUPTED}", file=out, flush=True)
+
+
+def _ours(sigint: _Sigint) -> bool:
+    """Whether the cancellation is a Ctrl+C to handle here: then it is
+    taken, and the task goes on. A closing signal, or any other
+    cancellation, goes on up."""
+    if not sigint.pending or sigint.closing is not None:
+        return False
+    sigint.pending = False
+    task = asyncio.current_task()
+    assert task is not None
+    task.uncancel()
+    return True
 
 
 async def _answer(
@@ -294,17 +329,12 @@ async def _answer(
         print(f"error: internal: {detail}", file=err, flush=True)
     except asyncio.CancelledError:
         # A closing signal goes on up: maha ends, not just the answer.
-        if not sigint.pending or sigint.closing is not None:
+        if not _ours(sigint):
             raise
-        sigint.pending = False
-        # Without this, asyncio would keep treating the task as cancelled.
-        task = asyncio.current_task()
-        assert task is not None
-        task.uncancel()
         await spinner.stop()
         if wrote or asking:
             print(file=out)
-        print("  [interrupted]", file=out, flush=True)
+        print(f"  {INTERRUPTED}", file=out, flush=True)
     finally:
         await spinner.stop()
 
