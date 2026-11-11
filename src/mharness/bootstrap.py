@@ -29,7 +29,7 @@ from typing import Any, TextIO
 from mharness import __version__, config
 from mharness.adapters import cli
 from mharness.adapters.catalog import CatalogError, TomlCatalog
-from mharness.adapters.commands import LocalCommandRunner
+from mharness.adapters.commands import LocalCommandRunner, command_shell
 from mharness.adapters.evals import TomlEvalSuite
 from mharness.adapters.models import AnthropicClient, OpenAIChatClient
 from mharness.adapters.project import LocalProject, git_root
@@ -338,7 +338,7 @@ def _tools(
         Grep(workspace),
         WriteFile(workspace),
         EditFile(workspace),
-        RunCommand(workspace.root, LocalCommandRunner(), env),
+        RunCommand(workspace.root, LocalCommandRunner(COMMAND_SHELL), env),
         TodoWrite(),
     ]
     if questions is not None:
@@ -354,8 +354,9 @@ def _questions(lines: cli.StdinLines) -> UserQuestions | None:
     return cli.TerminalQuestions(lines.readline, sys.stdout, discard=lines.discard)
 
 
-# The shell `run_command` runs in: asyncio's subprocess shell.
-COMMAND_SHELL = "/bin/sh"
+# The shell `run_command` runs in: bash if there is one (audit after hito
+# 10, P3).
+COMMAND_SHELL = command_shell()
 
 
 def _templates() -> PromptTemplates:
@@ -537,7 +538,11 @@ async def _eval(
     )
     out.line(head)
     evaluator = Evaluator(
-        suite, open_run, LocalCommandRunner(), env, expand=_eval_instruction
+        suite,
+        open_run,
+        LocalCommandRunner(COMMAND_SHELL),
+        env,
+        expand=_eval_instruction,
     )
 
     def on_run(run: TaskRun) -> None:

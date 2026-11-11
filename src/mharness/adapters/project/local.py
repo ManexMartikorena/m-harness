@@ -101,8 +101,9 @@ def _read(path: Path, *, inside: Path | None) -> tuple[str, int | None] | None:
 class LocalProject:
     """A `ProjectInfo` over the directory where `maha` runs.
 
-    `shell` is the one commands run in (`/bin/sh` for `run_command`), or
-    None when there is no tool to run them; `today` gives the date, local.
+    `shell` is the one commands run in (bash or `/bin/sh` for
+    `run_command`), or None when there is no tool to run them; `today`
+    gives the date, local.
     The user's instructions are in `config_dir` (`~/.config/maha`), or
     without them, with `compat_claude`, in `~/.claude/CLAUDE.md`; `user`
     False leaves them out (the evals measure maha, not the user's habits).

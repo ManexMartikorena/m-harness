@@ -28,6 +28,7 @@ import asyncio
 import contextlib
 import ctypes
 import os
+import shutil
 import signal
 import weakref
 from collections.abc import Mapping
@@ -68,8 +69,21 @@ _turns: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
 )
 
 
+# Without bash: what every POSIX system has.
+FALLBACK_SHELL = "/bin/sh"
+
+
+def command_shell() -> str:
+    """The shell commands run in: bash if there is one, since the model
+    writes bash (`source`, `[[`), and /bin/sh is dash in Debian and Ubuntu.
+    Not $SHELL: zsh or fish would change the syntax (audit after hito 10,
+    P3)."""
+    return shutil.which("bash") or FALLBACK_SHELL
+
+
 class LocalCommandRunner:
-    def __init__(self) -> None:
+    def __init__(self, shell: str = FALLBACK_SHELL) -> None:
+        self._shell = shell
         _become_subreaper()
 
     async def run(
@@ -84,7 +98,9 @@ class LocalCommandRunner:
     ) -> CommandResult:
         # Children that are not this command's: they are left alone.
         before = _children()
-        process = await asyncio.create_subprocess_shell(
+        process = await asyncio.create_subprocess_exec(
+            self._shell,
+            "-c",
             command,
             cwd=cwd,
             env=dict(env),

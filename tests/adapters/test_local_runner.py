@@ -8,6 +8,7 @@ import errno
 import os
 import pty
 import select
+import shutil
 import signal
 import sys
 import time
@@ -406,3 +407,40 @@ async def test_a_command_that_cannot_be_killed_does_not_hold_the_limit(
         timed_out=True,
         still_running=True,
     )
+
+
+# Audit after hito 10, P3: /bin/sh is dash in Debian and Ubuntu, where
+# `source` and `[[` fail. Bash if there is one; zsh or fish would change
+# the syntax, so not $SHELL.
+
+
+def test_the_shell_is_bash_when_there_is_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    assert local.command_shell() == "/usr/bin/bash"
+
+
+def test_without_bash_the_shell_is_sh(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+
+    assert local.command_shell() == "/bin/sh"
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+async def test_bash_syntax_runs(tmp_path: Path) -> None:
+    result = await LocalCommandRunner(local.command_shell()).run(
+        "[[ -d . ]] && echo $BASH_VERSINFO > /dev/null && echo bash",
+        cwd=tmp_path,
+        time_limit=10,
+        env=ENV,
+    )
+
+    assert (result.exit_code, result.output) == (0, "bash\n")
+
+
+async def test_the_runner_uses_the_shell_it_is_given(tmp_path: Path) -> None:
+    result = await LocalCommandRunner("/bin/sh").run(
+        "echo $0", cwd=tmp_path, time_limit=10, env=ENV
+    )
+
+    assert result.output == "/bin/sh\n"
