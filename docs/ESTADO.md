@@ -1,24 +1,23 @@
 # Estado del proyecto
 
 Última actualización: 2026-11-11. **Hito 10 cerrado: `v0.10.0` (system
-prompt por capas). La auditoría tras el hito 10 está hecha y commiteada en
-`fix/auditoria-hito-10`: falta su PR, el merge y `v0.10.1`. Después, el
-hito 11.**
+prompt por capas) y `v0.10.1` (la auditoría tras el hito 10, cero deuda).
+Lo siguiente: el hito 11 (gestión del contexto), cuando el mantenedor lo
+diga.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 ## Fase actual
 
-**Desarrollo. Hitos 1 a 10 cerrados; la auditoría tras el hito 10, hecha
-y por integrar, antes del hito 11 (gestión del contexto). Plan: 23 hitos hasta la 1.0
-(DESIGN §14).**
+**Desarrollo. Hitos 1 a 10 cerrados, con la auditoría tras el hito 10
+(`v0.10.1`). Lo siguiente, el hito 11 (gestión del contexto). Plan: 23
+hitos hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.10.0` — System prompt por capas** (2026-11-10):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.0
-- Ramas abiertas: `fix/auditoria-hito-10`, la auditoría, hasta que se
-  integre. Las integradas se conservan en GitHub.
+- Última versión: **`v0.10.1` — Auditoría tras el hito 10** (2026-11-11):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.1
+- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -48,19 +47,15 @@ spec, su nota de la guía y su release.
 
 ## Siguiente paso
 
-Al abrir: contrastar con GitHub (`gh pr list`) en qué punto está la
-auditoría (rama `fix/auditoria-hito-10`), y trabajar en esa rama: `git
-fetch && git switch fix/auditoria-hito-10 && git pull`, `uv sync`, y
-comprobar tests, mypy y lint-imports en verde.
+Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
+trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
-1. **Humano:** revisar los commits de `fix/auditoria-hito-10` (`git log
-   main..` y el diff), hacer push y abrir el PR (o pedírselo al agente);
-   integrarlo con merge commit con el CI en verde. Después, el tag
-   anotado `v0.10.1` sobre ese merge y su push, que crea la release.
-   Todo lo de la auditoría está hecho, con las decisiones del mantenedor
-   del 2026-11-11 (spec, IMPLEMENTADA).
-2. **Agente, tras la release:** ESTADO a `v0.10.1` y empezar la spec del
-   hito 11 (gestión del contexto), en su rama `docs/spec-hito-11-…`.
+1. **Mantenedor:** decir cuándo se empieza el hito 11 (gestión del
+   contexto). Hasta entonces, el agente no empieza su spec (decisión del
+   mantenedor, 2026-11-11).
+2. **Agente, cuando el mantenedor lo diga:** la spec del hito 11, en su
+   rama `docs/spec-hito-11-<slug>`, con lo que ya tiene asignado (ver
+   "Con hito asignado", más abajo).
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
