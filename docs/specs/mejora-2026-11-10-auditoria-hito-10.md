@@ -259,6 +259,27 @@ y esta spec. Cada hallazgo, comprobado y con su test primero:
   título termina con el código de la salida normal, no con 128 + la
   señal. Lo demás se guarda. ARREGLADO (`26cdd0f`).
 
+## Evals (2026-11-11)
+
+`maha eval --models glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5
+--repeat 5 --retry-errors`, en `47ec8dc`, contra las líneas base del
+2026-11-10 (`v0.9.1-44-g93cd982`, las 24 tareas). Coste de la pasada:
+1,71 $.
+
+| Modelo | Pasan (base → ahora) | Pasos | Tokens por ejecución | Coste por ejecución |
+|---|---|---|---|---|
+| glm-5.3-flash | 114 → 119 / 120 | 5,26 → 4,9 | 14.991 → 13.609 | 0,0012 → 0,0012 $ |
+| kimi-k2.7-code | 117 → 118 / 120 | 4,77 → 5,41 | 11.871 → 15.758 | 0,0054 → 0,0082 $ (⚠ +51 %) |
+| claude-haiku-5-5 | 120 → 120 / 120 | 3,93 → 3,88 | 16.933 → 16.750 | 0,0049 → 0,0049 $ |
+
+- Validación: 25/25 con los tres. Los fallos sueltos (GLM 13, Kimi 8 y
+  12) quedan dentro del ruido (p = 0,5).
+- **Kimi sale ⚠ por coste:** es P8. Su documentación exige devolverle su
+  `reasoning_content` en un bucle con herramientas ("you must … keep");
+  antes `maha` no lo hacía. Más tokens de entrada por llamada y algún
+  paso más, con una tarea más resuelta. DECISIÓN pendiente del
+  mantenedor (AGENTS.md: no se integra una regresión sin ella).
+
 ## Aprendido al implementar
 
 *Se añade al implementar.*

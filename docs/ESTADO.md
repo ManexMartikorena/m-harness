@@ -52,21 +52,24 @@ auditoría (rama `fix/auditoria-hito-10`), y trabajar en esa rama: `git
 fetch && git switch fix/auditoria-hito-10 && git pull`, `uv sync`, y
 comprobar tests, mypy y lint-imports en verde.
 
-1. **Agente:** cerrar la auditoría tras el hito 10 (spec
-   `docs/specs/mejora-2026-11-10-auditoria-hito-10.md`; su primera línea
-   dice qué está hecho). Hechos y commiteados, cada uno con su test: B, S,
-   H, I, M y P (P1 a P8), y el catálogo de OpenCode puesto al día con su
-   documentación (2026-11-11). Faltan, en este orden:
-   1. **Mantenedor:** decidir M4 (la escritura en caché de 1 h de los
-      Claude de OpenCode no tiene precio publicado; hoy se cuenta al de 5
-      min, spec 9, decisión 9);
-   2. la revisión independiente de los arreglos (en marcha el 2026-11-11,
-      tres agentes nuevos) y arreglar lo que encuentre;
-   3. la pasada de evals contra las líneas base del 2026-11-10 (P8 cambia
-      lo que se manda a Kimi, P3 el shell de `run_command`, I3 el mensaje
-      de `/init`): unos 1,5 $;
-   4. spec IMPLEMENTADA, ESTADO, HISTORIAL, PR, merge y `v0.10.1`.
-2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+1. **Mantenedor:** decidir lo que queda abierto de la auditoría tras el
+   hito 10 (spec `docs/specs/mejora-2026-11-10-auditoria-hito-10.md`):
+   - **M4:** la escritura en caché de 1 h de los Claude de OpenCode no
+     tiene precio publicado; hoy se cuenta al de 5 min. Recomendado:
+     "sin precio" en esa llamada.
+   - **R15:** con la decisión 2, las líneas tecleadas por adelantado
+     durante una respuesta se unen en un turno. Recomendado: solo
+     *bracketed paste*, sin la unión de respaldo.
+   - **Evals:** Kimi cuesta +51 % por ejecución (P8: su documentación
+     exige devolverle su razonamiento), con una tarea más resuelta.
+     Recomendado: aceptarlo, anotado en la spec.
+
+   Hecho y commiteado, cada uno con su test: B, S, H, I, M y P, el
+   catálogo de OpenCode al día, la revisión independiente (R1 a R16) y
+   la pasada de evals (2026-11-11).
+2. **Agente, tras las decisiones:** aplicarlas, spec IMPLEMENTADA,
+   ESTADO, HISTORIAL, PR, merge y `v0.10.1`.
+3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
