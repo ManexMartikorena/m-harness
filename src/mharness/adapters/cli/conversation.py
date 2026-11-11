@@ -266,12 +266,19 @@ async def _answer(
     # True while a question waits after "Allow? …:" (spec
     # mejora-2026-10-26-deuda-pre-hito-6, B8).
     asking = False
+    # A "\r" that ended the last piece: with a "\n" next it ends a line,
+    # and is not shown as \x0d (review of the audit after hito 10, I10).
+    held = ""
     # Covers each wait for the model (spec hito 3, §1.12).
     spinner = Spinner(out, color=use_color())
     spinner.start()
     try:
         async with aclosing(conversation.run(line)) as events:
             async for event in events:
+                if held and (not isinstance(event, TextDelta) or event.block != block):
+                    # It did not end a line: shown as what it is.
+                    out.write(clean(held))
+                    held = ""
                 match event:
                     case TextDelta(text=text):
                         await spinner.stop()
@@ -279,7 +286,9 @@ async def _answer(
                         if wrote and other and event.block != block:
                             out.write("\n")
                         block = event.block
-                        out.write(clean(text))
+                        text = held + text
+                        held = "\r" if text.endswith("\r") else ""
+                        out.write(clean(text.removesuffix(held)))
                         out.flush()
                         wrote = True
                     case ToolCallProposed(call=call):

@@ -1638,3 +1638,30 @@ async def test_ctrl_c_during_a_command_goes_back_to_the_prompt() -> None:
 
     assert code == 0
     assert "? [y/N]: \n  [interrupted]\n> " in out.getvalue()
+
+
+async def test_a_crlf_split_between_two_pieces_is_not_shown_as_x0d() -> None:
+    # Review of the audit after hito 10 (I10): clean() saw each piece alone.
+    pieces = [TextDelta(text="uno\r"), TextDelta(text="\ndos\r"), TextDelta(text="x")]
+    fake = FakeModelClient([[*pieces, END]])
+
+    _, out, _ = await run(fake, "Hola", "/exit")
+
+    assert "uno\ndos\\x0dx" in out
+
+
+async def test_ctrl_d_right_after_a_line_still_ends() -> None:
+    # Review of the audit after hito 10: looking for lines that came
+    # together took the end of input, and maha did not leave.
+    main, side = pty.openpty()
+    try:
+        lines = StdinLines(side)
+        os.write(main, b"hola\n\x04")
+        await asyncio.sleep(0.05)
+
+        assert await lines.readline() == "hola"
+        with pytest.raises(EOFError):
+            await asyncio.wait_for(lines.readline(), 1)
+    finally:
+        os.close(main)
+        os.close(side)

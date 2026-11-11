@@ -44,6 +44,9 @@ class StdinLines:
     def __init__(self, fd: int = 0) -> None:
         self._fd = fd
         self._buffer = b""
+        # The end of input came while looking for more of a line: the next
+        # read ends (review of the audit after hito 10).
+        self._ended = False
 
     async def readline(self) -> str:
         """The next line. A paste of several lines is one (audit after hito
@@ -56,16 +59,21 @@ class StdinLines:
                 try:
                     line += "\n" + await self._line()
                 except EOFError:
+                    self._ended = True
                     break
             return line.replace(PASTE_START, "").replace(PASTE_END, "")
         while self._together():
             try:
                 line += "\n" + await self._line()
             except EOFError:
+                self._ended = True
                 break
         return line
 
     async def _line(self) -> str:
+        if self._ended and not self._buffer:
+            self._ended = False
+            raise EOFError
         while b"\n" not in self._buffer:
             chunk = await self._read()
             if not chunk:
