@@ -9,6 +9,7 @@ AGENTS.md is said to take effect with the next one.
 from dataclasses import dataclass
 from pathlib import Path
 
+from mharness.adapters.cli.text import clean_line
 from mharness.domain.prompt import render
 
 INSTRUCTIONS_FILE = "AGENTS.md"
@@ -31,8 +32,11 @@ class Init:
         """What the person is told in a subfolder, before the turn."""
         if self.project is None:
             return None
+        # A folder's name is not to be trusted either (review of the
+        # audit after hito 10).
         return (
-            f"[/init in a subfolder: it writes {self.target}, loaded with the root's]"
+            f"[/init in a subfolder: it writes {clean_line(str(self.target))}, "
+            "loaded with the root's]"
         )
 
     @property

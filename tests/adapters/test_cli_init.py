@@ -173,3 +173,18 @@ async def test_an_agents_md_that_was_already_there_and_changed_is_told(
     out = await init_run(tmp_path, fake, "/init")
 
     assert TAKES_EFFECT in out
+
+
+def test_the_note_of_a_subfolder_is_clean(tmp_path: Path) -> None:
+    # Review of the audit after hito 10: a folder's name from a cloned
+    # repository reached the terminal raw.
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    inner = repo / "a\x1b[2Jb"
+    inner.mkdir()
+
+    note = _init(inner).note
+
+    assert note is not None
+    assert "\x1b" not in note
+    assert "a\\x1b[2Jb" in note
