@@ -896,7 +896,9 @@ def test_print_answers_on_stdout_and_saves_the_session(
 
     captured = capsys.readouterr()
     assert (code, captured.out) == (0, "Dos palabras.\n")
-    assert captured.err == "  [tokens: 12 in · 3 out · <$0.0001 · session <$0.0001]\n"
+    assert captured.err.startswith(
+        "  [tokens: 12 in · 3 out · <$0.0001 · session <$0.0001]\n  [session "
+    )
     messages = conversation(last_turn(route))
     [message] = messages
     assert message["role"] == "user"

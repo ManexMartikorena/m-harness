@@ -215,6 +215,10 @@ async def _print(
         _answer(result.text, out)
         if result.error is not None:
             print(f"error: {clean(result.error)}", file=err, flush=True)
+        if conversation.stored:
+            # To go on with it (audit after hito 10, P2).
+            session = clean(conversation.id)
+            shown.note(f"[session {session} · maha -r {session} resumes it]")
     else:
         _json_line(result_object(result), out)
     return exit_code(result)
@@ -319,13 +323,32 @@ def _watch(
     if output_format == "text":
         return _Progress(conversation, err).show
 
+    told = False
+
     def watch(event: AgentEvent) -> None:
+        nonlocal told
         if output_format == "stream-json":
+            if not told and conversation.exists:
+                # Who answers and in which session, once the id is this
+                # session's (audit after hito 10, P2).
+                told = True
+                _json_line(init_object(conversation), out)
             _json_line(event.model_dump(mode="json"), out)
         if isinstance(event, ToolFinished):
             warn_crash(event, err)
 
     return watch
+
+
+def init_object(conversation: Conversation) -> dict[str, Any]:
+    """The first event of `stream-json`: the session, the model and the
+    tools."""
+    return {
+        "type": "init",
+        "session_id": conversation.id,
+        "model": conversation.model,
+        "tools": conversation.tools,
+    }
 
 
 def _json_line(data: dict[str, Any], out: TextIO) -> None:

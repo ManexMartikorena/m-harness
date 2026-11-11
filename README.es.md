@@ -266,8 +266,9 @@ effort max, cache 1h]`.
 
 Con `-p`:
 - `--output-format text|json|stream-json`: solo la respuesta (por
-  defecto; las llamadas y los tokens van a stderr), un objeto JSON al
-  final o un evento JSON por línea. En JSON, `session_id` es la sesión
+  defecto; las llamadas, los tokens y la sesión para seguir van a
+  stderr), un objeto JSON al final o un evento JSON por línea, empezando
+  por un evento `init` con la sesión, el modelo y las herramientas. En JSON, `session_id` es la sesión
   que se retoma con `-r` (`null` si la ejecución no guardó nada) y
   `trace_id`, lo que enseña `maha trace`, también de una que falló.
 - `--allow TOOL` (repetible): esa herramienta se ejecuta sin preguntar

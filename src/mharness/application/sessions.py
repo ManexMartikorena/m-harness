@@ -195,6 +195,11 @@ class Conversation:
         return self._agent.messages
 
     @property
+    def tools(self) -> list[str]:
+        """The names of the tools the model has."""
+        return self._agent.tool_names
+
+    @property
     def effort(self) -> Effort | None:
         """How hard the model works in each call; None: the model's own."""
         return self._agent.effort

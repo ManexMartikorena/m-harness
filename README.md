@@ -258,11 +258,12 @@ your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
 | `maha import FILE` | A session exported in JSON, as a new one |
 
 With `-p`:
-- `--output-format text|json|stream-json`: only the answer (default; calls
-  and tokens go to stderr), one JSON object at the end, or one JSON event
-  per line. In JSON, `session_id` is the session to continue with `-r`
-  (`null` if the run kept nothing) and `trace_id` is what `maha trace`
-  shows, also of a run that failed.
+- `--output-format text|json|stream-json`: only the answer (default; calls,
+  tokens and the session to continue go to stderr), one JSON object at the
+  end, or one JSON event per line, starting with an `init` event with the
+  session, the model and the tools. In JSON, `session_id` is the session
+  to continue with `-r` (`null` if the run kept nothing) and `trace_id` is
+  what `maha trace` shows, also of a run that failed.
 - `--allow TOOL` (repeatable): that tool runs without asking inside the
   directory. Outside it, a secret or a file that runs code are always
   denied.

@@ -127,6 +127,11 @@ class Agent:
         """The conversation so far, oldest first."""
         return tuple(self._messages)
 
+    @property
+    def tool_names(self) -> list[str]:
+        """The names of the tools the model has, in their order."""
+        return self._tools.names()
+
     async def run(self, text: str) -> AsyncGenerator[AgentEvent]:
         """Run one turn from a user message, yielding what happens.
 
