@@ -461,3 +461,29 @@ async def test_ctrl_c_while_exit_waits_for_the_title_leaves_cleanly() -> None:
     assert code == 0
     assert "[naming the session; Ctrl+C skips it]" in out.getvalue()
     assert FIRST not in store.locked
+
+
+async def test_a_closing_signal_while_exit_waits_for_the_title_says_so() -> None:
+    # Review of the audit after hito 10 (R16): it ended as a plain /exit.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+
+    async def close_window_when_asked() -> None:
+        await small.asked.wait()
+        await asyncio.sleep(0.05)
+        signal.raise_signal(signal.SIGHUP)
+
+    closing = asyncio.create_task(close_window_when_asked())
+    code = await converse(
+        world.sessions,
+        provider="opencode-go",
+        catalog=MemoryCatalog(),
+        read_line=ScriptedInput("Hola", "/exit"),
+        out=io.StringIO(),
+        err=io.StringIO(),
+    )
+    await closing
+
+    assert code == 128 + signal.SIGHUP
+    assert FIRST not in store.locked

@@ -128,20 +128,21 @@ async def converse(
     for number in CLOSING:
         loop.add_signal_handler(number, on_closing, number)
     try:
-        return await _turns(
+        code = await _turns(
             commands, provider, read, out, err, sigint, opened.resumed, notes, init
         )
     except asyncio.CancelledError:
         if sigint.closing is not None:
             task.uncancel()
-            return 128 + sigint.closing
-        # Ctrl+C before the prompt ends `maha`; the prompt, an answer and a
-        # command handle their own.
-        if not sigint.pending:
-            raise
-        task.uncancel()
-        print(file=out)
-        return EXIT_INTERRUPTED
+            code = 128 + sigint.closing
+        else:
+            # Ctrl+C before the prompt ends `maha`; the prompt, an answer
+            # and a command handle their own.
+            if not sigint.pending:
+                raise
+            task.uncancel()
+            print(file=out)
+            code = EXIT_INTERRUPTED
     finally:
         # What is still pending is saved, and the session let go. Ctrl+C
         # while its title comes skips the title: our handler is still
@@ -160,6 +161,9 @@ async def converse(
             for number in CLOSING:
                 loop.remove_signal_handler(number)
         commands.warn_unsaved()
+    # A closing signal while leaving says so too (review of the audit after
+    # hito 10).
+    return code if sigint.closing is None else 128 + sigint.closing
 
 
 async def _turns(
