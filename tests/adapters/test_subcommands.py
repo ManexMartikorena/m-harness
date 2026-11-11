@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from mharness.adapters.cli import subcommands
+from mharness.adapters.cli import commands, subcommands
 from mharness.adapters.cli.subcommands import (
     delete_session,
     export_session,
@@ -66,6 +66,21 @@ async def test_sessions_lists_them_without_indent() -> None:
     line = out.getvalue()
     assert line.startswith(f"* {FIRST}  ")
     assert line.endswith("  2 messages  ~/proyecto  Pregunta para Hola.\n")
+
+
+async def test_sessions_says_how_to_see_them_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Audit after hito 10, P6.
+    monkeypatch.setattr(commands, "SESSIONS_SHOWN", 0)
+    world = await with_a_session("Hola.")
+    few, every = io.StringIO(), io.StringIO()
+
+    await list_sessions(world.sessions, out=few, home=HOME)
+    await list_sessions(world.sessions, out=every, home=HOME, every=True)
+
+    assert few.getvalue() == "… 1 more: maha sessions --all\n"
+    assert every.getvalue().startswith(f"* {FIRST}  ")
 
 
 async def test_sessions_without_any_says_so() -> None:

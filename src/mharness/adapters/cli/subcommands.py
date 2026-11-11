@@ -35,9 +35,15 @@ EXIT_ERROR = 1
 type ExportFormat = Literal["md", "json"]
 
 
-async def list_sessions(sessions: Sessions, *, out: TextIO, home: Path) -> int:
-    """`maha sessions`: the recent ones, of every directory."""
-    for line in await session_lines(sessions, home):
+async def list_sessions(
+    sessions: Sessions, *, out: TextIO, home: Path, every: bool = False
+) -> int:
+    """`maha sessions`: the recent ones, of every directory; with `--all`,
+    every one (audit after hito 10, P6)."""
+    lines = await session_lines(
+        sessions, home, every=every, see_all="maha sessions --all"
+    )
+    for line in lines:
         print(line, file=out)
     return EXIT_OK
 

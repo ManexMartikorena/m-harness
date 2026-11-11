@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from mharness.adapters.cli import commands
 from mharness.adapters.cli.commands import (
     COMMANDS,
     Command,
@@ -220,6 +221,32 @@ async def test_sessions_lists_every_directory_marking_this_one() -> None:
         "~/web  explícame el router\n"
     ) in out
     assert out.index("b01c") < out.index("3fa2")
+
+
+async def test_sessions_says_how_many_more_and_all_shows_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Audit after hito 10, P6: only 20 were seen, with no way to see more.
+    monkeypatch.setattr(commands, "SESSIONS_SHOWN", 1)
+    store = MemorySessionStore()
+    await Maha(store, [reply("Hola.")]).run("uno", "/exit")
+    await Maha(store, [reply("Vale.")], tokens=("b01c",)).run("dos", "/exit")
+
+    _, few, _ = await Maha(store, [], tokens=("9999",)).run("/sessions", "/exit")
+    _, every, _ = await Maha(store, [], tokens=("9998",)).run("/sessions all", "/exit")
+
+    assert "b01c" in few
+    assert "3fa2" not in few
+    assert "  … 1 more: /sessions all\n" in few
+    assert "b01c" in every
+    assert "3fa2" in every
+    assert "more:" not in every
+
+
+async def test_sessions_with_another_argument_says_how_to_use_it() -> None:
+    _, out, _ = await Maha(MemorySessionStore(), []).run("/sessions todas", "/exit")
+
+    assert "  usage: /sessions [all]\n" in out
 
 
 async def test_resume_continues_a_session_with_its_history() -> None:

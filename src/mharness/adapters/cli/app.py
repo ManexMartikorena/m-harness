@@ -280,6 +280,12 @@ def _sessions_parser(commands: Any) -> None:
         description="The recent sessions, of every directory; those of this "
         "one are marked with *. maha -r ID resumes one.",
     )
+    sessions.add_argument(
+        "--all",
+        action="store_true",
+        dest="every",
+        help="every session, not just the 20 most recent",
+    )
     actions = sessions.add_subparsers(dest="action", metavar="ACTION")
     delete = actions.add_parser(
         "delete",

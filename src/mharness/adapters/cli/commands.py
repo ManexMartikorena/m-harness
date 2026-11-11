@@ -27,7 +27,7 @@ from mharness.ports.catalog import ModelCatalog
 
 # What each command does, for /help.
 COMMANDS = {
-    "sessions": "/sessions — the recent sessions, of every directory",
+    "sessions": "/sessions [all] — the recent sessions, of every directory",
     "resume": "/resume [ID] — resume a session; without ID, the last one here",
     "delete": "/delete ID — delete a session",
     "model": "/model [ID] — show the model, or change it",
@@ -104,7 +104,7 @@ class Commands:
                     for line in COMMANDS.values():
                         self._say(line)
                 case "sessions":
-                    await self._list()
+                    await self._list(command.argument)
                 case "resume":
                     await self._resume(command.argument)
                 case "delete":
@@ -153,8 +153,17 @@ class Commands:
     def warn_unsaved(self) -> None:
         warn_unsaved(self.conversation, self._err)
 
-    async def _list(self) -> None:
-        for line in await session_lines(self._sessions, self._home):
+    async def _list(self, argument: str | None) -> None:
+        if argument not in (None, "all"):
+            self._say("usage: /sessions [all]")
+            return
+        lines = await session_lines(
+            self._sessions,
+            self._home,
+            every=argument == "all",
+            see_all="/sessions all",
+        )
+        for line in lines:
             print(f"  {line}", file=self._out)
         self._out.flush()
 
@@ -302,12 +311,17 @@ class Commands:
         print(f"  {text}", file=self._out, flush=True)
 
 
-async def session_lines(sessions: Sessions, home: Path) -> list[str]:
+async def session_lines(
+    sessions: Sessions, home: Path, *, every: bool = False, see_all: str = ""
+) -> list[str]:
     """The recent sessions of every directory, one per line, those of this
-    one marked with `*`; or `(no sessions)`."""
-    found = (await sessions.summaries())[:SESSIONS_SHOWN]
-    if not found:
+    one marked with `*`; or `(no sessions)`. Past `SESSIONS_SHOWN`, how
+    many more, and `see_all`, how to see them; with `every`, all (audit
+    after hito 10, P6)."""
+    summaries = await sessions.summaries()
+    if not summaries:
         return ["(no sessions)"]
+    found = summaries if every else summaries[:SESSIONS_SHOWN]
     lines = []
     for summary in found:
         mark = "*" if sessions.here(summary) else " "
@@ -321,6 +335,8 @@ async def session_lines(sessions: Sessions, home: Path) -> list[str]:
         lines.append(
             f"{mark} {clean_line(summary.id)}  {when}  {count}  {where}  {title}"
         )
+    if len(found) < len(summaries):
+        lines.append(f"… {len(summaries) - len(found)} more: {see_all}")
     return lines
 
 

@@ -822,7 +822,9 @@ async def _sessions_command(
             return await cli.delete_session(
                 sessions, options.id, out=sys.stdout, err=sys.stderr
             )
-        return await cli.list_sessions(sessions, out=sys.stdout, home=Path.home())
+        return await cli.list_sessions(
+            sessions, out=sys.stdout, home=Path.home(), every=options.every
+        )
 
 
 @asynccontextmanager
