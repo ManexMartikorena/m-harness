@@ -3,15 +3,24 @@ questions, so no line goes to the wrong one (spec
 mejora-2026-10-23-deuda-hito-5, B3)."""
 
 import asyncio
+import contextlib
 import os
 import select
 import termios
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from typing import TextIO
 
 type ReadLine = Callable[[], Awaitable[str]]
 # Everything until the end of the input, at most so many bytes.
 type ReadAll = Callable[[int], Awaitable[str]]
 
+
+# What a terminal puts around pasted text once asked to (bracketed paste).
+PASTE_START = "\x1b[200~"
+PASTE_END = "\x1b[201~"
+# Asks for it, and stops asking.
+PASTE_ON = "\x1b[?2004h"
+PASTE_OFF = "\x1b[?2004l"
 
 # What read_all() asks for at a time: a pipe holds 64 KiB on Linux.
 _BIG_READ = 64 * 1024
@@ -37,6 +46,26 @@ class StdinLines:
         self._buffer = b""
 
     async def readline(self) -> str:
+        """The next line. A paste of several lines is one (audit after hito
+        10, I4, decision 2 of the maintainer): what the terminal marks as
+        pasted (bracketed paste) and, in a terminal, the lines that arrive
+        together, as nobody types two lines at once."""
+        line = await self._line()
+        if PASTE_START in line:
+            while PASTE_END not in line.rpartition(PASTE_START)[2]:
+                try:
+                    line += "\n" + await self._line()
+                except EOFError:
+                    break
+            return line.replace(PASTE_START, "").replace(PASTE_END, "")
+        while self._together():
+            try:
+                line += "\n" + await self._line()
+            except EOFError:
+                break
+        return line
+
+    async def _line(self) -> str:
         while b"\n" not in self._buffer:
             chunk = await self._read()
             if not chunk:
@@ -48,6 +77,16 @@ class StdinLines:
         line, _, self._buffer = self._buffer.partition(b"\n")
         # Splitting bytes at b"\n" never cuts a UTF-8 character.
         return line.decode("utf-8", errors="replace").removesuffix("\r")
+
+    def _together(self) -> bool:
+        """Whether another line came with the last one, in a terminal: from
+        a pipe or a file each line is a turn (`maha < notes.txt`)."""
+        if not _is_terminal(self._fd):
+            return False
+        if b"\n" in self._buffer:
+            return True
+        ready, _, _ = select.select([self._fd], [], [], 0)
+        return bool(ready)
 
     async def read_all(self, limit: int) -> str:
         """Everything until the end (`git diff | maha -p …`), as text; more
@@ -102,3 +141,41 @@ class StdinLines:
         finally:
             loop.remove_reader(self._fd)
         return os.read(self._fd, size)
+
+
+def _is_terminal(fd: int) -> bool:
+    """Whether `fd` is a terminal, by its settings: a pipe has none."""
+    try:
+        termios.tcgetattr(fd)
+    except termios.error, OSError:
+        return False
+    return True
+
+
+@contextlib.contextmanager
+def bracketed_paste(fd: int, out: TextIO) -> Iterator[None]:
+    """Ask the terminal to mark what is pasted, while the conversation lasts
+    (audit after hito 10, I4). Its marks are not echoed as `^[[200~`: the
+    terminal ignores them, as it ignores every escape it does not know.
+    Only with a terminal on both sides; everything is left as it was."""
+    if not (os.isatty(fd) and out.isatty()):
+        yield
+        return
+    try:
+        before = termios.tcgetattr(fd)
+    except termios.error:
+        yield
+        return
+    quiet = list(before)
+    quiet[3] = before[3] & ~termios.ECHOCTL
+    termios.tcsetattr(fd, termios.TCSANOW, quiet)
+    out.write(PASTE_ON)
+    out.flush()
+    try:
+        yield
+    finally:
+        with contextlib.suppress(OSError, ValueError):
+            out.write(PASTE_OFF)
+            out.flush()
+        with contextlib.suppress(termios.error):
+            termios.tcsetattr(fd, termios.TCSANOW, before)

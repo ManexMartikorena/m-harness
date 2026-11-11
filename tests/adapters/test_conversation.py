@@ -5,6 +5,7 @@ import json
 import os
 import pty
 import signal
+import termios
 from collections.abc import Iterator, Sequence
 from decimal import Decimal
 from importlib.metadata import version
@@ -21,7 +22,13 @@ from mharness.adapters.cli.conversation import (
     retry_note,
     turn_note,
 )
-from mharness.adapters.cli.input import InputTooLarge, StdinLines
+from mharness.adapters.cli.input import (
+    PASTE_OFF,
+    PASTE_ON,
+    InputTooLarge,
+    StdinLines,
+    bracketed_paste,
+)
 from mharness.adapters.cli.questions import TerminalQuestions
 from mharness.adapters.cli.spinner import CLEAR_LINE
 from mharness.adapters.commands import LocalCommandRunner
@@ -379,6 +386,88 @@ async def test_stdin_lines_discards_what_the_terminal_holds() -> None:
     finally:
         os.close(main)
         os.close(side)
+
+
+# Pasting text of several lines (audit after hito 10, I4, decision 2 of
+# the maintainer): one turn, not one per line.
+
+
+async def test_a_bracketed_paste_is_one_line(pipe: tuple[int, int]) -> None:
+    read_fd, write_fd = pipe
+    os.write(write_fd, b"\x1b[200~uno\ndos\ntres\x1b[201~\nsigue\n")
+    lines = StdinLines(read_fd)
+
+    assert await lines.readline() == "uno\ndos\ntres"
+    assert await lines.readline() == "sigue"
+
+
+async def test_text_typed_around_a_paste_goes_with_it(pipe: tuple[int, int]) -> None:
+    read_fd, write_fd = pipe
+    os.write(write_fd, b"mira: \x1b[200~a\nb\x1b[201~ y dime\n")
+
+    assert await StdinLines(read_fd).readline() == "mira: a\nb y dime"
+
+
+async def test_a_paste_waits_for_its_end(pipe: tuple[int, int]) -> None:
+    read_fd, write_fd = pipe
+    lines = StdinLines(read_fd)
+    pending = asyncio.create_task(lines.readline())
+
+    os.write(write_fd, b"\x1b[200~uno\n")
+    await asyncio.sleep(0.02)
+    assert not pending.done()
+    os.write(write_fd, b"dos\x1b[201~\n")
+
+    assert await pending == "uno\ndos"
+
+
+async def test_lines_from_a_pipe_are_still_one_by_one(pipe: tuple[int, int]) -> None:
+    # `maha < notas.txt`: each line is a turn, as always.
+    read_fd, write_fd = pipe
+    os.write(write_fd, b"uno\ndos\n")
+    lines = StdinLines(read_fd)
+
+    assert [await lines.readline(), await lines.readline()] == ["uno", "dos"]
+
+
+async def test_lines_that_reach_a_terminal_together_are_one() -> None:
+    # The fallback without bracketed paste: no one types two lines at once.
+    main, side = pty.openpty()
+    try:
+        lines = StdinLines(side)
+        os.write(main, b"uno\ndos\ntres\n")
+        await asyncio.sleep(0.05)
+
+        assert await lines.readline() == "uno\ndos\ntres"
+        os.write(main, b"sola\n")
+        assert await lines.readline() == "sola"
+    finally:
+        os.close(main)
+        os.close(side)
+
+
+def test_bracketed_paste_is_asked_for_and_left_as_it_was() -> None:
+    main, side = pty.openpty()
+    try:
+        before = termios.tcgetattr(side)
+        out = os.fdopen(os.dup(side), "w")
+        with bracketed_paste(side, out):
+            assert not termios.tcgetattr(side)[3] & termios.ECHOCTL
+        out.close()
+        assert termios.tcgetattr(side) == before
+        assert os.read(main, 100) == PASTE_ON.encode() + PASTE_OFF.encode()
+    finally:
+        os.close(main)
+        os.close(side)
+
+
+def test_bracketed_paste_is_not_asked_for_without_a_terminal() -> None:
+    out = io.StringIO()
+
+    with bracketed_paste(0, out):
+        pass
+
+    assert out.getvalue() == ""
 
 
 async def test_stdin_lines_reads_a_regular_file(tmp_path: Path) -> None:

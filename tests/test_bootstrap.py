@@ -496,15 +496,28 @@ def test_in_a_terminal_a_command_asks_and_runs_without_the_key(
     # Typed ahead: the question drops it (spec
     # mejora-2026-10-26-deuda-pre-hito-6, A2). The answer comes after, as a
     # person seeing the question would type it.
-    terminal("Ejecuta env\ny\n/exit\n")
+    # Lines that arrive together are one turn (audit after hito 10, I4):
+    # what a person types comes one line at a time.
+    terminal("Ejecuta env\n")
     discard = StdinLines.discard
+    readline = StdinLines.readline
 
     def discard_then_answer(self: StdinLines) -> bool:
         dropped = discard(self)
-        terminal("y\n/exit\n")
+        terminal("y\n")
         return dropped
 
+    async def then_exit(self: StdinLines) -> str:
+        line = await readline(self)
+        if line == "Ejecuta env":
+            # Typed while the model answers.
+            terminal("y\n")
+        if line == "y":
+            terminal("/exit\n")
+        return line
+
     monkeypatch.setattr(StdinLines, "discard", discard_then_answer)
+    monkeypatch.setattr(StdinLines, "readline", then_exit)
 
     code = main([])
 
