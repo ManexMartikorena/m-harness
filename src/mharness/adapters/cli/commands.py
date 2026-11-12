@@ -179,12 +179,23 @@ class Commands:
         # Switched first: Ctrl+C while the old one's title comes skips the
         # title, never the switch (review of the audit after hito 10). Said
         # only now, when the wait comes (second review).
-        self.tell_naming(old)
         try:
-            await old.close()
+            await self._let_go(old)
         finally:
             self._warn_lost(left, old.unsaved)
             self.tell_resumed(resumed)
+
+    async def _let_go(self, old: Conversation) -> None:
+        """Close the conversation left behind, once said that it waits for
+        its title. If saying it fails (the window went), it closes without
+        the title, and the error goes on (third review of the audit after
+        hito 10): it was skipped, and its pending turns lost."""
+        try:
+            self.tell_naming(old)
+        except OSError:
+            await old.close(title=False)
+            raise
+        await old.close()
 
     def tell_naming(self, conversation: Conversation | None = None) -> None:
         """Leaving a conversation, the current one by default, waits for its
@@ -267,9 +278,8 @@ class Commands:
         # The new one is ready: only now is the current one let go, once
         # switched (review of the audit after hito 10), and the wait said.
         self.conversation = fresh
-        self.tell_naming(old)
         try:
-            await old.close()
+            await self._let_go(old)
         finally:
             self._warn_lost(left, old.unsaved)
             self._say("[new session]")

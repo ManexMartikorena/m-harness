@@ -781,6 +781,37 @@ async def test_a_closed_window_when_leaving_does_not_skip_closing() -> None:
     assert FIRST not in store.locked
 
 
+async def test_a_closed_window_while_new_switches_closes_the_old_session() -> None:
+    # Third review too: "naming the session" for the old one, to the dead
+    # terminal, came before the try that closes it.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+    out = HungUp()
+    lines = ["Hola", "/new"]
+
+    async def read() -> str:
+        line = lines.pop(0)
+        if line == "/new":
+            await small.asked.wait()
+            out.dead = True
+        return line
+
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=out,
+        )
+    )
+
+    assert code == 128 + signal.SIGHUP
+    assert store.locked == set()
+
+
 async def test_a_closed_window_while_a_title_comes_still_closes_the_session() -> None:
     # Second review of the audit after hito 10: "naming the session" was
     # written to the dead terminal before closing, and its EIO left the
