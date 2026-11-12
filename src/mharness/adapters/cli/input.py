@@ -138,8 +138,18 @@ class StdinLines:
 
 
 def _stop() -> None:
-    """Stop maha as Ctrl+Z would; it goes on here after `fg`."""
-    os.kill(os.getpid(), signal.SIGSTOP)
+    """Stop maha as Ctrl+Z would; it goes on here after `fg`.
+
+    By SIGTSTP with its default action, as editors do, not SIGSTOP: in a
+    process group no shell can continue any more (orphaned), the kernel
+    drops it, and maha goes on instead of staying stopped for ever (third
+    review of the audit after hito 10)."""
+    ours = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+    try:
+        # To this thread: stopped before it returns.
+        signal.raise_signal(signal.SIGTSTP)
+    finally:
+        signal.signal(signal.SIGTSTP, ours)
 
 
 @contextlib.contextmanager

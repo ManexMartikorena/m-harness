@@ -5,6 +5,8 @@ import json
 import os
 import pty
 import signal
+import subprocess
+import sys
 import termios
 from collections.abc import Iterator, Sequence
 from decimal import Decimal
@@ -507,6 +509,44 @@ async def test_bracketed_paste_is_given_back_on_ctrl_z_and_asked_again_on_fg(
     finally:
         os.close(main)
         os.close(side)
+
+
+_STOPS = """
+import os, sys
+from mharness.adapters.cli.input import _stop
+os.setsid() if sys.argv[1] == "orphaned" else os.setpgid(0, 0)
+_stop()
+print("back", flush=True)
+"""
+
+
+def test_ctrl_z_stops_until_fg_and_not_for_ever_when_orphaned() -> None:
+    # Third review too: by SIGSTOP, a process group that no shell can
+    # continue any more stayed stopped for ever. By SIGTSTP, as editors
+    # do: the kernel drops it there.
+    orphaned = subprocess.run(
+        [sys.executable, "-c", _STOPS, "orphaned"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    assert orphaned.stdout == "back\n"
+
+    child = subprocess.Popen(
+        [sys.executable, "-c", _STOPS, "own group"],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        _, status = os.waitpid(child.pid, os.WUNTRACED)
+        assert os.WIFSTOPPED(status)
+        assert os.WSTOPSIG(status) == signal.SIGTSTP
+        os.kill(child.pid, signal.SIGCONT)
+        assert child.communicate(timeout=10)[0] == "back\n"
+    finally:
+        child.kill()
+        child.wait()
 
 
 class OpensForEver(Sessions):
