@@ -3,6 +3,7 @@ network."""
 
 import asyncio
 import contextlib
+import errno
 import io
 import json
 import logging
@@ -1745,6 +1746,26 @@ class ClosedPipe(io.StringIO):
 
     def write(self, text: str) -> int:
         raise BrokenPipeError(32, "Broken pipe")
+
+
+class ClosedWindow(io.StringIO):
+    """A stdout whose terminal is gone: what it kept fails with EIO."""
+
+    def flush(self) -> None:
+        raise OSError(errno.EIO, "Input/output error")
+
+
+def test_a_closed_window_keeps_the_exit_code(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Third review of the audit after hito 10: the paste marks, kept by a
+    # write that failed, made the last flush raise EIO; maha ended with a
+    # traceback and 1 instead of 129.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setattr(bootstrap, "_dispatch", lambda *args: 129)
+    monkeypatch.setattr(sys, "stdout", ClosedWindow())
+
+    assert main(["sessions"]) == 129
 
 
 @respx.mock

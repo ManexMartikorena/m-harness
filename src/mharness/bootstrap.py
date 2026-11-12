@@ -7,6 +7,7 @@ application and starts the `maha` command.
 import argparse
 import asyncio
 import contextlib
+import errno
 import io
 import json
 import logging
@@ -133,6 +134,15 @@ def _main(options: argparse.Namespace) -> int:
         # as `maha -p` (audit of hito 8).
         cli.drop_output(sys.stdout)
         return 1
+    except OSError as exc:
+        # The window was closed: what a failed write kept (the paste marks)
+        # cannot reach it either. The code is the one maha ended with (third
+        # review of the audit after hito 10).
+        if exc.errno != errno.EIO:
+            raise
+        cli.drop_output(sys.stdout)
+        cli.drop_output(sys.stderr)
+        return code
     return code
 
 
