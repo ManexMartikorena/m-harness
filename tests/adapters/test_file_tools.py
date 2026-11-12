@@ -830,8 +830,9 @@ async def test_creating_asks_with_a_preview_and_writes(root: Path) -> None:
         detail="uno\ndos\ntres",
         scope="write_file",
         covers=(
-            "every write_file in the working directory, but secrets and files "
-            "that run code by themselves (hooks, CI, editor tasks)"
+            "every write_file in the working directory, but secrets, maha's settings, "
+            "hard links and files that run code by themselves (hooks, CI, editor "
+            "tasks)"
         ),
         review=True,
     )
@@ -856,8 +857,9 @@ async def test_the_preview_shows_the_first_20_lines(root: Path) -> None:
         detail="(empty file)",
         scope="write_file",
         covers=(
-            "every write_file in the working directory, but secrets and files "
-            "that run code by themselves (hooks, CI, editor tasks)"
+            "every write_file in the working directory, but secrets, maha's settings, "
+            "hard links and files that run code by themselves (hooks, CI, editor "
+            "tasks)"
         ),
         review=True,
     )
@@ -900,8 +902,9 @@ async def test_overwriting_asks_with_a_diff(root: Path) -> None:
         detail="@@ -1,3 +1,3 @@\n a\n-b\n+B\n c",
         scope="write_file",
         covers=(
-            "every write_file in the working directory, but secrets and files "
-            "that run code by themselves (hooks, CI, editor tasks)"
+            "every write_file in the working directory, but secrets, maha's settings, "
+            "hard links and files that run code by themselves (hooks, CI, editor "
+            "tasks)"
         ),
         review=True,
     )
@@ -1314,6 +1317,35 @@ async def test_always_covers_files_that_run_only_when_a_command_runs(
     )
 
 
+@pytest.mark.parametrize(
+    ("name", "named"),
+    [
+        (".env", "secrets"),
+        (".maha/config.toml", "maha's settings"),
+        ("linked.txt", "hard links"),
+        (".github/workflows/ci.yml", "run code by themselves"),
+        (".git/config", "run code by themselves"),
+    ],
+)
+async def test_what_always_covers_names_each_file_that_asks_each_time(
+    root: Path, name: str, named: str
+) -> None:
+    # Third review of the audit after hito 10: maha's settings and hard
+    # links asked each time, and [a] did not say so.
+    write(root, name, "uno\n")
+    if name == "linked.txt":
+        os.link(root / name, root / "other.txt")
+    plain = write(root, "plain.txt", "uno\n")
+
+    asking = await ask_edit(edit_tool(root), edit_params(name, "uno", "dos"))
+    covered = await ask_edit(edit_tool(root), edit_params(plain.name, "uno", "dos"))
+
+    assert asking.warning is not None
+    assert asking.covers is None
+    assert covered.covers is not None
+    assert named in covered.covers
+
+
 async def test_editing_asks_with_a_diff_and_edits(root: Path) -> None:
     # No read_file before: the exact old_string is enough (spec §1.8).
     write(root, "src/app.py", "def f():\n    x = 0\n    return 1\n")
@@ -1327,8 +1359,9 @@ async def test_editing_asks_with_a_diff_and_edits(root: Path) -> None:
         detail="@@ -1,3 +1,3 @@\n def f():\n     x = 0\n-    return 1\n+    return 2",
         scope="edit_file",
         covers=(
-            "every edit_file in the working directory, but secrets and files "
-            "that run code by themselves (hooks, CI, editor tasks)"
+            "every edit_file in the working directory, but secrets, maha's settings, "
+            "hard links and files that run code by themselves (hooks, CI, editor "
+            "tasks)"
         ),
         review=True,
     )
