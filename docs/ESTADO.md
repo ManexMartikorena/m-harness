@@ -1,9 +1,10 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-11. **Hito 10 cerrado: `v0.10.0` (system
-prompt por capas), `v0.10.1` (la auditoría tras el hito 10) y `v0.10.2`
-(su segunda revisión, cero deuda). Lo siguiente: el hito 11 (gestión del
-contexto), cuando el mantenedor lo diga.**
+Última actualización: 2026-11-12. **Hito 10 cerrado: `v0.10.0` (system
+prompt por capas) y `v0.10.1` (la auditoría tras el hito 10). `v0.10.2`
+(su segunda y tercera revisión, cero deuda) está commiteada en su rama,
+sin publicar. Lo siguiente: cerrar `v0.10.2`; después, el hito 11
+(gestión del contexto), cuando el mantenedor lo diga.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -15,12 +16,11 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 (gestión del contexto). Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.10.2` — Segunda revisión de la auditoría tras el
-  hito 10** (2026-11-11):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.2
-- Ramas abiertas: `fix/cierre-auditoria-hito-10` (la segunda revisión de
-  la auditoría, R17 a R25, sin PR todavía). Las integradas se conservan en
-  GitHub.
+- Última versión: **`v0.10.1` — Auditoría tras el hito 10** (2026-11-11):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.1
+- Ramas abiertas: `fix/cierre-auditoria-hito-10` (la segunda y la tercera
+  revisión de la auditoría, R17 a R43, sin PR todavía). Las integradas se
+  conservan en GitHub.
 
 ## Para la release
 
@@ -53,15 +53,22 @@ spec, su nota de la guía y su release.
 Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
 trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
-0. **Agente, en `fix/cierre-auditoria-hito-10`:** cerrar `v0.10.2`. Los
-   arreglos y los documentos están commiteados; falta: (a) relanzar las
-   evals (`maha eval --models glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5
-   --repeat 5 --retry-errors`): la pasada del 2026-11-11 se cortó al
-   cerrar la sesión, sin regresión hasta entonces (GLM 115/120, Kimi
-   118/119, Haiku 25/25); (b) anotarlas en la spec, sección "Evals", y en
-   HISTORIAL; (c) versión 0.10.2 en `pyproject.toml` y `uv.lock`; (d) PR,
-   merge con el CI en verde, tag `v0.10.2` y release (el mantenedor ya dio
-   permiso el 2026-11-11); (e) ESTADO sin esta rama abierta.
+0. **Agente, en `fix/cierre-auditoria-hito-10`:** cerrar `v0.10.2`. La
+   tercera revisión (R26 a R43, spec de la auditoría) está arreglada y
+   commiteada, con sus tests; verificada a mano en una pty y en `bash -i`.
+   Falta, en este orden: (a) encontrar el test inestable: el 2026-11-12,
+   una pasada de `uv run pytest` dio 1 fallo y las tres siguientes, 2574
+   en verde; pasar la suite unas 10 veces, encontrarlo y arreglarlo (test
+   primero); (b) una revisión independiente corta de `Hangup` (el último
+   commit de código), por el patrón de esta auditoría: cada tanda de
+   arreglos trajo fallos nuevos; (c) las evals, con todo dentro
+   (`maha eval --models glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5
+   --repeat 5 --retry-errors`; cambia `edit_file`, R26 a R28), anotadas en
+   la spec, sección "Evals", y en HISTORIAL; (d) "Aprendido al
+   implementar" de la tercera revisión en la spec; HISTORIAL, PROYECTO y
+   los README si hace falta; (e) versión 0.10.2 en `pyproject.toml` y
+   `uv.lock`; (f) PR, merge con el CI en verde, tag `v0.10.2` y release
+   (permiso del mantenedor del 2026-11-11); (g) ESTADO sin esta rama.
 1. **Mantenedor:** decir cuándo se empieza el hito 11 (gestión del
    contexto). Hasta entonces, el agente no empieza su spec (decisión del
    mantenedor, 2026-11-11).
@@ -98,7 +105,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.10.2`).
+   `maha 0.10.1` hasta publicar `v0.10.2`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -177,6 +184,9 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 - **Hito 17:** que `main()` no calle un `BrokenPipeError` que no sea de
   stdout: los procesos hijo de MCP tratan sus propias tuberías, con su
   test (spec 8, §12.56; decisión del mantenedor, 2026-11-03).
+- **Hito 21:** tras Ctrl+Z y `fg` en el prompt, repintar `> ` y la línea
+  tecleada, en modo raw (decisión del mantenedor, 2026-11-12; auditoría
+  tras el hito 10, R42).
 - **Hito 21:** lo que se teclea mientras gira el spinner y el eco de `^C`
   se mezclan con la salida (spec 3, §12.10; spec 4, §12.13); ver el texto
   del razonamiento (spec 7); con el selector de modelo, que un id que no

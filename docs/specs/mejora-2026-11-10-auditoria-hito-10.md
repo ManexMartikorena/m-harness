@@ -1,7 +1,7 @@
-Estado: IMPLEMENTADA (2026-11-11). Hechos: B, S, H, I, M y P, la
+Estado: IMPLEMENTADA (2026-11-12). Hechos: B, S, H, I, M y P, la
 revisión independiente (R1 a R16) y las evals, con las decisiones del
 mantenedor. Sale en `v0.10.1`. La segunda revisión, tras publicarla (R17
-a R25), sale en `v0.10.2`.
+a R25), y la tercera, de sus arreglos (R26 a R43), salen en `v0.10.2`.
 
 # Auditoría tras el hito 10
 
@@ -331,6 +331,113 @@ Comprobado y sin cambio:
   es el sandbox del hito 15; anotado allí, en ESTADO.
 - **`docs/COMPARATIVA.md`:** la columna `maha` era del 2026-10-27; puesta
   al día con lo hecho en los hitos 8 a 10, para la spec del hito 11.
+
+## Tercera revisión, de los arreglos de la segunda (2026-11-12)
+
+Pedida por el mantenedor: "dejar todo limpio, cerrado y con 0 deuda
+técnica antes de empezar el hito 11", con la solución más robusta, no la
+más directa. Cada tanda de arreglos había traído fallos nuevos (16 en la
+primera, 9 en la segunda), así que sus arreglos se revisan otra vez. Tres
+rondas de revisores independientes, que solo ven el código: dos sobre
+`f91f272..8e7db04` (la terminal y las sesiones; `edit_file`), dos sobre
+sus arreglos y uno final sobre los últimos. Cada fallo, reproducido por el
+revisor y otra vez por el agente, con su test primero; los de la
+terminal, también a mano con `maha` en una pty y en un `bash -i`.
+
+**`edit_file`** (venían del hito 5):
+- **R26.** Una coincidencia exacta pegaba `new_string` con sus saltos
+  tal cual. `read_file` quita los finales, así que el modelo manda
+  `\n`: una línea por dos en un fichero CRLF lo dejaba mezclado
+  (`uno\nmas\r\ndos\r\n`), sin aviso tras "siempre". Ahora los saltos de
+  `new_string` toman el estilo del primer salto encontrado o, sin él, el
+  de su línea (`_Styles`, lineal). Y un fichero solo con `\r` es "CR" en
+  el aviso del diff, no "mixed": pasar a mezclado no se decía.
+  ARREGLADO (`cfa90c7`).
+- **R27.** En un fichero mezclado, si `old_string` coincidía tal cual en
+  un sitio, los bloques que solo cambian en el salto no contaban:
+  `replace_all` los dejaba sin cambiar (1 de 2), y una edición simple
+  elegía uno sin avisar del otro. DECISIÓN del mantenedor (2026-11-12):
+  un salto es un salto, siempre; dos bloques así son "appears 2 times", y
+  `replace_all` cambia los dos. Sustituye a "el exacto primero" (spec
+  `mejora-2026-10-23-deuda-hito-5`, 9 y 10). ARREGLADO (`538df2b`).
+- **R28.** En un fichero sin saltos, un `new_string` con saltos de dos
+  tipos (`a\ra\r\n`) lo dejaba mezclado. Ahora todos toman el primero de
+  `new_string`. ARREGLADO (`1de917f`).
+- **R29.** Lo que cubre "siempre" no nombraba la configuración de `maha`,
+  los enlaces duros ni la carpeta `.git`, que preguntan cada vez.
+  ARREGLADO (`a83a538`, `1de917f`).
+
+Probado con dos referencias independientes al azar (más de 1,9 millones
+de casos entre las dos, sin diferencias) y con la ida y vuelta pregunta →
+escritura en disco (3.000 casos: el diff es lo que se escribe).
+
+**La ventana cerrada** (de S7, R17 y R18):
+- **R30.** Con la ventana cerrada mientras gira el spinner o mientras
+  `/new` espera el título, la escritura de la limpieza (borrar el spinner,
+  `[new session]`) daba EIO y tomaba el sitio de la cancelación: un
+  traceback y 1, no 129. ARREGLADO (`a4c40db`).
+- **R31.** Una señal de cierre mientras se abría la sesión mataba `maha`
+  con las marcas de pegado pedidas y `ECHOCTL` quitado: `converse` aún no
+  tenía las señales. Ahora son suyas desde antes de abrir la sesión y de
+  pedir las marcas, que pasan a `converse` (`terminal=`). ARREGLADO
+  (`a4c40db`).
+- **R32.** Lo que no llegó a escribirse a la ventana cerrada (las marcas)
+  quedaba en el buffer de stdout, y el `flush` final de `_main` daba EIO:
+  1 y "Exception ignored". Y si el EIO salía del propio comando, `code`
+  no existía (`UnboundLocalError`, callado). ARREGLADO (`d3a0a7b`,
+  `cfc5a26`).
+- **R33.** Encontrado a mano en la pty: al cerrar la ventana, el prompt
+  recibe el fin de fichero **antes** de que el bucle atienda SIGHUP, y la
+  línea en blanco tras él da EIO sin señal de cierre: 1. Un EIO de una
+  terminal ya es la ventana cerrada, aunque su SIGHUP no haya llegado.
+  ARREGLADO (`da4e0cf`).
+- **R34.** Si fallaba el aviso de que se espera al título al salir, la
+  sesión no se cerraba: lo pendiente se perdía. Ahora se cierra sin
+  esperar al título. ARREGLADO (`da4e0cf`).
+- **R35.** Igual en `/new` y `/resume`: el aviso de la sesión que se deja
+  iba antes del `try` que la cierra. ARREGLADO (`ebe5725`).
+- **R36.** De R33: cualquier EIO era la ventana cerrada, también con
+  stdout a un fichero de un disco que falla (un USB, NFS): la salida se
+  perdía sin avisar, con 0. Solo cuenta si era una terminal al empezar
+  (una terminal colgada ya dice que no lo es). ARREGLADO (`abc417d`,
+  `caf067f`).
+- **R37.** Si la línea en blanco tras el fin de fichero sí llegaba a
+  escribirse, el cierre de la ventana se tomaba por Ctrl+D: 0. Un fin de
+  entrada con el teclado colgado acaba como SIGHUP. ARREGLADO (`caf067f`).
+- **R43.** De R36 (ronda final): la ventana se juzgaba solo por stdout.
+  Un EIO de stderr en un disco que falla, con la terminal viva, acababa
+  con 129 sin avisar; con stdout a un fichero, cerrar la ventana daba un
+  traceback y 1; y un comando cortado por ella decía `error: internal`.
+  Ahora es la ventana cerrada solo si una terminal que `maha` tenía al
+  empezar ya no lo es (`Hangup`). ARREGLADO (commit "Juzgar la ventana
+  cerrada por todas las terminales…").
+- **R38.** `_tell_if_heard` (un aviso al salir no cambia nada con la
+  ventana cerrada) no tenía test. ARREGLADO (`4da6d43`).
+
+**Ctrl+Z, `fg` y `bg`** (de R23):
+- **R39.** `maha` se paraba con SIGSTOP: en un grupo de procesos que ya
+  no tiene shell que lo continúe (huérfano), se quedaba parado para
+  siempre. Ahora con SIGTSTP y su acción por defecto, como los editores:
+  el kernel lo descarta allí. ARREGLADO (`78a1afc`).
+- **R40.** Tras `bg`, SIGCONT cambiaba la terminal desde el segundo plano
+  y SIGTTOU paraba `maha` otra vez. Solo se toca en primer plano.
+  ARREGLADO (`d67a761`).
+- **R41.** Dos Ctrl+Z seguidos lo paraban dos veces (había que hacer `fg`
+  dos veces). Uno atendido en los 0,1 s tras volver llegó antes de parar.
+  ARREGLADO (`5629480`).
+- **R42.** Tras Ctrl+Z y `fg` en el prompt, `> ` no se pinta otra vez
+  (bash sí). En modo línea, lo tecleado antes está en el buffer de la
+  terminal y no se puede leer para repintarlo. DECISIÓN del mantenedor
+  (2026-11-12): al hito 21, la TUI en modo raw repinta prompt y línea.
+  Anotado en ESTADO.
+
+Comprobado y sin cambio:
+- **Ctrl+Z no hace nada hasta que el bucle recupera el control:** es como
+  funciona `asyncio`; no hay pasos síncronos largos (toda la E/S es
+  asíncrona). NO ES FALLO.
+- **Dos SIGHUP seguidos** (el del kernel y el que reenvía bash), durante
+  una respuesta o con el título en camino: 129, el turno guardado, nada
+  bloqueado.
 
 ## Evals (2026-11-11)
 

@@ -313,6 +313,11 @@ fallar antes del arreglo:
     auditoría tras el hito 10, R20 y R21): un `old_string` que empieza por
     `\n` o acaba en `\r` no se busca tal cual, porque tomaba medio `\r\n`;
     y una edición que juntaría un `\r` y un `\n` en un salto se rechaza.*
+    *Cambiado el 2026-11-12, por decisión del mantenedor (tercera
+    revisión, R27): un salto es un salto siempre, también si un bloque
+    coincide tal cual; ya no hay "el exacto primero". Y los saltos de
+    `new_string` toman el estilo del texto también en una coincidencia
+    exacta (R26).*
 17. D12 (`d6631a1`): `_shift()` corrige los números de línea de la cabecera
     del diff recortado. El texto usa guion (`lines 2-9`), no raya: ruff
     (RUF001) no la admite en el código.
