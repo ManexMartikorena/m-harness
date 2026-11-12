@@ -715,6 +715,72 @@ async def test_a_closed_window_with_an_unsaved_session_ends_with_129(
     assert FIRST not in store.locked
 
 
+async def test_a_closed_window_seen_before_its_signal_ends_with_129() -> None:
+    # Third review of the audit after hito 10, by hand with maha in a pty:
+    # the prompt got its end of file before the loop handled SIGHUP; the
+    # new line after it hit the dead terminal with no closing signal yet,
+    # and maha ended with 1.
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Hecho.")]))
+    out = HungUp()
+    answered = False
+
+    async def read() -> str:
+        nonlocal answered
+        if not answered:
+            answered = True
+            return "Hola"
+        out.dead = True
+        raise EOFError
+
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=out,
+        )
+    )
+
+    assert code == 128 + signal.SIGHUP
+    saved = [e.message.text for e in entries(store) if isinstance(e, MessageEntry)]
+    assert saved == ["Hola", "Hecho."]
+    assert FIRST not in store.locked
+
+
+async def test_a_closed_window_when_leaving_does_not_skip_closing() -> None:
+    # Third review too: "naming the session" to a dead terminal, before its
+    # SIGHUP, skipped the close; what was pending would be lost.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+    out = HungUp()
+    lines = ["Hola", "/exit"]
+
+    async def read() -> str:
+        line = lines.pop(0)
+        if line == "/exit":
+            await small.asked.wait()
+            out.dead = True
+        return line
+
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=out,
+        )
+    )
+
+    assert code == 128 + signal.SIGHUP
+    assert FIRST not in store.locked
+
+
 async def test_a_closed_window_while_a_title_comes_still_closes_the_session() -> None:
     # Second review of the audit after hito 10: "naming the session" was
     # written to the dead terminal before closing, and its EIO left the

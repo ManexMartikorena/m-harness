@@ -6,6 +6,7 @@ call the agent makes (spec hito 4, §1.9).
 
 import asyncio
 import contextlib
+import errno
 import json
 import logging
 import signal
@@ -215,12 +216,15 @@ async def _opened(
             task.uncancel()
             print(file=out)
             code = EXIT_INTERRUPTED
-    except OSError:
+    except OSError as exc:
         # A closed window: a write to the dead terminal, in the cleanup on
         # the way up (the spinner, "[new session]"), took the place of the
-        # cancellation (third review of the audit after hito 10).
-        if sigint.closing is None:
+        # cancellation; or came before its SIGHUP was handled (third review
+        # of the audit after hito 10).
+        if sigint.closing is None and not _hung_up(exc):
             raise
+        if sigint.closing is None:
+            sigint.closing = signal.SIGHUP
         if task.cancelling():
             task.uncancel()
         code = 128 + sigint.closing
@@ -229,12 +233,18 @@ async def _opened(
         # while its title comes skips the title: our handler is still
         # there, and the rest is saved and told (review of the audit after
         # hito 10). A closing signal does not wait for the title, nor
-        # writes to a terminal that may be gone (second review).
-        closing = sigint.closing is not None
-        try:
-            if not closing:
+        # writes to a terminal that may be gone (second review). Nor when
+        # saying that it waits fails: nobody would see it (third review).
+        title = sigint.closing is None
+        if title:
+            try:
                 commands.tell_naming()
-            await commands.conversation.close(title=not closing)
+            except OSError as exc:
+                title = False
+                if _hung_up(exc):
+                    sigint.closing = signal.SIGHUP
+        try:
+            await commands.conversation.close(title=title)
         except asyncio.CancelledError:
             if sigint.closing is None and not _ours(sigint):
                 raise
@@ -246,6 +256,13 @@ async def _opened(
     # A closing signal while leaving says so too (review of the audit after
     # hito 10).
     return code if sigint.closing is None else 128 + sigint.closing
+
+
+def _hung_up(exc: OSError) -> bool:
+    """Whether a write failed because the window was closed: the terminal
+    gives EIO from then on, maybe before its SIGHUP is handled (third
+    review of the audit after hito 10)."""
+    return exc.errno == errno.EIO
 
 
 def _tell_if_heard(tell: Callable[[], None], *, closed: bool) -> None:
