@@ -126,6 +126,9 @@ def _main(options: argparse.Namespace) -> int:
         json_result = options.prompt is not None and options.output_format != "text"
         return cli.fail(str(exc), result=json_result)
     code: int | None = None
+    # Asked now: a hung-up terminal says it is not one (third review of the
+    # audit after hito 10).
+    terminal = sys.stdout.isatty()
     try:
         code = _dispatch(options, settings, catalog, data)
         # Inside: Python's own last flush would print "Exception ignored".
@@ -139,7 +142,8 @@ def _main(options: argparse.Namespace) -> int:
         # The window was closed: what a failed write kept (the paste marks)
         # cannot reach it either. The code is the one maha ended with (third
         # review of the audit after hito 10).
-        if exc.errno != errno.EIO:
+        if exc.errno != errno.EIO or not terminal:
+            # A file on a disk that fails: an error, not a closed window.
             raise
         cli.drop_output(sys.stdout)
         cli.drop_output(sys.stderr)

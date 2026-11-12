@@ -1751,8 +1751,31 @@ class ClosedPipe(io.StringIO):
 class ClosedWindow(io.StringIO):
     """A stdout whose terminal is gone: what it kept fails with EIO."""
 
+    def isatty(self) -> bool:
+        return True
+
     def flush(self) -> None:
         raise OSError(errno.EIO, "Input/output error")
+
+
+class FailingDisk(ClosedWindow):
+    """A stdout to a file on a disk that fails: EIO, but no window."""
+
+    def isatty(self) -> bool:
+        return False
+
+
+def test_an_eio_of_a_file_is_not_a_closed_window(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Third review of the audit after hito 10: `maha export ID > usb/x.md`
+    # on a failing disk ended with 0 and the output lost, without a word.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setattr(bootstrap, "_dispatch", lambda *args: 0)
+    monkeypatch.setattr(sys, "stdout", FailingDisk())
+
+    with pytest.raises(OSError, match="Input/output error"):
+        main(["sessions"])
 
 
 def test_a_closed_window_keeps_the_exit_code(
