@@ -609,6 +609,44 @@ async def test_a_closing_signal_at_the_prompt_does_not_wait_for_the_title(
     assert FIRST not in store.locked
 
 
+async def test_a_closed_window_with_an_unsaved_session_ends_with_129(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Third review too: "session not saved" at the end, after a closing
+    # signal, goes to a dead terminal; it ends nothing. The disk keeps
+    # failing, so the warning is due.
+    monkeypatch.setattr("tests.fakes.sessions.MemoryLog", BrokenLog)
+    monkeypatch.setattr(BrokenLog, "failures", 10)
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Hecho.")]))
+    out = HungUp()
+    answered = asyncio.Event()
+
+    async def read() -> str:
+        if not answered.is_set():
+            answered.set()
+            return "Hola"
+        out.dead = True
+        signal.raise_signal(signal.SIGHUP)
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=out,
+        )
+    )
+
+    assert code == 128 + signal.SIGHUP
+    assert BrokenLog.failures < 10  # it did try to save
+    assert FIRST not in store.locked
+
+
 async def test_a_closed_window_while_a_title_comes_still_closes_the_session() -> None:
     # Second review of the audit after hito 10: "naming the session" was
     # written to the dead terminal before closing, and its EIO left the
