@@ -511,6 +511,32 @@ async def test_bracketed_paste_is_given_back_on_ctrl_z_and_asked_again_on_fg(
         os.close(side)
 
 
+async def test_after_bg_the_terminal_is_not_touched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Third review too: on `bg`, SIGCONT changed the terminal from the
+    # background, and SIGTTOU stopped maha again.
+    main, side = pty.openpty()
+    try:
+        out = os.fdopen(os.dup(side), "w")
+        with bracketed_paste(side, out):
+            assert os.read(main, 100) == PASTE_ON.encode()
+            changed = termios.tcgetattr(side)
+            monkeypatch.setattr(
+                "mharness.adapters.cli.input._foreground", lambda fd: False
+            )
+            signal.raise_signal(signal.SIGCONT)
+            await asyncio.sleep(0.05)
+            assert termios.tcgetattr(side) == changed
+            os.write(side, b"-")  # nothing else waits to be read
+            assert os.read(main, 100) == b"-"
+            monkeypatch.undo()
+        out.close()
+    finally:
+        os.close(main)
+        os.close(side)
+
+
 _STOPS = """
 import os, sys
 from mharness.adapters.cli.input import _stop

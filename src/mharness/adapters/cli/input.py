@@ -152,6 +152,16 @@ def _stop() -> None:
         signal.signal(signal.SIGTSTP, ours)
 
 
+def _foreground(fd: int) -> bool:
+    """Whether maha has the terminal: after `bg`, changing it would stop
+    maha again with SIGTTOU (third review of the audit after hito 10). A
+    terminal that is not maha's own (no job control there) is always."""
+    try:
+        return os.tcgetpgrp(fd) == os.getpgrp()
+    except OSError:
+        return True
+
+
 @contextlib.contextmanager
 def bracketed_paste(fd: int, out: TextIO) -> Iterator[None]:
     """Ask the terminal to mark what is pasted, while the conversation lasts
@@ -174,6 +184,8 @@ def bracketed_paste(fd: int, out: TextIO) -> Iterator[None]:
     quiet[3] = before[3] & ~termios.ECHOCTL
 
     def ask() -> None:
+        if not _foreground(fd):
+            return
         with contextlib.suppress(termios.error):
             termios.tcsetattr(fd, termios.TCSANOW, quiet)
         with contextlib.suppress(OSError, ValueError):
@@ -181,6 +193,8 @@ def bracketed_paste(fd: int, out: TextIO) -> Iterator[None]:
             out.flush()
 
     def give_back() -> None:
+        if not _foreground(fd):
+            return
         with contextlib.suppress(OSError, ValueError):
             out.write(PASTE_OFF)
             out.flush()
