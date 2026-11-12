@@ -27,7 +27,7 @@ from mharness.domain.session import (
 )
 from mharness.domain.trace import TitleWritten
 from tests.fakes.catalog import MemoryCatalog
-from tests.fakes.model import FakeModelClient, reply
+from tests.fakes.model import HANG, FakeModelClient, reply
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
 from tests.fakes.terminal import ScriptedInput
 from tests.unit.test_sessions import FIRST, BrokenLog, World, entries, turn
@@ -607,6 +607,74 @@ async def test_a_closing_signal_at_the_prompt_does_not_wait_for_the_title(
     saved = [e.message.text for e in entries(store) if isinstance(e, MessageEntry)]
     assert saved == ["Hola", "Hecho."]
     assert FIRST not in store.locked
+
+
+class HungUpTerminal(HungUp):
+    """A closed window that was a terminal: the spinner draws on it."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+async def test_a_closed_window_while_the_spinner_spins_ends_with_129() -> None:
+    # Third review of the audit after hito 10: stopping the spinner, in the
+    # cleanup of the cut answer, wrote to the dead terminal; its EIO took
+    # the place of the cancellation, and maha ended with a traceback.
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([[HANG]]))
+    out = HungUpTerminal()
+
+    async def close_the_window() -> None:
+        await asyncio.sleep(0.2)  # the model never answers; the spinner spins
+        out.dead = True
+        signal.raise_signal(signal.SIGHUP)
+
+    closing = asyncio.create_task(close_the_window())
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=WaitsAtThePrompt("Hola"),
+            out=out,
+            err=out,
+        )
+    )
+    await closing
+
+    assert code == 128 + signal.SIGHUP
+    assert FIRST not in store.locked
+
+
+async def test_a_closed_window_while_new_waits_for_the_title_ends_with_129() -> None:
+    # Third review too: "[new session]" in the cleanup of the cut /new, then
+    # "error: internal", both to the dead terminal.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+    out = HungUp()
+
+    async def close_the_window() -> None:
+        await small.asked.wait()
+        await asyncio.sleep(0.1)  # /new waits for the title
+        out.dead = True
+        signal.raise_signal(signal.SIGHUP)
+
+    closing = asyncio.create_task(close_the_window())
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=WaitsAtThePrompt("Hola", "/new"),
+            out=out,
+            err=out,
+        )
+    )
+    await closing
+
+    assert code == 128 + signal.SIGHUP
+    assert store.locked == set()
 
 
 async def test_a_closed_window_with_an_unsaved_session_ends_with_129(

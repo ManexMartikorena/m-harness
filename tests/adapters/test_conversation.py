@@ -509,6 +509,65 @@ async def test_bracketed_paste_is_given_back_on_ctrl_z_and_asked_again_on_fg(
         os.close(side)
 
 
+class OpensForEver(Sessions):
+    """Sessions whose first conversation never opens (a slow disk)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            MemorySessionStore(),
+            lambda model, history: None,  # type: ignore[arg-type,return-value]
+            cwd="/home/ana/proyecto",
+            provider="opencode-go",
+            model="glm-5.3-flash",
+            version="0.6.0",
+            traces=MemoryTraceSink(),
+        )
+
+    async def open(self, start: Start | None = None) -> Any:
+        signal.raise_signal(self.number)
+        await asyncio.Event().wait()
+        raise AssertionError("not cancelled")
+
+    number: signal.Signals = signal.SIGTERM
+
+
+@pytest.mark.parametrize(
+    ("number", "code"),
+    [(signal.SIGTERM, 143), (signal.SIGHUP, 129), (signal.SIGINT, 130)],
+)
+async def test_a_signal_while_the_session_opens_gives_the_terminal_back(
+    number: signal.Signals, code: int
+) -> None:
+    # Third review of the audit after hito 10: the paste marks were asked
+    # before converse took the signals, so one that came while the session
+    # opened killed maha with ECHOCTL off and the marks on.
+    main, side = pty.openpty()
+    sessions = OpensForEver()
+    sessions.number = number
+    try:
+        before = termios.tcgetattr(side)
+        out = os.fdopen(os.dup(side), "w")
+        got = await converse(
+            sessions,
+            provider="opencode-go",
+            catalog=KNOWN,
+            read_line=ScriptedInput(),
+            out=out,
+            err=io.StringIO(),
+            terminal=side,
+        )
+        out.close()
+
+        assert got == code
+        assert termios.tcgetattr(side) == before
+        assert os.read(main, 100).startswith(PASTE_ON.encode())
+        # Ours to the end; the default after.
+        assert signal.getsignal(number) in (signal.SIG_DFL, signal.default_int_handler)
+    finally:
+        os.close(main)
+        os.close(side)
+
+
 def test_bracketed_paste_is_not_asked_for_without_a_terminal() -> None:
     out = io.StringIO()
 

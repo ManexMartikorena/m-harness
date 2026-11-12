@@ -972,17 +972,17 @@ async def _converse(
             questions=_questions(lines),
             titler=_titler(settings, catalog, client),
         )
-        # A pasted text of several lines is one turn (audit after hito 10,
-        # I4).
-        with cli.bracketed_paste(0, sys.stdout):
-            return await cli.converse(
-                sessions,
-                provider=settings.provider_name,
-                catalog=catalog,
-                read_line=lines.readline,
-                # Only a terminal has typed-ahead input to drop.
-                discard=lines.discard if os.isatty(0) else None,
-                start=start,
-                notes=_notes(settings),
-                init=_init(cwd),
-            )
+        return await cli.converse(
+            sessions,
+            provider=settings.provider_name,
+            catalog=catalog,
+            read_line=lines.readline,
+            # Only a terminal has typed-ahead input to drop.
+            discard=lines.discard if os.isatty(0) else None,
+            start=start,
+            notes=_notes(settings),
+            init=_init(cwd),
+            # A pasted text of several lines is one turn (audit after hito
+            # 10, I4).
+            terminal=0,
+        )
