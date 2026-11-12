@@ -1090,18 +1090,16 @@ def _too_large(before: list[str], after: list[str], start: int, end: int) -> str
 
 
 def _endings(text: str) -> str | None:
-    """The line ending style of `text`: "CRLF", "LF", "mixed" (also a lone
-    "\r"), or None without line endings."""
+    """The line ending style of `text`: "CRLF", "LF", "CR", "mixed", or None
+    without line endings. A file of lone "\r" is "CR", not "mixed": else
+    making it mixed was not told (third review of the audit after hito 10)."""
     crlf = text.count("\r\n")
     lf = text.count("\n") - crlf
     cr = text.count("\r") - crlf
-    if cr or (crlf and lf):
-        return "mixed"
-    if crlf:
-        return "CRLF"
-    if lf:
-        return "LF"
-    return None
+    kinds = [name for name, count in (("CRLF", crlf), ("LF", lf), ("CR", cr)) if count]
+    if not kinds:
+        return None
+    return kinds[0] if len(kinds) == 1 else "mixed"
 
 
 def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
@@ -1565,10 +1563,11 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
     """`text` after the edit, and how many replacements it makes.
 
     Exact matches first. With none, each line break of old_string matches
-    any line break ("\\n", "\\r\\n" or "\\r"), and the breaks of new_string
-    take the style of the first break matched: `read_file` shows the lines
-    without their endings (spec mejora-2026-10-23-deuda-hito-5, D9 and D10;
-    it replaces decision 9b). Overlapping matches count (D8).
+    any line break ("\\n", "\\r\\n" or "\\r"). Either way, the breaks of
+    new_string take the style of the first break matched, or of its line
+    without one (`_Styles`): `read_file` shows the lines without their
+    endings (spec mejora-2026-10-23-deuda-hito-5, D9 and D10; it replaces
+    decision 9b). Overlapping matches count (D8).
 
     An old_string that starts with "\\n" or ends with "\\r" is never matched
     exactly: it could take half of a "\\r\\n". Its break is a whole break,
@@ -1585,10 +1584,13 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
     spans: list[tuple[int, int, str]] = []
     if found:
         _check_found(found, params)
+        styles = _Styles(text) if _BREAK.search(new) else None
         start = text.find(old)
         # Left to right and without overlaps, as str.replace.
         while start != -1:
-            spans.append((start, start + len(old), new))
+            end = start + len(old)
+            kept = new if styles is None else _restyled(new, styles.at(start, end))
+            spans.append((start, end, kept))
             if not params.replace_all:
                 break
             start = text.find(old, start + len(old))
@@ -1605,11 +1607,57 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
         end = _original(start + len(wanted), collapsed)
         style = _BREAK.search(text, begin, end)
         assert style is not None  # old_string has a break, so does its match
-        spans.append((begin, end, style.group().join(_BREAK.split(new))))
+        spans.append((begin, end, _restyled(new, style.group())))
         if not params.replace_all:
             break
         start = flat.find(wanted, start + len(wanted))
     return _put(text, spans, params), len(spans)
+
+
+def _restyled(new: str, style: str | None) -> str:
+    """`new` with each of its line breaks made `style`; as it is without."""
+    return new if style is None else style.join(_BREAK.split(new))
+
+
+class _Styles:
+    """The line break style for new_string at each match of an exact edit,
+    asked left to right: that of the first break of the match; without one,
+    that of its line (the break that ends it, or the one before the last
+    line); None in a file without breaks. `read_file` shows lines without
+    their endings, so the model sends "\\n": pasted as it is, one line for
+    two in a CRLF file left it mixed (third review of the audit after hito
+    10). Linear over all the matches: each search starts where the last
+    one ended, and the last break of the file is found once."""
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+        self._next: re.Match[str] | None = None
+        self._searched = False
+        self._last: str | None = None
+        self._found_last = False
+
+    def at(self, begin: int, end: int) -> str | None:
+        inside = _BREAK.search(self._text, begin, end)
+        if inside is not None:
+            return inside.group()
+        if not self._searched or (self._next is not None and self._next.start() < end):
+            # An exact match never ends in "\r", so `end` never splits a "\r\n".
+            self._next = _BREAK.search(self._text, end)
+            self._searched = True
+        if self._next is not None:
+            return self._next.group()
+        return self._last_break()
+
+    def _last_break(self) -> str | None:
+        if not self._found_last:
+            text = self._text
+            last = max(text.rfind("\n"), text.rfind("\r"))
+            if last > 0 and text[last - 1 : last + 1] == "\r\n":
+                self._last = "\r\n"
+            elif last != -1:
+                self._last = text[last]
+            self._found_last = True
+        return self._last
 
 
 def _put(text: str, spans: list[tuple[int, int, str]], params: EditFileParams) -> str:

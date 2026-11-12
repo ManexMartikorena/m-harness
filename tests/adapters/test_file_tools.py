@@ -1667,6 +1667,44 @@ async def test_only_the_lone_lf_of_new_string_change(root: Path) -> None:
     assert path.read_bytes() == b"a\r\nb\r\nc\r\n"
 
 
+# An exact match also writes the breaks of new_string in the style of the
+# text: `read_file` shows lines without their endings, so the model sends
+# "\n" (third review of the audit after hito 10).
+@pytest.mark.parametrize(
+    ("before", "old", "new", "after"),
+    [
+        # One line for two, the most common edit: the style of its line.
+        (b"uno\r\ndos\r\n", "uno", "uno\nmas", b"uno\r\nmas\r\ndos\r\n"),
+        (b"uno\rdos\r", "dos", "dos\rtres\nfin", b"uno\rdos\rtres\rfin\r"),
+        # A match with a break: the style of its first break.
+        (b"uno\r\ndos\r\n", "uno\r\ndos", "a\nb", b"a\r\nb\r\n"),
+        # In a mixed file, the style of the line edited.
+        (b"a\r\nb\nc\r\n", "b", "b\nz", b"a\r\nb\nz\nc\r\n"),
+        # The last line, without its own break: the one before it.
+        (b"a\r\nb", "b", "b\nc", b"a\r\nb\r\nc"),
+        # No breaks in the file: new_string as it is.
+        (b"abc", "b", "x\r\ny", b"ax\r\nyc"),
+    ],
+)
+async def test_an_exact_match_writes_the_breaks_of_the_text(
+    root: Path, before: bytes, old: str, new: str, after: bytes
+) -> None:
+    path = crlf(root, "f.txt", before)
+
+    await edit(root, edit_params("f.txt", old, new))
+
+    assert path.read_bytes() == after
+
+
+async def test_replace_all_writes_each_match_in_its_line_style(root: Path) -> None:
+    path = crlf(root, "f.txt", b"x\r\nx\n")
+
+    _, result = await edit(root, edit_params("f.txt", "x", "y\nz", replace_all=True))
+
+    assert result == "edited f.txt (2 replacements)"
+    assert path.read_bytes() == b"y\r\nz\r\ny\nz\n"
+
+
 async def test_a_crlf_old_string_still_not_found_fails(root: Path) -> None:
     crlf(root, "win.txt", b"uno\r\ndos\r\n")
 
@@ -2179,7 +2217,9 @@ async def endings_note(root: Path, old: bytes, new: str) -> str:
         (b"a\nb\n", "a\r\nc\r\n", "(line endings change: LF → CRLF)"),
         (b"a\nb\r\n", "a\nc\n", "(line endings change: mixed → LF)"),
         (b"a\r\nb\r\n", "a\r\nc\n", "(line endings change: CRLF → mixed)"),
-        (b"a\rb\r", "a\nc\n", "(line endings change: mixed → LF)"),
+        (b"a\rb\r", "a\nc\n", "(line endings change: CR → LF)"),
+        # Only lone "\r" before, mixed after: also a change.
+        (b"a\rb\r", "a\rc\n", "(line endings change: CR → mixed)"),
     ],
 )
 async def test_a_change_of_line_endings_is_told_first(
@@ -2225,12 +2265,28 @@ async def test_the_note_goes_after_the_asked_path(root: Path) -> None:
     ]
 
 
+async def test_an_edit_keeps_the_line_endings_of_the_file(root: Path) -> None:
+    # The breaks of new_string take the style of the text, also on an exact
+    # match: changing the style of a file is for write_file (third review of
+    # the audit after hito 10).
+    path = write(root, "app.py", "x\n")
+
+    request, _ = await edit(root, edit_params("app.py", "x\n", "y\r\n"))
+
+    assert request.detail == "@@ -1 +1 @@\n-x\n+y"
+    assert path.read_bytes() == b"y\n"
+
+
 async def test_an_edit_tells_a_change_of_line_endings(root: Path) -> None:
-    write(root, "app.py", "x\n")
+    # Taking out the only CRLF line leaves a mixed file LF.
+    crlf(root, "app.py", b"a\nb\r\nc")
 
-    request = await ask_edit(edit_tool(root), edit_params("app.py", "x\n", "y\r\n"))
+    request = await ask_edit(edit_tool(root), edit_params("app.py", "b\r\nc", "b"))
 
-    assert request.detail == "(line endings change: LF → CRLF)\n@@ -1 +1 @@\n-x\n+y"
+    assert (
+        request.detail
+        == "(line endings change: mixed → LF)\n@@ -1,3 +1,2 @@\n a\n b\n-c"
+    )
 
 
 async def test_the_fallback_detail_has_no_note(root: Path) -> None:
@@ -2592,6 +2648,22 @@ def test_an_ambiguous_exact_edit_takes_linear_time() -> None:
         files._replaced("x\n" * lines, params)
 
     assert time.monotonic() - started < 0.2
+
+
+@pytest.mark.parametrize("text", ["ab" * 20_000, "ab" * 20_000 + "\r\n"])
+def test_the_style_of_many_exact_matches_takes_linear_time(text: str) -> None:
+    # Third review of the audit after hito 10: the style for new_string is
+    # searched after each match; from the start of the text each time, it
+    # would be O(matches x length) on one long line.
+    params = EditFileParams(
+        path="a", old_string="a", new_string="x\ny", replace_all=True
+    )
+    started = time.monotonic()
+
+    _, count = files._replaced(text, params)
+
+    assert count == 20_000
+    assert time.monotonic() - started < 0.5
 
 
 def test_a_flexible_edit_keeps_the_breaks_of_the_file() -> None:
