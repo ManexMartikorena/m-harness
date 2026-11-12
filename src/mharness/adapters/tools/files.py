@@ -1564,52 +1564,35 @@ def _check_strings(params: EditFileParams) -> None:
 def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
     """`text` after the edit, and how many replacements it makes.
 
-    Exact matches first. With none, each line break of old_string matches
-    any line break ("\\n", "\\r\\n" or "\\r"). Either way, the breaks of
-    new_string take the style of the first break matched, or of its line
-    without one (`_Styles`): `read_file` shows the lines without their
-    endings (spec mejora-2026-10-23-deuda-hito-5, D9 and D10; it replaces
-    decision 9b). Overlapping matches count (D8).
-
-    An old_string that starts with "\\n" or ends with "\\r" is never matched
-    exactly: it could take half of a "\\r\\n". Its break is a whole break,
-    as any other. And an edit that would put a "\\r" and a "\\n" side by
-    side, one break where there were two, is refused: a line would be lost
-    (second review of the audit after hito 10).
+    Each line break of old_string matches any line break ("\\n", "\\r\\n"
+    or "\\r"), always: `read_file` shows the lines without their endings,
+    so two blocks that differ only in them are the same text to the model
+    (spec mejora-2026-10-23-deuda-hito-5, D9 and D10; and, since the third
+    review of the audit after hito 10, also when one block matches as it
+    is: decision of the maintainer, 2026-11-12). The breaks of new_string
+    take the style of the first break matched, or of its line without one
+    (`_Styles`). Overlapping matches count (D8). A break is matched whole,
+    never half of a "\\r\\n"; and an edit that would put a "\\r" and a
+    "\\n" side by side, one break where there were two, is refused: a line
+    would be lost (second review).
 
     By `str.find` over the text with its breaks made "\\n", not a regex:
     that was O(lines x lines) on a long old_string (audit after hito 10,
     H2).
     """
-    old, new = params.old_string, params.new_string
-    found = 0 if old.startswith("\n") or old.endswith("\r") else _occurrences(text, old)
-    spans: list[tuple[int, int, str]] = []
-    if found:
-        _check_found(found, params)
-        styles = _Styles(text) if _BREAK.search(new) else None
-        start = text.find(old)
-        # Left to right and without overlaps, as str.replace.
-        while start != -1:
-            end = start + len(old)
-            kept = new if styles is None else _restyled(new, styles.at(start, end))
-            spans.append((start, end, kept))
-            if not params.replace_all:
-                break
-            start = text.find(old, start + len(old))
-        return _put(text, spans, params), len(spans)
-    if not _BREAK.search(old):
-        _check_found(0, params)
+    new = params.new_string
     flat, collapsed = _flatten(text)
-    wanted = _BREAK.sub("\n", old)
+    wanted = _BREAK.sub("\n", params.old_string)
     _check_found(_occurrences(flat, wanted), params)
+    styles = _Styles(text) if _BREAK.search(new) else None
+    spans: list[tuple[int, int, str]] = []
     start = flat.find(wanted)
-    # Left to right and without overlaps, also with replace_all.
+    # Left to right and without overlaps, as str.replace.
     while start != -1:
         begin = _original(start, collapsed)
         end = _original(start + len(wanted), collapsed)
-        style = _BREAK.search(text, begin, end)
-        assert style is not None  # old_string has a break, so does its match
-        spans.append((begin, end, _restyled(new, style.group())))
+        kept = new if styles is None else _restyled(new, styles.at(begin, end))
+        spans.append((begin, end, kept))
         if not params.replace_all:
             break
         start = flat.find(wanted, start + len(wanted))
@@ -1622,8 +1605,8 @@ def _restyled(new: str, style: str | None) -> str:
 
 
 class _Styles:
-    """The line break style for new_string at each match of an exact edit,
-    asked left to right: that of the first break of the match; without one,
+    """The line break style for new_string at each match of an edit, asked
+    left to right: that of the first break of the match; without one,
     that of its line (the break that ends it, or the one before the last
     line); None in a file without breaks. `read_file` shows lines without
     their endings, so the model sends "\\n": pasted as it is, one line for
@@ -1643,7 +1626,7 @@ class _Styles:
         if inside is not None:
             return inside.group()
         if not self._searched or (self._next is not None and self._next.start() < end):
-            # An exact match never ends in "\r", so `end` never splits a "\r\n".
+            # A match ends after a whole break, never inside a "\r\n".
             self._next = _BREAK.search(self._text, end)
             self._searched = True
         if self._next is not None:

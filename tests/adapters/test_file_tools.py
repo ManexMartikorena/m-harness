@@ -1648,15 +1648,32 @@ async def test_a_multiline_old_string_is_adapted_to_crlf(root: Path) -> None:
     assert path.read_bytes() == b"UNO\r\nDOS\r\nmas\r\ntres\r\n"
 
 
-async def test_an_exact_match_comes_before_the_crlf_one(root: Path) -> None:
-    # One "a\nb" exact, one "a\r\nb": the exact one alone, with no
-    # "appears 2 times".
-    path = crlf(root, "mixed.txt", b"a\nb\r\na\r\nb\r\n")
+# A break is a break, also when one block matches as it is: `read_file`
+# shows the two the same. Decision of the maintainer (2026-11-12), from the
+# third review of the audit after hito 10; it replaces "the exact one
+# first", which picked one without a word and left the other behind with
+# replace_all.
+async def test_two_blocks_that_differ_only_in_their_breaks_are_ambiguous(
+    root: Path,
+) -> None:
+    crlf(root, "mixed.txt", b"a\nb\r\na\r\nb\r\n")
 
-    _, result = await edit(root, edit_params("mixed.txt", "a\nb", "x\ny"))
+    with pytest.raises(ToolError) as caught:
+        await edit_tool(root).approval(edit_params("mixed.txt", "a\nb", "x\ny"))
+    assert "appears 2 times" in str(caught.value)
 
-    assert result == "edited mixed.txt (1 replacement)"
-    assert path.read_bytes() == b"x\ny\r\na\r\nb\r\n"
+
+async def test_replace_all_replaces_the_blocks_that_differ_only_in_their_breaks(
+    root: Path,
+) -> None:
+    path = crlf(root, "mixed.txt", b"x\ny\r\nx\r\ny\n")
+
+    _, result = await edit(
+        root, edit_params("mixed.txt", "x\ny", "Z", replace_all=True)
+    )
+
+    assert result == "edited mixed.txt (2 replacements)"
+    assert path.read_bytes() == b"Z\r\nZ\n"
 
 
 async def test_a_crlf_old_string_matches_an_lf_file(root: Path) -> None:
