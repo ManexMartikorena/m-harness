@@ -8,6 +8,7 @@ import os
 import select
 import signal
 import termios
+import time
 from collections.abc import Awaitable, Callable, Iterator
 from typing import TextIO
 
@@ -137,6 +138,11 @@ class StdinLines:
         return os.read(self._fd, size)
 
 
+# A Ctrl+Z handled this soon after going on came before stopping: the
+# kernel drops the stop signals that come while stopped, on SIGCONT.
+_STALE = 0.1
+
+
 def _stop() -> None:
     """Stop maha as Ctrl+Z would; it goes on here after `fg`.
 
@@ -201,9 +207,17 @@ def bracketed_paste(fd: int, out: TextIO) -> Iterator[None]:
         with contextlib.suppress(termios.error):
             termios.tcsetattr(fd, termios.TCSANOW, before)
 
+    back = -_STALE
+
     def suspend() -> None:
+        nonlocal back
+        if time.monotonic() - back < _STALE:
+            # Two Ctrl+Z close together stopped maha twice (third review
+            # of the audit after hito 10).
+            return
         give_back()
         _stop()
+        back = time.monotonic()
         ask()
 
     try:

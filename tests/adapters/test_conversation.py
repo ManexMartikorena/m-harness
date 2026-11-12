@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import termios
+import time
 from collections.abc import Iterator, Sequence
 from decimal import Decimal
 from importlib.metadata import version
@@ -506,6 +507,34 @@ async def test_bracketed_paste_is_given_back_on_ctrl_z_and_asked_again_on_fg(
         assert termios.tcgetattr(side) == before
         # Ctrl+Z is the default again.
         assert signal.getsignal(signal.SIGTSTP) == signal.SIG_DFL
+    finally:
+        os.close(main)
+        os.close(side)
+
+
+async def test_two_ctrl_z_close_together_stop_maha_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Third review of the audit after hito 10: the second, handled after
+    # `fg`, stopped maha again.
+    main, side = pty.openpty()
+    stops: list[float] = []
+    monkeypatch.setattr(
+        "mharness.adapters.cli.input._stop", lambda: stops.append(time.monotonic())
+    )
+    try:
+        out = os.fdopen(os.dup(side), "w")
+        with bracketed_paste(side, out):
+            signal.raise_signal(signal.SIGTSTP)
+            signal.raise_signal(signal.SIGTSTP)
+            await asyncio.sleep(0.05)
+            assert len(stops) == 1
+            # One pressed later stops it again.
+            await asyncio.sleep(0.2)
+            signal.raise_signal(signal.SIGTSTP)
+            await asyncio.sleep(0.05)
+            assert len(stops) == 2
+        out.close()
     finally:
         os.close(main)
         os.close(side)
