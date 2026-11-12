@@ -125,6 +125,7 @@ def _main(options: argparse.Namespace) -> int:
     except (config.ConfigError, CatalogError) as exc:
         json_result = options.prompt is not None and options.output_format != "text"
         return cli.fail(str(exc), result=json_result)
+    code: int | None = None
     try:
         code = _dispatch(options, settings, catalog, data)
         # Inside: Python's own last flush would print "Exception ignored".
@@ -142,7 +143,8 @@ def _main(options: argparse.Namespace) -> int:
             raise
         cli.drop_output(sys.stdout)
         cli.drop_output(sys.stderr)
-        return code
+        # Out of the command itself: the window went before it ended.
+        return 128 + signal.SIGHUP if code is None else code
     return code
 
 

@@ -1768,6 +1768,22 @@ def test_a_closed_window_keeps_the_exit_code(
     assert main(["sessions"]) == 129
 
 
+def test_a_closed_window_before_any_exit_code_ends_with_129(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Third review too: an EIO out of the command itself left no code, and
+    # maha ended with 1 and an error nobody saw.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+
+    def hung_up(*args: object) -> int:
+        raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(bootstrap, "_dispatch", hung_up)
+    monkeypatch.setattr(sys, "stdout", ClosedWindow())
+
+    assert main(["sessions"]) == 129
+
+
 @respx.mock
 def test_eval_into_a_closed_pipe_still_keeps_every_run(
     workspace: Path, monkeypatch: pytest.MonkeyPatch
