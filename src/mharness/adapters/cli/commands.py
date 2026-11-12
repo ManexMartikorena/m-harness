@@ -9,7 +9,7 @@ from pathlib import Path, PurePath
 from typing import TextIO
 
 from mharness.adapters.cli.export import markdown
-from mharness.adapters.cli.input import Discard, ReadLine
+from mharness.adapters.cli.input import Discard, Hangup, ReadLine
 from mharness.adapters.cli.spinner import use_color
 from mharness.adapters.cli.text import clean, clean_line, usd
 from mharness.application.sessions import (
@@ -85,8 +85,10 @@ class Commands:
         out: TextIO,
         err: TextIO,
         home: Path,
+        hangup: Hangup | None = None,
     ) -> None:
         self._sessions = sessions
+        self._hangup = hangup
         self.conversation = conversation
         self._catalog = catalog
         self._provider = provider
@@ -127,7 +129,11 @@ class Commands:
             print(f"error: {clean(str(exc))}", file=self._err, flush=True)
         except Exception as exc:
             # A bug, or the disk failing in a way nobody expected: said, and
-            # maha goes on, as with an answer (final audit of hito 6).
+            # maha goes on, as with an answer (final audit of hito 6). The
+            # window closed is neither: maha ends (third review of the
+            # audit after hito 10).
+            if self._hangup is not None and self._hangup.explains(exc):
+                raise
             detail = clean(f"{type(exc).__name__}: {exc}")
             print(f"error: internal: {detail}", file=self._err, flush=True)
         self.warn_unsaved()

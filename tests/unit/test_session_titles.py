@@ -852,6 +852,68 @@ async def test_a_closed_window_while_new_switches_closes_the_old_session() -> No
     assert store.locked == set()
 
 
+class LiveTerminal(io.StringIO):
+    """A terminal whose window stays open."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+async def leave_with(
+    out: io.StringIO, err: io.StringIO, dead: HungUp, *lines: str
+) -> int:
+    """converse over `lines`; `dead` hangs up (or fails) before the first."""
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([]))
+    pending = list(lines)
+
+    async def read() -> str:
+        dead.dead = True
+        if pending:
+            return pending.pop(0)
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    return await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=err,
+        )
+    )
+
+
+async def test_a_failing_disk_for_stderr_is_no_closed_window() -> None:
+    # Final round of the third review of the audit after hito 10: the
+    # window was judged by stdout alone; an EIO of stderr on a failing
+    # disk, with the terminal alive, ended maha with 129 and no word.
+    err = FailingDisk()
+
+    with pytest.raises(OSError, match="Input/output error"):
+        await leave_with(LiveTerminal(), err, err, "/resume zzz", "still here?")
+
+
+async def test_a_closed_window_on_stderr_alone_ends_with_129() -> None:
+    # Final round too: with stdout to a file (`maha > log.txt`), the EIO of
+    # the terminal on stderr gave a traceback and 1.
+    err = HungUp()
+
+    assert await leave_with(io.StringIO(), err, err, "/resume zzz") == 129
+
+
+async def test_a_closed_window_is_no_internal_error() -> None:
+    # Final round too: a command cut by the closed window said "error:
+    # internal: OSError" in the log of stderr; the terminal going is not a
+    # bug of maha.
+    out, err = HungUp(), io.StringIO()
+
+    assert await leave_with(out, err, out, "/help") == 129
+    assert "error: internal" not in err.getvalue()
+
+
 async def test_a_closed_window_while_a_title_comes_still_closes_the_session() -> None:
     # Second review of the audit after hito 10: "naming the session" was
     # written to the dead terminal before closing, and its EIO left the

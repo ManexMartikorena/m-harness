@@ -1749,20 +1749,53 @@ class ClosedPipe(io.StringIO):
 
 
 class ClosedWindow(io.StringIO):
-    """A stdout whose terminal is gone: what it kept fails with EIO."""
+    """A stdout whose terminal goes while maha runs: then it is no terminal
+    any more, and what it kept fails with EIO."""
+
+    gone = False
 
     def isatty(self) -> bool:
-        return True
+        return not self.gone
+
+    def flush(self) -> None:
+        if self.gone:
+            raise OSError(errno.EIO, "Input/output error")
+
+
+def closing_the_window(stdout: ClosedWindow, code: int) -> Callable[..., int]:
+    def dispatch(*args: object) -> int:
+        stdout.gone = True
+        return code
+
+    return dispatch
+
+
+class FailingDisk(io.StringIO):
+    """A stdout to a file on a disk that fails: EIO, but no window."""
 
     def flush(self) -> None:
         raise OSError(errno.EIO, "Input/output error")
 
 
-class FailingDisk(ClosedWindow):
-    """A stdout to a file on a disk that fails: EIO, but no window."""
+class LiveTerminal(FailingDisk):
+    """stdin or stderr on a terminal whose window stays open."""
 
     def isatty(self) -> bool:
-        return False
+        return True
+
+
+def test_an_eio_of_a_file_next_to_a_live_terminal_is_no_closed_window(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Final round of the third review: judged by stdout alone, an EIO of a
+    # failing disk with the window open could be taken for it.
+    write_user_config(workspace, 'model = "glm-5.3-flash"\n')
+    monkeypatch.setattr(bootstrap, "_dispatch", lambda *args: 0)
+    monkeypatch.setattr(sys, "stdout", FailingDisk())
+    monkeypatch.setattr(sys, "stderr", LiveTerminal())
+
+    with pytest.raises(OSError, match="Input/output error"):
+        main(["sessions"])
 
 
 def test_an_eio_of_a_file_is_not_a_closed_window(
@@ -1785,8 +1818,9 @@ def test_a_closed_window_keeps_the_exit_code(
     # write that failed, made the last flush raise EIO; maha ended with a
     # traceback and 1 instead of 129.
     write_user_config(workspace, 'model = "glm-5.3-flash"\n')
-    monkeypatch.setattr(bootstrap, "_dispatch", lambda *args: 129)
-    monkeypatch.setattr(sys, "stdout", ClosedWindow())
+    stdout = ClosedWindow()
+    monkeypatch.setattr(bootstrap, "_dispatch", closing_the_window(stdout, 129))
+    monkeypatch.setattr(sys, "stdout", stdout)
 
     assert main(["sessions"]) == 129
 
@@ -1798,11 +1832,14 @@ def test_a_closed_window_before_any_exit_code_ends_with_129(
     # maha ended with 1 and an error nobody saw.
     write_user_config(workspace, 'model = "glm-5.3-flash"\n')
 
+    stdout = ClosedWindow()
+
     def hung_up(*args: object) -> int:
+        stdout.gone = True
         raise OSError(errno.EIO, "Input/output error")
 
     monkeypatch.setattr(bootstrap, "_dispatch", hung_up)
-    monkeypatch.setattr(sys, "stdout", ClosedWindow())
+    monkeypatch.setattr(sys, "stdout", stdout)
 
     assert main(["sessions"]) == 129
 

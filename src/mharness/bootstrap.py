@@ -7,7 +7,6 @@ application and starts the `maha` command.
 import argparse
 import asyncio
 import contextlib
-import errno
 import io
 import json
 import logging
@@ -128,7 +127,7 @@ def _main(options: argparse.Namespace) -> int:
     code: int | None = None
     # Asked now: a hung-up terminal says it is not one (third review of the
     # audit after hito 10).
-    terminal = sys.stdout.isatty()
+    hangup = cli.Hangup(sys.stdin, sys.stdout, sys.stderr)
     try:
         code = _dispatch(options, settings, catalog, data)
         # Inside: Python's own last flush would print "Exception ignored".
@@ -142,7 +141,7 @@ def _main(options: argparse.Namespace) -> int:
         # The window was closed: what a failed write kept (the paste marks)
         # cannot reach it either. The code is the one maha ended with (third
         # review of the audit after hito 10).
-        if exc.errno != errno.EIO or not terminal:
+        if not hangup.explains(exc):
             # A file on a disk that fails: an error, not a closed window.
             raise
         cli.drop_output(sys.stdout)

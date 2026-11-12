@@ -4,6 +4,7 @@ mejora-2026-10-23-deuda-hito-5, B3)."""
 
 import asyncio
 import contextlib
+import errno
 import os
 import select
 import signal
@@ -166,6 +167,37 @@ def _foreground(fd: int) -> bool:
         return os.tcgetpgrp(fd) == os.getpgrp()
     except OSError:
         return True
+
+
+class Hangup:
+    """Whether the window was closed: a terminal maha had at the start is
+    one no more (a hung-up terminal says so at once, maybe before its
+    SIGHUP is handled). Judged by every terminal maha had, not by the
+    stream that failed: a disk that fails leaves the terminal alive, and
+    its EIO stays an error (third review of the audit after hito 10)."""
+
+    def __init__(self, *streams: TextIO | None, keyboard: int | None = None) -> None:
+        # None: closed when maha started (`maha -p <&-`).
+        self._streams = [s for s in streams if s is not None and _isatty(s)]
+        self._keyboard = (
+            keyboard if keyboard is not None and os.isatty(keyboard) else None
+        )
+
+    def happened(self) -> bool:
+        if any(not _isatty(stream) for stream in self._streams):
+            return True
+        return self._keyboard is not None and not os.isatty(self._keyboard)
+
+    def explains(self, exc: BaseException) -> bool:
+        """Whether `exc` is the closed window: an EIO, once it happened."""
+        return isinstance(exc, OSError) and exc.errno == errno.EIO and self.happened()
+
+
+def _isatty(stream: TextIO) -> bool:
+    try:
+        return stream.isatty()
+    except ValueError:  # closed
+        return False
 
 
 @contextlib.contextmanager

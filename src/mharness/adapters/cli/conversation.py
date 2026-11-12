@@ -6,10 +6,8 @@ call the agent makes (spec hito 4, §1.9).
 
 import asyncio
 import contextlib
-import errno
 import json
 import logging
-import os
 import signal
 import sys
 from collections.abc import Callable, Sequence
@@ -21,7 +19,13 @@ from mharness import __version__
 from mharness.adapters.cli.approval import show_covered
 from mharness.adapters.cli.commands import Commands, parse_command
 from mharness.adapters.cli.init import TAKES_EFFECT, Init
-from mharness.adapters.cli.input import Discard, ReadLine, StdinLines, bracketed_paste
+from mharness.adapters.cli.input import (
+    Discard,
+    Hangup,
+    ReadLine,
+    StdinLines,
+    bracketed_paste,
+)
 from mharness.adapters.cli.spinner import Spinner, use_color
 from mharness.adapters.cli.text import clean, clean_line, usd
 from mharness.adapters.cli.todo import finished_todo, is_todo
@@ -74,11 +78,9 @@ class _Sigint:
     def __init__(self) -> None:
         self.pending = False
         self.closing: int | None = None
-        # Whether the output and the keyboard were a terminal at the start:
-        # once hung up, it says it is not (third review of the audit after
+        # Whether the window was closed (third review of the audit after
         # hito 10).
-        self.terminal = False
-        self.keyboard: int | None = None
+        self.hangup = Hangup()
 
 
 async def converse(
@@ -116,9 +118,7 @@ async def converse(
     task = asyncio.current_task()
     assert task is not None
     sigint = _Sigint()
-    sigint.terminal = out.isatty()
-    if terminal is not None and os.isatty(terminal):
-        sigint.keyboard = terminal
+    sigint.hangup = Hangup(out, err, keyboard=terminal)
 
     def on_sigint() -> None:
         if sigint.pending:
@@ -202,6 +202,7 @@ async def _opened(
         out=out,
         err=err,
         home=home,
+        hangup=sigint.hangup,
     )
     task = asyncio.current_task()
     assert task is not None
@@ -226,7 +227,7 @@ async def _opened(
         # the way up (the spinner, "[new session]"), took the place of the
         # cancellation; or came before its SIGHUP was handled (third review
         # of the audit after hito 10).
-        if sigint.closing is None and not _hung_up(exc, sigint):
+        if sigint.closing is None and not sigint.hangup.explains(exc):
             raise
         if sigint.closing is None:
             sigint.closing = signal.SIGHUP
@@ -246,7 +247,7 @@ async def _opened(
                 commands.tell_naming()
             except OSError as exc:
                 title = False
-                if _hung_up(exc, sigint):
+                if sigint.hangup.explains(exc):
                     sigint.closing = signal.SIGHUP
         try:
             await commands.conversation.close(title=title)
@@ -259,21 +260,6 @@ async def _opened(
     # A closing signal while leaving says so too (review of the audit after
     # hito 10).
     return code if sigint.closing is None else 128 + sigint.closing
-
-
-def _hung_up(exc: OSError, sigint: _Sigint) -> bool:
-    """Whether a write failed because the window was closed: a terminal
-    gives EIO from then on, maybe before its SIGHUP is handled. A file on a
-    disk that fails gives EIO too, and that is an error (third review of
-    the audit after hito 10)."""
-    return exc.errno == errno.EIO and sigint.terminal
-
-
-def _keyboard_gone(sigint: _Sigint) -> bool:
-    """Whether an end of input is the window closed, not Ctrl+D: a hung-up
-    terminal is no terminal any more (third review of the audit after hito
-    10)."""
-    return sigint.keyboard is not None and not os.isatty(sigint.keyboard)
 
 
 def _tell_if_heard(tell: Callable[[], None], *, closed: bool) -> None:
@@ -324,7 +310,7 @@ async def _turns(
         try:
             line = (await read()).strip()
         except EOFError:
-            if _keyboard_gone(sigint):
+            if sigint.hangup.happened():
                 # Its SIGHUP comes after: it ends as one.
                 sigint.closing = signal.SIGHUP
                 return 0
@@ -480,6 +466,10 @@ async def _answer(
     except Exception as exc:
         # A bug, or the terminal failing: the agent already kept what ran,
         # and maha goes on (spec mejora-2026-10-26-deuda-pre-hito-6, B1).
+        # The window closed ends maha (third review of the audit after
+        # hito 10).
+        if sigint.hangup.explains(exc):
+            raise
         spinner.stop()
         if wrote:
             print(file=out)
