@@ -831,8 +831,8 @@ async def test_creating_asks_with_a_preview_and_writes(root: Path) -> None:
         scope="write_file",
         covers=(
             "every write_file in the working directory, but secrets, maha's settings, "
-            "hard links and files that run code by themselves (hooks, CI, editor "
-            "tasks)"
+            "hard links, the .git folder and files that run code by themselves "
+            "(hooks, CI, editor tasks)"
         ),
         review=True,
     )
@@ -858,8 +858,8 @@ async def test_the_preview_shows_the_first_20_lines(root: Path) -> None:
         scope="write_file",
         covers=(
             "every write_file in the working directory, but secrets, maha's settings, "
-            "hard links and files that run code by themselves (hooks, CI, editor "
-            "tasks)"
+            "hard links, the .git folder and files that run code by themselves "
+            "(hooks, CI, editor tasks)"
         ),
         review=True,
     )
@@ -903,8 +903,8 @@ async def test_overwriting_asks_with_a_diff(root: Path) -> None:
         scope="write_file",
         covers=(
             "every write_file in the working directory, but secrets, maha's settings, "
-            "hard links and files that run code by themselves (hooks, CI, editor "
-            "tasks)"
+            "hard links, the .git folder and files that run code by themselves "
+            "(hooks, CI, editor tasks)"
         ),
         review=True,
     )
@@ -1324,7 +1324,7 @@ async def test_always_covers_files_that_run_only_when_a_command_runs(
         (".maha/config.toml", "maha's settings"),
         ("linked.txt", "hard links"),
         (".github/workflows/ci.yml", "run code by themselves"),
-        (".git/config", "run code by themselves"),
+        (".git/description", "the .git folder"),
     ],
 )
 async def test_what_always_covers_names_each_file_that_asks_each_time(
@@ -1360,8 +1360,8 @@ async def test_editing_asks_with_a_diff_and_edits(root: Path) -> None:
         scope="edit_file",
         covers=(
             "every edit_file in the working directory, but secrets, maha's settings, "
-            "hard links and files that run code by themselves (hooks, CI, editor "
-            "tasks)"
+            "hard links, the .git folder and files that run code by themselves "
+            "(hooks, CI, editor tasks)"
         ),
         review=True,
     )
@@ -1732,8 +1732,9 @@ async def test_only_the_lone_lf_of_new_string_change(root: Path) -> None:
         (b"a\r\nb\nc\r\n", "b", "b\nz", b"a\r\nb\nz\nc\r\n"),
         # The last line, without its own break: the one before it.
         (b"a\r\nb", "b", "b\nc", b"a\r\nb\r\nc"),
-        # No breaks in the file: new_string as it is.
+        # No breaks in the file: the first break of new_string, for all.
         (b"abc", "b", "x\r\ny", b"ax\r\nyc"),
+        (b"b", "b", "a\ra\r\n", b"a\ra\r"),
     ],
 )
 async def test_an_exact_match_writes_the_breaks_of_the_text(

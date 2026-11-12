@@ -1498,7 +1498,8 @@ class WriteFile:
 # the person approves (third review of the audit after hito 10).
 _COVERS = (
     "every {tool} in the working directory, but secrets, maha's settings, "
-    "hard links and files that run code by themselves (hooks, CI, editor tasks)"
+    "hard links, the .git folder and files that run code by themselves "
+    "(hooks, CI, editor tasks)"
 )
 
 
@@ -1584,7 +1585,7 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
     flat, collapsed = _flatten(text)
     wanted = _BREAK.sub("\n", params.old_string)
     _check_found(_occurrences(flat, wanted), params)
-    styles = _Styles(text) if _BREAK.search(new) else None
+    styles = _Styles(text, new) if _BREAK.search(new) else None
     spans: list[tuple[int, int, str]] = []
     start = flat.find(wanted)
     # Left to right and without overlaps, as str.replace.
@@ -1599,29 +1600,36 @@ def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
     return _put(text, spans, params), len(spans)
 
 
-def _restyled(new: str, style: str | None) -> str:
-    """`new` with each of its line breaks made `style`; as it is without."""
-    return new if style is None else style.join(_BREAK.split(new))
+def _restyled(new: str, style: str) -> str:
+    """`new` with each of its line breaks made `style`."""
+    return style.join(_BREAK.split(new))
 
 
 class _Styles:
     """The line break style for new_string at each match of an edit, asked
     left to right: that of the first break of the match; without one,
     that of its line (the break that ends it, or the one before the last
-    line); None in a file without breaks. `read_file` shows lines without
-    their endings, so the model sends "\\n": pasted as it is, one line for
-    two in a CRLF file left it mixed (third review of the audit after hito
-    10). Linear over all the matches: each search starts where the last
-    one ended, and the last break of the file is found once."""
+    line); in a file without breaks, the first one of new_string, so it is
+    never left mixed. `read_file` shows lines without their endings, so
+    the model sends "\\n": pasted as it is, one line for two in a CRLF
+    file left it mixed (third review of the audit after hito 10). Linear
+    over all the matches: each search starts where the last one ended."""
 
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, new: str) -> None:
         self._text = text
         self._next: re.Match[str] | None = None
         self._searched = False
-        self._last: str | None = None
-        self._found_last = False
+        last = max(text.rfind("\n"), text.rfind("\r"))
+        if last > 0 and text[last - 1 : last + 1] == "\r\n":
+            self._last = "\r\n"
+        elif last != -1:
+            self._last = text[last]
+        else:
+            first = _BREAK.search(new)
+            assert first is not None  # only made for a new_string with breaks
+            self._last = first.group()
 
-    def at(self, begin: int, end: int) -> str | None:
+    def at(self, begin: int, end: int) -> str:
         inside = _BREAK.search(self._text, begin, end)
         if inside is not None:
             return inside.group()
@@ -1631,17 +1639,6 @@ class _Styles:
             self._searched = True
         if self._next is not None:
             return self._next.group()
-        return self._last_break()
-
-    def _last_break(self) -> str | None:
-        if not self._found_last:
-            text = self._text
-            last = max(text.rfind("\n"), text.rfind("\r"))
-            if last > 0 and text[last - 1 : last + 1] == "\r\n":
-                self._last = "\r\n"
-            elif last != -1:
-                self._last = text[last]
-            self._found_last = True
         return self._last
 
 
