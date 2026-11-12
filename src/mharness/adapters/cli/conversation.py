@@ -9,6 +9,7 @@ import contextlib
 import errno
 import json
 import logging
+import os
 import signal
 import sys
 from collections.abc import Callable, Sequence
@@ -73,9 +74,11 @@ class _Sigint:
     def __init__(self) -> None:
         self.pending = False
         self.closing: int | None = None
-        # Once the session is closed, a signal cuts nothing more: only the
-        # exit code says it (third review of the audit after hito 10).
-        self.done = False
+        # Whether the output and the keyboard were a terminal at the start:
+        # once hung up, it says it is not (third review of the audit after
+        # hito 10).
+        self.terminal = False
+        self.keyboard: int | None = None
 
 
 async def converse(
@@ -113,9 +116,12 @@ async def converse(
     task = asyncio.current_task()
     assert task is not None
     sigint = _Sigint()
+    sigint.terminal = out.isatty()
+    if terminal is not None and os.isatty(terminal):
+        sigint.keyboard = terminal
 
     def on_sigint() -> None:
-        if sigint.pending or sigint.done:
+        if sigint.pending:
             # Not taken yet: a second press would cut what handles the
             # first, as the save while leaving (review of the audit).
             return
@@ -125,8 +131,7 @@ async def converse(
     def on_closing(number: int) -> None:
         if sigint.closing is None:
             sigint.closing = number
-        if not sigint.done:
-            task.cancel()
+        task.cancel()
 
     loop.add_signal_handler(signal.SIGINT, on_sigint)
     for number in CLOSING:
@@ -221,7 +226,7 @@ async def _opened(
         # the way up (the spinner, "[new session]"), took the place of the
         # cancellation; or came before its SIGHUP was handled (third review
         # of the audit after hito 10).
-        if sigint.closing is None and not _hung_up(exc):
+        if sigint.closing is None and not _hung_up(exc, sigint):
             raise
         if sigint.closing is None:
             sigint.closing = signal.SIGHUP
@@ -241,7 +246,7 @@ async def _opened(
                 commands.tell_naming()
             except OSError as exc:
                 title = False
-                if _hung_up(exc):
+                if _hung_up(exc, sigint):
                     sigint.closing = signal.SIGHUP
         try:
             await commands.conversation.close(title=title)
@@ -250,19 +255,25 @@ async def _opened(
                 raise
             if sigint.closing is not None:
                 task.uncancel()
-        finally:
-            sigint.done = True
         _tell_if_heard(commands.warn_unsaved, closed=sigint.closing is not None)
     # A closing signal while leaving says so too (review of the audit after
     # hito 10).
     return code if sigint.closing is None else 128 + sigint.closing
 
 
-def _hung_up(exc: OSError) -> bool:
-    """Whether a write failed because the window was closed: the terminal
-    gives EIO from then on, maybe before its SIGHUP is handled (third
-    review of the audit after hito 10)."""
-    return exc.errno == errno.EIO
+def _hung_up(exc: OSError, sigint: _Sigint) -> bool:
+    """Whether a write failed because the window was closed: a terminal
+    gives EIO from then on, maybe before its SIGHUP is handled. A file on a
+    disk that fails gives EIO too, and that is an error (third review of
+    the audit after hito 10)."""
+    return exc.errno == errno.EIO and sigint.terminal
+
+
+def _keyboard_gone(sigint: _Sigint) -> bool:
+    """Whether an end of input is the window closed, not Ctrl+D: a hung-up
+    terminal is no terminal any more (third review of the audit after hito
+    10)."""
+    return sigint.keyboard is not None and not os.isatty(sigint.keyboard)
 
 
 def _tell_if_heard(tell: Callable[[], None], *, closed: bool) -> None:
@@ -313,6 +324,10 @@ async def _turns(
         try:
             line = (await read()).strip()
         except EOFError:
+            if _keyboard_gone(sigint):
+                # Its SIGHUP comes after: it ends as one.
+                sigint.closing = signal.SIGHUP
+                return 0
             print(file=out)
             return 0
         except asyncio.CancelledError:

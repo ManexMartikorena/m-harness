@@ -663,6 +663,77 @@ async def test_a_signal_while_the_session_opens_gives_the_terminal_back(
         os.close(side)
 
 
+async def test_the_end_of_input_of_a_closed_window_ends_with_129() -> None:
+    # Third review of the audit after hito 10: closing the window at the
+    # prompt gave an end of file before the loop handled SIGHUP, and maha
+    # took it for Ctrl+D: 0. A hung-up terminal says it is not one. The
+    # new line after it may still be written (here, to somewhere else).
+    main, side = pty.openpty()
+    out = io.StringIO()
+
+    async def close_the_window() -> str:
+        os.close(main)
+        raise EOFError
+
+    try:
+        code = await converse(
+            solo(
+                Agent(
+                    FakeModelClient([]),
+                    ToolRegistry(),
+                    gate=FakeApproval(),
+                    model="glm-5.3-flash",
+                    catalog=MemoryCatalog(),
+                    provider="opencode-go",
+                )
+            ),
+            provider="opencode-go",
+            catalog=KNOWN,
+            read_line=close_the_window,
+            out=out,
+            err=io.StringIO(),
+            terminal=side,
+        )
+    finally:
+        os.close(side)
+
+    assert code == 128 + signal.SIGHUP
+
+
+async def test_ctrl_d_at_the_prompt_still_ends_with_0() -> None:
+    main, side = pty.openpty()
+    out = os.fdopen(os.dup(side), "w")
+
+    async def ctrl_d() -> str:
+        raise EOFError
+
+    try:
+        code = await converse(
+            solo(
+                Agent(
+                    FakeModelClient([]),
+                    ToolRegistry(),
+                    gate=FakeApproval(),
+                    model="glm-5.3-flash",
+                    catalog=MemoryCatalog(),
+                    provider="opencode-go",
+                )
+            ),
+            provider="opencode-go",
+            catalog=KNOWN,
+            read_line=ctrl_d,
+            out=out,
+            err=io.StringIO(),
+            terminal=side,
+        )
+        out.close()
+    finally:
+        os.close(main)
+        os.close(side)
+
+    assert code == 0
+
+
 def test_bracketed_paste_is_not_asked_for_without_a_terminal() -> None:
     out = io.StringIO()
 

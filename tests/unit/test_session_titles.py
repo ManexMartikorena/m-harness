@@ -555,10 +555,21 @@ class HungUp(io.StringIO):
 
     dead = False
 
+    def isatty(self) -> bool:
+        # A hung-up terminal says False, but maha asked at the start.
+        return not self.dead
+
     def write(self, text: str) -> int:
         if self.dead:
             raise OSError(errno.EIO, "Input/output error")
         return super().write(text)
+
+
+class FailingDisk(HungUp):
+    """A file on a disk that fails (a USB, NFS): also EIO, but no window."""
+
+    def isatty(self) -> bool:
+        return False
 
 
 async def promptly(leaving: Coroutine[None, None, int]) -> int:
@@ -778,6 +789,35 @@ async def test_a_closed_window_when_leaving_does_not_skip_closing() -> None:
     )
 
     assert code == 128 + signal.SIGHUP
+    assert FIRST not in store.locked
+
+
+async def test_an_eio_of_a_file_is_not_a_closed_window() -> None:
+    # Third review of the audit after hito 10: only a terminal hangs up; a
+    # disk that fails is an error, said, not a quiet exit.
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Hecho.")]))
+    out = FailingDisk()
+    answered = False
+
+    async def read() -> str:
+        nonlocal answered
+        if not answered:
+            answered = True
+            return "Hola"
+        out.dead = True
+        raise EOFError
+
+    with pytest.raises(OSError, match="Input/output error"):
+        await converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=io.StringIO(),
+        )
+    # Closed all the same.
     assert FIRST not in store.locked
 
 
