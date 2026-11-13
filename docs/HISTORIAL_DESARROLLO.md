@@ -9,8 +9,30 @@ Para cada hito, además: su spec en `docs/specs/` (decisiones, verificación
 a mano y "Aprendido al implementar"), su nota en `docs/guia/` y su release
 en GitHub.
 
-## Hito 10 (2026-11-04 a 2026-11-11)
+## Hito 10 (2026-11-04 a 2026-11-13)
 
+- **Tercera y cuarta revisión de la auditoría, 2026-11-12 y 2026-11-13:
+  también en `v0.10.2`** (la misma rama y la misma spec, R26 a R52). Por
+  el patrón de esta auditoría (cada tanda de arreglos trajo fallos
+  nuevos), una revisión independiente de cada tanda, hasta que una sale
+  limpia:
+  - **`edit_file`:** un salto es un salto, siempre (R26 a R28, decisión
+    del mantenedor): lo que se pega toma el estilo del fichero, y nunca
+    lo deja mezclado; probado con 1,9 millones de casos al azar.
+  - **La ventana cerrada:** 129 en cada momento (el spinner, `/new`, el
+    flush final, un EIO antes de su SIGHUP, una señal ya en cola), y un
+    disco que falla ya no se toma por ella (R30 a R37, R43 a R45).
+  - **Ctrl+Z, `fg` y `bg`**, como los editores (R39 a R41); el repintado
+    del prompt, al hito 21 (R42, decisión del mantenedor).
+  - **Guardar la sesión** acaba siempre, aunque lleguen señales seguidas:
+    ni turnos perdidos ni duplicados (R46 a R48).
+  - **El test inestable** era un fallo de verdad: un Ctrl+C mientras
+    arranca un comando dejaba vivos sus procesos (R49 a R52). Con la CPU
+    saturada, 6 pasadas de 6 en verde.
+  - Evals del 2026-11-13: GLM 116/120, Kimi 119/120 (coste aceptado por
+    el mantenedor, como el 2026-11-11), Haiku 120/120.
+  - Con hito asignado: que la limpieza de un comando no mate otros hijos
+    de `maha` (hito 16, decisión del mantenedor).
 - **Segunda revisión de la auditoría, 2026-11-11: `v0.10.2`** (rama
   `fix/cierre-auditoria-hito-10`; spec
   `mejora-2026-11-10-auditoria-hito-10.md`, R17 a R25). Pedida por el
