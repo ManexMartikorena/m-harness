@@ -1090,18 +1090,16 @@ def _too_large(before: list[str], after: list[str], start: int, end: int) -> str
 
 
 def _endings(text: str) -> str | None:
-    """The line ending style of `text`: "CRLF", "LF", "mixed" (also a lone
-    "\r"), or None without line endings."""
+    """The line ending style of `text`: "CRLF", "LF", "CR", "mixed", or None
+    without line endings. A file of lone "\r" is "CR", not "mixed": else
+    making it mixed was not told (third review of the audit after hito 10)."""
     crlf = text.count("\r\n")
     lf = text.count("\n") - crlf
     cr = text.count("\r") - crlf
-    if cr or (crlf and lf):
-        return "mixed"
-    if crlf:
-        return "CRLF"
-    if lf:
-        return "LF"
-    return None
+    kinds = [name for name, count in (("CRLF", crlf), ("LF", lf), ("CR", cr)) if count]
+    if not kinds:
+        return None
+    return kinds[0] if len(kinds) == 1 else "mixed"
 
 
 def _check_target(workspace: Workspace, path: Path, raw: str) -> None:
@@ -1492,7 +1490,17 @@ class WriteFile:
 # What "always this session" covers for a change (audit after hito 10, H1):
 # a file with a warning (a secret, one that runs code, outside) is still
 # asked one by one.
-_COVERS = "every {tool} in the working directory, but secrets and files that run code"
+# The files that run code by themselves; a Makefile or a test runs only
+# with a command, which asks first (or was allowed with its exact text):
+# the line any source file is on (second review of the audit after hito 10,
+# decision of the maintainer). Hito 15's sandbox bounds what they run.
+# Every exception of change_warning, and no more: what [a] covers is what
+# the person approves (third review of the audit after hito 10).
+_COVERS = (
+    "every {tool} in the working directory, but secrets, maha's settings, "
+    "hard links, the .git folder and files that run code by themselves "
+    "(hooks, CI, editor tasks)"
+)
 
 
 def _blind_question(
@@ -1557,46 +1565,103 @@ def _check_strings(params: EditFileParams) -> None:
 def _replaced(text: str, params: EditFileParams) -> tuple[str, int]:
     """`text` after the edit, and how many replacements it makes.
 
-    Exact matches first. With none, each line break of old_string matches
-    any line break ("\\n", "\\r\\n" or "\\r"), and the breaks of new_string
-    take the style of the first break matched: `read_file` shows the lines
-    without their endings (spec mejora-2026-10-23-deuda-hito-5, D9 and D10;
-    it replaces decision 9b). Overlapping matches count (D8).
+    Each line break of old_string matches any line break ("\\n", "\\r\\n"
+    or "\\r"), always: `read_file` shows the lines without their endings,
+    so two blocks that differ only in them are the same text to the model
+    (spec mejora-2026-10-23-deuda-hito-5, D9 and D10; and, since the third
+    review of the audit after hito 10, also when one block matches as it
+    is: decision of the maintainer, 2026-11-12). The breaks of new_string
+    take the style of the first break matched, or of its line without one
+    (`_Styles`). Overlapping matches count (D8). A break is matched whole,
+    never half of a "\\r\\n"; and an edit that would put a "\\r" and a
+    "\\n" side by side, one break where there were two, is refused: a line
+    would be lost (second review).
 
     By `str.find` over the text with its breaks made "\\n", not a regex:
     that was O(lines x lines) on a long old_string (audit after hito 10,
     H2).
     """
-    old, new = params.old_string, params.new_string
-    found = _occurrences(text, old)
-    if found:
-        _check_found(found, params)
-        if params.replace_all:
-            return text.replace(old, new), text.count(old)
-        return text.replace(old, new, 1), 1
-    if not _BREAK.search(old):
-        _check_found(0, params)
+    new = params.new_string
     flat, collapsed = _flatten(text)
-    wanted = _BREAK.sub("\n", old)
+    wanted = _BREAK.sub("\n", params.old_string)
     _check_found(_occurrences(flat, wanted), params)
-    pieces: list[str] = []
-    done = 0
-    count = 0
+    styles = _Styles(text, new) if _BREAK.search(new) else None
+    spans: list[tuple[int, int, str]] = []
     start = flat.find(wanted)
-    # Left to right and without overlaps, also with replace_all.
+    # Left to right and without overlaps, as str.replace.
     while start != -1:
         begin = _original(start, collapsed)
         end = _original(start + len(wanted), collapsed)
-        style = _BREAK.search(text, begin, end)
-        assert style is not None  # old_string has a break, so does its match
-        pieces += [text[done:begin], style.group().join(_BREAK.split(new))]
-        done = end
-        count += 1
+        kept = new if styles is None else _restyled(new, styles.at(begin, end))
+        spans.append((begin, end, kept))
         if not params.replace_all:
             break
         start = flat.find(wanted, start + len(wanted))
-    pieces.append(text[done:])
-    return "".join(pieces), count
+    return _put(text, spans, params), len(spans)
+
+
+def _restyled(new: str, style: str) -> str:
+    """`new` with each of its line breaks made `style`."""
+    return style.join(_BREAK.split(new))
+
+
+class _Styles:
+    """The line break style for new_string at each match of an edit, asked
+    left to right: that of the first break of the match; without one,
+    that of its line (the break that ends it, or the one before the last
+    line); in a file without breaks, the first one of new_string, so it is
+    never left mixed. `read_file` shows lines without their endings, so
+    the model sends "\\n": pasted as it is, one line for two in a CRLF
+    file left it mixed (third review of the audit after hito 10). Linear
+    over all the matches: each search starts where the last one ended."""
+
+    def __init__(self, text: str, new: str) -> None:
+        self._text = text
+        self._next: re.Match[str] | None = None
+        self._searched = False
+        last = max(text.rfind("\n"), text.rfind("\r"))
+        if last > 0 and text[last - 1 : last + 1] == "\r\n":
+            self._last = "\r\n"
+        elif last != -1:
+            self._last = text[last]
+        else:
+            first = _BREAK.search(new)
+            assert first is not None  # only made for a new_string with breaks
+            self._last = first.group()
+
+    def at(self, begin: int, end: int) -> str:
+        inside = _BREAK.search(self._text, begin, end)
+        if inside is not None:
+            return inside.group()
+        if not self._searched or (self._next is not None and self._next.start() < end):
+            # A match ends after a whole break, never inside a "\r\n".
+            self._next = _BREAK.search(self._text, end)
+            self._searched = True
+        if self._next is not None:
+            return self._next.group()
+        return self._last
+
+
+def _put(text: str, spans: list[tuple[int, int, str]], params: EditFileParams) -> str:
+    """`text` with each span, in order and apart, replaced by its text;
+    refused if a seam made a "\\r" and a "\\n" one break."""
+    pieces: list[str] = []
+    last = ""
+    done = 0
+    for begin, end, replacement in [*spans, (len(text), len(text), "")]:
+        for piece in (text[done:begin], replacement):
+            if not piece:
+                continue
+            if last == "\r" and piece[0] == "\n":
+                raise ToolError(
+                    'the edit would join a "\\r" and a "\\n" into one line '
+                    f"break in {params.path}; include the line break next to "
+                    "it in old_string"
+                )
+            pieces.append(piece)
+            last = piece[-1]
+        done = end
+    return "".join(pieces)
 
 
 def _check_found(found: int, params: EditFileParams) -> None:

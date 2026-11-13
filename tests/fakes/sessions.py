@@ -55,7 +55,8 @@ class MemoryLog:
         stored.updated_at = datetime.now(UTC)
         # As a real store may: other tasks run before it returns (audit
         # after hito 10, S1).
-        await asyncio.sleep(0)
+        if self._store.pauses:
+            await asyncio.sleep(0)
 
     async def close(self) -> None:
         # Only its own lock: closing twice frees nobody else's.
@@ -65,11 +66,14 @@ class MemoryLog:
 
 
 class MemorySessionStore:
-    """Sessions in `sessions`, by id; the open ones in `locked`."""
+    """Sessions in `sessions`, by id; the open ones in `locked`. With
+    `pauses=False`, a save never lets other tasks run, as the JSONL store
+    on disk (review of the fixes, v0.10.2)."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, pauses: bool = True) -> None:
         self.sessions: dict[str, _Stored] = {}
         self.locked: set[str] = set()
+        self.pauses = pauses
 
     async def create(self, header: SessionHeader) -> MemoryLog:
         if header.id in self.sessions:

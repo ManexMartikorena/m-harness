@@ -4,9 +4,12 @@ mejora-2026-10-23-deuda-hito-5, B3)."""
 
 import asyncio
 import contextlib
+import errno
 import os
 import select
+import signal
 import termios
+import time
 from collections.abc import Awaitable, Callable, Iterator
 from typing import TextIO
 
@@ -21,6 +24,13 @@ PASTE_END = "\x1b[201~"
 # Asks for it, and stops asking.
 PASTE_ON = "\x1b[?2004h"
 PASTE_OFF = "\x1b[?2004l"
+
+# A closed window gives EIO a moment before its terminal says it is one no
+# more: the kernel marks the other side of a pty closed, wakes the reader,
+# and only then hangs it up (at most ~30 µs measured, 5 reads in 3,000).
+# An EIO with every terminal still alive is looked at again for so long,
+# in seconds, before it is taken for an error (review of Hangup, v0.10.2).
+HANGUP_GRACE = 0.05
 
 # What read_all() asks for at a time: a pipe holds 64 KiB on Linux.
 _BIG_READ = 64 * 1024
@@ -136,12 +146,89 @@ class StdinLines:
         return os.read(self._fd, size)
 
 
+# A Ctrl+Z handled this soon after going on came before stopping: the
+# kernel drops the stop signals that come while stopped, on SIGCONT.
+_STALE = 0.1
+
+
+def _stop() -> None:
+    """Stop maha as Ctrl+Z would; it goes on here after `fg`.
+
+    By SIGTSTP with its default action, as editors do, not SIGSTOP: in a
+    process group no shell can continue any more (orphaned), the kernel
+    drops it, and maha goes on instead of staying stopped for ever (third
+    review of the audit after hito 10)."""
+    ours = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+    try:
+        # To this thread: stopped before it returns.
+        signal.raise_signal(signal.SIGTSTP)
+    finally:
+        signal.signal(signal.SIGTSTP, ours)
+
+
+def _foreground(fd: int) -> bool:
+    """Whether maha has the terminal: after `bg`, changing it would stop
+    maha again with SIGTTOU (third review of the audit after hito 10). A
+    terminal that is not maha's own (no job control there) is always."""
+    try:
+        return os.tcgetpgrp(fd) == os.getpgrp()
+    except OSError:
+        return True
+
+
+class Hangup:
+    """Whether the window was closed: a terminal maha had at the start is
+    one no more (a hung-up terminal says so at once, maybe before its
+    SIGHUP is handled). Judged by every terminal maha had, not by the
+    stream that failed: a disk that fails leaves the terminal alive, and
+    its EIO stays an error (third review of the audit after hito 10)."""
+
+    def __init__(self, *streams: TextIO | None, keyboard: int | None = None) -> None:
+        # None: closed when maha started (`maha -p <&-`).
+        self._streams = [s for s in streams if s is not None and _isatty(s)]
+        self._keyboard = (
+            keyboard if keyboard is not None and os.isatty(keyboard) else None
+        )
+
+    def happened(self) -> bool:
+        if any(not _isatty(stream) for stream in self._streams):
+            return True
+        return self._keyboard is not None and not os.isatty(self._keyboard)
+
+    def explains(self, exc: BaseException) -> bool:
+        """Whether `exc` is the closed window: an EIO, once it happened.
+
+        Waits up to HANGUP_GRACE for the hang-up that follows the EIO; a
+        blocking wait, but only on the way out with an error."""
+        if not (isinstance(exc, OSError) and exc.errno == errno.EIO):
+            return False
+        if not self._streams and self._keyboard is None:
+            return False
+        deadline = time.monotonic() + HANGUP_GRACE
+        while not self.happened():
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.001)
+        return True
+
+
+def _isatty(stream: TextIO) -> bool:
+    try:
+        return stream.isatty()
+    except ValueError:  # closed
+        return False
+
+
 @contextlib.contextmanager
 def bracketed_paste(fd: int, out: TextIO) -> Iterator[None]:
     """Ask the terminal to mark what is pasted, while the conversation lasts
     (audit after hito 10, I4). Its marks are not echoed as `^[[200~`: the
     terminal ignores them, as it ignores every escape it does not know.
-    Only with a terminal on both sides; everything is left as it was."""
+    Only with a terminal on both sides; everything is left as it was.
+
+    Ctrl+Z gives the terminal back as it was before stopping, and `fg`
+    asks again, as editors do: the shell turns the marks off in between
+    (second review of the audit after hito 10)."""
     if not (os.isatty(fd) and out.isatty()):
         yield
         return
@@ -152,14 +239,50 @@ def bracketed_paste(fd: int, out: TextIO) -> Iterator[None]:
         return
     quiet = list(before)
     quiet[3] = before[3] & ~termios.ECHOCTL
-    termios.tcsetattr(fd, termios.TCSANOW, quiet)
-    out.write(PASTE_ON)
-    out.flush()
-    try:
-        yield
-    finally:
+
+    def ask() -> None:
+        if not _foreground(fd):
+            return
+        with contextlib.suppress(termios.error):
+            termios.tcsetattr(fd, termios.TCSANOW, quiet)
+        with contextlib.suppress(OSError, ValueError):
+            out.write(PASTE_ON)
+            out.flush()
+
+    def give_back() -> None:
+        if not _foreground(fd):
+            return
         with contextlib.suppress(OSError, ValueError):
             out.write(PASTE_OFF)
             out.flush()
         with contextlib.suppress(termios.error):
             termios.tcsetattr(fd, termios.TCSANOW, before)
+
+    back = -_STALE
+
+    def suspend() -> None:
+        nonlocal back
+        if time.monotonic() - back < _STALE:
+            # Two Ctrl+Z close together stopped maha twice (third review
+            # of the audit after hito 10).
+            return
+        give_back()
+        _stop()
+        back = time.monotonic()
+        ask()
+
+    try:
+        loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    ask()
+    if loop is not None:
+        loop.add_signal_handler(signal.SIGTSTP, suspend)
+        loop.add_signal_handler(signal.SIGCONT, ask)
+    try:
+        yield
+    finally:
+        if loop is not None:
+            loop.remove_signal_handler(signal.SIGTSTP)
+            loop.remove_signal_handler(signal.SIGCONT)
+        give_back()

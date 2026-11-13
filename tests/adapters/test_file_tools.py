@@ -830,8 +830,9 @@ async def test_creating_asks_with_a_preview_and_writes(root: Path) -> None:
         detail="uno\ndos\ntres",
         scope="write_file",
         covers=(
-            "every write_file in the working directory, but secrets and files "
-            "that run code"
+            "every write_file in the working directory, but secrets, maha's settings, "
+            "hard links, the .git folder and files that run code by themselves "
+            "(hooks, CI, editor tasks)"
         ),
         review=True,
     )
@@ -856,8 +857,9 @@ async def test_the_preview_shows_the_first_20_lines(root: Path) -> None:
         detail="(empty file)",
         scope="write_file",
         covers=(
-            "every write_file in the working directory, but secrets and files "
-            "that run code"
+            "every write_file in the working directory, but secrets, maha's settings, "
+            "hard links, the .git folder and files that run code by themselves "
+            "(hooks, CI, editor tasks)"
         ),
         review=True,
     )
@@ -900,8 +902,9 @@ async def test_overwriting_asks_with_a_diff(root: Path) -> None:
         detail="@@ -1,3 +1,3 @@\n a\n-b\n+B\n c",
         scope="write_file",
         covers=(
-            "every write_file in the working directory, but secrets and files "
-            "that run code"
+            "every write_file in the working directory, but secrets, maha's settings, "
+            "hard links, the .git folder and files that run code by themselves "
+            "(hooks, CI, editor tasks)"
         ),
         review=True,
     )
@@ -1290,6 +1293,59 @@ def test_edit_file_params_describe_each_field() -> None:
     assert fields["replace_all"].default is False
 
 
+@pytest.mark.parametrize(
+    "name", ["Makefile", "package.json", "pyproject.toml", "conftest.py", "setup.py"]
+)
+async def test_always_covers_files_that_run_only_when_a_command_runs(
+    root: Path, name: str
+) -> None:
+    # Decision of the maintainer (2026-11-11, "the most professional"), from
+    # the second review of the audit after hito 10: the boundary is the
+    # files that run by themselves (hooks, CI, editor tasks). These run
+    # only with a command, which asks first; any source file runs code
+    # that way too, so asking for them would leave "always" empty. What
+    # [a] covers says so.
+    write(root, name, "uno\n")
+
+    request, _ = await edit(root, edit_params(name, "uno", "dos"))
+
+    assert request.scope == "edit_file"
+    assert request.warning is None
+    assert request.covers is not None
+    assert request.covers.endswith(
+        "files that run code by themselves (hooks, CI, editor tasks)"
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "named"),
+    [
+        (".env", "secrets"),
+        (".maha/config.toml", "maha's settings"),
+        ("linked.txt", "hard links"),
+        (".github/workflows/ci.yml", "run code by themselves"),
+        (".git/description", "the .git folder"),
+    ],
+)
+async def test_what_always_covers_names_each_file_that_asks_each_time(
+    root: Path, name: str, named: str
+) -> None:
+    # Third review of the audit after hito 10: maha's settings and hard
+    # links asked each time, and [a] did not say so.
+    write(root, name, "uno\n")
+    if name == "linked.txt":
+        os.link(root / name, root / "other.txt")
+    plain = write(root, "plain.txt", "uno\n")
+
+    asking = await ask_edit(edit_tool(root), edit_params(name, "uno", "dos"))
+    covered = await ask_edit(edit_tool(root), edit_params(plain.name, "uno", "dos"))
+
+    assert asking.warning is not None
+    assert asking.covers is None
+    assert covered.covers is not None
+    assert named in covered.covers
+
+
 async def test_editing_asks_with_a_diff_and_edits(root: Path) -> None:
     # No read_file before: the exact old_string is enough (spec §1.8).
     write(root, "src/app.py", "def f():\n    x = 0\n    return 1\n")
@@ -1303,8 +1359,9 @@ async def test_editing_asks_with_a_diff_and_edits(root: Path) -> None:
         detail="@@ -1,3 +1,3 @@\n def f():\n     x = 0\n-    return 1\n+    return 2",
         scope="edit_file",
         covers=(
-            "every edit_file in the working directory, but secrets and files "
-            "that run code"
+            "every edit_file in the working directory, but secrets, maha's settings, "
+            "hard links, the .git folder and files that run code by themselves "
+            "(hooks, CI, editor tasks)"
         ),
         review=True,
     )
@@ -1591,15 +1648,32 @@ async def test_a_multiline_old_string_is_adapted_to_crlf(root: Path) -> None:
     assert path.read_bytes() == b"UNO\r\nDOS\r\nmas\r\ntres\r\n"
 
 
-async def test_an_exact_match_comes_before_the_crlf_one(root: Path) -> None:
-    # One "a\nb" exact, one "a\r\nb": the exact one alone, with no
-    # "appears 2 times".
-    path = crlf(root, "mixed.txt", b"a\nb\r\na\r\nb\r\n")
+# A break is a break, also when one block matches as it is: `read_file`
+# shows the two the same. Decision of the maintainer (2026-11-12), from the
+# third review of the audit after hito 10; it replaces "the exact one
+# first", which picked one without a word and left the other behind with
+# replace_all.
+async def test_two_blocks_that_differ_only_in_their_breaks_are_ambiguous(
+    root: Path,
+) -> None:
+    crlf(root, "mixed.txt", b"a\nb\r\na\r\nb\r\n")
 
-    _, result = await edit(root, edit_params("mixed.txt", "a\nb", "x\ny"))
+    with pytest.raises(ToolError) as caught:
+        await edit_tool(root).approval(edit_params("mixed.txt", "a\nb", "x\ny"))
+    assert "appears 2 times" in str(caught.value)
 
-    assert result == "edited mixed.txt (1 replacement)"
-    assert path.read_bytes() == b"x\ny\r\na\r\nb\r\n"
+
+async def test_replace_all_replaces_the_blocks_that_differ_only_in_their_breaks(
+    root: Path,
+) -> None:
+    path = crlf(root, "mixed.txt", b"x\ny\r\nx\r\ny\n")
+
+    _, result = await edit(
+        root, edit_params("mixed.txt", "x\ny", "Z", replace_all=True)
+    )
+
+    assert result == "edited mixed.txt (2 replacements)"
+    assert path.read_bytes() == b"Z\r\nZ\n"
 
 
 async def test_a_crlf_old_string_matches_an_lf_file(root: Path) -> None:
@@ -1641,6 +1715,45 @@ async def test_only_the_lone_lf_of_new_string_change(root: Path) -> None:
     await edit(root, params)
 
     assert path.read_bytes() == b"a\r\nb\r\nc\r\n"
+
+
+# An exact match also writes the breaks of new_string in the style of the
+# text: `read_file` shows lines without their endings, so the model sends
+# "\n" (third review of the audit after hito 10).
+@pytest.mark.parametrize(
+    ("before", "old", "new", "after"),
+    [
+        # One line for two, the most common edit: the style of its line.
+        (b"uno\r\ndos\r\n", "uno", "uno\nmas", b"uno\r\nmas\r\ndos\r\n"),
+        (b"uno\rdos\r", "dos", "dos\rtres\nfin", b"uno\rdos\rtres\rfin\r"),
+        # A match with a break: the style of its first break.
+        (b"uno\r\ndos\r\n", "uno\r\ndos", "a\nb", b"a\r\nb\r\n"),
+        # In a mixed file, the style of the line edited.
+        (b"a\r\nb\nc\r\n", "b", "b\nz", b"a\r\nb\nz\nc\r\n"),
+        # The last line, without its own break: the one before it.
+        (b"a\r\nb", "b", "b\nc", b"a\r\nb\r\nc"),
+        # No breaks in the file: the first break of new_string, for all.
+        (b"abc", "b", "x\r\ny", b"ax\r\nyc"),
+        (b"b", "b", "a\ra\r\n", b"a\ra\r"),
+    ],
+)
+async def test_an_exact_match_writes_the_breaks_of_the_text(
+    root: Path, before: bytes, old: str, new: str, after: bytes
+) -> None:
+    path = crlf(root, "f.txt", before)
+
+    await edit(root, edit_params("f.txt", old, new))
+
+    assert path.read_bytes() == after
+
+
+async def test_replace_all_writes_each_match_in_its_line_style(root: Path) -> None:
+    path = crlf(root, "f.txt", b"x\r\nx\n")
+
+    _, result = await edit(root, edit_params("f.txt", "x", "y\nz", replace_all=True))
+
+    assert result == "edited f.txt (2 replacements)"
+    assert path.read_bytes() == b"y\r\nz\r\ny\nz\n"
 
 
 async def test_a_crlf_old_string_still_not_found_fails(root: Path) -> None:
@@ -1694,6 +1807,55 @@ async def test_an_old_string_with_crlf_and_lone_lf_is_adapted(root: Path) -> Non
 
     assert result == "edited win.txt (1 replacement)"
     assert path.read_bytes() == b"x\r\ny\r\n"
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "after"),
+    [
+        # Second review of the audit after hito 10: an exact match split a
+        # "\r\n", and the file was left with mixed breaks.
+        ("\nb", "\nB1\nB2", b"a\r\nB1\r\nB2\r\nc\r\n"),
+        ("a\r", "z", b"zb\r\nc\r\n"),
+    ],
+)
+async def test_an_old_string_never_matches_half_a_crlf(
+    root: Path, old: str, new: str, after: bytes
+) -> None:
+    # Its break is a whole break, as any other (D9).
+    path = crlf(root, "win.txt", b"a\r\nb\r\nc\r\n")
+
+    _, result = await edit(root, edit_params("win.txt", old, new))
+
+    assert result == "edited win.txt (1 replacement)"
+    assert path.read_bytes() == after
+
+
+@pytest.mark.parametrize(
+    ("text", "old", "new"),
+    [
+        # Exact: the "\r" put before a "\n".
+        (b"a\rb\nc", "\rb", "\r"),
+        # Exact: what was between a "\r" and a "\n", taken out.
+        (b"a\rX\nb", "X", ""),
+        # Adapted: the break of new_string takes the style "\r", before a
+        # "\n" (second review of the audit after hito 10).
+        (b"\ra\n\xc3\xa9\xc3\xa9\r\nbba", "\r\na", "\r"),
+    ],
+)
+async def test_an_edit_never_joins_two_breaks_into_one(
+    root: Path, text: bytes, old: str, new: str
+) -> None:
+    # A "\r" and a "\n" side by side are one break: a line would be lost
+    # without anybody asking for it.
+    path = crlf(root, "mixed.txt", text)
+
+    with pytest.raises(ToolError) as caught:
+        await edit_tool(root).approval(edit_params("mixed.txt", old, new))
+    assert str(caught.value) == (
+        'the edit would join a "\\r" and a "\\n" into one line break in '
+        "mixed.txt; include the line break next to it in old_string"
+    )
+    assert path.read_bytes() == text
 
 
 # With a warning, nothing that depends on the content is told to the model
@@ -2106,7 +2268,9 @@ async def endings_note(root: Path, old: bytes, new: str) -> str:
         (b"a\nb\n", "a\r\nc\r\n", "(line endings change: LF → CRLF)"),
         (b"a\nb\r\n", "a\nc\n", "(line endings change: mixed → LF)"),
         (b"a\r\nb\r\n", "a\r\nc\n", "(line endings change: CRLF → mixed)"),
-        (b"a\rb\r", "a\nc\n", "(line endings change: mixed → LF)"),
+        (b"a\rb\r", "a\nc\n", "(line endings change: CR → LF)"),
+        # Only lone "\r" before, mixed after: also a change.
+        (b"a\rb\r", "a\rc\n", "(line endings change: CR → mixed)"),
     ],
 )
 async def test_a_change_of_line_endings_is_told_first(
@@ -2152,12 +2316,28 @@ async def test_the_note_goes_after_the_asked_path(root: Path) -> None:
     ]
 
 
+async def test_an_edit_keeps_the_line_endings_of_the_file(root: Path) -> None:
+    # The breaks of new_string take the style of the text, also on an exact
+    # match: changing the style of a file is for write_file (third review of
+    # the audit after hito 10).
+    path = write(root, "app.py", "x\n")
+
+    request, _ = await edit(root, edit_params("app.py", "x\n", "y\r\n"))
+
+    assert request.detail == "@@ -1 +1 @@\n-x\n+y"
+    assert path.read_bytes() == b"y\n"
+
+
 async def test_an_edit_tells_a_change_of_line_endings(root: Path) -> None:
-    write(root, "app.py", "x\n")
+    # Taking out the only CRLF line leaves a mixed file LF.
+    crlf(root, "app.py", b"a\nb\r\nc")
 
-    request = await ask_edit(edit_tool(root), edit_params("app.py", "x\n", "y\r\n"))
+    request = await ask_edit(edit_tool(root), edit_params("app.py", "b\r\nc", "b"))
 
-    assert request.detail == "(line endings change: LF → CRLF)\n@@ -1 +1 @@\n-x\n+y"
+    assert (
+        request.detail
+        == "(line endings change: mixed → LF)\n@@ -1,3 +1,2 @@\n a\n b\n-c"
+    )
 
 
 async def test_the_fallback_detail_has_no_note(root: Path) -> None:
@@ -2519,6 +2699,22 @@ def test_an_ambiguous_exact_edit_takes_linear_time() -> None:
         files._replaced("x\n" * lines, params)
 
     assert time.monotonic() - started < 0.2
+
+
+@pytest.mark.parametrize("text", ["ab" * 20_000, "ab" * 20_000 + "\r\n"])
+def test_the_style_of_many_exact_matches_takes_linear_time(text: str) -> None:
+    # Third review of the audit after hito 10: the style for new_string is
+    # searched after each match; from the start of the text each time, it
+    # would be O(matches x length) on one long line.
+    params = EditFileParams(
+        path="a", old_string="a", new_string="x\ny", replace_all=True
+    )
+    started = time.monotonic()
+
+    _, count = files._replaced(text, params)
+
+    assert count == 20_000
+    assert time.monotonic() - started < 0.5
 
 
 def test_a_flexible_edit_keeps_the_breaks_of_the_file() -> None:

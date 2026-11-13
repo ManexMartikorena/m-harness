@@ -11,7 +11,7 @@
 hacerlo, **preguntándote antes de cada cambio**. Funciona con el proveedor y
 el modelo que elijas, y te dice en cada turno lo que ha costado.
 
-> 🚧 **En desarrollo: `v0.10.0`.** Ya es usable para trabajar en un
+> 🚧 **En desarrollo: `v0.10.2`.** Ya es usable para trabajar en un
 > proyecto: conversar, leer y cambiar ficheros, ejecutar comandos, seguir el
 > `AGENTS.md` del proyecto, guardar y retomar sesiones y ver el coste, con
 > modelos del formato de OpenAI y con Claude; y en scripts, con `maha -p`.
@@ -138,7 +138,7 @@ Necesitas [uv](https://docs.astral.sh/uv/) (instala también Python 3.14 si
 falta).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.10.0
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.10.2
 ```
 
 Después, elige proveedor y modelo:
@@ -248,7 +248,8 @@ effort max, cache 1h]`.
 - **Ctrl+C** a mitad de una respuesta la corta y vuelve al prompt; el
   modelo sabe que la cortaste. En el prompt, el primero limpia la línea y
   el segundo sale.
-- **Un texto pegado** de varias líneas va como un solo mensaje.
+- **Un texto pegado** de varias líneas va como un solo mensaje, también
+  tras **Ctrl+Z** y `fg`.
 - **Sin terminal** (`maha < instrucciones.txt`), todo lo que tiene efecto
   se deniega. Para scripts, mejor `maha -p`.
 

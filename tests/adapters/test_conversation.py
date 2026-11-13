@@ -1,11 +1,15 @@
 import asyncio
 import contextlib
+import errno
 import io
 import json
 import os
 import pty
 import signal
+import subprocess
+import sys
 import termios
+import time
 from collections.abc import Iterator, Sequence
 from decimal import Decimal
 from importlib.metadata import version
@@ -23,8 +27,10 @@ from mharness.adapters.cli.conversation import (
     turn_note,
 )
 from mharness.adapters.cli.input import (
+    HANGUP_GRACE,
     PASTE_OFF,
     PASTE_ON,
+    Hangup,
     InputTooLarge,
     StdinLines,
     bracketed_paste,
@@ -463,6 +469,272 @@ def test_bracketed_paste_is_asked_for_and_left_as_it_was() -> None:
     finally:
         os.close(main)
         os.close(side)
+
+
+async def test_bracketed_paste_is_given_back_on_ctrl_z_and_asked_again_on_fg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Second review of the audit after hito 10: asked once, at the start.
+    # After Ctrl+Z, the shell turns it off and gives ECHOCTL back, and on
+    # `fg` a paste of several lines was a turn per line.
+    main, side = pty.openpty()
+    stopped: list[tuple[int, bytes]] = []
+
+    def stop() -> None:
+        # What the shell finds while maha is stopped.
+        stopped.append((termios.tcgetattr(side)[3], os.read(main, 100)))
+
+    monkeypatch.setattr("mharness.adapters.cli.input._stop", stop)
+    try:
+        before = termios.tcgetattr(side)
+        out = os.fdopen(os.dup(side), "w")
+        with bracketed_paste(side, out):
+            assert os.read(main, 100) == PASTE_ON.encode()
+            signal.raise_signal(signal.SIGTSTP)
+            await asyncio.sleep(0.05)
+            [(flags, written)] = stopped
+            assert flags == before[3]
+            assert written == PASTE_OFF.encode()
+            # Back with `fg`: asked again.
+            assert not termios.tcgetattr(side)[3] & termios.ECHOCTL
+            assert os.read(main, 100) == PASTE_ON.encode()
+
+            # Stopped from outside (`kill -STOP`), the shell may change the
+            # terminal too: SIGCONT asks again.
+            termios.tcsetattr(side, termios.TCSANOW, before)
+            signal.raise_signal(signal.SIGCONT)
+            await asyncio.sleep(0.05)
+            assert not termios.tcgetattr(side)[3] & termios.ECHOCTL
+            assert os.read(main, 100) == PASTE_ON.encode()
+        out.close()
+        assert termios.tcgetattr(side) == before
+        # Ctrl+Z is the default again.
+        assert signal.getsignal(signal.SIGTSTP) == signal.SIG_DFL
+    finally:
+        os.close(main)
+        os.close(side)
+
+
+async def test_two_ctrl_z_close_together_stop_maha_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Third review of the audit after hito 10: the second, handled after
+    # `fg`, stopped maha again.
+    main, side = pty.openpty()
+    stops: list[float] = []
+    monkeypatch.setattr(
+        "mharness.adapters.cli.input._stop", lambda: stops.append(time.monotonic())
+    )
+    try:
+        out = os.fdopen(os.dup(side), "w")
+        with bracketed_paste(side, out):
+            signal.raise_signal(signal.SIGTSTP)
+            signal.raise_signal(signal.SIGTSTP)
+            await asyncio.sleep(0.05)
+            assert len(stops) == 1
+            # One pressed later stops it again.
+            await asyncio.sleep(0.2)
+            signal.raise_signal(signal.SIGTSTP)
+            await asyncio.sleep(0.05)
+            assert len(stops) == 2
+        out.close()
+    finally:
+        os.close(main)
+        os.close(side)
+
+
+async def test_after_bg_the_terminal_is_not_touched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Third review too: on `bg`, SIGCONT changed the terminal from the
+    # background, and SIGTTOU stopped maha again.
+    main, side = pty.openpty()
+    try:
+        out = os.fdopen(os.dup(side), "w")
+        with bracketed_paste(side, out):
+            assert os.read(main, 100) == PASTE_ON.encode()
+            changed = termios.tcgetattr(side)
+            monkeypatch.setattr(
+                "mharness.adapters.cli.input._foreground", lambda fd: False
+            )
+            signal.raise_signal(signal.SIGCONT)
+            await asyncio.sleep(0.05)
+            assert termios.tcgetattr(side) == changed
+            os.write(side, b"-")  # nothing else waits to be read
+            assert os.read(main, 100) == b"-"
+            monkeypatch.undo()
+        out.close()
+    finally:
+        os.close(main)
+        os.close(side)
+
+
+_STOPS = """
+import os, sys
+from mharness.adapters.cli.input import _stop
+os.setsid() if sys.argv[1] == "orphaned" else os.setpgid(0, 0)
+_stop()
+print("back", flush=True)
+"""
+
+
+def test_ctrl_z_stops_until_fg_and_not_for_ever_when_orphaned() -> None:
+    # Third review too: by SIGSTOP, a process group that no shell can
+    # continue any more stayed stopped for ever. By SIGTSTP, as editors
+    # do: the kernel drops it there.
+    orphaned = subprocess.run(
+        [sys.executable, "-c", _STOPS, "orphaned"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    assert orphaned.stdout == "back\n"
+
+    child = subprocess.Popen(
+        [sys.executable, "-c", _STOPS, "own group"],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        _, status = os.waitpid(child.pid, os.WUNTRACED)
+        assert os.WIFSTOPPED(status)
+        assert os.WSTOPSIG(status) == signal.SIGTSTP
+        os.kill(child.pid, signal.SIGCONT)
+        assert child.communicate(timeout=10)[0] == "back\n"
+    finally:
+        child.kill()
+        child.wait()
+
+
+class OpensForEver(Sessions):
+    """Sessions whose first conversation never opens (a slow disk)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            MemorySessionStore(),
+            lambda model, history: None,  # type: ignore[arg-type,return-value]
+            cwd="/home/ana/proyecto",
+            provider="opencode-go",
+            model="glm-5.3-flash",
+            version="0.6.0",
+            traces=MemoryTraceSink(),
+        )
+
+    async def open(self, start: Start | None = None) -> Any:
+        signal.raise_signal(self.number)
+        await asyncio.Event().wait()
+        raise AssertionError("not cancelled")
+
+    number: signal.Signals = signal.SIGTERM
+
+
+@pytest.mark.parametrize(
+    ("number", "code"),
+    [(signal.SIGTERM, 143), (signal.SIGHUP, 129), (signal.SIGINT, 130)],
+)
+async def test_a_signal_while_the_session_opens_gives_the_terminal_back(
+    number: signal.Signals, code: int
+) -> None:
+    # Third review of the audit after hito 10: the paste marks were asked
+    # before converse took the signals, so one that came while the session
+    # opened killed maha with ECHOCTL off and the marks on.
+    main, side = pty.openpty()
+    sessions = OpensForEver()
+    sessions.number = number
+    try:
+        before = termios.tcgetattr(side)
+        out = os.fdopen(os.dup(side), "w")
+        got = await converse(
+            sessions,
+            provider="opencode-go",
+            catalog=KNOWN,
+            read_line=ScriptedInput(),
+            out=out,
+            err=io.StringIO(),
+            terminal=side,
+        )
+        out.close()
+
+        assert got == code
+        assert termios.tcgetattr(side) == before
+        assert os.read(main, 100).startswith(PASTE_ON.encode())
+        # Ours to the end; the default after.
+        assert signal.getsignal(number) in (signal.SIG_DFL, signal.default_int_handler)
+    finally:
+        os.close(main)
+        os.close(side)
+
+
+async def test_the_end_of_input_of_a_closed_window_ends_with_129() -> None:
+    # Third review of the audit after hito 10: closing the window at the
+    # prompt gave an end of file before the loop handled SIGHUP, and maha
+    # took it for Ctrl+D: 0. A hung-up terminal says it is not one. The
+    # new line after it may still be written (here, to somewhere else).
+    main, side = pty.openpty()
+    out = io.StringIO()
+
+    async def close_the_window() -> str:
+        os.close(main)
+        raise EOFError
+
+    try:
+        code = await converse(
+            solo(
+                Agent(
+                    FakeModelClient([]),
+                    ToolRegistry(),
+                    gate=FakeApproval(),
+                    model="glm-5.3-flash",
+                    catalog=MemoryCatalog(),
+                    provider="opencode-go",
+                )
+            ),
+            provider="opencode-go",
+            catalog=KNOWN,
+            read_line=close_the_window,
+            out=out,
+            err=io.StringIO(),
+            terminal=side,
+        )
+    finally:
+        os.close(side)
+
+    assert code == 128 + signal.SIGHUP
+
+
+async def test_ctrl_d_at_the_prompt_still_ends_with_0() -> None:
+    main, side = pty.openpty()
+    out = os.fdopen(os.dup(side), "w")
+
+    async def ctrl_d() -> str:
+        raise EOFError
+
+    try:
+        code = await converse(
+            solo(
+                Agent(
+                    FakeModelClient([]),
+                    ToolRegistry(),
+                    gate=FakeApproval(),
+                    model="glm-5.3-flash",
+                    catalog=MemoryCatalog(),
+                    provider="opencode-go",
+                )
+            ),
+            provider="opencode-go",
+            catalog=KNOWN,
+            read_line=ctrl_d,
+            out=out,
+            err=io.StringIO(),
+            terminal=side,
+        )
+        out.close()
+    finally:
+        os.close(main)
+        os.close(side)
+
+    assert code == 0
 
 
 def test_bracketed_paste_is_not_asked_for_without_a_terminal() -> None:
@@ -1666,3 +1938,45 @@ async def test_ctrl_d_right_after_a_line_still_ends() -> None:
     finally:
         os.close(main)
         os.close(side)
+
+
+class HangsUpLate(io.StringIO):
+    """A terminal whose window was closed: the kernel marks it closed and
+    gives EIO a moment before it hangs it up and says it is no terminal."""
+
+    def __init__(self, still: int) -> None:
+        super().__init__()
+        self.still = still
+
+    def isatty(self) -> bool:
+        self.still -= 1
+        return self.still >= 0
+
+
+def test_an_eio_just_before_the_hang_up_is_the_closed_window() -> None:
+    # Review of Hangup, closing v0.10.2: in a pty, 5 times out of 3,000 a
+    # read gave EIO while isatty still said yes (for about 30 µs).
+    window = HangsUpLate(still=3)
+    hangup = Hangup(window)
+
+    assert hangup.explains(OSError(errno.EIO, "Input/output error"))
+
+
+class LiveTerminal(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+def test_an_eio_with_the_terminal_alive_waits_little() -> None:
+    hangup = Hangup(LiveTerminal())
+    start = time.monotonic()
+
+    assert not hangup.explains(OSError(errno.EIO, "Input/output error"))
+    assert time.monotonic() - start < 1
+
+
+def test_without_terminals_an_eio_is_never_the_closed_window() -> None:
+    start = time.monotonic()
+
+    assert not Hangup(io.StringIO()).explains(OSError(errno.EIO, "x"))
+    assert time.monotonic() - start < HANGUP_GRACE

@@ -11,7 +11,7 @@
 done, **asking you before every change**. It works with the provider and
 model you choose, and tells you what each turn cost.
 
-> 🚧 **In development: `v0.10.0`.** Already usable to work on a project:
+> 🚧 **In development: `v0.10.2`.** Already usable to work on a project:
 > chat, read and change files, run commands, follow the project's
 > `AGENTS.md`, save and resume sessions and see the cost, with OpenAI-format
 > models and with Claude; and in scripts, with `maha -p`. What comes next
@@ -134,7 +134,7 @@ You need [uv](https://docs.astral.sh/uv/) (it also installs Python 3.14 if
 missing).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.10.0
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.10.2
 ```
 
 Then choose a provider and a model:
@@ -241,7 +241,8 @@ your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
 - **Ctrl+C** in the middle of an answer interrupts it and returns to the
   prompt; the model knows you interrupted it. At the prompt, the first one
   clears the line and the second one quits.
-- **Pasted text** of several lines goes as one message.
+- **Pasted text** of several lines goes as one message, also after
+  **Ctrl+Z** and `fg`.
 - **Without a terminal** (`maha < instructions.txt`), everything with an
   effect is denied. For scripts, use `maha -p`.
 

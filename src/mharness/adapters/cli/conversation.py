@@ -5,11 +5,12 @@ call the agent makes (spec hito 4, §1.9).
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import signal
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import aclosing
 from pathlib import Path
 from typing import TextIO
@@ -18,11 +19,23 @@ from mharness import __version__
 from mharness.adapters.cli.approval import show_covered
 from mharness.adapters.cli.commands import Commands, parse_command
 from mharness.adapters.cli.init import TAKES_EFFECT, Init
-from mharness.adapters.cli.input import Discard, ReadLine, StdinLines
+from mharness.adapters.cli.input import (
+    Discard,
+    Hangup,
+    ReadLine,
+    StdinLines,
+    bracketed_paste,
+)
 from mharness.adapters.cli.spinner import Spinner, use_color
 from mharness.adapters.cli.text import clean, clean_line, usd
 from mharness.adapters.cli.todo import finished_todo, is_todo
-from mharness.application.sessions import Conversation, Resumed, Sessions, Start
+from mharness.application.sessions import (
+    Conversation,
+    Opened,
+    Resumed,
+    Sessions,
+    Start,
+)
 from mharness.domain.agent_events import (
     ApprovalCovered,
     ApprovalRequested,
@@ -65,6 +78,13 @@ class _Sigint:
     def __init__(self) -> None:
         self.pending = False
         self.closing: int | None = None
+        # Whether the window was closed (third review of the audit after
+        # hito 10).
+        self.hangup = Hangup()
+        # Whether converse has ended: a handler already queued then runs
+        # after it, while its caller still awaits (the HTTP client
+        # closing), and must not cancel that (review of Hangup, v0.10.2).
+        self.over = False
 
 
 async def converse(
@@ -80,22 +100,108 @@ async def converse(
     start: Start | None = None,
     notes: Sequence[str] = (),
     init: Init | None = None,
+    terminal: int | None = None,
 ) -> int:
     """Run the conversation until /exit, Ctrl+D or Ctrl+C; return the exit code.
 
     A new session, or the one `start` resumes (spec hito 8, §1.12), saved
     turn by turn; the commands of maha can resume another (spec hito 6,
-    §1.8). `discard` drops what was typed ahead of a question.
+    §1.8). `discard` drops what was typed ahead of a question. With
+    `terminal`, the descriptor of the keyboard, pasted text is marked
+    (`bracketed_paste`).
+
+    Ctrl+C and the closing signals are ours from the start to the end:
+    one that came while the session opened killed maha with the terminal
+    still changed (third review of the audit after hito 10).
     """
     read = read_line or StdinLines().readline
     # Looked up now, not at import time, in case they were replaced.
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    assert task is not None
+    sigint = _Sigint()
+    sigint.hangup = Hangup(out, err, keyboard=terminal)
+
+    def on_sigint() -> None:
+        if sigint.over:
+            return
+        if sigint.pending:
+            # Not taken yet: a second press would cut what handles the
+            # first, as the save while leaving (review of the audit).
+            return
+        sigint.pending = True
+        task.cancel()
+
+    def on_closing(number: int) -> None:
+        if sigint.over:
+            return
+        if sigint.closing is None:
+            sigint.closing = number
+        task.cancel()
+
+    loop.add_signal_handler(signal.SIGINT, on_sigint)
+    for number in CLOSING:
+        loop.add_signal_handler(number, on_closing, number)
     try:
-        opened = await sessions.open(start)
-    except SessionError as exc:
-        print(f"error: {clean(str(exc))}", file=err, flush=True)
-        return 1
+        with (
+            bracketed_paste(terminal, out)
+            if terminal is not None
+            else contextlib.nullcontext()
+        ):
+            try:
+                opened = await sessions.open(start)
+            except SessionError as exc:
+                print(f"error: {clean(str(exc))}", file=err, flush=True)
+                return 1
+            except asyncio.CancelledError:
+                # Before the first prompt: Ctrl+C or a signal end maha.
+                if sigint.closing is None and not sigint.pending:
+                    raise
+                task.uncancel()
+                if sigint.closing is None:
+                    _tell_if_heard(lambda: print(file=out, flush=True), closed=False)
+                    return EXIT_INTERRUPTED
+                return 128 + sigint.closing
+            return await _opened(
+                sessions,
+                opened,
+                sigint,
+                provider=provider,
+                catalog=catalog,
+                read=read,
+                discard=discard,
+                out=out,
+                err=err,
+                home=Path.home() if home is None else home,
+                notes=notes,
+                init=init,
+            )
+    finally:
+        # Removing a handler does not drop a call already queued.
+        sigint.over = True
+        loop.remove_signal_handler(signal.SIGINT)
+        for number in CLOSING:
+            loop.remove_signal_handler(number)
+
+
+async def _opened(
+    sessions: Sessions,
+    opened: Opened,
+    sigint: _Sigint,
+    *,
+    provider: str,
+    catalog: ModelCatalog,
+    read: ReadLine,
+    discard: Discard | None,
+    out: TextIO,
+    err: TextIO,
+    home: Path,
+    notes: Sequence[str],
+    init: Init | None,
+) -> int:
+    """The conversation, once its session is open."""
     commands = Commands(
         sessions,
         opened.conversation,
@@ -105,28 +211,11 @@ async def converse(
         discard=discard,
         out=out,
         err=err,
-        home=Path.home() if home is None else home,
+        home=home,
+        hangup=sigint.hangup,
     )
-    loop = asyncio.get_running_loop()
     task = asyncio.current_task()
     assert task is not None
-    sigint = _Sigint()
-
-    def on_sigint() -> None:
-        if sigint.pending:
-            # Not taken yet: a second press would cut what handles the
-            # first, as the save while leaving (review of the audit).
-            return
-        sigint.pending = True
-        task.cancel()
-
-    def on_closing(number: int) -> None:
-        sigint.closing = number
-        task.cancel()
-
-    loop.add_signal_handler(signal.SIGINT, on_sigint)
-    for number in CLOSING:
-        loop.add_signal_handler(number, on_closing, number)
     try:
         code = await _turns(
             commands, provider, read, out, err, sigint, opened.resumed, notes, init
@@ -143,27 +232,54 @@ async def converse(
             task.uncancel()
             print(file=out)
             code = EXIT_INTERRUPTED
+    except OSError as exc:
+        # A closed window: a write to the dead terminal, in the cleanup on
+        # the way up (the spinner, "[new session]"), took the place of the
+        # cancellation; or came before its SIGHUP was handled (third review
+        # of the audit after hito 10).
+        if sigint.closing is None and not sigint.hangup.explains(exc):
+            raise
+        if sigint.closing is None:
+            sigint.closing = signal.SIGHUP
+        if task.cancelling():
+            task.uncancel()
+        code = 128 + sigint.closing
     finally:
         # What is still pending is saved, and the session let go. Ctrl+C
         # while its title comes skips the title: our handler is still
         # there, and the rest is saved and told (review of the audit after
-        # hito 10).
-        commands.tell_naming()
+        # hito 10). A closing signal does not wait for the title, nor
+        # writes to a terminal that may be gone (second review). Nor when
+        # saying that it waits fails: nobody would see it (third review).
+        title = sigint.closing is None
+        if title:
+            try:
+                commands.tell_naming()
+            except OSError as exc:
+                title = False
+                if sigint.hangup.explains(exc):
+                    sigint.closing = signal.SIGHUP
         try:
-            await commands.conversation.close()
+            await commands.conversation.close(title=title)
         except asyncio.CancelledError:
             if sigint.closing is None and not _ours(sigint):
                 raise
             if sigint.closing is not None:
                 task.uncancel()
-        finally:
-            loop.remove_signal_handler(signal.SIGINT)
-            for number in CLOSING:
-                loop.remove_signal_handler(number)
-        commands.warn_unsaved()
+        _tell_if_heard(commands.warn_unsaved, closed=sigint.closing is not None)
     # A closing signal while leaving says so too (review of the audit after
     # hito 10).
     return code if sigint.closing is None else 128 + sigint.closing
+
+
+def _tell_if_heard(tell: Callable[[], None], *, closed: bool) -> None:
+    """Tell the person something on the way out; after a closing signal the
+    terminal may be gone (a closed window), and its error ends nothing."""
+    try:
+        tell()
+    except OSError:
+        if not closed:
+            raise
 
 
 async def _turns(
@@ -195,10 +311,19 @@ async def _turns(
     # one in a row leaves (audit after hito 10, P1).
     armed = False
     while True:
+        if sigint.closing is not None:
+            # A command that took the cancellation of a closing signal for
+            # its own error still ends maha (third review of the audit
+            # after hito 10).
+            return 0
         print("> ", end="", file=out, flush=True)
         try:
             line = (await read()).strip()
         except EOFError:
+            if sigint.hangup.happened():
+                # Its SIGHUP comes after: it ends as one.
+                sigint.closing = signal.SIGHUP
+                return 0
             print(file=out)
             return 0
         except asyncio.CancelledError:
@@ -285,7 +410,7 @@ async def _answer(
                     held = ""
                 match event:
                     case TextDelta(text=text):
-                        await spinner.stop()
+                        spinner.stop()
                         other = event.block is not None and block is not None
                         if wrote and other and event.block != block:
                             out.write("\n")
@@ -296,7 +421,7 @@ async def _answer(
                         out.flush()
                         wrote = True
                     case ToolCallProposed(call=call):
-                        await spinner.stop()
+                        spinner.stop()
                         if wrote:
                             print(file=out)
                             wrote = False
@@ -311,7 +436,7 @@ async def _answer(
                     case ApprovalCovered(request=request):
                         show_covered(request, out)
                     case ModelRetry() | ModelFallback():
-                        await spinner.stop()
+                        spinner.stop()
                         if wrote:
                             print(file=out)
                             wrote = False
@@ -327,7 +452,7 @@ async def _answer(
                         # The model is called again.
                         spinner.start()
                     case TurnFinished():
-                        await spinner.stop()
+                        spinner.stop()
                         if wrote:
                             print(file=out)
                             wrote = False
@@ -343,7 +468,7 @@ async def _answer(
                             print(f"  {tokens}", file=out)
                         out.flush()
     except ModelError as exc:
-        await spinner.stop()
+        spinner.stop()
         # The text already shown stays; the error starts on a new line.
         if wrote:
             print(file=out)
@@ -351,7 +476,11 @@ async def _answer(
     except Exception as exc:
         # A bug, or the terminal failing: the agent already kept what ran,
         # and maha goes on (spec mejora-2026-10-26-deuda-pre-hito-6, B1).
-        await spinner.stop()
+        # The window closed ends maha (third review of the audit after
+        # hito 10).
+        if sigint.hangup.explains(exc):
+            raise
+        spinner.stop()
         if wrote:
             print(file=out)
         detail = clean(f"{type(exc).__name__}: {exc}")
@@ -360,12 +489,12 @@ async def _answer(
         # A closing signal goes on up: maha ends, not just the answer.
         if not _ours(sigint):
             raise
-        await spinner.stop()
+        spinner.stop()
         if wrote or asking:
             print(file=out)
         print(f"  {INTERRUPTED}", file=out, flush=True)
     finally:
-        await spinner.stop()
+        spinner.stop()
 
 
 def show_finished(event: ToolFinished, out: TextIO, *, color: bool = False) -> None:

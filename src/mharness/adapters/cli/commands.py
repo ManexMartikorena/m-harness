@@ -9,7 +9,7 @@ from pathlib import Path, PurePath
 from typing import TextIO
 
 from mharness.adapters.cli.export import markdown
-from mharness.adapters.cli.input import Discard, ReadLine
+from mharness.adapters.cli.input import Discard, Hangup, ReadLine
 from mharness.adapters.cli.spinner import use_color
 from mharness.adapters.cli.text import clean, clean_line, usd
 from mharness.application.sessions import (
@@ -85,8 +85,10 @@ class Commands:
         out: TextIO,
         err: TextIO,
         home: Path,
+        hangup: Hangup | None = None,
     ) -> None:
         self._sessions = sessions
+        self._hangup = hangup
         self.conversation = conversation
         self._catalog = catalog
         self._provider = provider
@@ -127,7 +129,11 @@ class Commands:
             print(f"error: {clean(str(exc))}", file=self._err, flush=True)
         except Exception as exc:
             # A bug, or the disk failing in a way nobody expected: said, and
-            # maha goes on, as with an answer (final audit of hito 6).
+            # maha goes on, as with an answer (final audit of hito 6). The
+            # window closed is neither: maha ends (third review of the
+            # audit after hito 10).
+            if self._hangup is not None and self._hangup.explains(exc):
+                raise
             detail = clean(f"{type(exc).__name__}: {exc}")
             print(f"error: internal: {detail}", file=self._err, flush=True)
         self.warn_unsaved()
@@ -168,7 +174,6 @@ class Commands:
         self._out.flush()
 
     async def _resume(self, session: str | None) -> None:
-        self.tell_naming()
         left = self.conversation.id if self.conversation.stored else None
         try:
             resumed = await self._sessions.resume(session, current=self.conversation)
@@ -178,17 +183,31 @@ class Commands:
             raise
         old, self.conversation = self.conversation, resumed.conversation
         # Switched first: Ctrl+C while the old one's title comes skips the
-        # title, never the switch (review of the audit after hito 10).
+        # title, never the switch (review of the audit after hito 10). Said
+        # only now, when the wait comes (second review).
         try:
-            await old.close()
+            await self._let_go(old)
         finally:
             self._warn_lost(left, old.unsaved)
             self.tell_resumed(resumed)
 
-    def tell_naming(self) -> None:
-        """Leaving a conversation waits for its title, if it is on its way
-        (decision of the maintainer, 2026-11-10): said, with the way out."""
-        if self.conversation.naming:
+    async def _let_go(self, old: Conversation) -> None:
+        """Close the conversation left behind, once said that it waits for
+        its title. If saying it fails (the window went), it closes without
+        the title, and the error goes on (third review of the audit after
+        hito 10): it was skipped, and its pending turns lost."""
+        try:
+            self.tell_naming(old)
+        except OSError:
+            await old.close(title=False)
+            raise
+        await old.close()
+
+    def tell_naming(self, conversation: Conversation | None = None) -> None:
+        """Leaving a conversation, the current one by default, waits for its
+        title, if it is on its way (decision of the maintainer, 2026-11-10):
+        said, with the way out."""
+        if (conversation or self.conversation).naming:
             self._say(NAMING)
 
     def tell_resumed(self, resumed: Resumed) -> None:
@@ -260,14 +279,13 @@ class Commands:
         """A new session without leaving maha (spec hito 8, §1.15). The
         model chosen with /model stays: it is this maha's choice."""
         old = self.conversation
-        self.tell_naming()
         left = old.id if old.stored else None
         fresh = await self._sessions.start(old.model)
         # The new one is ready: only now is the current one let go, once
-        # switched (review of the audit after hito 10).
+        # switched (review of the audit after hito 10), and the wait said.
         self.conversation = fresh
         try:
-            await old.close()
+            await self._let_go(old)
         finally:
             self._warn_lost(left, old.unsaved)
             self._say("[new session]")

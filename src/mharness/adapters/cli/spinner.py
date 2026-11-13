@@ -52,15 +52,18 @@ class Spinner:
         if self._task is None and self._out.isatty():
             self._task = asyncio.create_task(self._spin())
 
-    async def stop(self) -> None:
-        """Stop and erase the line. Safe to call more than once."""
+    def stop(self) -> None:
+        """Stop and erase the line. Safe to call more than once.
+
+        Without waiting: the spinner only draws after its sleep, and a
+        cancelled task wakes up from it with the cancellation, so nothing
+        is drawn after the line is erased. A wait here was a moment where a
+        second Ctrl+C escaped the handling of the first (second review of
+        the audit after hito 10)."""
         if self._task is None:
             return
         task, self._task = self._task, None
         task.cancel()
-        # Waits without raising the spinner's own CancelledError; a
-        # cancellation of the caller still propagates.
-        await asyncio.wait([task])
         self._out.write(CLEAR_LINE)
         self._out.flush()
 

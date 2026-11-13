@@ -3,8 +3,10 @@
 
 import asyncio
 import contextlib
+import errno
 import io
 import signal
+from collections.abc import Coroutine, Sequence
 from decimal import Decimal
 from pathlib import Path
 
@@ -14,10 +16,13 @@ from mharness.adapters.cli.commands import Commands, parse_command
 from mharness.adapters.cli.conversation import converse
 from mharness.application.sessions import Conversation
 from mharness.application.titles import Title, Titler
+from mharness.domain.agent_events import TurnFinished
 from mharness.domain.errors import ModelUnavailableError
+from mharness.domain.events import TextDelta
 from mharness.domain.model import ModelRequest, ModelResponse, Usage
 from mharness.domain.session import (
     MessageEntry,
+    SessionEntry,
     SessionError,
     SessionHeader,
     TitleEntry,
@@ -25,10 +30,10 @@ from mharness.domain.session import (
 )
 from mharness.domain.trace import TitleWritten
 from tests.fakes.catalog import MemoryCatalog
-from tests.fakes.model import FakeModelClient, reply
+from tests.fakes.model import HANG, FakeModelClient, reply
 from tests.fakes.sessions import MemoryLog, MemorySessionStore
 from tests.fakes.terminal import ScriptedInput
-from tests.unit.test_sessions import FIRST, World, entries, turn
+from tests.unit.test_sessions import FIRST, BrokenLog, World, entries, turn
 
 TEMPLATE = "Title: {{message}}"
 PAID = Usage(input_tokens=80, output_tokens=6)
@@ -203,13 +208,21 @@ async def test_leaving_waits_for_the_title() -> None:
     assert TitleEntry(title="Hola") in entries(store)
 
 
-async def test_ctrl_c_while_leaving_skips_the_title_and_saves_the_rest() -> None:
+async def test_ctrl_c_while_leaving_skips_the_title_and_saves_the_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The turn's save fails, so its messages are still pending when leaving:
+    # they are saved after the cut (second review of the audit after hito
+    # 10: nothing was pending, and the test said nothing of "the rest").
+    monkeypatch.setattr("tests.fakes.sessions.MemoryLog", BrokenLog)
+    monkeypatch.setattr(BrokenLog, "failures", 1)
     store = MemorySessionStore()
     small = NeverAnswers()
     conversation = await conversation_with(store, small, "Hecho.")
     await turn(conversation, "Hola")
     await small.asked.wait()
     assert conversation.naming
+    assert conversation.unsaved is not None
 
     closing = asyncio.create_task(conversation.close())
     await asyncio.sleep(0.01)
@@ -218,6 +231,9 @@ async def test_ctrl_c_while_leaving_skips_the_title_and_saves_the_rest() -> None
         await closing
 
     assert not any(isinstance(entry, TitleEntry) for entry in entries(store))
+    saved = [e.message.text for e in entries(store) if isinstance(e, MessageEntry)]
+    assert saved == ["Hola", "Hecho."]
+    assert conversation.unsaved is None
     # The session was let go: another maha may resume it.
     assert FIRST not in store.locked
 
@@ -433,6 +449,41 @@ async def test_ctrl_c_while_a_command_waits_for_the_title_still_switches(
     assert store.locked == set()
 
 
+async def test_a_resume_that_fails_does_not_say_it_waits_for_the_title() -> None:
+    # Second review of the audit after hito 10: "[naming the session…]" was
+    # said before the step that can fail, and nothing waited after it.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+    conversation = await world.sessions.start()
+    await turn(conversation, "Hola")
+    await small.asked.wait()
+    out, err = io.StringIO(), io.StringIO()
+    commands = Commands(
+        world.sessions,
+        conversation,
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
+        read=ScriptedInput(),
+        discard=None,
+        out=out,
+        err=err,
+        home=Path("/home/ane"),
+    )
+    command = parse_command("/resume 20261026-091502-0bad")
+    assert command is not None
+
+    await asyncio.wait_for(commands.run(command), timeout=2)
+
+    assert err.getvalue().startswith("error: no session")
+    assert "naming the session" not in out.getvalue()
+    assert commands.conversation is conversation
+    assert conversation.naming
+    closing = asyncio.create_task(conversation.close(title=False))
+    await closing
+    assert store.locked == set()
+
+
 async def test_ctrl_c_while_exit_waits_for_the_title_leaves_cleanly() -> None:
     # Review of the audit after hito 10: our Ctrl+C handler was gone while
     # leaving, so a KeyboardInterrupt unwound asyncio; /exit then ended with
@@ -487,3 +538,641 @@ async def test_a_closing_signal_while_exit_waits_for_the_title_says_so() -> None
 
     assert code == 128 + signal.SIGHUP
     assert FIRST not in store.locked
+
+
+class WaitsAtThePrompt:
+    """What the person types, then a prompt that waits for ever."""
+
+    def __init__(self, *lines: str) -> None:
+        self._lines = list(lines)
+
+    async def __call__(self) -> str:
+        if self._lines:
+            return self._lines.pop(0)
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+class HungUp(io.StringIO):
+    """A terminal whose window was closed: writing to it fails with EIO."""
+
+    dead = False
+
+    def isatty(self) -> bool:
+        # A hung-up terminal says False, but maha asked at the start.
+        return not self.dead
+
+    def write(self, text: str) -> int:
+        if self.dead:
+            raise OSError(errno.EIO, "Input/output error")
+        return super().write(text)
+
+
+class FailingDisk(HungUp):
+    """A file on a disk that fails (a USB, NFS): also EIO, but no window."""
+
+    def isatty(self) -> bool:
+        return False
+
+
+async def promptly(leaving: Coroutine[None, None, int]) -> int:
+    """What `leaving` returns, if it ends within two seconds. Not wait_for:
+    its cancel would end a wait for the title, as a second signal does."""
+    task = asyncio.create_task(leaving)
+    done, _ = await asyncio.wait([task], timeout=2)
+    if not done:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        pytest.fail("maha waited for the title")
+    return task.result()
+
+
+@pytest.mark.parametrize("number", [signal.SIGTERM, signal.SIGHUP])
+async def test_a_closing_signal_at_the_prompt_does_not_wait_for_the_title(
+    number: signal.Signals,
+) -> None:
+    # Second review of the audit after hito 10: the signal was spent on the
+    # prompt, and leaving then waited for the title with nothing to cut it,
+    # up to the HTTP time limit, with nobody left to press Ctrl+C.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+
+    async def signal_when_asked() -> None:
+        await small.asked.wait()
+        await asyncio.sleep(0.05)
+        signal.raise_signal(number)
+
+    sending = asyncio.create_task(signal_when_asked())
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=WaitsAtThePrompt("Hola"),
+            out=io.StringIO(),
+            err=io.StringIO(),
+        )
+    )
+    await sending
+
+    assert code == 128 + number
+    saved = [e.message.text for e in entries(store) if isinstance(e, MessageEntry)]
+    assert saved == ["Hola", "Hecho."]
+    assert FIRST not in store.locked
+
+
+class HungUpTerminal(HungUp):
+    """A closed window that was a terminal: the spinner draws on it."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+async def test_a_closed_window_while_the_spinner_spins_ends_with_129() -> None:
+    # Third review of the audit after hito 10: stopping the spinner, in the
+    # cleanup of the cut answer, wrote to the dead terminal; its EIO took
+    # the place of the cancellation, and maha ended with a traceback.
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([[HANG]]))
+    out = HungUpTerminal()
+
+    async def close_the_window() -> None:
+        await asyncio.sleep(0.2)  # the model never answers; the spinner spins
+        out.dead = True
+        signal.raise_signal(signal.SIGHUP)
+
+    closing = asyncio.create_task(close_the_window())
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=WaitsAtThePrompt("Hola"),
+            out=out,
+            err=out,
+        )
+    )
+    await closing
+
+    assert code == 128 + signal.SIGHUP
+    assert FIRST not in store.locked
+
+
+async def test_a_closed_window_while_new_waits_for_the_title_ends_with_129() -> None:
+    # Third review too: "[new session]" in the cleanup of the cut /new, then
+    # "error: internal", both to the dead terminal.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+    out = HungUp()
+
+    async def close_the_window() -> None:
+        await small.asked.wait()
+        await asyncio.sleep(0.1)  # /new waits for the title
+        out.dead = True
+        signal.raise_signal(signal.SIGHUP)
+
+    closing = asyncio.create_task(close_the_window())
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=WaitsAtThePrompt("Hola", "/new"),
+            out=out,
+            err=out,
+        )
+    )
+    await closing
+
+    assert code == 128 + signal.SIGHUP
+    assert store.locked == set()
+
+
+async def test_a_closed_window_with_an_unsaved_session_ends_with_129(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Third review too: "session not saved" at the end, after a closing
+    # signal, goes to a dead terminal; it ends nothing. The disk keeps
+    # failing, so the warning is due.
+    monkeypatch.setattr("tests.fakes.sessions.MemoryLog", BrokenLog)
+    monkeypatch.setattr(BrokenLog, "failures", 10)
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Hecho.")]))
+    out = HungUp()
+    answered = asyncio.Event()
+
+    async def read() -> str:
+        if not answered.is_set():
+            answered.set()
+            return "Hola"
+        out.dead = True
+        signal.raise_signal(signal.SIGHUP)
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=out,
+        )
+    )
+
+    assert code == 128 + signal.SIGHUP
+    assert BrokenLog.failures < 10  # it did try to save
+    assert FIRST not in store.locked
+
+
+async def test_a_closed_window_seen_before_its_signal_ends_with_129() -> None:
+    # Third review of the audit after hito 10, by hand with maha in a pty:
+    # the prompt got its end of file before the loop handled SIGHUP; the
+    # new line after it hit the dead terminal with no closing signal yet,
+    # and maha ended with 1.
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Hecho.")]))
+    out = HungUp()
+    answered = False
+
+    async def read() -> str:
+        nonlocal answered
+        if not answered:
+            answered = True
+            return "Hola"
+        out.dead = True
+        raise EOFError
+
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=out,
+        )
+    )
+
+    assert code == 128 + signal.SIGHUP
+    saved = [e.message.text for e in entries(store) if isinstance(e, MessageEntry)]
+    assert saved == ["Hola", "Hecho."]
+    assert FIRST not in store.locked
+
+
+async def test_a_closed_window_when_leaving_does_not_skip_closing() -> None:
+    # Third review too: "naming the session" to a dead terminal, before its
+    # SIGHUP, skipped the close; what was pending would be lost.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+    out = HungUp()
+    lines = ["Hola", "/exit"]
+
+    async def read() -> str:
+        line = lines.pop(0)
+        if line == "/exit":
+            await small.asked.wait()
+            out.dead = True
+        return line
+
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=out,
+        )
+    )
+
+    assert code == 128 + signal.SIGHUP
+    assert FIRST not in store.locked
+
+
+async def test_an_eio_of_a_file_is_not_a_closed_window() -> None:
+    # Third review of the audit after hito 10: only a terminal hangs up; a
+    # disk that fails is an error, said, not a quiet exit.
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Hecho.")]))
+    out = FailingDisk()
+    answered = False
+
+    async def read() -> str:
+        nonlocal answered
+        if not answered:
+            answered = True
+            return "Hola"
+        out.dead = True
+        raise EOFError
+
+    with pytest.raises(OSError, match="Input/output error"):
+        await converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=io.StringIO(),
+        )
+    # Closed all the same.
+    assert FIRST not in store.locked
+
+
+async def test_a_closed_window_while_new_switches_closes_the_old_session() -> None:
+    # Third review too: "naming the session" for the old one, to the dead
+    # terminal, came before the try that closes it.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+    out = HungUp()
+    lines = ["Hola", "/new"]
+
+    async def read() -> str:
+        line = lines.pop(0)
+        if line == "/new":
+            await small.asked.wait()
+            out.dead = True
+        return line
+
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=out,
+        )
+    )
+
+    assert code == 128 + signal.SIGHUP
+    assert store.locked == set()
+
+
+class LiveTerminal(io.StringIO):
+    """A terminal whose window stays open."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+async def leave_with(
+    out: io.StringIO, err: io.StringIO, dead: HungUp, *lines: str
+) -> int:
+    """converse over `lines`; `dead` hangs up (or fails) before the first."""
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([]))
+    pending = list(lines)
+
+    async def read() -> str:
+        dead.dead = True
+        if pending:
+            return pending.pop(0)
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    return await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=err,
+        )
+    )
+
+
+async def test_a_failing_disk_for_stderr_is_no_closed_window() -> None:
+    # Final round of the third review of the audit after hito 10: the
+    # window was judged by stdout alone; an EIO of stderr on a failing
+    # disk, with the terminal alive, ended maha with 129 and no word.
+    err = FailingDisk()
+
+    with pytest.raises(OSError, match="Input/output error"):
+        await leave_with(LiveTerminal(), err, err, "/resume zzz", "still here?")
+
+
+async def test_a_closed_window_on_stderr_alone_ends_with_129() -> None:
+    # Final round too: with stdout to a file (`maha > log.txt`), the EIO of
+    # the terminal on stderr gave a traceback and 1.
+    err = HungUp()
+
+    assert await leave_with(io.StringIO(), err, err, "/resume zzz") == 129
+
+
+async def test_a_closed_window_is_no_internal_error() -> None:
+    # Final round too: a command cut by the closed window said "error:
+    # internal: OSError" in the log of stderr; the terminal going is not a
+    # bug of maha.
+    out, err = HungUp(), io.StringIO()
+
+    assert await leave_with(out, err, out, "/help") == 129
+    assert "error: internal" not in err.getvalue()
+
+
+async def test_a_closed_window_while_a_title_comes_still_closes_the_session() -> None:
+    # Second review of the audit after hito 10: "naming the session" was
+    # written to the dead terminal before closing, and its EIO left the
+    # session unclosed, with a traceback instead of 129.
+    store = MemorySessionStore()
+    small = NeverAnswers()
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+    out = HungUp()
+
+    async def close_the_window() -> None:
+        await small.asked.wait()
+        await asyncio.sleep(0.05)
+        out.dead = True
+        signal.raise_signal(signal.SIGHUP)
+
+    closing = asyncio.create_task(close_the_window())
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=WaitsAtThePrompt("Hola"),
+            out=out,
+            err=out,
+        )
+    )
+    await closing
+
+    assert code == 128 + signal.SIGHUP
+    assert FIRST not in store.locked
+
+
+@pytest.mark.parametrize(
+    ("number", "last", "expected"),
+    [
+        (signal.SIGHUP, None, 128 + signal.SIGHUP),
+        (signal.SIGINT, "/exit", 0),
+    ],
+)
+async def test_a_signal_handled_after_converse_ends_cuts_nothing(
+    number: signal.Signals, last: str | None, expected: int
+) -> None:
+    # Review of Hangup, closing v0.10.2: the window closes, and its end of
+    # file and its SIGHUP come in the same pass of the loop. The end of
+    # file ends converse; the handler, already queued, ran after it, while
+    # bootstrap still closed the HTTP client, and cancelled that: a
+    # traceback and 1, not 129. Ctrl+C just as /exit ends, the same.
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Hecho.")]))
+    out = HungUp()
+    answered = False
+
+    async def read() -> str:
+        nonlocal answered
+        if not answered:
+            answered = True
+            return "Hola"
+        loop = asyncio.get_running_loop()
+        signal.raise_signal(number)
+        ready = loop.create_future()
+        loop.call_soon(ready.set_result, None)
+        await ready
+        if last is None:
+            out.dead = True
+            raise EOFError
+        return last
+
+    async def like_bootstrap() -> int:
+        code = await converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=out,
+        )
+        # What bootstrap still awaits: the HTTP client closing.
+        await asyncio.sleep(0.01)
+        return code
+
+    task = asyncio.create_task(like_bootstrap())
+    done, _ = await asyncio.wait([task], timeout=2)
+
+    assert done
+    assert not task.cancelled()
+    assert task.result() == expected
+    assert FIRST not in store.locked
+
+
+class SignalsWhileSaving(MemorySessionStore):
+    """A store whose next saves each get a closing signal of `armed` while
+    they write: the SIGHUP bash forwards after the kernel's, at the window
+    close, and a `kill` (SIGTERM) after it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.armed: list[signal.Signals] = []
+
+    async def create(self, header: SessionHeader) -> MemoryLog:
+        await super().create(header)
+        return _SignalledLog(self, header.id)
+
+
+class _SignalledLog(MemoryLog):
+    def __init__(self, store: SignalsWhileSaving, session_id: str) -> None:
+        super().__init__(store, session_id)
+        self._signals = store
+
+    async def append(self, entries: Sequence[SessionEntry]) -> None:
+        if self._signals.armed:
+            signal.raise_signal(self._signals.armed.pop(0))
+            await asyncio.sleep(0.05)
+        await super().append(entries)
+
+
+async def test_more_closing_signals_while_saving_cut_no_save() -> None:
+    # Review of the fixes, closing v0.10.2: every closing signal cancelled
+    # the task again. The second cut the save of the cut turn (it stays
+    # pending), the third the save on the way out: the turn was lost.
+    store = SignalsWhileSaving()
+    world = World(store, FakeModelClient([[TextDelta(text="Medio"), HANG]]))
+
+    async def close_the_window() -> None:
+        await asyncio.sleep(0.2)  # the model never ends its answer
+        store.armed = [signal.SIGHUP, signal.SIGTERM]
+        signal.raise_signal(signal.SIGHUP)
+
+    closing = asyncio.create_task(close_the_window())
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=WaitsAtThePrompt("Hola"),
+            out=io.StringIO(),
+            err=io.StringIO(),
+        )
+    )
+    await closing
+
+    assert code == 128 + signal.SIGHUP
+    saved = [e.message.text for e in entries(store) if isinstance(e, MessageEntry)]
+    assert saved == ["Hola", "Medio"]
+    assert FIRST not in store.locked
+
+
+class SignalsAfterWriting(MemorySessionStore):
+    """A store whose next save, once `armed`, gets a closing signal after
+    it wrote and before it returns."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.armed = False
+
+    async def create(self, header: SessionHeader) -> MemoryLog:
+        await super().create(header)
+        return _LateSignalledLog(self, header.id)
+
+
+class _LateSignalledLog(MemoryLog):
+    def __init__(self, store: SignalsAfterWriting, session_id: str) -> None:
+        super().__init__(store, session_id)
+        self._signals = store
+
+    async def append(self, entries: Sequence[SessionEntry]) -> None:
+        await super().append(entries)
+        if self._signals.armed:
+            self._signals.armed = False
+            signal.raise_signal(signal.SIGHUP)
+            await asyncio.sleep(0.05)
+
+
+async def test_a_closing_signal_after_a_save_wrote_doubles_nothing() -> None:
+    # Review of the fixes, closing v0.10.2: the save of the cut turn, cut
+    # once written, put its entries back as pending; leaving saved them
+    # again, twice in the file.
+    store = SignalsAfterWriting()
+    world = World(store, FakeModelClient([[TextDelta(text="Medio"), HANG]]))
+
+    async def close_the_window() -> None:
+        await asyncio.sleep(0.2)  # the model never ends its answer
+        store.armed = True
+        signal.raise_signal(signal.SIGHUP)
+
+    closing = asyncio.create_task(close_the_window())
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=WaitsAtThePrompt("Hola"),
+            out=io.StringIO(),
+            err=io.StringIO(),
+        )
+    )
+    await closing
+
+    assert code == 128 + signal.SIGHUP
+    saved = [e.message.text for e in entries(store) if isinstance(e, MessageEntry)]
+    assert saved == ["Hola", "Medio"]
+    assert FIRST not in store.locked
+
+
+async def test_ctrl_c_just_after_a_turn_still_names_the_session() -> None:
+    # Review of the fixes, closing v0.10.2: guarding the save made it let
+    # other tasks run, also with a store that never does (the one on
+    # disk). Ctrl+C just after the turn then cut it once saved: no title
+    # was asked for, and the finished turn said [interrupted].
+    store = MemorySessionStore(pauses=False)
+    small = FakeModelClient([titled("Saludo")])
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+    conversation = await world.sessions.start()
+
+    async def answer() -> None:
+        async with contextlib.aclosing(conversation.run("Hola")) as events:
+            async for event in events:
+                if isinstance(event, TurnFinished):
+                    me = asyncio.current_task()
+                    assert me is not None
+                    asyncio.get_running_loop().call_soon(me.cancel)
+
+    answering = asyncio.create_task(answer())
+    with contextlib.suppress(asyncio.CancelledError):
+        await answering
+    await conversation.titled()
+
+    assert not answering.cancelled()
+    assert conversation.title == TitleEntry(title="Saludo")
+
+
+class BreaksWhenCut(MemorySessionStore):
+    """A store whose save is cancelled while it writes, and then fails with
+    an error nobody expected."""
+
+    async def create(self, header: SessionHeader) -> MemoryLog:
+        await super().create(header)
+        return _BreaksWhenCutLog(self, header.id)
+
+
+class _BreaksWhenCutLog(MemoryLog):
+    async def append(self, entries: Sequence[SessionEntry]) -> None:
+        del entries
+        await asyncio.sleep(0.05)
+        raise RuntimeError("broken store")
+
+
+async def test_an_error_while_saving_is_not_hidden_by_a_cancellation() -> None:
+    store = BreaksWhenCut()
+    world = World(store, FakeModelClient([reply("Hecho.")]))
+    conversation = await world.sessions.start()
+    with contextlib.suppress(RuntimeError):
+        await turn(conversation, "Hola")
+
+    closing = asyncio.create_task(conversation.close())
+    await asyncio.sleep(0.01)
+    closing.cancel()
+
+    with pytest.raises(RuntimeError, match="broken store"):
+        await closing

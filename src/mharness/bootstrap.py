@@ -124,6 +124,10 @@ def _main(options: argparse.Namespace) -> int:
     except (config.ConfigError, CatalogError) as exc:
         json_result = options.prompt is not None and options.output_format != "text"
         return cli.fail(str(exc), result=json_result)
+    code: int | None = None
+    # Asked now: a hung-up terminal says it is not one (third review of the
+    # audit after hito 10).
+    hangup = cli.Hangup(sys.stdin, sys.stdout, sys.stderr)
     try:
         code = _dispatch(options, settings, catalog, data)
         # Inside: Python's own last flush would print "Exception ignored".
@@ -133,6 +137,17 @@ def _main(options: argparse.Namespace) -> int:
         # as `maha -p` (audit of hito 8).
         cli.drop_output(sys.stdout)
         return 1
+    except OSError as exc:
+        # The window was closed: what a failed write kept (the paste marks)
+        # cannot reach it either. The code is the one maha ended with (third
+        # review of the audit after hito 10).
+        if not hangup.explains(exc):
+            # A file on a disk that fails: an error, not a closed window.
+            raise
+        cli.drop_output(sys.stdout)
+        cli.drop_output(sys.stderr)
+        # Out of the command itself: the window went before it ended.
+        return 128 + signal.SIGHUP if code is None else code
     return code
 
 
@@ -972,17 +987,17 @@ async def _converse(
             questions=_questions(lines),
             titler=_titler(settings, catalog, client),
         )
-        # A pasted text of several lines is one turn (audit after hito 10,
-        # I4).
-        with cli.bracketed_paste(0, sys.stdout):
-            return await cli.converse(
-                sessions,
-                provider=settings.provider_name,
-                catalog=catalog,
-                read_line=lines.readline,
-                # Only a terminal has typed-ahead input to drop.
-                discard=lines.discard if os.isatty(0) else None,
-                start=start,
-                notes=_notes(settings),
-                init=_init(cwd),
-            )
+        return await cli.converse(
+            sessions,
+            provider=settings.provider_name,
+            catalog=catalog,
+            read_line=lines.readline,
+            # Only a terminal has typed-ahead input to drop.
+            discard=lines.discard if os.isatty(0) else None,
+            start=start,
+            notes=_notes(settings),
+            init=_init(cwd),
+            # A pasted text of several lines is one turn (audit after hito
+            # 10, I4).
+            terminal=0,
+        )

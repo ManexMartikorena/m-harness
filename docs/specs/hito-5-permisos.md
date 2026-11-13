@@ -253,7 +253,9 @@ exacto por otro. `effect`.
   CRLF:** si hay 0 coincidencias exactas, `old_string` contiene `\n` sueltos
   y el fichero contiene `\r\n`, se busca con esos `\n` pasados a `\r\n`, y
   `new_string` se escribe adaptado igual. La coincidencia exacta tiene
-  prioridad. Por qué: `read_file` no muestra los `\r`; sin esto, toda edición
+  prioridad. *(Generalizado en la mejora `2026-10-23` (D9 y D10); sin
+  prioridad del exacto desde el 2026-11-12, decisión del mantenedor:
+  auditoría tras el hito 10, R27.)* Por qué: `read_file` no muestra los `\r`; sin esto, toda edición
   de varias líneas en un fichero CRLF fallaría.
 - **Pregunta** con el diff unificado (3 líneas de contexto, a lo sumo 60
   líneas de diff; más, con un aviso de cuántas faltan).

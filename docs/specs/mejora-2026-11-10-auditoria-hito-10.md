@@ -1,6 +1,8 @@
-Estado: IMPLEMENTADA (2026-11-11). Hechos: B, S, H, I, M y P, la
+Estado: IMPLEMENTADA (2026-11-13). Hechos: B, S, H, I, M y P, la
 revisión independiente (R1 a R16) y las evals, con las decisiones del
-mantenedor. Sale en `v0.10.1`.
+mantenedor. Sale en `v0.10.1`. La segunda revisión, tras publicarla (R17
+a R25), la tercera, de sus arreglos (R26 a R43), y la cuarta, de los
+suyos y del test inestable (R44 a R52), salen en `v0.10.2`.
 
 # Auditoría tras el hito 10
 
@@ -262,6 +264,254 @@ y esta spec. Cada hallazgo, comprobado y con su test primero:
   título termina con el código de la salida normal, no con 128 + la
   señal. Lo demás se guarda. ARREGLADO (`26cdd0f`).
 
+## Segunda revisión, tras `v0.10.1` (2026-11-11)
+
+Pedida por el mantenedor: "asegurarme de que todo esté bien, con 0 deuda
+técnica". Dos revisores independientes más, que solo ven el código del
+merge (`f91f272`): la interfaz y las sesiones; las herramientas, los
+modelos y la configuración. Cada fallo, reproducido por el revisor y otra
+vez por el agente, con su test primero. Rama
+`fix/cierre-auditoria-hito-10`.
+
+- **R17.** Un SIGTERM o un SIGHUP en el prompt, con el título en camino:
+  la cancelación se gastaba en el prompt, y salir esperaba al título sin
+  nada que lo cortara, hasta el tiempo límite HTTP (120 s). Nuevo de S7.
+  Ahora una señal de cierre no espera al título: `close(title=False)`.
+  ARREGLADO (`de9315b`).
+- **R18.** Con la ventana cerrada y el título en camino, el aviso
+  "naming the session" se escribía en la terminal muerta; su EIO dejaba
+  la sesión sin cerrar y salía con un traceback en vez de 129. Tras una
+  señal de cierre ya no se escribe antes de cerrar, y un aviso posterior
+  que falla no cambia nada. ARREGLADO (`de9315b`).
+- **R19.** `/resume` decía que esperaba al título antes del paso que puede
+  fallar (`no session …`). Se dice solo cuando llega la espera; igual en
+  `/new`. ARREGLADO (`3123a8c`).
+- **R20.** `edit_file`: un `old_string` que empieza por `\n` o acaba en
+  `\r` coincidía tal cual con medio `\r\n`, y dejaba saltos mezclados
+  (`a\r\nb`, cambiar `a\r` por `z` → `z\nb`). Venía del hito 5. Ahora no se
+  busca tal cual: su salto es un salto entero, como cualquier otro (D9).
+  ARREGLADO (`ca1e320`).
+- **R21.** `edit_file`, en ficheros con `\r` sueltos: una edición que
+  pone un `\r` junto a un `\n` los junta en un salto, y se pierde una
+  línea sin que nadie lo pida. Se rechaza, con el motivo y qué hacer.
+  Probado con 300.000 casos al azar (100.830 ediciones hechas): el
+  número de saltos del resultado es siempre el esperado. ARREGLADO (`ca1e320`).
+- **R22.** "Siempre" decía que cubre todo "salvo secretos y ficheros que
+  ejecutan código", pero un `Makefile`, `package.json`, `pyproject.toml`,
+  `conftest.py` o `setup.py` no preguntan. DECISIÓN del mantenedor
+  (2026-11-11, "la más profesional"): la frontera son los ficheros que se
+  ejecutan **solos** (hooks, CI, tareas del editor); esos solo se ejecutan
+  con un comando, que pregunta (o se permitió con su texto exacto), igual
+  que cualquier fichero fuente. Preguntar por ellos dejaría "siempre"
+  vacío, y la lista no tendría fin. Lo que se corrige es el texto: "files
+  that run code by themselves (hooks, CI, editor tasks)", con un test que
+  fija la decisión. El README ya lo decía así. Lo que esos ficheros
+  ejecutan lo acota el sandbox del hito 15. ARREGLADO (`fbb83b1`).
+- **R23.** Ctrl+Z y `fg`: el *bracketed paste* se pedía una vez, al
+  empezar; la shell lo apaga mientras `maha` está parado, y al volver un
+  pegado de varias líneas era un turno por línea. Ahora Ctrl+Z devuelve
+  la terminal como estaba y `fg` (SIGCONT) lo pide otra vez, como hacen
+  los editores. Probado también en una pty real. ARREGLADO (`1c15806`).
+- **R24.** Un segundo Ctrl+C justo mientras se paraba el spinner, al
+  cortar una respuesta, salía del manejo del primero y terminaba `maha`.
+  `Spinner.stop()` ya no espera: no queda ese momento. ARREGLADO
+  (`4820be6`).
+- **R25.** El test "Ctrl+C al salir salta el título y guarda el resto" no
+  tenía nada pendiente que guardar. Ahora sí, y falla si se quita el
+  guardado. ARREGLADO (`ca28c78`).
+
+Comprobado y sin cambio:
+- **Coste desconocido con `max_cost`:** con `cache_ttl = "1h"` y un modelo
+  sin precio de esa caché, si el proveedor no da el coste, el tope para
+  el turno tras la primera llamada. Es lo seguro (un tope que no se puede
+  medir no se salta), y lo dice: `[cost limit: the cost of a call is not
+  known]`. Con OpenCode Go no pasa: da el coste. NO ES FALLO.
+- **`XDG_RUNTIME_DIR` fuera del entorno de los comandos** es una defensa
+  más, no una frontera: un comando corre como la persona y puede
+  rehacer la ruta de sus *sockets* (`/run/user/$(id -u)/bus`). La frontera
+  es el sandbox del hito 15; anotado allí, en ESTADO.
+- **`docs/COMPARATIVA.md`:** la columna `maha` era del 2026-10-27; puesta
+  al día con lo hecho en los hitos 8 a 10, para la spec del hito 11.
+
+## Tercera revisión, de los arreglos de la segunda (2026-11-12)
+
+Pedida por el mantenedor: "dejar todo limpio, cerrado y con 0 deuda
+técnica antes de empezar el hito 11", con la solución más robusta, no la
+más directa. Cada tanda de arreglos había traído fallos nuevos (16 en la
+primera, 9 en la segunda), así que sus arreglos se revisan otra vez. Tres
+rondas de revisores independientes, que solo ven el código: dos sobre
+`f91f272..8e7db04` (la terminal y las sesiones; `edit_file`), dos sobre
+sus arreglos y uno final sobre los últimos. Cada fallo, reproducido por el
+revisor y otra vez por el agente, con su test primero; los de la
+terminal, también a mano con `maha` en una pty y en un `bash -i`.
+
+**`edit_file`** (venían del hito 5):
+- **R26.** Una coincidencia exacta pegaba `new_string` con sus saltos
+  tal cual. `read_file` quita los finales, así que el modelo manda
+  `\n`: una línea por dos en un fichero CRLF lo dejaba mezclado
+  (`uno\nmas\r\ndos\r\n`), sin aviso tras "siempre". Ahora los saltos de
+  `new_string` toman el estilo del primer salto encontrado o, sin él, el
+  de su línea (`_Styles`, lineal). Y un fichero solo con `\r` es "CR" en
+  el aviso del diff, no "mixed": pasar a mezclado no se decía.
+  ARREGLADO (`cfa90c7`).
+- **R27.** En un fichero mezclado, si `old_string` coincidía tal cual en
+  un sitio, los bloques que solo cambian en el salto no contaban:
+  `replace_all` los dejaba sin cambiar (1 de 2), y una edición simple
+  elegía uno sin avisar del otro. DECISIÓN del mantenedor (2026-11-12):
+  un salto es un salto, siempre; dos bloques así son "appears 2 times", y
+  `replace_all` cambia los dos. Sustituye a "el exacto primero" (spec
+  `mejora-2026-10-23-deuda-hito-5`, 9 y 10). ARREGLADO (`538df2b`).
+- **R28.** En un fichero sin saltos, un `new_string` con saltos de dos
+  tipos (`a\ra\r\n`) lo dejaba mezclado. Ahora todos toman el primero de
+  `new_string`. ARREGLADO (`1de917f`).
+- **R29.** Lo que cubre "siempre" no nombraba la configuración de `maha`,
+  los enlaces duros ni la carpeta `.git`, que preguntan cada vez.
+  ARREGLADO (`a83a538`, `1de917f`).
+
+Probado con dos referencias independientes al azar (más de 1,9 millones
+de casos entre las dos, sin diferencias) y con la ida y vuelta pregunta →
+escritura en disco (3.000 casos: el diff es lo que se escribe).
+
+**La ventana cerrada** (de S7, R17 y R18):
+- **R30.** Con la ventana cerrada mientras gira el spinner o mientras
+  `/new` espera el título, la escritura de la limpieza (borrar el spinner,
+  `[new session]`) daba EIO y tomaba el sitio de la cancelación: un
+  traceback y 1, no 129. ARREGLADO (`a4c40db`).
+- **R31.** Una señal de cierre mientras se abría la sesión mataba `maha`
+  con las marcas de pegado pedidas y `ECHOCTL` quitado: `converse` aún no
+  tenía las señales. Ahora son suyas desde antes de abrir la sesión y de
+  pedir las marcas, que pasan a `converse` (`terminal=`). ARREGLADO
+  (`a4c40db`).
+- **R32.** Lo que no llegó a escribirse a la ventana cerrada (las marcas)
+  quedaba en el buffer de stdout, y el `flush` final de `_main` daba EIO:
+  1 y "Exception ignored". Y si el EIO salía del propio comando, `code`
+  no existía (`UnboundLocalError`, callado). ARREGLADO (`d3a0a7b`,
+  `cfc5a26`).
+- **R33.** Encontrado a mano en la pty: al cerrar la ventana, el prompt
+  recibe el fin de fichero **antes** de que el bucle atienda SIGHUP, y la
+  línea en blanco tras él da EIO sin señal de cierre: 1. Un EIO de una
+  terminal ya es la ventana cerrada, aunque su SIGHUP no haya llegado.
+  ARREGLADO (`da4e0cf`).
+- **R34.** Si fallaba el aviso de que se espera al título al salir, la
+  sesión no se cerraba: lo pendiente se perdía. Ahora se cierra sin
+  esperar al título. ARREGLADO (`da4e0cf`).
+- **R35.** Igual en `/new` y `/resume`: el aviso de la sesión que se deja
+  iba antes del `try` que la cierra. ARREGLADO (`ebe5725`).
+- **R36.** De R33: cualquier EIO era la ventana cerrada, también con
+  stdout a un fichero de un disco que falla (un USB, NFS): la salida se
+  perdía sin avisar, con 0. Solo cuenta si era una terminal al empezar
+  (una terminal colgada ya dice que no lo es). ARREGLADO (`abc417d`,
+  `caf067f`).
+- **R37.** Si la línea en blanco tras el fin de fichero sí llegaba a
+  escribirse, el cierre de la ventana se tomaba por Ctrl+D: 0. Un fin de
+  entrada con el teclado colgado acaba como SIGHUP. ARREGLADO (`caf067f`).
+- **R43.** De R36 (ronda final): la ventana se juzgaba solo por stdout.
+  Un EIO de stderr en un disco que falla, con la terminal viva, acababa
+  con 129 sin avisar; con stdout a un fichero, cerrar la ventana daba un
+  traceback y 1; y un comando cortado por ella decía `error: internal`.
+  Ahora es la ventana cerrada solo si una terminal que `maha` tenía al
+  empezar ya no lo es (`Hangup`). ARREGLADO (commit "Juzgar la ventana
+  cerrada por todas las terminales…").
+- **R38.** `_tell_if_heard` (un aviso al salir no cambia nada con la
+  ventana cerrada) no tenía test. ARREGLADO (`4da6d43`).
+
+**Ctrl+Z, `fg` y `bg`** (de R23):
+- **R39.** `maha` se paraba con SIGSTOP: en un grupo de procesos que ya
+  no tiene shell que lo continúe (huérfano), se quedaba parado para
+  siempre. Ahora con SIGTSTP y su acción por defecto, como los editores:
+  el kernel lo descarta allí. ARREGLADO (`78a1afc`).
+- **R40.** Tras `bg`, SIGCONT cambiaba la terminal desde el segundo plano
+  y SIGTTOU paraba `maha` otra vez. Solo se toca en primer plano.
+  ARREGLADO (`d67a761`).
+- **R41.** Dos Ctrl+Z seguidos lo paraban dos veces (había que hacer `fg`
+  dos veces). Uno atendido en los 0,1 s tras volver llegó antes de parar.
+  ARREGLADO (`5629480`).
+- **R42.** Tras Ctrl+Z y `fg` en el prompt, `> ` no se pinta otra vez
+  (bash sí). En modo línea, lo tecleado antes está en el buffer de la
+  terminal y no se puede leer para repintarlo. DECISIÓN del mantenedor
+  (2026-11-12): al hito 21, la TUI en modo raw repinta prompt y línea.
+  Anotado en ESTADO.
+
+Comprobado y sin cambio:
+- **Ctrl+Z no hace nada hasta que el bucle recupera el control:** es como
+  funciona `asyncio`; no hay pasos síncronos largos (toda la E/S es
+  asíncrona). NO ES FALLO.
+- **Dos SIGHUP seguidos** (el del kernel y el que reenvía bash), durante
+  una respuesta o con el título en camino: 129, el turno guardado, nada
+  bloqueado.
+
+## Cuarta revisión, de los arreglos de la tercera (2026-11-13)
+
+Antes de publicar `v0.10.2`, por el patrón de esta auditoría (cada tanda
+de arreglos trajo fallos nuevos): una revisión independiente de `Hangup`,
+otra de cada tanda de sus arreglos, y la búsqueda del test inestable
+(una pasada de 4 falló el 2026-11-12, sin anotar cuál). Cada fallo,
+reproducido por el revisor y otra vez por el agente, con su test primero.
+
+**La ventana cerrada:**
+- **R44.** El fin de fichero y el SIGHUP de la ventana cerrada llegan en
+  la misma vuelta del bucle. El fin de fichero acababa `converse`, y el
+  manejador, ya en cola, cancelaba después el cierre del cliente HTTP:
+  un traceback y 1, no 129. Igual con Ctrl+C justo al acabar `/exit`.
+  Quitar un manejador no quita su llamada en cola; vuelve el indicador
+  que quitó `caf067f` (`_Sigint.over`). ARREGLADO (`acde5c5`).
+- **R45.** Al cerrar una pty, el kernel despierta al lector con EIO
+  antes de colgarla, y `isatty` aún dice que sí: 5 lecturas de 3.000,
+  durante unos 30 µs, medido en WSL. Ese EIO acababa con un traceback.
+  Un EIO con todas las terminales vivas se mira otra vez durante 50 ms
+  (`HANGUP_GRACE`). ARREGLADO (`0dbf6f9`).
+
+**Guardar la sesión:**
+- **R46.** Cada señal de cierre cancelaba otra vez la tarea. Con un
+  almacén que espera al escribir (el puerto lo permite; el de disco no
+  espera), un guardado cortado tras escribir devolvía el lote a
+  pendientes y salía dos veces en el fichero, y tres señales seguidas
+  (el SIGHUP del kernel, el que reenvía bash, un `kill`) perdían el
+  turno. Guardar y soltar la sesión acaban siempre; la cancelación se
+  relanza después (`_uncut`). ARREGLADO (`f6dfd01`).
+- **R47.** De R46: `_uncut` lanzaba el guardado en otra tarea, y cedía
+  el control también con el almacén de disco. Un Ctrl+C justo tras un
+  turno lo cortaba ya guardado: sin título y con `[interrupted]`. Arranca
+  en el acto (`eager_start`, documentado para `loop.create_task` en
+  Python 3.14, comprobado el 2026-11-13). ARREGLADO (`56b59ae`).
+- **R48.** De R46: si el guardado falla con un error inesperado tras una
+  cancelación, gana el error: un fallo interno no se esconde tras un
+  Ctrl+C. Fijado con un test (`56b59ae`).
+
+**Los comandos (el test inestable):**
+- **R49.** Con todos los núcleos ocupados, salieron dos tests inestables
+  (`test_sigterm_during_a_command_kills_it`,
+  `test_an_escaped_process_dies_on_ctrl_c_too`): 2 pasadas de 4. No eran
+  lentos: el `sleep 30` seguía vivo 12 s después. El shell ya corría
+  mientras asyncio conectaba sus tuberías; un Ctrl+C ahí lo mataba solo
+  a él, y el corte se saltaba matar su grupo y lo que escapó. El arranque
+  ya no se corta: el corte llega después y lo acaba como cualquier otro.
+  Probablemente es el fallo suelto del 2026-11-12. ARREGLADO (`3715900`).
+- **R50.** De R49: si el arranque fallaba ya con el shell en marcha (sin
+  descriptores para sus tuberías) o lo cortaba el fin del bucle, lo que
+  había lanzado quedaba vivo. Se mata como lo que escapa. ARREGLADO
+  (`90006bb`).
+- **R51.** De R49: un Ctrl+C que llegó antes de que el arranque fallara
+  se perdía, y el turno seguía como una herramienta fallida. Gana el
+  Ctrl+C. ARREGLADO (`90006bb`).
+- **R52.** Un segundo Ctrl+C (o el SIGHUP que reenvía bash) en la pausa
+  entre dos rondas de la limpieza la cortaba: lo que quedaba huérfano en
+  la ronda siguiente seguía vivo. La limpieza acaba siempre (como mucho,
+  la espera del shell y las rondas). ARREGLADO (`65fee79`).
+
+Comprobado: con la CPU saturada (32 bucles en 16 núcleos), 6 pasadas de
+la suite de 6 en verde, y ningún proceso suelto; antes, 2 de 4 fallaban.
+Sin carga, 25 pasadas en verde.
+
+Con hito asignado:
+- **La limpieza mata cualquier hijo nuevo de `maha`**, también el proceso
+  de búsqueda de `search_files` si arrancara mientras corre un comando.
+  Hoy no pasa: las herramientas van de una en una y las evals no usan
+  `run_command`. DECISIÓN del mantenedor (2026-11-13): al hito 16, con
+  "varios comandos a la vez, hoy uno a uno por el subreaper" (spec 8,
+  §12.10), que es el mismo problema: saber qué procesos son de cada
+  comando. Anotado en ESTADO.
+
 ## Evals (2026-11-11)
 
 `maha eval --models glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5
@@ -287,6 +537,27 @@ y esta spec. Cada hallazgo, comprobado y con su test primero:
   mantenedor (AGENTS.md: no se integra una regresión sin ella).
   **Aceptado por el mantenedor (2026-11-11):** es el precio de cumplir el
   contrato de la API de Kimi.
+
+### Evals de la tercera y la cuarta revisión (2026-11-13)
+
+Cambian `edit_file` (R26 a R28) y el guardado de la sesión (R46, R47).
+La misma orden, en `90006bb` (`v0.10.1-35-g90006bb`), contra las mismas
+líneas base. Lo que vino después (R52) solo toca `run_command`, que las
+evals no usan. Coste de la pasada: 1,82 $.
+
+| Modelo | Pasan (base → ahora) | Pasos | Tokens por ejecución | Coste por ejecución |
+|---|---|---|---|---|
+| glm-5.3-flash | 114 → 116 / 120 | igual | igual | igual |
+| kimi-k2.7-code | 117 → 119 / 120 | 4,77 → 5,43 | 11.871 → 16.753 | 0,0054 → 0,0090 $ (⚠ +66 %) |
+| claude-haiku-5-5 | 120 → 120 / 120 | igual | igual | igual |
+
+- Validación: 24/25 (GLM), 24/25 (Kimi), 25/25 (Haiku). Los fallos
+  sueltos (GLM 13, 18, 20 y 22; Kimi 4) quedan dentro del ruido (p = 0,5).
+- **Kimi sale ⚠ por coste**, con la causa de la pasada del 2026-11-11
+  (P8, devolver su `reasoning_content`). Frente a ella: 5,41 → 5,43
+  pasos, 15.758 → 16.753 tokens (+6 %) y 0,0082 → 0,0090 $; el coste por
+  token, +3 %. Es ruido entre pasadas. **Aceptado por el mantenedor
+  (2026-11-13)**, con estos datos.
 
 ## Aprendido al implementar
 
@@ -331,3 +602,42 @@ y esta spec. Cada hallazgo, comprobado y con su test primero:
 - **Las revisiones independientes encuentran lo que el autor no ve.** Dos
   de los tres revisores dieron por separado con R1; los arreglos de la
   propia auditoría trajeron 16 fallos nuevos, todos con su test.
+- **Y una segunda revisión, tras publicar, todavía encuentra.** Nueve
+  más (R17 a R25), casi todos en los bordes de las señales y la terminal:
+  un `kill` en el prompt, una ventana cerrada, Ctrl+Z. Las pruebas de
+  señales tienen que mandar la señal en cada momento, no solo en uno.
+- **`wait_for` no sirve para comprobar que algo no espera.** Su cancelación
+  corta la espera del título igual que un segundo Ctrl+C, y el test pasaba
+  con el fallo dentro. Se mide con `asyncio.wait` y un tiempo.
+- **Una espera dentro del manejo de Ctrl+C es un hueco.** Cada `await` en
+  un `except CancelledError` es un sitio por donde un segundo Ctrl+C se
+  escapa; parar el spinner sin esperar lo cierra.
+- **Un salto es un salto** (R26 a R28, decisión del mantenedor): el
+  modelo escribe `\n` porque `read_file` quita los finales. Lo que pega
+  `edit_file` toma el estilo del fichero; si no, deja un fichero
+  mezclado sin avisar. Dos referencias independientes al azar (1,9
+  millones de casos) lo fijan.
+- **Una ventana cerrada se juzga por todas las terminales del
+  principio**, no por el flujo que falló: un EIO de un disco que falla,
+  con la terminal viva, es un error y se dice (R36, R43).
+- **Ctrl+Z, como los editores: SIGTSTP con su acción por defecto**, no
+  SIGSTOP. En un grupo huérfano, el kernel lo descarta; SIGSTOP dejaba
+  `maha` parado para siempre (R39).
+- **Quitar un manejador de señal no quita su llamada en cola.** Lo que
+  ya llegó corre después, cuando quien lo puso ya no espera nada: hace
+  falta un indicador de "ya acabé" (R44).
+- **El kernel también tiene huecos.** Una pty da EIO unos 30 µs antes de
+  colgarse; solo se vio midiendo 3.000 cierres. Lo que dice el sistema en
+  un instante no siempre es lo que será un instante después (R45).
+- **Proteger algo de las cancelaciones cambia cuándo cede el control.**
+  `shield` con una tarea nueva cede siempre; con `eager_start`, solo si
+  hay espera de verdad. Un fake que cede (`MemoryLog`) escondía la
+  diferencia: el fake gana una opción para portarse como el disco (R47).
+- **Un test inestable puede ser un fallo de verdad.** Los dos "lentos"
+  dejaban un proceso vivo para siempre. Con la CPU saturada salieron en
+  dos pasadas de cuatro; mirar el estado del proceso (`/proc/<pid>/stat`)
+  en vez de subir el tiempo de espera dio con la causa (R49).
+- **Una limpieza no se corta.** Guardar la sesión y matar lo que quedó de
+  un comando acaban siempre, y la cancelación llega después; un segundo
+  Ctrl+C, o la señal que reenvía bash, ya no deja nada a medias (R46,
+  R52).

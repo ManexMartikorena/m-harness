@@ -31,8 +31,9 @@ import os
 import shutil
 import signal
 import weakref
-from collections.abc import Mapping
+from collections.abc import Coroutine, Mapping
 from pathlib import Path
+from typing import Any
 
 from mharness.domain.commands import (
     OUTPUT_HEAD_CHARS,
@@ -101,25 +102,53 @@ class LocalCommandRunner:
     ) -> CommandResult:
         # Children that are not this command's: they are left alone.
         before = _children()
-        process = await asyncio.create_subprocess_exec(
-            self._shell,
-            "-c",
-            command,
-            cwd=cwd,
-            env=dict(env),
-            # A command that asks for input does not wait for it.
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            # A new session: a new group, whose id is the pid, and no
-            # terminal to wait on.
-            start_new_session=True,
+        starting = asyncio.ensure_future(
+            asyncio.create_subprocess_exec(
+                self._shell,
+                "-c",
+                command,
+                cwd=cwd,
+                env=dict(env),
+                # A command that asks for input does not wait for it.
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                # A new session: a new group, whose id is the pid, and no
+                # terminal to wait on.
+                start_new_session=True,
+            )
         )
+        # Its start is never cut: the shell may run already while asyncio
+        # connects its pipes, and a cut there kills the shell alone, leaving
+        # what it started (closing v0.10.2). The cut comes once it started,
+        # and ends it as any other.
+        stopped: asyncio.CancelledError | None = None
+        while True:
+            try:
+                process = await asyncio.shield(starting)
+                break
+            except asyncio.CancelledError as exc:
+                if not starting.cancelled():
+                    stopped = exc
+                    continue
+                # The start itself was cut (the loop ending): asyncio killed
+                # the shell alone, and what it started is ours now.
+                await _to_the_end(_kill_escaped(set(before)))
+                raise
+            except BaseException as exc:
+                # It failed once running (no descriptors left for its
+                # pipes): the same. A Ctrl+C that came first still wins.
+                await _to_the_end(_kill_escaped(set(before)))
+                if stopped is not None:
+                    raise stopped from exc
+                raise
         assert process.stdout is not None
         output = _Output()
         reader = asyncio.create_task(output.read(process.stdout))
         timed_out = False
         try:
+            if stopped is not None:
+                raise stopped
             try:
                 # The command ends when its shell does, even if a child in
                 # the background still holds the pipe (final audit,
@@ -134,16 +163,7 @@ class LocalCommandRunner:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(asyncio.shield(reader), DRAIN_SECONDS)
         finally:
-            _kill_group(process.pid)
-            reader.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await reader
-            # Reaped also when cancelled: SIGKILL ends it at once, unless
-            # maha cannot kill it.
-            with contextlib.suppress(TimeoutError):
-                async with asyncio.timeout(KILL_WAIT_SECONDS):
-                    await _exited(process)
-            await _kill_escaped(before | {process.pid})
+            await _to_the_end(_clean_up(process, reader, before | {process.pid}))
         text, cut = output.text()
         code = process.returncode
         return CommandResult(
@@ -217,6 +237,43 @@ async def _exited(process: asyncio.subprocess.Process) -> None:
     """
     while process.returncode is None:  # noqa: ASYNC110 (see above)
         await asyncio.sleep(EXIT_POLL_SECONDS)
+
+
+async def _clean_up(
+    process: asyncio.subprocess.Process, reader: asyncio.Task[None], known: set[int]
+) -> None:
+    """Kill the command's group, stop reading, reap its shell, and kill
+    what escaped."""
+    _kill_group(process.pid)
+    reader.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await reader
+    # Reaped also when cancelled: SIGKILL ends it at once, unless maha
+    # cannot kill it.
+    with contextlib.suppress(TimeoutError):
+        async with asyncio.timeout(KILL_WAIT_SECONDS):
+            await _exited(process)
+    await _kill_escaped(known)
+
+
+async def _to_the_end(work: Coroutine[Any, Any, None]) -> None:
+    """Run `work` to its end, even if the task is cancelled meanwhile, and
+    raise the cancellation then. A second Ctrl+C (or the SIGHUP bash
+    forwards) cut the clean-up between two rounds, and what became an
+    orphan in the next one was left running (closing v0.10.2). It lasts
+    at most KILL_WAIT_SECONDS and the rounds of `_kill_escaped`."""
+    running = asyncio.get_running_loop().create_task(work, eager_start=True)
+    cut: asyncio.CancelledError | None = None
+    while True:
+        try:
+            await asyncio.shield(running)
+            break
+        except asyncio.CancelledError as exc:
+            if running.cancelled():
+                raise
+            cut = exc
+    if cut is not None:
+        raise cut
 
 
 def _become_subreaper() -> None:

@@ -1,8 +1,10 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-11. **Hito 10 cerrado: `v0.10.0` (system
-prompt por capas) y `v0.10.1` (la auditoría tras el hito 10, cero deuda).
-Lo siguiente: el hito 11 (gestión del contexto), cuando el mantenedor lo
+Última actualización: 2026-11-13. **Hito 10 cerrado: `v0.10.0` (system
+prompt por capas) y `v0.10.1` (la auditoría tras el hito 10). `v0.10.2`
+(su segunda, tercera y cuarta revisión, cero deuda) está lista en su
+rama, con evals, sin publicar. Lo siguiente: publicar `v0.10.2`;
+después, el hito 11 (gestión del contexto), cuando el mantenedor lo
 diga.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
@@ -11,13 +13,15 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 ## Fase actual
 
 **Desarrollo. Hitos 1 a 10 cerrados, con la auditoría tras el hito 10
-(`v0.10.1`). Lo siguiente, el hito 11 (gestión del contexto). Plan: 23
-hitos hasta la 1.0 (DESIGN §14).**
+(`v0.10.1`) y sus revisiones (`v0.10.2`, por publicar). Lo siguiente, el hito 11
+(gestión del contexto). Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.10.1` — Auditoría tras el hito 10** (2026-11-11):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.1
-- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
+- Ramas abiertas: `fix/cierre-auditoria-hito-10` (la segunda, la tercera
+  y la cuarta revisión de la auditoría, R17 a R52, sin PR todavía). Las integradas se
+  conservan en GitHub.
 
 ## Para la release
 
@@ -43,13 +47,21 @@ spec, su nota de la guía y su release.
 | 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
 | 8 | Evals (20 tareas, dos modelos, línea base), `maha -p`, reintentos con respaldo y comandos de línea; auditoría con tres revisiones independientes | `v0.8.0` (2026-10-30), `v0.8.1` (2026-11-03) |
 | 9 | Formato de Anthropic (Claude, MiniMax y Qwen por OpenCode; la API directa), el formato de cada modelo, razonamiento devuelto intacto, effort y caché del prompt; auditoría profunda con cinco revisores y una revisión de los arreglos | `v0.9.0` (2026-11-03), `v0.9.1` (2026-11-04) |
-| 10 | System prompt por capas (`AGENTS.md`, entorno, `maha prompt`), `todo_write`, `ask_user`, `/init`, títulos de sesión y `/rename`; evals con 24 tareas y líneas base nuevas; auditoría con cinco revisores, mejoras de producto y una revisión independiente de los arreglos | `v0.10.0` (2026-11-10), `v0.10.1` (2026-11-11) |
+| 10 | System prompt por capas (`AGENTS.md`, entorno, `maha prompt`), `todo_write`, `ask_user`, `/init`, títulos de sesión y `/rename`; evals con 24 tareas y líneas base nuevas; auditoría con cinco revisores, mejoras de producto y cuatro revisiones independientes de los arreglos | `v0.10.0` (2026-11-10), `v0.10.1` (2026-11-11); `v0.10.2`, por publicar |
 
 ## Siguiente paso
 
 Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
 trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
+0. **Agente, en `fix/cierre-auditoria-hito-10`:** publicar `v0.10.2`.
+   Hecho: la tercera y la cuarta revisión (R26 a R52, spec de la
+   auditoría), con el test inestable encontrado y arreglado (R49); las
+   evals del 2026-11-13, anotadas y con el coste de Kimi aceptado; spec,
+   HISTORIAL, README y la versión 0.10.2. Falta: (a) PR, merge con el CI
+   en verde, tag `v0.10.2` y release (permiso del mantenedor del
+   2026-11-11 y del 2026-11-13); (b) ESTADO sin esta rama, en su propio
+   PR, como el #113.
 1. **Mantenedor:** decir cuándo se empieza el hito 11 (gestión del
    contexto). Hasta entonces, el agente no empieza su spec (decisión del
    mantenedor, 2026-11-11).
@@ -86,7 +98,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.10.1`).
+   `maha 0.10.1` hasta publicar `v0.10.2`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -145,6 +157,11 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 - **Hito 12:** bifurcar una sesión (spec 8, §11.8).
 - **Hito 13:** las reglas de instrucciones por ruta, como `.claude/rules/`
   con `paths` (spec 10, decisión 6).
+- **Hito 15:** que un comando no llegue a los *sockets* de la sesión de la
+  persona (D-Bus, el agente SSH): quitar `XDG_RUNTIME_DIR` de su entorno
+  es una defensa más, no una frontera, porque un comando corre como la
+  persona y puede rehacer la ruta; la frontera es el sandbox (segunda
+  revisión de la auditoría tras el hito 10).
 - **Hito 15:** detectar secretos con otro nombre (`credenciales.txt`)
   mirando el contenido (mejora `2026-10-23`, E5); con el sandbox,
   `run_command` en las evals y tareas de "ejecuta y arregla" (spec 8,
@@ -156,10 +173,18 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   2026-11-03).
 - **Hito 16:** llamadas a herramientas en paralelo (spec 4, §11); comandos
   que esperan entrada, con los comandos en segundo plano (spec 5, §10);
-  varios comandos a la vez, hoy uno a uno por el subreaper (spec 8, §12.10).
+  varios comandos a la vez, hoy uno a uno por el subreaper (spec 8, §12.10);
+  con ellos, que la limpieza de un comando no mate otros hijos de `maha`
+  (el proceso de búsqueda de `search_files`): hoy mata cualquier hijo
+  nuevo, y no pasa porque las herramientas van de una en una (cuarta
+  revisión de la auditoría tras el hito 10; decisión del mantenedor,
+  2026-11-13).
 - **Hito 17:** que `main()` no calle un `BrokenPipeError` que no sea de
   stdout: los procesos hijo de MCP tratan sus propias tuberías, con su
   test (spec 8, §12.56; decisión del mantenedor, 2026-11-03).
+- **Hito 21:** tras Ctrl+Z y `fg` en el prompt, repintar `> ` y la línea
+  tecleada, en modo raw (decisión del mantenedor, 2026-11-12; auditoría
+  tras el hito 10, R42).
 - **Hito 21:** lo que se teclea mientras gira el spinner y el eco de `^C`
   se mezclan con la salida (spec 3, §12.10; spec 4, §12.13); ver el texto
   del razonamiento (spec 7); con el selector de modelo, que un id que no
@@ -240,8 +265,9 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
   `v0.8.1` (2026-11-03, la auditoría)
 - [x] 9. Adaptador de Anthropic. `v0.9.0` (2026-11-03) y el arreglo
   `v0.9.1` (2026-11-04, la auditoría profunda)
-- [x] 10. System prompt por capas. `v0.10.0` (2026-11-10) y el arreglo
-  `v0.10.1` (2026-11-11, la auditoría)
+- [x] 10. System prompt por capas. `v0.10.0` (2026-11-10) y los arreglos
+  `v0.10.1` (2026-11-11, la auditoría) y `v0.10.2` (por publicar, sus
+  revisiones)
 - [ ] 11. Gestión del contexto. `v0.11.0`
 - [ ] 12. Deshacer y puntos de control. `v0.12.0` *(nuevo, 2026-10-27)*
 - [ ] 13. Skills y comandos personalizados. `v0.13.0`
