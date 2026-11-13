@@ -6,7 +6,7 @@ import contextlib
 import errno
 import io
 import signal
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Sequence
 from decimal import Decimal
 from pathlib import Path
 
@@ -17,9 +17,11 @@ from mharness.adapters.cli.conversation import converse
 from mharness.application.sessions import Conversation
 from mharness.application.titles import Title, Titler
 from mharness.domain.errors import ModelUnavailableError
+from mharness.domain.events import TextDelta
 from mharness.domain.model import ModelRequest, ModelResponse, Usage
 from mharness.domain.session import (
     MessageEntry,
+    SessionEntry,
     SessionError,
     SessionHeader,
     TitleEntry,
@@ -1000,4 +1002,118 @@ async def test_a_signal_handled_after_converse_ends_cuts_nothing(
     assert done
     assert not task.cancelled()
     assert task.result() == expected
+    assert FIRST not in store.locked
+
+
+class SignalsWhileSaving(MemorySessionStore):
+    """A store whose next saves each get a closing signal of `armed` while
+    they write: the SIGHUP bash forwards after the kernel's, at the window
+    close, and a `kill` (SIGTERM) after it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.armed: list[signal.Signals] = []
+
+    async def create(self, header: SessionHeader) -> MemoryLog:
+        await super().create(header)
+        return _SignalledLog(self, header.id)
+
+
+class _SignalledLog(MemoryLog):
+    def __init__(self, store: SignalsWhileSaving, session_id: str) -> None:
+        super().__init__(store, session_id)
+        self._signals = store
+
+    async def append(self, entries: Sequence[SessionEntry]) -> None:
+        if self._signals.armed:
+            signal.raise_signal(self._signals.armed.pop(0))
+            await asyncio.sleep(0.05)
+        await super().append(entries)
+
+
+async def test_more_closing_signals_while_saving_cut_no_save() -> None:
+    # Review of the fixes, closing v0.10.2: every closing signal cancelled
+    # the task again. The second cut the save of the cut turn (it stays
+    # pending), the third the save on the way out: the turn was lost.
+    store = SignalsWhileSaving()
+    world = World(store, FakeModelClient([[TextDelta(text="Medio"), HANG]]))
+
+    async def close_the_window() -> None:
+        await asyncio.sleep(0.2)  # the model never ends its answer
+        store.armed = [signal.SIGHUP, signal.SIGTERM]
+        signal.raise_signal(signal.SIGHUP)
+
+    closing = asyncio.create_task(close_the_window())
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=WaitsAtThePrompt("Hola"),
+            out=io.StringIO(),
+            err=io.StringIO(),
+        )
+    )
+    await closing
+
+    assert code == 128 + signal.SIGHUP
+    saved = [e.message.text for e in entries(store) if isinstance(e, MessageEntry)]
+    assert saved == ["Hola", "Medio"]
+    assert FIRST not in store.locked
+
+
+class SignalsAfterWriting(MemorySessionStore):
+    """A store whose next save, once `armed`, gets a closing signal after
+    it wrote and before it returns."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.armed = False
+
+    async def create(self, header: SessionHeader) -> MemoryLog:
+        await super().create(header)
+        return _LateSignalledLog(self, header.id)
+
+
+class _LateSignalledLog(MemoryLog):
+    def __init__(self, store: SignalsAfterWriting, session_id: str) -> None:
+        super().__init__(store, session_id)
+        self._signals = store
+
+    async def append(self, entries: Sequence[SessionEntry]) -> None:
+        await super().append(entries)
+        if self._signals.armed:
+            self._signals.armed = False
+            signal.raise_signal(signal.SIGHUP)
+            await asyncio.sleep(0.05)
+
+
+async def test_a_closing_signal_after_a_save_wrote_doubles_nothing() -> None:
+    # Review of the fixes, closing v0.10.2: the save of the cut turn, cut
+    # once written, put its entries back as pending; leaving saved them
+    # again, twice in the file.
+    store = SignalsAfterWriting()
+    world = World(store, FakeModelClient([[TextDelta(text="Medio"), HANG]]))
+
+    async def close_the_window() -> None:
+        await asyncio.sleep(0.2)  # the model never ends its answer
+        store.armed = True
+        signal.raise_signal(signal.SIGHUP)
+
+    closing = asyncio.create_task(close_the_window())
+    code = await promptly(
+        converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=WaitsAtThePrompt("Hola"),
+            out=io.StringIO(),
+            err=io.StringIO(),
+        )
+    )
+    await closing
+
+    assert code == 128 + signal.SIGHUP
+    saved = [e.message.text for e in entries(store) if isinstance(e, MessageEntry)]
+    assert saved == ["Hola", "Medio"]
     assert FIRST not in store.locked
