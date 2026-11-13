@@ -1,11 +1,9 @@
 # Estado del proyecto
 
 Última actualización: 2026-11-13. **Hito 10 cerrado: `v0.10.0` (system
-prompt por capas) y `v0.10.1` (la auditoría tras el hito 10). `v0.10.2`
-(su segunda, tercera y cuarta revisión, cero deuda) está lista en su
-rama, con evals, sin publicar. Lo siguiente: publicar `v0.10.2`;
-después, el hito 11 (gestión del contexto), cuando el mantenedor lo
-diga.**
+prompt por capas), `v0.10.1` (la auditoría tras el hito 10) y `v0.10.2`
+(su segunda, tercera y cuarta revisión, cero deuda). Lo siguiente: el
+hito 11 (gestión del contexto), cuando el mantenedor lo diga.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -13,15 +11,14 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 ## Fase actual
 
 **Desarrollo. Hitos 1 a 10 cerrados, con la auditoría tras el hito 10
-(`v0.10.1`) y sus revisiones (`v0.10.2`, por publicar). Lo siguiente, el hito 11
+(`v0.10.1`) y sus revisiones (`v0.10.2`). Lo siguiente, el hito 11
 (gestión del contexto). Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.10.1` — Auditoría tras el hito 10** (2026-11-11):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.1
-- Ramas abiertas: `fix/cierre-auditoria-hito-10` (la segunda, la tercera
-  y la cuarta revisión de la auditoría, R17 a R52, sin PR todavía). Las integradas se
-  conservan en GitHub.
+- Última versión: **`v0.10.2` — Revisiones de la auditoría tras el hito
+  10** (2026-11-13):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.2
+- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -47,21 +44,13 @@ spec, su nota de la guía y su release.
 | 7 | Trazas y coste, con tres revisiones independientes | `v0.7.0` (2026-10-27), `v0.7.1` |
 | 8 | Evals (20 tareas, dos modelos, línea base), `maha -p`, reintentos con respaldo y comandos de línea; auditoría con tres revisiones independientes | `v0.8.0` (2026-10-30), `v0.8.1` (2026-11-03) |
 | 9 | Formato de Anthropic (Claude, MiniMax y Qwen por OpenCode; la API directa), el formato de cada modelo, razonamiento devuelto intacto, effort y caché del prompt; auditoría profunda con cinco revisores y una revisión de los arreglos | `v0.9.0` (2026-11-03), `v0.9.1` (2026-11-04) |
-| 10 | System prompt por capas (`AGENTS.md`, entorno, `maha prompt`), `todo_write`, `ask_user`, `/init`, títulos de sesión y `/rename`; evals con 24 tareas y líneas base nuevas; auditoría con cinco revisores, mejoras de producto y cuatro revisiones independientes de los arreglos | `v0.10.0` (2026-11-10), `v0.10.1` (2026-11-11); `v0.10.2`, por publicar |
+| 10 | System prompt por capas (`AGENTS.md`, entorno, `maha prompt`), `todo_write`, `ask_user`, `/init`, títulos de sesión y `/rename`; evals con 24 tareas y líneas base nuevas; auditoría con cinco revisores, mejoras de producto y cuatro revisiones independientes de los arreglos | `v0.10.0` (2026-11-10), `v0.10.1` (2026-11-11), `v0.10.2` (2026-11-13) |
 
 ## Siguiente paso
 
 Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
 trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
-0. **Agente, en `fix/cierre-auditoria-hito-10`:** publicar `v0.10.2`.
-   Hecho: la tercera y la cuarta revisión (R26 a R52, spec de la
-   auditoría), con el test inestable encontrado y arreglado (R49); las
-   evals del 2026-11-13, anotadas y con el coste de Kimi aceptado; spec,
-   HISTORIAL, README y la versión 0.10.2. Falta: (a) PR, merge con el CI
-   en verde, tag `v0.10.2` y release (permiso del mantenedor del
-   2026-11-11 y del 2026-11-13); (b) ESTADO sin esta rama, en su propio
-   PR, como el #113.
 1. **Mantenedor:** decir cuándo se empieza el hito 11 (gestión del
    contexto). Hasta entonces, el agente no empieza su spec (decisión del
    mantenedor, 2026-11-11).
@@ -98,7 +87,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.10.1` hasta publicar `v0.10.2`).
+   `maha 0.10.2`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -266,7 +255,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 9. Adaptador de Anthropic. `v0.9.0` (2026-11-03) y el arreglo
   `v0.9.1` (2026-11-04, la auditoría profunda)
 - [x] 10. System prompt por capas. `v0.10.0` (2026-11-10) y los arreglos
-  `v0.10.1` (2026-11-11, la auditoría) y `v0.10.2` (por publicar, sus
+  `v0.10.1` (2026-11-11, la auditoría) y `v0.10.2` (2026-11-13, sus
   revisiones)
 - [ ] 11. Gestión del contexto. `v0.11.0`
 - [ ] 12. Deshacer y puntos de control. `v0.12.0` *(nuevo, 2026-10-27)*
