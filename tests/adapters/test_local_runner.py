@@ -301,6 +301,50 @@ async def test_an_escaped_process_dies_on_ctrl_c_too(tmp_path: Path) -> None:
     assert await gone(escaped)
 
 
+async def test_ctrl_c_while_the_command_starts_kills_what_it_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Closing v0.10.2, with every core busy: the shell was running, and
+    # asyncio still connecting its pipes, when Ctrl+C came. asyncio kills
+    # the shell alone there; the cut skipped the kill of its group and of
+    # what escaped, and their sleep 30 was left running.
+    started = asyncio.create_subprocess_exec
+    connected = asyncio.Event()
+
+    async def slow_to_connect(
+        *args: str, **kwargs: object
+    ) -> asyncio.subprocess.Process:
+        process = await started(*args, **kwargs)  # type: ignore[arg-type]
+        try:
+            await connected.wait()
+        except asyncio.CancelledError:
+            # As asyncio does when its start is cancelled.
+            process.kill()
+            await process.wait()
+            raise
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", slow_to_connect)
+    inside, escaped = tmp_path / "inside", tmp_path / "escaped"
+    task = asyncio.ensure_future(
+        run(
+            f"sleep 30 & echo $! > {inside}; "
+            f"setsid sleep 30 > /dev/null 2>&1 & echo $! > {escaped}; wait",
+            tmp_path,
+            30,
+        )
+    )
+    pids = [await written_pid(inside), await written_pid(escaped)]
+
+    task.cancel()
+    await asyncio.sleep(0.05)  # the cut lands while it connects
+    connected.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert [await gone(pid) for pid in pids] == [True, True]
+
+
 async def test_an_escaped_process_that_cannot_be_killed_is_left_alone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

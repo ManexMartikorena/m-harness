@@ -101,25 +101,42 @@ class LocalCommandRunner:
     ) -> CommandResult:
         # Children that are not this command's: they are left alone.
         before = _children()
-        process = await asyncio.create_subprocess_exec(
-            self._shell,
-            "-c",
-            command,
-            cwd=cwd,
-            env=dict(env),
-            # A command that asks for input does not wait for it.
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            # A new session: a new group, whose id is the pid, and no
-            # terminal to wait on.
-            start_new_session=True,
+        starting = asyncio.ensure_future(
+            asyncio.create_subprocess_exec(
+                self._shell,
+                "-c",
+                command,
+                cwd=cwd,
+                env=dict(env),
+                # A command that asks for input does not wait for it.
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                # A new session: a new group, whose id is the pid, and no
+                # terminal to wait on.
+                start_new_session=True,
+            )
         )
+        # Its start is never cut: the shell may run already while asyncio
+        # connects its pipes, and a cut there kills the shell alone, leaving
+        # what it started (closing v0.10.2). The cut comes once it started,
+        # and ends it as any other.
+        stopped: asyncio.CancelledError | None = None
+        while True:
+            try:
+                process = await asyncio.shield(starting)
+                break
+            except asyncio.CancelledError as exc:
+                if starting.cancelled():
+                    raise
+                stopped = exc
         assert process.stdout is not None
         output = _Output()
         reader = asyncio.create_task(output.read(process.stdout))
         timed_out = False
         try:
+            if stopped is not None:
+                raise stopped
             try:
                 # The command ends when its shell does, even if a child in
                 # the background still holds the pipe (final audit,
