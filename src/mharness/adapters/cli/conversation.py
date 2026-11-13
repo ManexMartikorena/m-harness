@@ -81,6 +81,10 @@ class _Sigint:
         # Whether the window was closed (third review of the audit after
         # hito 10).
         self.hangup = Hangup()
+        # Whether converse has ended: a handler already queued then runs
+        # after it, while its caller still awaits (the HTTP client
+        # closing), and must not cancel that (review of Hangup, v0.10.2).
+        self.over = False
 
 
 async def converse(
@@ -121,6 +125,8 @@ async def converse(
     sigint.hangup = Hangup(out, err, keyboard=terminal)
 
     def on_sigint() -> None:
+        if sigint.over:
+            return
         if sigint.pending:
             # Not taken yet: a second press would cut what handles the
             # first, as the save while leaving (review of the audit).
@@ -129,6 +135,8 @@ async def converse(
         task.cancel()
 
     def on_closing(number: int) -> None:
+        if sigint.over:
+            return
         if sigint.closing is None:
             sigint.closing = number
         task.cancel()
@@ -171,6 +179,8 @@ async def converse(
                 init=init,
             )
     finally:
+        # Removing a handler does not drop a call already queued.
+        sigint.over = True
         loop.remove_signal_handler(signal.SIGINT)
         for number in CLOSING:
             loop.remove_signal_handler(number)

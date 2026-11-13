@@ -944,3 +944,60 @@ async def test_a_closed_window_while_a_title_comes_still_closes_the_session() ->
 
     assert code == 128 + signal.SIGHUP
     assert FIRST not in store.locked
+
+
+@pytest.mark.parametrize(
+    ("number", "last", "expected"),
+    [
+        (signal.SIGHUP, None, 128 + signal.SIGHUP),
+        (signal.SIGINT, "/exit", 0),
+    ],
+)
+async def test_a_signal_handled_after_converse_ends_cuts_nothing(
+    number: signal.Signals, last: str | None, expected: int
+) -> None:
+    # Review of Hangup, closing v0.10.2: the window closes, and its end of
+    # file and its SIGHUP come in the same pass of the loop. The end of
+    # file ends converse; the handler, already queued, ran after it, while
+    # bootstrap still closed the HTTP client, and cancelled that: a
+    # traceback and 1, not 129. Ctrl+C just as /exit ends, the same.
+    store = MemorySessionStore()
+    world = World(store, FakeModelClient([reply("Hecho.")]))
+    out = HungUp()
+    answered = False
+
+    async def read() -> str:
+        nonlocal answered
+        if not answered:
+            answered = True
+            return "Hola"
+        loop = asyncio.get_running_loop()
+        signal.raise_signal(number)
+        ready = loop.create_future()
+        loop.call_soon(ready.set_result, None)
+        await ready
+        if last is None:
+            out.dead = True
+            raise EOFError
+        return last
+
+    async def like_bootstrap() -> int:
+        code = await converse(
+            world.sessions,
+            provider="opencode-go",
+            catalog=MemoryCatalog(),
+            read_line=read,
+            out=out,
+            err=out,
+        )
+        # What bootstrap still awaits: the HTTP client closing.
+        await asyncio.sleep(0.01)
+        return code
+
+    task = asyncio.create_task(like_bootstrap())
+    done, _ = await asyncio.wait([task], timeout=2)
+
+    assert done
+    assert not task.cancelled()
+    assert task.result() == expected
+    assert FIRST not in store.locked
