@@ -428,6 +428,33 @@ def test_a_start_cut_when_the_loop_ends_kills_what_it_started(
     assert asyncio.run(gone(pid))
 
 
+async def test_a_second_ctrl_c_does_not_cut_the_clean_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review of the start that is never cut: a second Ctrl+C (or the SIGHUP
+    # bash forwards) during the pause between two rounds of the clean-up
+    # cut it; what became an orphan in the next round was left running.
+    monkeypatch.setattr(local, "ESCAPED_PAUSE", 0.5)
+    pidfile = tmp_path / "pid"
+    task = asyncio.ensure_future(
+        run(
+            f"setsid sh -c 'sleep 30 & echo $! > {pidfile}; wait' "
+            "> /dev/null 2>&1 & sleep 30",
+            tmp_path,
+            30,
+        )
+    )
+    grandchild = await written_pid(pidfile)
+
+    task.cancel()
+    await asyncio.sleep(0.25)  # its first round is done, the pause goes on
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert await gone(grandchild)
+
+
 async def test_an_escaped_process_that_cannot_be_killed_is_left_alone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
