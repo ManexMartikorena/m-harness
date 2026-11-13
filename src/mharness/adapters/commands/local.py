@@ -127,9 +127,20 @@ class LocalCommandRunner:
                 process = await asyncio.shield(starting)
                 break
             except asyncio.CancelledError as exc:
-                if starting.cancelled():
-                    raise
-                stopped = exc
+                if not starting.cancelled():
+                    stopped = exc
+                    continue
+                # The start itself was cut (the loop ending): asyncio killed
+                # the shell alone, and what it started is ours now.
+                await _kill_escaped(before)
+                raise
+            except BaseException as exc:
+                # It failed once running (no descriptors left for its
+                # pipes): the same. A Ctrl+C that came first still wins.
+                await _kill_escaped(before)
+                if stopped is not None:
+                    raise stopped from exc
+                raise
         assert process.stdout is not None
         output = _Output()
         reader = asyncio.create_task(output.read(process.stdout))

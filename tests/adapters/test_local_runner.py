@@ -12,6 +12,7 @@ import shutil
 import signal
 import sys
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
@@ -343,6 +344,88 @@ async def test_ctrl_c_while_the_command_starts_kills_what_it_started(
         await task
 
     assert [await gone(pid) for pid in pids] == [True, True]
+
+
+async def test_ctrl_c_wins_over_a_start_that_fails_after_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review of the start that is never cut: the start failed (no cwd, no
+    # descriptors left) after Ctrl+C came, and its error took the place of
+    # Ctrl+C; the turn went on as a failed tool.
+    gate = asyncio.Event()
+
+    async def fails(*args: str, **kwargs: object) -> asyncio.subprocess.Process:
+        del args, kwargs
+        await gate.wait()
+        raise FileNotFoundError(errno.ENOENT, "No such file or directory")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fails)
+    task = asyncio.ensure_future(run("true", tmp_path))
+    await asyncio.sleep(0.01)
+    task.cancel()
+    await asyncio.sleep(0.01)
+    gate.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+def spawns_then(
+    monkeypatch: pytest.MonkeyPatch, fail: Callable[[], Awaitable[object]]
+) -> None:
+    """Start the shell, then `fail`, as asyncio does while it connects the
+    pipes: it kills the shell alone, and raises."""
+    started = asyncio.create_subprocess_exec
+
+    async def spawn(*args: str, **kwargs: object) -> asyncio.subprocess.Process:
+        process = await started(*args, **kwargs)  # type: ignore[arg-type]
+        try:
+            await fail()
+        except BaseException:
+            process.kill()
+            await process.wait()
+            raise
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+
+
+async def test_a_start_that_fails_once_running_kills_what_it_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pidfile = tmp_path / "pid"
+
+    async def fail() -> None:
+        await written_pid(pidfile)
+        raise OSError(errno.EMFILE, "Too many open files")
+
+    spawns_then(monkeypatch, fail)
+
+    with pytest.raises(OSError, match="Too many open files"):
+        await run(f"sleep 30 & echo $! > {pidfile}; wait", tmp_path)
+
+    assert await gone(read_pid(pidfile) or 0)
+
+
+def test_a_start_cut_when_the_loop_ends_kills_what_it_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The loop ending (asyncio.run) cancels the start itself.
+    pidfile = tmp_path / "pid"
+    spawns_then(monkeypatch, asyncio.Event().wait)
+
+    async def main() -> None:
+        # Left running: asyncio.run cancels it on its way out.
+        running = asyncio.ensure_future(
+            run(f"sleep 30 & echo $! > {pidfile}; wait", tmp_path)
+        )
+        await written_pid(pidfile)
+        assert not running.done()
+
+    asyncio.run(main())
+    pid = read_pid(pidfile)
+    assert pid is not None
+    assert asyncio.run(gone(pid))
 
 
 async def test_an_escaped_process_that_cannot_be_killed_is_left_alone(
