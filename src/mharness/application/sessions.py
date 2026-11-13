@@ -938,8 +938,16 @@ async def _uncut(work: Coroutine[Any, Any, None]) -> None:
     cancellation is raised once it is done. A save cut once written put
     its entries back as pending and wrote them twice; one cut before it
     lost the turn, with closing signals in a row (review of the fixes,
-    v0.10.2)."""
-    running = asyncio.ensure_future(work)
+    v0.10.2).
+
+    Started eagerly: a store that never waits (the one on disk) is done
+    before anything else runs, and nothing new can land here; with a task
+    started later, a Ctrl+C just after a turn cut it once saved, with no
+    title asked for (review of `_uncut`). An error of `work` goes up even
+    if a cancellation came first: a failure nobody expected is never
+    hidden behind a Ctrl+C.
+    """
+    running = asyncio.get_running_loop().create_task(work, eager_start=True)
     cut: asyncio.CancelledError | None = None
     while True:
         try:

@@ -16,6 +16,7 @@ from mharness.adapters.cli.commands import Commands, parse_command
 from mharness.adapters.cli.conversation import converse
 from mharness.application.sessions import Conversation
 from mharness.application.titles import Title, Titler
+from mharness.domain.agent_events import TurnFinished
 from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta
 from mharness.domain.model import ModelRequest, ModelResponse, Usage
@@ -1117,3 +1118,61 @@ async def test_a_closing_signal_after_a_save_wrote_doubles_nothing() -> None:
     saved = [e.message.text for e in entries(store) if isinstance(e, MessageEntry)]
     assert saved == ["Hola", "Medio"]
     assert FIRST not in store.locked
+
+
+async def test_ctrl_c_just_after_a_turn_still_names_the_session() -> None:
+    # Review of the fixes, closing v0.10.2: guarding the save made it let
+    # other tasks run, also with a store that never does (the one on
+    # disk). Ctrl+C just after the turn then cut it once saved: no title
+    # was asked for, and the finished turn said [interrupted].
+    store = MemorySessionStore(pauses=False)
+    small = FakeModelClient([titled("Saludo")])
+    world = World(store, FakeModelClient([reply("Hecho.")]), titler=titler(small))
+    conversation = await world.sessions.start()
+
+    async def answer() -> None:
+        async with contextlib.aclosing(conversation.run("Hola")) as events:
+            async for event in events:
+                if isinstance(event, TurnFinished):
+                    me = asyncio.current_task()
+                    assert me is not None
+                    asyncio.get_running_loop().call_soon(me.cancel)
+
+    answering = asyncio.create_task(answer())
+    with contextlib.suppress(asyncio.CancelledError):
+        await answering
+    await conversation.titled()
+
+    assert not answering.cancelled()
+    assert conversation.title == TitleEntry(title="Saludo")
+
+
+class BreaksWhenCut(MemorySessionStore):
+    """A store whose save is cancelled while it writes, and then fails with
+    an error nobody expected."""
+
+    async def create(self, header: SessionHeader) -> MemoryLog:
+        await super().create(header)
+        return _BreaksWhenCutLog(self, header.id)
+
+
+class _BreaksWhenCutLog(MemoryLog):
+    async def append(self, entries: Sequence[SessionEntry]) -> None:
+        del entries
+        await asyncio.sleep(0.05)
+        raise RuntimeError("broken store")
+
+
+async def test_an_error_while_saving_is_not_hidden_by_a_cancellation() -> None:
+    store = BreaksWhenCut()
+    world = World(store, FakeModelClient([reply("Hecho.")]))
+    conversation = await world.sessions.start()
+    with contextlib.suppress(RuntimeError):
+        await turn(conversation, "Hola")
+
+    closing = asyncio.create_task(conversation.close())
+    await asyncio.sleep(0.01)
+    closing.cancel()
+
+    with pytest.raises(RuntimeError, match="broken store"):
+        await closing
