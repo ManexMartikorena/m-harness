@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import errno
 import io
 import json
 import os
@@ -26,8 +27,10 @@ from mharness.adapters.cli.conversation import (
     turn_note,
 )
 from mharness.adapters.cli.input import (
+    HANGUP_GRACE,
     PASTE_OFF,
     PASTE_ON,
+    Hangup,
     InputTooLarge,
     StdinLines,
     bracketed_paste,
@@ -1935,3 +1938,45 @@ async def test_ctrl_d_right_after_a_line_still_ends() -> None:
     finally:
         os.close(main)
         os.close(side)
+
+
+class HangsUpLate(io.StringIO):
+    """A terminal whose window was closed: the kernel marks it closed and
+    gives EIO a moment before it hangs it up and says it is no terminal."""
+
+    def __init__(self, still: int) -> None:
+        super().__init__()
+        self.still = still
+
+    def isatty(self) -> bool:
+        self.still -= 1
+        return self.still >= 0
+
+
+def test_an_eio_just_before_the_hang_up_is_the_closed_window() -> None:
+    # Review of Hangup, closing v0.10.2: in a pty, 5 times out of 3,000 a
+    # read gave EIO while isatty still said yes (for about 30 µs).
+    window = HangsUpLate(still=3)
+    hangup = Hangup(window)
+
+    assert hangup.explains(OSError(errno.EIO, "Input/output error"))
+
+
+class LiveTerminal(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+def test_an_eio_with_the_terminal_alive_waits_little() -> None:
+    hangup = Hangup(LiveTerminal())
+    start = time.monotonic()
+
+    assert not hangup.explains(OSError(errno.EIO, "Input/output error"))
+    assert time.monotonic() - start < 1
+
+
+def test_without_terminals_an_eio_is_never_the_closed_window() -> None:
+    start = time.monotonic()
+
+    assert not Hangup(io.StringIO()).explains(OSError(errno.EIO, "x"))
+    assert time.monotonic() - start < HANGUP_GRACE

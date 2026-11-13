@@ -25,6 +25,13 @@ PASTE_END = "\x1b[201~"
 PASTE_ON = "\x1b[?2004h"
 PASTE_OFF = "\x1b[?2004l"
 
+# A closed window gives EIO a moment before its terminal says it is one no
+# more: the kernel marks the other side of a pty closed, wakes the reader,
+# and only then hangs it up (at most ~30 µs measured, 5 reads in 3,000).
+# An EIO with every terminal still alive is looked at again for so long,
+# in seconds, before it is taken for an error (review of Hangup, v0.10.2).
+HANGUP_GRACE = 0.05
+
 # What read_all() asks for at a time: a pipe holds 64 KiB on Linux.
 _BIG_READ = 64 * 1024
 
@@ -189,8 +196,20 @@ class Hangup:
         return self._keyboard is not None and not os.isatty(self._keyboard)
 
     def explains(self, exc: BaseException) -> bool:
-        """Whether `exc` is the closed window: an EIO, once it happened."""
-        return isinstance(exc, OSError) and exc.errno == errno.EIO and self.happened()
+        """Whether `exc` is the closed window: an EIO, once it happened.
+
+        Waits up to HANGUP_GRACE for the hang-up that follows the EIO; a
+        blocking wait, but only on the way out with an error."""
+        if not (isinstance(exc, OSError) and exc.errno == errno.EIO):
+            return False
+        if not self._streams and self._keyboard is None:
+            return False
+        deadline = time.monotonic() + HANGUP_GRACE
+        while not self.happened():
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.001)
+        return True
 
 
 def _isatty(stream: TextIO) -> bool:
