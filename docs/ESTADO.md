@@ -164,6 +164,11 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   (`unittest.py` en la copia): el aislamiento completo de las comprobaciones
   (auditoría profunda tras el hito 9, I14 e I5; decisión del mantenedor,
   2026-11-03).
+- **Hito 15:** (también) el análisis de comandos peligrosos, las reglas
+  por patrón, el `cd` que dura, la lista de variables de los comandos
+  como parte del sandbox y qué ve el modelo tras una negativa en `-p`
+  (auditoría tras el hito 10, "A su hito"; faltaban aquí, añadidos el
+  2026-11-16).
 - **Hito 16:** llamadas a herramientas en paralelo (spec 4, §11); comandos
   que esperan entrada, con los comandos en segundo plano (spec 5, §10);
   varios comandos a la vez, hoy uno a uno por el subreaper (spec 8, §12.10);
@@ -185,6 +190,12 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   y que el error del proveedor diga qué hacer (`/model`, `maha models`):
   hoy da solo `HTTP 400 … Model is unavailable` (prueba del mantenedor,
   2026-11-03).
+- **Hito 21:** (también) el indicador de una herramienta larga,
+  distinguir a la vista el texto del modelo, `maha "texto"`, el selector
+  de `-r` y explicar un `effort` no admitido (auditoría tras el hito 10,
+  "A su hito"; faltaban aquí, añadidos el 2026-11-16).
+- **Hito 23:** la limpieza de las sesiones antiguas (auditoría tras el
+  hito 10, "A su hito"; faltaba aquí, añadido el 2026-11-16).
 - **Con la batería más larga (hito 11):** volver a medir cuándo usan los
   modelos `todo_write`. Hoy solo la 12 (train) y la 23 (validación) son
   trabajo largo; la guía se ajustó con la 12 y una tarea a mano (spec 10,
