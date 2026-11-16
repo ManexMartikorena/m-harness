@@ -1,9 +1,9 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-13. **Hito 10 cerrado: `v0.10.0` (system
+Última actualización: 2026-11-16. **Hito 10 cerrado: `v0.10.0` (system
 prompt por capas), `v0.10.1` (la auditoría tras el hito 10) y `v0.10.2`
-(su segunda, tercera y cuarta revisión, cero deuda). Lo siguiente: el
-hito 11 (gestión del contexto), cuando el mantenedor lo diga.**
+(su segunda, tercera y cuarta revisión, cero deuda). En curso: la spec
+del hito 11 (gestión del contexto), PROPUESTA, en su PR.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -11,14 +11,15 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 ## Fase actual
 
 **Desarrollo. Hitos 1 a 10 cerrados, con la auditoría tras el hito 10
-(`v0.10.1`) y sus revisiones (`v0.10.2`). Lo siguiente, el hito 11
-(gestión del contexto). Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
+(`v0.10.1`) y sus revisiones (`v0.10.2`). En curso, el hito 11 (gestión
+del contexto): su spec. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.10.2` — Revisiones de la auditoría tras el hito
   10** (2026-11-13):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.2
-- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
+- Ramas abiertas: `docs/spec-hito-11-contexto` (la spec del hito 11).
+  Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -51,12 +52,12 @@ spec, su nota de la guía y su release.
 Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
 trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
-1. **Mantenedor:** decir cuándo se empieza el hito 11 (gestión del
-   contexto). Hasta entonces, el agente no empieza su spec (decisión del
-   mantenedor, 2026-11-11).
-2. **Agente, cuando el mantenedor lo diga:** la spec del hito 11, en su
-   rama `docs/spec-hito-11-<slug>`, con lo que ya tiene asignado (ver
-   "Con hito asignado", más abajo).
+1. **Mantenedor:** revisar el PR de la spec del hito 11
+   (`docs/specs/hito-11-contexto.md`, rama `docs/spec-hito-11-contexto`),
+   y sus 11 decisiones (§11). Integrarlo es la aprobación (el mantenedor
+   dio la salida al hito el 2026-11-16).
+2. **Agente, con la spec aprobada:** el PR 1 de la spec (contar y ver),
+   en `feature/hito-11-contar`.
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
@@ -142,7 +143,10 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   herramientas en cada llamada (~700 con las cuatro del hito 4; hoy son
   siete, por medir) y compactar (spec 4, §12.14); en la batería de evals, tareas con historial previo y la marca
   `[interrupted by the user]` (spec 6, §5; pasa del hito 8 por decisión
-  del mantenedor, spec 8, §11.8).
+  del mantenedor, spec 8, §11.8); `grep` con contexto o solo ficheros,
+  la política de versiones del formato de sesión y subir el tope de
+  pasos (auditoría tras el hito 10, "A su hito"; faltaban aquí, añadidos
+  el 2026-11-16). Todo, en la spec 11.
 - **Hito 12:** bifurcar una sesión (spec 8, §11.8).
 - **Hito 13:** las reglas de instrucciones por ruta, como `.claude/rules/`
   con `paths` (spec 10, decisión 6).
