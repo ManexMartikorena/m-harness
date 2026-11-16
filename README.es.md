@@ -310,7 +310,8 @@ tu usuario. Respeta las variables `XDG_*`.
 
 `maha` crece hito a hito hasta la versión 1.0. Lo siguiente:
 
-- **Compactación del contexto**, para conversaciones largas, y **deshacer**
+- **Contexto virtual**, para que una conversación larga cueste poco con
+  cualquier modelo; **menos idas y vueltas** al modelo, y **deshacer**
   cambios.
 - **Skills y comandos propios, memoria entre sesiones, sandbox, modos de
   permiso, subagentes, MCP y hooks.**

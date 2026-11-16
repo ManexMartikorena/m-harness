@@ -105,19 +105,20 @@ debe. El detalle: [`DESIGN.md`](DESIGN.md); dónde está cada fichero:
 | 8 | Evals y modo no interactivo | ✅ `v0.8.0` (y `v0.8.1`) |
 | 9 | Adaptador de Anthropic | ✅ `v0.9.0` (y `v0.9.1`) |
 | 10 | System prompt por capas | ✅ `v0.10.0` (y `v0.10.1`, `v0.10.2`) |
-| 11 | Gestión del contexto | ⬜ |
-| 12 | Deshacer y puntos de control | ⬜ |
-| 13 | Skills y comandos personalizados | ⬜ |
-| 14 | Memoria persistente | ⬜ |
-| 15 | Sandbox y modos de permiso | ⬜ |
-| 16 | Subagentes y agentes propios | ⬜ |
-| 17 | MCP | ⬜ |
-| 18 | Hooks | ⬜ |
-| 19 | Web | ⬜ |
-| 20 | Multimodal | ⬜ |
-| 21 | Interfaz completa (TUI) | ⬜ |
-| 22 | Exportador OpenTelemetry | ⬜ |
-| 23 | Versión 1.0 y distribución | ⬜ |
+| 11 | Contexto virtual | ⬜ |
+| 12 | Órbita larga | ⬜ |
+| 13 | Deshacer y puntos de control | ⬜ |
+| 14 | Skills y comandos personalizados | ⬜ |
+| 15 | Memoria persistente | ⬜ |
+| 16 | Sandbox y modos de permiso | ⬜ |
+| 17 | Subagentes y agentes propios | ⬜ |
+| 18 | MCP | ⬜ |
+| 19 | Hooks | ⬜ |
+| 20 | Web | ⬜ |
+| 21 | Multimodal | ⬜ |
+| 22 | Interfaz completa (TUI) | ⬜ |
+| 23 | Exportador OpenTelemetry | ⬜ |
+| 24 | Versión 1.0 y distribución | ⬜ |
 
 Qué entra en cada hito: [`DESIGN.md`](DESIGN.md) §14. El estado al día:
 [`ESTADO.md`](ESTADO.md).
