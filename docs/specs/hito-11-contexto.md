@@ -1,4 +1,6 @@
-Estado: PROPUESTA (2026-11-16)
+Estado: PROPUESTA (2026-11-16) → APROBADA (2026-11-16, por el humano, con
+las 12 decisiones de §11 y el recorte de lo que no hace el producto más
+competitivo)
 
 # Spec — Hito 11: Contexto virtual
 
@@ -480,8 +482,10 @@ hito 10):
   siempre (§1.9).
 - **Formato de Anthropic:** la caché automática de hoy (spec 9, §1.8).
 - **Formato de OpenAI:** se manda `prompt_cache_key` = id de sesión, como
-  OpenCode (§1.0). Si un proveedor no lo acepta (se comprueba con OpenCode
-  Go al implementar), el catálogo lo apaga por proveedor.
+  OpenCode (§1.0). Se comprueba con OpenCode Go al implementar. Solo si un
+  proveedor lo rechaza se añade al catálogo una forma de apagarlo por
+  proveedor; si no, no hay opción nueva. *(Recortado al aprobar, decisión
+  13.)*
 - **Se mide:** la parte leída de caché de cada llamada, en `/context`, en
   la traza y en el informe de `maha eval`.
 
@@ -542,8 +546,9 @@ cada paso queda acotado.
   usará.
 - **La traza** los apunta, con el coste del archivero en su
   `ModelCallFinished`, y la parte de caché de cada llamada.
-- **`maha -p`** archiva solo; la salida JSON gana `archived` (cuántas veces
-  en el turno).
+- **`maha -p`** archiva solo, igual que la sesión interactiva. La salida
+  JSON no cambia: cuántas veces se archivó está en la traza. *(Recortado
+  al aprobar, decisión 13.)*
 
 ## 2. En la industria
 
@@ -579,7 +584,7 @@ cada paso queda acotado.
 | `adapters/tools/files.py`, `shell.py` | adapters | El tope común; `touched()`; `grep` con `context` y `output` |
 | `adapters/models/openai_chat.py`, `anthropic.py` | adapters | `ContextOverflowError`; `prompt_cache_key` |
 | `adapters/project/local.py` | adapters | `nested()` |
-| `adapters/cli/*` | adapters | `/compact`, `/context`, la línea al archivar, `archived` en JSON, la marca en la exportación |
+| `adapters/cli/*` | adapters | `/compact`, `/context`, la línea al archivar y la marca en la exportación |
 | `adapters/evals/toml_suite.py`, `domain/evals.py`, `application/evals.py` | varias | `history` y `context_budget` en una tarea; la caché en el informe |
 | `src/mharness/prompts/archive.md` (nuevo) | — (datos) | El prompt del archivero |
 | `src/mharness/prompts/base.md`, `tools.md` | — (datos) | Una línea sobre `recall` y el índice |
@@ -594,8 +599,7 @@ budget = 100_000          # §1.3
 archivist_model = "…"     # §1.7; opcional
 ```
 
-En `models.toml`, por proveedor: `cache_key = false` si no acepta
-`prompt_cache_key` (§1.13). Comandos: `/compact [instrucciones]` y
+Comandos: `/compact [instrucciones]` y
 `/context`. Herramienta nueva: `recall`.
 
 ## 4. Plan de tests
@@ -635,10 +639,9 @@ Con fakes y ficheros temporales; ninguna llamada real.
     archivar, otra vez; secretos, enlaces y el tope de 64 KiB.
 17. `grep`: `context` y `output`; valores fuera de rango, error al modelo.
 18. Adaptadores: el error de contexto excedido (respx con el cuerpo
-    documentado); `prompt_cache_key` en el formato de OpenAI, y no con
-    `cache_key = false`.
+    documentado); `prompt_cache_key` en el formato de OpenAI.
 19. `/context` y `/compact` con un prompt y unas herramientas conocidos.
-20. `-p` archiva solo y el JSON lleva `archived`.
+20. `-p` archiva solo; la traza lo apunta.
 21. Evals: una tarea con `history` empieza con esa conversación; una con
     `context_budget` usa ese techo.
 22. Arquitectura: import-linter en verde; `domain/context.py` sin E/S.
@@ -750,7 +753,7 @@ En un directorio desechable, con OpenCode Go:
 7. Un comando con una salida enorme: principio, final y el id; `recall`
    la lee por partes.
 8. Un `AGENTS.md` en una subcarpeta: al leer allí, el resultado lo trae.
-9. `maha -p` con un presupuesto pequeño: archiva y el JSON lo cuenta.
+9. `maha -p` con un presupuesto pequeño: archiva y la traza lo cuenta.
 10. La parte leída de caché en `/context`, en los dos formatos.
 
 ## 8. Lo que no viaja por git y lo que necesita la release
@@ -806,7 +809,7 @@ Del mantenedor (2026-11-16):
 4. **La órbita larga, hito 12 nuevo**; los siguientes se renumeran y la
    1.0 pasa al hito 24 (§0).
 
-Propuestas del agente, para el mantenedor:
+Propuestas del agente, aprobadas por el mantenedor (2026-11-16):
 5. **Contar con el uso del proveedor y estimar lo nuevo** (caracteres /
    4), sin tokenizador (§1.2).
 6. **Tope común de 40.000 caracteres por resultado**, y lo que sobra al
@@ -820,6 +823,16 @@ Propuestas del agente, para el mantenedor:
 11. **`AGENTS.md` de subcarpetas al final del resultado** (§1.14).
 12. **`grep` con `context` y `output`** (§1.15) y **tope de pasos a 50**
     (§1.16).
+
+Del mantenedor, al aprobar (2026-11-16):
+13. **Solo entra lo que hace el producto verdaderamente competitivo, útil
+    y profesional.** Revisada la spec con ese criterio, se quitan el campo
+    `archived` de la salida JSON de `-p` (ningún competidor lo tiene; la
+    traza ya lo cuenta) y la opción `cache_key` del catálogo (solo si un
+    proveedor rechaza la clave). Lo demás se queda: cada pieza la tiene al
+    menos un competidor, baja el coste con cualquier modelo o evita perder
+    sesiones. El mismo criterio vale al implementar: lo que no lo cumpla
+    se quita, y se anota en §12.
 
 ## 12. Aprendido al implementar
 

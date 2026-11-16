@@ -3,7 +3,7 @@
 Última actualización: 2026-11-16. **Hito 10 cerrado: `v0.10.0` (system
 prompt por capas), `v0.10.1` (la auditoría tras el hito 10) y `v0.10.2`
 (su segunda, tercera y cuarta revisión, cero deuda). En curso: la spec
-del hito 11 (contexto virtual), PROPUESTA, en su PR. Plan ampliado a
+del hito 11 (contexto virtual), APROBADA, en su PR (#116). Plan ampliado a
 24 hitos (la órbita larga, hito 12 nuevo).**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
@@ -54,15 +54,12 @@ spec, su nota de la guía y su release.
 Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
 trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
-1. **Mantenedor:** revisar el PR de la spec del hito 11
-   (`docs/specs/hito-11-contexto.md`, rama `docs/spec-hito-11-contexto`),
-   y sus decisiones (§11): las 4 del mantenedor (2026-11-16) y las 8
-   propuestas del agente. Integrarlo es la aprobación. El PR también
-   renumera el plan: la órbita larga entra como hito 12 y la 1.0 pasa al
-   24.
-2. **Agente o mantenedor, al integrar el PR:** en GitHub, renombrar los
-   milestones de los hitos 12 a 23 a 13 a 24 y crear "Hito 12 — Órbita
-   larga" (spec 11, §8).
+1. **Mantenedor:** integrar el PR #116 (spec del hito 11, APROBADA el
+   2026-11-16 con sus 13 decisiones) con merge commit, con el CI en verde.
+   Los milestones de GitHub ya están renumerados y "Hito 12 — Órbita
+   larga" creado.
+2. **Agente, tras el merge:** `git switch main && git pull`, borrar la
+   rama local y seguir con el punto 3.
 3. **Agente, con la spec aprobada:** el PR 1 de la spec (contar, acotar y
    ver), en `feature/hito-11-contar`.
 4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
