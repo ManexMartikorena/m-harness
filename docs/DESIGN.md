@@ -607,7 +607,10 @@ queda abierto ("o", "mejora pequeña") se decide en esa spec.)*
     las instrucciones por URL al 19.)*
 11. **Gestión del contexto.** Conteo, umbral y compactación por resumen. Guía:
     la ventana de contexto. Además (P6): `/compact`, `/context` y qué
-    sobrevive a la compactación.
+    sobrevive a la compactación. *(Concretado el 16/11/2026, spec del hito 11,
+    §0: también la poda de resultados viejos, `max_tokens` por llamada,
+    los `AGENTS.md` de subcarpetas, la política de versiones del formato
+    de sesión, `grep` con contexto y solo ficheros, y el tope de pasos.)*
 12. **Deshacer y puntos de control** *(nuevo, P8)*. `/undo`, `/redo` y volver
     a un punto de la conversación, con los ficheros que cambió el agente.
     Guía: deshacer.
