@@ -1,6 +1,6 @@
 Estado: PROPUESTA (2026-11-16)
 
-# Spec — Hito 11: Gestión del contexto
+# Spec — Hito 11: Contexto virtual
 
 Referencias: `docs/DESIGN.md` §4 (pieza 7: "antes de cada llamada: si no
 cabe, se compacta"), §5 (sesión), §8 (system prompt fijo por sesión), §9
@@ -9,506 +9,553 @@ cabe, se compacta"), §5 (sesión), §8 (system prompt fijo por sesión), §9
 specs 4 (§12.14, tokens de las herramientas), 6 (§5 y riesgos: sesiones
 que no caben; la marca `[interrupted by the user]`), 8 (§1.1 topes; §11.8,
 tareas con historial previo), 9 (§1.6 `max_tokens`; caché del prompt) y 10
-(decisión 6, `AGENTS.md` de subcarpetas; §5, `todo_write`); la auditoría
-tras el hito 10 ("A su hito": `grep` con contexto o solo ficheros, la
-política de versiones del formato de sesión y subir el tope de pasos);
-`AGENTS.md`.
+(decisión 6, `AGENTS.md` de subcarpetas; §5, `todo_write`; §1.12, el
+modelo pequeño); la auditoría tras el hito 10 ("A su hito": `grep` con
+contexto o solo ficheros, la política de versiones del formato de sesión y
+subir el tope de pasos); `AGENTS.md`.
+
+*(El hito se llamaba "Gestión del contexto". Pasa a "Contexto virtual" por
+decisión del mantenedor, 2026-11-16: el arnés tiene que ser barato con
+cualquier modelo, también con sesiones enormes. DESIGN §14 se corrige en
+el mismo PR.)*
 
 ## 0. Alcance
 
 **El problema.** `maha` manda la conversación entera en cada llamada y no
-sabe cuánto ocupa. Una sesión larga crece hasta que el proveedor la
-rechaza o corta la respuesta (`context_full`), y entonces la sesión ya no
-sirve: no hay forma de seguir sin empezar otra. Antes de llegar ahí, cada
-llamada cuesta más y el modelo trabaja peor con tanto texto viejo.
+sabe cuánto ocupa. En un agente eso pesa el doble: en cada paso se
+**reenvía todo**, así que lo que entra una vez se paga en todos los pasos
+siguientes. Una sesión larga se vuelve cara con cualquier modelo, el
+modelo trabaja peor con tanto texto viejo, y al final el proveedor la
+rechaza (`context_full`) y la sesión ya no sirve.
 
-**Lo que hace este hito.** `maha` cuenta los tokens de cada llamada, sabe
-cuánto le queda de ventana y, antes de llenarla, libera sitio: primero
-poda los resultados viejos de las herramientas y, si no basta, resume la
-conversación con el modelo y sigue con el resumen. La persona lo ve
-(`/context`), lo puede pedir (`/compact`) y la sesión guarda lo que pasó
-sin perder nada en disco.
+**Lo que hace este hito.** El modelo ve siempre una **ventana de trabajo
+de tamaño fijo** (100.000 tokens por defecto, para todos los modelos): lo
+fijo, un índice de lo anterior y los últimos pasos tal cual. Lo que sale
+de esa ventana no se borra: va a un **archivo de la sesión en SQLite**,
+con búsqueda por texto. Un **modelo barato hace de archivero**: resume lo
+que se archiva y mantiene el índice. El modelo bueno tiene una
+herramienta, **`recall`**, para recuperar del archivo justo lo que
+necesite. Así cada llamada cuesta casi lo mismo, aunque la sesión tenga un
+millón de tokens.
+
+```
+ Modelo de la sesión                     Modelo barato (archivero)
+ ┌─────────────────────────────┐         ┌───────────────────────────┐
+ │ system prompt + herramientas│         │ al pasar del presupuesto: │
+ │ índice de lo archivado      │◄─índice─│ resume lo que sale de la  │
+ │ últimos pasos, tal cual     │         │ ventana y rehace el índice│
+ └─────────────┬───────────────┘         └────────────┬──────────────┘
+               │ recall("test del IVA")               │
+               ▼                                      ▼
+        ┌──────────────────────────────────────────────────┐
+        │ archivo de la sesión: SQLite + FTS5              │
+        │ mensajes · resultados enteros · resúmenes        │
+        └──────────────────────────────────────────────────┘
+```
 
 **Términos.**
 - **Token:** el trozo de texto con el que cuenta un modelo (en inglés,
   unos 4 caracteres).
 - **Ventana de contexto:** cuántos tokens caben en una llamada, prompt y
   respuesta juntos. Sale del catálogo (`context`).
-- **Reserva:** la parte de la ventana que se deja libre para la respuesta
-  del modelo.
-- **Poda (*prune*):** cambiar el texto de un resultado de herramienta
-  viejo por una marca corta. Sin llamar al modelo.
-- **Compactar:** cambiar el principio de la conversación por un resumen
-  que escribe el modelo.
-- **Umbral:** el tamaño a partir del cual `maha` compacta solo.
+- **Presupuesto de trabajo:** lo máximo que `maha` manda al modelo en una
+  llamada. Fijo y el mismo para todos los modelos (100.000), salvo que la
+  ventana del modelo sea menor.
+- **Archivar:** sacar los pasos más viejos de lo que se manda, guardarlos
+  en el archivo y dejar en su lugar un índice.
+- **Archivo:** una base SQLite por sesión, con FTS5 (la búsqueda por
+  texto de SQLite, de la biblioteca estándar de Python).
+- **Archivero:** el modelo barato que resume lo que se archiva.
+- **Índice:** el texto corto, siempre visible, que dice qué hay en el
+  archivo.
+- **Paso:** un mensaje de la persona, o una respuesta del modelo con sus
+  resultados de herramientas. Se archiva por pasos enteros: una llamada
+  nunca queda sin su resultado.
+- **Caché del prompt:** el proveedor cobra a un 10 % la parte del
+  principio de la petición que ya vio (§1.0). Solo funciona si ese
+  principio no cambia.
 
 Dentro de alcance:
-- **Conteo** (§1.1): cuánto ocupa la conversación, con el uso que da el
-  proveedor y una estimación de lo nuevo.
-- **Umbral y reserva** (§1.2), y `max_tokens` por llamada (§1.3).
-- **Poda de resultados viejos** (§1.4).
-- **Compactación por resumen** (§1.5), **qué sobrevive** (§1.6) y su
-  **prompt** en el repo (§1.7).
-- **Cuándo** se comprueba (§1.8): antes de cada llamada, también a mitad
-  de turno, y una vez más si el proveedor dice que no cabe.
-- **`/compact [instrucciones]`** y **`/context`** (§1.9).
-- **La sesión** (§1.10): la compactación como entrada nueva, y la
-  **política de versiones del formato** (pendiente de la auditoría).
-- **`AGENTS.md` de subcarpetas** (§1.11), cargados al leer un fichero de
-  allí.
-- **Herramientas que gastan menos** (§1.12): `grep` con líneas de
-  contexto y modo "solo ficheros"; el coste de las herramientas, medido.
-- **El tope de pasos** (§1.13), revisado con la compactación.
-- **Trazas** (§1.14) y **`-p`** (§1.15).
+- **El principio del arnés barato** (§1.1): parte fija acotada con un
+  test, tope por resultado, prefijo estable y presupuesto fijo.
+- **Conteo** (§1.2), **presupuesto** (§1.3) y `max_tokens` por llamada
+  (§1.4).
+- **El archivo** (§1.5), **las salidas grandes** (§1.6), **el archivero**
+  (§1.7), **lo que ve el modelo** (§1.8) y **`recall`** (§1.9).
+- **Cuándo** se archiva (§1.10), también a mitad de turno y cuando el
+  proveedor dice que no cabe.
+- **`/compact [instrucciones]`** y **`/context`** (§1.11).
+- **La sesión** y **la política de versiones del formato** (§1.12).
+- **La caché del prompt en los dos formatos** (§1.13).
+- **`AGENTS.md` de subcarpetas** (§1.14), **`grep` con contexto y solo
+  ficheros** (§1.15) y **el tope de pasos** (§1.16).
+- **Trazas y `-p`** (§1.17).
 - **Evals** (§5): tareas con historial previo (con la marca
-  `[interrupted by the user]`), tareas largas que compactan con una
-  ventana pequeña forzada, y otra medida de `todo_write`.
-- Nota 11 de la guía: la ventana de contexto.
+  `[interrupted by the user]`), tareas largas con un presupuesto pequeño
+  donde hay que recuperar lo archivado, y otra medida de `todo_write`.
+- Nota 11 de la guía: el contexto virtual.
 
 **Fuera de alcance** (y por qué):
-- **La compactación del proveedor** (Anthropic: edición del contexto y
-  compactación en la API, §1.0): es de un solo formato y haría una pieza
-  del agente fuera de `maha` (DESIGN §7.1, "a mano lo que es del agente").
-- **Un tokenizador local** (`tiktoken` u otro): cada familia cuenta a su
-  manera, y el proveedor ya da la cifra exacta de cada llamada (§1.1).
-- **La barra de estado con el contexto:** hito 21 (TUI). Aquí, `/context`
-  y una línea cuando se compacta.
-- **Hooks antes y después de compactar:** hito 18. Este hito deja el
-  evento que usarán.
-- **Deshacer una compactación** y volver a un punto: hito 12 (deshacer).
-  La sesión guarda todo, así que el hito 12 lo podrá hacer.
-- **Bifurcar una sesión:** hito 12 (ya asignado).
-- **Memoria entre sesiones:** hito 14.
+- **La órbita larga** (`run_plan`: el modelo da varios pasos con su
+  resultado esperado, y el código los ejecuta y solo vuelve al final o si
+  algo no sale como se esperaba): es otra palanca de coste, pero toca el
+  bucle, no el contexto. **Hito 12 nuevo**, por decisión del mantenedor
+  (2026-11-16); los hitos 12 a 23 pasan a ser los 13 a 24 (DESIGN §14).
+- **Code Mode** (el modelo escribe código que llama a las herramientas,
+  §1.0): necesita un sandbox; tras el hito 16 (sandbox).
+- **Buscar herramientas bajo demanda** (*tool search*, §1.0): con 10
+  herramientas no compensa; entra con MCP (hito 18), cuando haya muchas.
+- **Memoria entre sesiones:** hito 15. Usará el mismo adaptador SQLite.
+- **La compactación del proveedor** (Anthropic, §1.0): es de un solo
+  formato y haría una pieza del agente fuera de `maha` (DESIGN §7.1).
+- **Un tokenizador local:** cada familia cuenta a su manera, y el
+  proveedor ya da la cifra exacta de cada llamada (§1.2).
+- **Archivar en segundo plano** antes de llegar al presupuesto (para que
+  la persona no espere): mejora posible, si en el uso se nota la espera.
+- **La barra de estado:** hito 22 (TUI). Aquí, `/context` y una línea al
+  archivar.
+- **Hooks antes y después de archivar:** hito 19. Este hito deja el
+  evento.
+- **Deshacer** y **bifurcar:** hito 13.
 
 ## 1. Decisiones de fondo
 
 ### 1.0 Hechos comprobados (2026-11-16)
 
-Leídos en la documentación oficial y en el código. OpenCode: `dev` en el
-commit `8bb7fab` (ya es la V2) y el tag `v1.19.5` (la V1); Codex: commit
-`95946fa`.
+Leídos en la documentación oficial y en el código. OpenCode: `dev` (V2,
+commits `8bb7fab` y `b083c4d`) y el tag `v1.19.5` (V1); Codex: commits
+`95946fa` y `cd18053`; Hermes Agent: commit `611f0ab`.
+
+**Cómo hacen barato el arnés los demás**
 
 | Hecho | Fuente |
 |---|---|
-| OpenCode cuenta con el uso de la última respuesta del proveedor y estima lo que va después con caracteres / 4 (`CHARS_PER_TOKEN = 4`) | código, `packages/core/src/session/compaction.ts` (`estimatePrompt`), `util/token.ts` |
-| OpenCode V2 compacta en `ventana − max(15 % de la ventana, 16.000)` (`compaction.buffer`, por defecto `"15%"`); conserva unos 15.000 tokens recientes tal cual (`compaction.keep.tokens`) | https://opencode.ai/docs/compaction, `compaction.ts` (`calculateCeiling`) |
-| OpenCode V2 repite una vez la llamada que el proveedor rechaza por larga, tras compactar | https://opencode.ai/docs/compaction |
-| OpenCode resume con el modelo de la sesión, salvo `agents.compaction.model`. Su plantilla: objetivo, requisitos, decisiones, estado (hecho, en curso, bloqueado), siguiente paso, ficheros (15 como mucho) y contexto; rutas, comandos y errores exactos; "Do not continue the task or call tools" | https://opencode.ai/docs/compaction, `compaction.ts` (`SUMMARY_TEMPLATE`) |
-| OpenCode V1 podaba: de atrás hacia delante, sin tocar los dos últimos turnos de la persona, protegía los últimos 40.000 tokens de salidas (`PRUNE_PROTECT`) y solo podaba si liberaba más de 20.000 (`PRUNE_MINIMUM`); la marca, `[Old tool result content cleared]`. La V2 quitó `prune`: acorta las salidas largas dentro de la parte que conserva | `v1.19.5`, `packages/opencode/src/session/compaction.ts`; https://opencode.ai/docs/migrate-v1 |
-| OpenCode carga los `AGENTS.md` entre el fichero leído y el directorio de trabajo, el más cercano primero, una vez mientras siga en el historial (otra vez tras compactar). Van en un mensaje aparte, `Instructions from: <ruta>`, no en el resultado | https://opencode.ai/docs/instructions, `tool/plugin/read.ts`, `session/instructions.ts` |
-| Claude Code, tras compactar: vuelve a meter el system prompt, el `CLAUDE.md` de la raíz y el plan; los `CLAUDE.md` de subcarpetas se recargan al leer allí; relee hasta 5 ficheros recientes | https://code.claude.com/docs/en/context-window |
-| Claude Code carga un `CLAUDE.md` de subcarpeta la primera vez que lee, escribe o edita allí | https://code.claude.com/docs/en/memory |
-| Claude Code: `/compact [instrucciones]`; compacta cerca del límite (unos 967K en los modelos de 1M); tras varios intentos fallidos para con un error en vez de repetir; `/context` por partes (system prompt, herramientas, memoria, skills, mensajes) | https://code.claude.com/docs/en/commands, `/model-config`, `/how-claude-code-works`, `/debug-your-config` |
-| Claude Code borra resultados viejos de herramientas, y lo cuenta como una reconstrucción esperada de la caché | https://code.claude.com/docs/en/costs |
-| Hook `PreCompact` de Claude Code: `manual` o `auto`, puede bloquear | https://code.claude.com/docs/en/hooks |
-| Codex compacta en `min(configurado, 90 % de la ventana)`; conserva mensajes recientes de la persona hasta 20.000 tokens | código, `codex-rs/protocol/src/openai_models.rs`, `codex-rs/core/src/compact.rs` |
-| Anthropic: `count_tokens` es gratis y da una estimación; *context editing* (beta `context-management-2025-06-27`) y compactación en la API (beta `compact-2026-01-12`) | https://platform.claude.com/docs/en/build-with-claude/token-counting, `/context-editing`, `/compaction-threshold` |
-| Anthropic: un prompt que no cabe da 400 `invalid_request_error` ("prompt is too long"); en los modelos 4.5 y posteriores, prompt + `max_tokens` por encima de la ventana se acepta, y la respuesta para con `model_context_window_exceeded` | https://platform.claude.com/docs/en/build-with-claude/context-windows |
-| OpenAI: "the prompt and the generated output combined must be no more than the model's maximum context length"; Chat Completions no tiene endpoint para contar tokens | https://developers.openai.com/api/docs/concepts, `/guides/token-counting` |
-| OpenAI: con `stream_options.include_usage`, el uso llega en un trozo final; si el stream se corta, se puede perder | referencia de `chat/completions/create` |
+| Prompt base de OpenCode: 756 bytes; añadidos por familia de 300 B a 8,7 KB. Instrucciones base de Codex: 20.903 bytes | OpenCode `core/session/runner/prompt/system.txt`, `core/plugin/system-prompt/`; Codex `protocol/src/prompts/base_instructions/default.md` |
+| Claude Code carga bajo demanda las herramientas de MCP (`ENABLE_TOOL_SEARCH`) y las skills, y pide `CLAUDE.md` de menos de 200 líneas | https://code.claude.com/docs/en/mcp, `/costs` |
+| *Tool search* de Anthropic (`defer_loading`): con 5 servidores MCP, unos 55.000 tokens de definiciones bajan más del 85 %; la elección pierde precisión pasadas 30-50 herramientas | https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool |
+| Topes de resultados. Claude Code: unos 30.000 caracteres de un comando (el resto, a un fichero), 25.000 tokens por lectura. OpenCode: 2.000 líneas o 50 KiB (el resto, a un fichero con su ruta). Codex: 10.000 tokens, principio y final | https://code.claude.com/docs/en/tools-reference; OpenCode `core/tool-output.ts`, `core/shell.ts`; Codex `utils/string/src/truncate.rs` |
+| Caché de Anthropic: lectura a 0,1x, escritura a 1,25x (5 min) o 2x (1 h); orden herramientas → system → mensajes; cambiar las herramientas la invalida entera | https://platform.claude.com/docs/en/build-with-claude/prompt-caching |
+| Caché de OpenAI: automática por prefijo, desde 1.024 tokens; `prompt_cache_key` ayuda a que las peticiones de una sesión caigan en el mismo sitio | https://developers.openai.com/api/docs/guides/prompt-caching |
+| OpenCode manda `promptCacheKey` = id de sesión; marca la caché de Anthropic en la última herramienta, el system y la cola | OpenCode `core/session/model-request.ts`, `packages/ai/src/cache-policy.ts` |
+| Claude Code no reescribe lo ya enviado: tras editar un fichero añade un aviso al final, para no romper la caché | https://code.claude.com/docs/en/prompt-caching |
+| Claude Code: "`/clear` costs nothing"; compactar es en sí una petición grande | https://code.claude.com/docs/en/costs |
 
-**Sin comprobar** (POR VERIFICAR al implementar, con una llamada real a
-OpenCode Go): qué error exacto (estado y cuerpo) da Chat Completions, y
-GLM y Kimi por OpenCode, cuando el prompt no cabe; si rechazan prompt +
-`max_tokens` por encima de la ventana.
+**Contexto que se archiva y se recupera**
 
-### 1.1 Contar: el uso del proveedor, y una estimación de lo nuevo
+| Hecho | Fuente |
+|---|---|
+| Hermes Agent guarda todas las sesiones en SQLite con FTS5; `session_search` busca y lee mensajes de la base **sin modelo** ("no LLM"), 2.000 caracteres por mensaje como mucho | Hermes `hermes_state_fts.py`, `tools/session_search_tool.py` |
+| Hermes comprime con **un modelo auxiliar barato** (`auxiliary.compression`); empieza al 50 % de la ventana (75 % en las de menos de 512K); protege los 3 primeros turnos y los 20 últimos mensajes; el resumen, 12K tokens como mucho | Hermes `agent/context_compressor.py`, `cli-config.yaml.example` |
+| Hermes congela su memoria en el system prompt al empezar la sesión, para conservar la caché | Hermes `website/docs/user-guide/features/memory.md` |
+| MemGPT: contexto principal fijo + almacén de mensajes donde buscar; aviso al 70 %, y al 100 % archiva la mitad y rehace un resumen recursivo | https://arxiv.org/abs/2310.08560 |
+| MemGPT recupera lo olvidado: con GPT-4, del 32,1 % al 92,5 %. Fallo visto: el modelo deja de buscar antes de tiempo | mismo artículo, tabla 2 |
+| Anthropic recomienda compactar, notas estructuradas, recuperar "justo a tiempo" (rutas, grep) y "lo más simple que funcione"; borrar resultados viejos es "the safest lightest touch" | https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents |
 
-El tamaño de la conversación en la próxima llamada es:
+**Compactar en Claude Code, OpenCode y Codex**
+
+| Hecho | Fuente |
+|---|---|
+| OpenCode cuenta con el uso de la última respuesta y estima lo que va después con caracteres / 4 | OpenCode `core/session/compaction.ts` (`estimatePrompt`), `util/token.ts` |
+| OpenCode V2 compacta en `ventana − max(15 %, 16.000)`; conserva unos 15.000 tokens recientes; resume con el modelo de la sesión (o `agents.compaction.model`); repite una vez la llamada que el proveedor rechaza por larga | https://opencode.ai/docs/compaction |
+| OpenCode V1 podaba resultados viejos (protegía 40.000 tokens, solo si liberaba 20.000); la V2 lo quitó | `v1.19.5` `session/compaction.ts`; https://opencode.ai/docs/migrate-v1 |
+| Codex compacta en `min(configurado, 90 % de la ventana)` y conserva los mensajes de la persona hasta 20.000 tokens | Codex `protocol/src/openai_models.rs`, `core/src/compact.rs` |
+| Claude Code: `/compact [instrucciones]`; tras compactar vuelve a meter el system prompt y el `CLAUDE.md` raíz; los de subcarpetas se recargan al leer allí; `/context` por partes | https://code.claude.com/docs/en/context-window, `/commands` |
+| OpenCode carga los `AGENTS.md` entre el fichero leído y el directorio de trabajo, una vez (otra tras compactar), en un mensaje aparte; Claude Code, al leer, escribir o editar | https://opencode.ai/docs/instructions; https://code.claude.com/docs/en/memory |
+
+**Errores de las APIs**
+
+| Hecho | Fuente |
+|---|---|
+| Anthropic: un prompt que no cabe da 400 `invalid_request_error` ("prompt is too long"); en sus modelos recientes, prompt + `max_tokens` por encima de la ventana se acepta y la respuesta para con `model_context_window_exceeded` | https://platform.claude.com/docs/en/build-with-claude/context-windows |
+| OpenAI: "the prompt and the generated output combined must be no more than the model's maximum context length"; Chat Completions no tiene endpoint para contar tokens | https://developers.openai.com/api/docs/concepts |
+
+**Comprobado en el puesto:** el Python de `maha` (3.14.8) trae SQLite
+3.53.1 con FTS5. No hace falta ninguna dependencia nueva.
+
+**Sin comprobar** (POR VERIFICAR al implementar, con llamadas reales a
+OpenCode Go): qué error exacto da el formato de OpenAI cuando el prompt no
+cabe; si rechaza prompt + `max_tokens` por encima de la ventana; si acepta
+`prompt_cache_key`.
+
+### 1.1 El principio: barato con cualquier modelo
+
+No se ajusta a un modelo: se acota lo que el arnés manda. Cuatro reglas,
+cada una con su test:
+
+1. **La parte fija, acotada.** System prompt base y herramientas no pasan
+   de **3.500 tokens** estimados. Medido hoy (2026-11-16): base unos 700,
+   herramientas unos 1.960 (9 herramientas, 7.840 caracteres). Un test lo
+   fija: si un cambio lo pasa, el CI falla y lo decide el mantenedor. Las
+   instrucciones del proyecto (`AGENTS.md`) no cuentan: son de la persona
+   y ya tienen su tope (spec 10, 64 KiB).
+2. **Cada resultado, con tope** (§1.6). Ninguna herramienta mete más de
+   **40.000 caracteres** (unos 10.000 tokens, como Codex) de una vez.
+3. **El principio de la petición no cambia** (§1.13). Lo fijo va primero
+   y nunca se reescribe lo ya enviado, salvo al archivar.
+4. **Presupuesto de trabajo fijo** (§1.3): 100.000 tokens como mucho por
+   llamada, con cualquier modelo.
+
+### 1.2 Contar: el uso del proveedor, y una estimación de lo nuevo
 
 ```
 último input_tokens + último output_tokens   (exacto, del proveedor)
 + estimación de lo añadido después           (resultados, mensaje nuevo)
 ```
 
-- **Lo exacto, del proveedor.** Cada llamada ya devuelve `Usage`
-  (`input_tokens` cuenta todo el prompt, caché incluida, DESIGN §5). Es la
-  cifra con el tokenizador real del modelo, el system prompt y las
-  herramientas incluidos.
+- **Lo exacto, del proveedor.** `input_tokens` cuenta todo el prompt,
+  caché incluida (DESIGN §5), con el tokenizador real del modelo.
 - **Lo nuevo, estimado:** caracteres / 4, redondeando hacia arriba, en
-  `domain/context.py`. Es lo que hacen OpenCode y Claude Code para lo que
-  aún no ha medido el proveedor (§1.0). Se equivoca en código y en otros
-  idiomas, así que el margen de §1.2 lo cubre.
-- **Sin llamada previa** (sesión nueva, recién retomada, tras compactar):
-  todo estimado. El system prompt y las herramientas, también por
-  caracteres.
-- **El uso de la última llamada se guarda** en la sesión (ya está en
-  `UsageEntry`, por turno) y en el agente, por llamada: al retomar, la
-  primera estimación usa la última llamada que se guardó.
+  `domain/context.py`. Como OpenCode (§1.0).
+- **Sin llamada previa** (sesión nueva o recién retomada, o tras
+  archivar): todo estimado.
 
 ```python
 # domain/context.py
 def estimate(text: str) -> int:
     return -(-len(text) // 4)
-
-
-class ContextSize(BaseModel, frozen=True):
-    measured: int  # del proveedor, la última llamada
-    estimated: int  # lo añadido después
-
-    @property
-    def total(self) -> int: ...
 ```
 
-*Alternativas descartadas:* un tokenizador por familia (dependencias,
-modelos sin tokenizador público); el endpoint `count_tokens` de Anthropic
-(una llamada más por paso, y solo un formato).
+*Descartados:* un tokenizador por familia (dependencias, modelos sin
+tokenizador público) y `count_tokens` de Anthropic (una llamada más por
+paso, y de un solo formato).
 
-### 1.2 Umbral y reserva
+### 1.3 El presupuesto de trabajo
 
 ```
-ventana útil = min(ventana del catálogo, [context] window)
-reserva      = max(15 % de la ventana útil, 16_000)
-umbral       = ventana útil − reserva
+ventana   = la del catálogo (desconocida: la del presupuesto)
+reserva   = max(15 % de la ventana, 16.000)       como OpenCode V2 (§1.0)
+techo     = min([context] budget, ventana − reserva)
 ```
 
-- **Se compacta cuando la próxima llamada pasaría del umbral.**
-- **La reserva** es para la respuesta y para el error de la estimación.
-  Es la fórmula de OpenCode V2 (§1.0). Con 1M de ventana compacta a
-  850.000; con `kimi-k2.7-code` (262.144), a unos 222.800; con 30.000
-  (evals), a 14.000.
-- **No sale de `max_output`**, porque hay modelos con `max_output` igual a
-  su ventana (`kimi-k2.7-code`: 262.144 de los dos): reservarlo todo
-  dejaría cero para la conversación.
-- **`[context] window`** limita la ventana. Sirve para tres cosas:
-  - **coste:** en `claude-haiku-5-5`, pasar de 100.000 tokens de entrada
-    multiplica el precio por 5 (`models.toml`, tramo `above = 100_000`);
-  - **calidad:** los modelos atienden peor con contextos muy largos;
-  - **evals:** una ventana pequeña obliga a compactar en una tarea corta
-    y barata (§5).
-- **Valor por defecto de `window`:** sin límite (la del catálogo). Ver
-  decisión 2: se propone medir con evals si conviene uno.
-- **Ventana desconocida** (el catálogo no tiene `context`): no se compacta
-  solo. `/compact` funciona, y `/context` dice que no se sabe la ventana.
+- **Se archiva cuando la próxima llamada pasaría del techo.**
+- **`[context] budget`, 100.000 por defecto**, igual para todos los
+  modelos (decisión del mantenedor, 2026-11-16). En un modelo de 1M de
+  ventana, `maha` nunca manda más de 100.000; en uno de 64.000, el techo
+  es 48.000.
+- **Por qué fijo:** el precio de una llamada crece con lo que se manda, y
+  en un agente cada paso reenvía todo. Con un techo fijo, un paso cuesta
+  lo mismo en el minuto 1 que en la hora 5. Algunos modelos además
+  cambian de tramo de precio pasado un tamaño (el catálogo lo tiene,
+  `tiers`).
+- **Tras archivar** se manda: lo fijo, el índice (§1.8) y la **cola**, los
+  últimos pasos enteros que quepan en el **30 %** del techo. Así se
+  archiva cada 60.000-70.000 tokens nuevos, no en cada paso.
 
 ```toml
 # ~/.config/maha/config.toml o .maha/config.toml
 [context]
-auto_compact = true   # false: solo con /compact
-window = 200_000      # opcional: tope de la ventana, en tokens
+budget = 100_000         # tokens por llamada, como mucho
+archivist_model = "…"    # opcional; por defecto, small_model (§1.7)
 ```
 
-### 1.3 `max_tokens` por llamada
+### 1.4 `max_tokens` por llamada
 
 Hoy cada petición lleva `max_tokens = max_output` del catálogo (spec 9,
-§1.6). Con `kimi-k2.7-code` eso es su ventana entera. La regla de OpenAI
-dice que prompt y respuesta juntos no pasan de la ventana (§1.0); si el
-proveedor la aplica, la llamada falla en cuanto la conversación crece.
-Anthropic lo acepta en sus modelos recientes y corta la respuesta.
+§1.6), que en algunos modelos es la ventana entera. La regla de OpenAI
+dice que prompt y respuesta juntos no pasan de la ventana (§1.0).
 
-- **Desde este hito:** `max_tokens = min(max_output, ventana útil −
-  tamaño estimado del prompt)`. Por debajo del umbral siempre queda al
-  menos la reserva de §1.2; por encima, se compacta antes (§1.8).
+- **Desde este hito:** `max_tokens = min(max_output, ventana − tamaño
+  estimado del prompt)`. Por debajo del techo siempre queda al menos la
+  reserva.
 - Cierra el pendiente "el tope de cada llamada sigue para el hito 11"
-  (DESIGN §5, anotado el 27/10/2026).
+  (DESIGN §5, 27/10/2026).
 
-### 1.4 Primer nivel: podar resultados viejos
+### 1.5 El archivo de la sesión
 
-Lo que más ocupa en un agente de código son los resultados de las
-herramientas: un fichero leído, una salida de tests. Pasados unos pasos,
-el modelo ya los usó.
+- **Un SQLite por sesión**, en
+  `~/.local/state/maha/archive/<id-de-sesión>.db`, con permisos `0600`,
+  como las sesiones (spec 6). Con `sqlite3` de la biblioteca estándar,
+  desde un hilo (`asyncio.to_thread`): el bucle no se bloquea.
+- **Es un índice, no la fuente.** La fuente sigue siendo el JSONL de la
+  sesión (spec 6). El archivo se puede borrar o romper y se rehace desde
+  el JSONL. Es la "caché local" de la sesión.
+- **Qué guarda:**
 
-- **Qué se poda:** el `content` de los `ToolResultBlock` más viejos, de
-  atrás hacia delante, dejando intactos los resultados de los últimos
-  **40.000 tokens** estimados. Se cambia por:
+  ```sql
+  items(id, step, role, tool, text)            -- cada mensaje y resultado, entero
+  items_fts USING fts5(text, content=items)    -- búsqueda por texto
+  chunks(id, first_step, last_step, summary)   -- lo que escribió el archivero
+  ```
+- **Se borra con la sesión** (`/delete`, `maha sessions delete`).
+- **Datos sensibles:** guarda lo mismo que el fichero de la sesión (ya en
+  disco, `0600`, fuera del repo). Nada nuevo sale de la máquina.
+- **Arquitectura:** puerto `ContextArchive` (`ports/archive.py`), con
+  `add(items)`, `search(query, limit)`, `read(id, offset, limit)` y
+  `rebuild(messages)`; adaptador `adapters/storage/archive_sqlite.py`; un
+  fake en memoria para los tests. El hito 15 (memoria) reutiliza el
+  adaptador.
+
+### 1.6 Las salidas grandes, al archivo desde el principio
+
+Es la palanca más grande (§1.0): lo que entra una vez se reenvía en cada
+paso. En vez de podar después (rompe la caché), se acota al entrar.
+
+- **Tope común: 40.000 caracteres por resultado** (unos 10.000 tokens),
+  en `domain/context.py`. Hoy: `read_file` hasta 100.000, `run_command`
+  30.000, `grep` unos 30.000.
+- **Lo que pasa del tope se guarda entero en el archivo**, y el modelo ve
+  el principio, el final y cómo pedir el resto:
 
   ```
-  [old tool result cleared to free context; run the tool again if you need it]
+  …primeras líneas…
+  … [output cut: 182,340 characters; the whole output is archived as
+  out-17; read it with recall(id="out-17", offset=…)]
+  …últimas líneas…
   ```
-- **Qué no se poda nunca:** los mensajes de la persona, el texto y las
-  llamadas del modelo, los bloques de razonamiento (Anthropic los
-  comprueba con su firma), los resultados de error (cortos y útiles) y
-  los de `todo_write` y `ask_user` (son decisiones, no datos).
-- **Solo si compensa:** si la poda libera menos de **20.000 tokens**, no
-  se hace y se pasa al resumen (§1.5). Romper la caché del proveedor
-  (§1.0) por poco no vale la pena.
-- **El par llamada-resultado se conserva** siempre: la API exige un
-  resultado por llamada (spec 4, §1.1); la poda solo cambia el texto.
-- **Deja la conversación bajo el objetivo:** la poda tiene que bajar del
-  **60 %** de la ventana útil; si no llega, se pasa al resumen.
-- Los números (40.000 y 20.000) son los de OpenCode V1 (§1.0); Claude
-  Code también borra resultados viejos. Se ajustan con evals.
-- **OpenCode V2 quitó la poda** (§1.0) y solo resume. Lo que se gana con
-  ella: una sesión de muchas lecturas sigue sin llamar al modelo y sin
-  perder nada de lo que dijeron la persona y el modelo. Lo que se pierde:
-  otra pieza que probar, y otra rotura de la caché. Las evals deciden si
-  se queda (decisión 3); si no gana, el PR 2 la quita y queda solo el
-  resumen.
+- **`read_file`** no lo necesita: el fichero está en disco y ya lee por
+  partes (`offset`). Su tope baja de 100.000 a 40.000 caracteres.
+- **`run_command`**, `grep`, `glob` y `list_dir`: principio y final (en
+  la salida de un comando, el final es lo que dice qué falló).
+- *Descartada:* la poda de resultados viejos (OpenCode V1, Claude Code,
+  §1.0). Con el tope al entrar aporta poco, y cada poda reescribe lo ya
+  enviado y rompe la caché. OpenCode V2 la quitó.
 
-### 1.5 Segundo nivel: resumir
+### 1.7 El archivero
 
-Cuando podar no basta, el modelo resume la conversación y la parte vieja
-se cambia por el resumen.
-
-- **Qué se resume:** todo menos la cola reciente. La **cola** son los
-  últimos turnos enteros que quepan en **20.000 tokens** estimados (Codex
-  conserva 20.000 y OpenCode 15.000, §1.0), y como mínimo el último
-  mensaje de la persona. Turnos enteros: una llamada
-  nunca queda sin su resultado.
-- **Quién resume:** el modelo de la sesión, con el mismo proveedor, los
-  mismos reintentos y el mismo respaldo (spec 8, §1.14). No el modelo
-  pequeño: su ventana puede ser menor y el resumen es la pieza que más
-  pesa en la calidad de lo que sigue. Se puede cambiar con `[context]
-  compact_model`.
-- **Sin herramientas:** la llamada de resumen no lleva herramientas
-  (`tools = []`), así que el modelo solo puede escribir texto. Lleva el
-  system prompt de la sesión (la caché del proveedor lo reutiliza).
-- **Si lo que se resume no cabe** en la llamada de resumen (por ejemplo,
-  el modelo de respaldo tiene menos ventana): se poda primero, en esa
-  petición, todo lo podable; si aún no cabe, se resume por partes, de la
-  más vieja a la más nueva, cada parte con el resumen de la anterior.
-- **El resultado** es un mensaje de la persona al principio de la
-  conversación, marcado y delimitado:
-
-  ```
-  <conversation-summary>
-  This conversation was compacted. Summary of the earlier part:
-  …
-  </conversation-summary>
-  ```
-  Delante va lo que construye el código (§1.6), y detrás, la cola intacta.
-- **Ctrl+C mientras resume:** se cancela, la conversación queda como
-  estaba y el turno sigue cortado como cualquier Ctrl+C. Compactar es
-  atómico: o todo, o nada.
-- **Si falla** (error del proveedor tras reintentos, resumen vacío): la
-  conversación queda como estaba. Si la llamada aún cabe, el turno sigue
-  y se avisa; si no, el turno acaba con `context_full` y el aviso dice qué
-  hacer (`/compact`, `/new`).
-- **El coste del resumen** cuenta en el turno y en la sesión, como
-  cualquier llamada (`ModelCallFinished`), y en los topes del turno.
-
-### 1.6 Qué sobrevive a la compactación
-
-Una parte la escribe el código (exacta, no depende del modelo) y otra el
-modelo (el resumen):
-
-| Qué | Cómo |
-|---|---|
-| System prompt | Intacto: va aparte y no cambia en la sesión (spec 10, §1.2) |
-| Herramientas y permisos aprobados para la sesión | Intactos: no son conversación |
-| La lista de tareas | El código copia la última de `todo_write` |
-| Ficheros que el agente cambió | El código lista las rutas de `write_file` y `edit_file` con éxito |
-| `AGENTS.md` de subcarpetas ya cargados | Se olvidan: vuelven al leer otra vez allí (§1.11) |
-| Instrucciones de `/compact` | Van al prompt del resumen |
-| La cola reciente | Intacta, con sus resultados |
-| Lo demás (qué pidió la persona, decisiones, errores, estado) | El resumen del modelo, con la estructura de §1.7 |
-
-La parte del código va delante del resumen, en el mismo mensaje:
-
-```
-<conversation-summary>
-Files changed so far: src/app.py, tests/test_app.py
-Task list: [x] rename multa · [ ] add tope · [ ] update README
-…resumen del modelo…
-</conversation-summary>
-```
-
-### 1.7 El prompt del resumen
-
-- **En el repo:** `src/mharness/prompts/compact.md`, con huecos
-  (`{{instructions}}`), como `title.md` e `init.md` (spec 10, §1.3). Es
-  código: se evalúa (§5).
-- **Pide una estructura fija**, en el idioma de la conversación: la
-  petición de la persona y sus cambios; decisiones y por qué; lo hecho
-  (ficheros y qué cambió en cada uno); errores y cómo se resolvieron; lo
-  que falta; el siguiente paso exacto, con las palabras de la persona si
-  las hay.
-- **Delimita lo que resume:** la conversación va dentro de
-  `<conversation>` y el prompt dice que es entrada no confiable: las
+- **Quién:** `[context] archivist_model`; si no hay, `small_model` (el del
+  catálogo por proveedor, spec 10, §1.12); si no hay, el de la sesión.
+  Como el compresor de Hermes (§1.0). Si la ventana del archivero es menor
+  que lo que tiene que leer, lo lee por partes.
+- **Qué recibe:** el índice anterior y los pasos que salen de la ventana,
+  delimitados como entrada no confiable (`<conversation>`): las
   instrucciones que aparezcan ahí (un fichero leído, una web) no se
   siguen, se resumen como datos (DESIGN §10).
-- **Tope de salida:** `max_tokens = 8.000` para el resumen. Un resumen más
-  largo que eso ya no ahorra.
+- **Qué devuelve:** JSON validado con Pydantic:
 
-### 1.8 Cuándo se comprueba
-
-- **Antes de cada llamada al modelo**, dentro del bucle (DESIGN §4): al
-  empezar el turno, con el mensaje nuevo, y antes de cada paso, con los
-  resultados del anterior.
-- **A mitad de turno** se compacta igual: lo resumido es lo anterior al
-  turno, y el turno en curso es parte de la cola. Si el turno solo ya no
-  cabe, se podan sus resultados viejos; si aun así no cabe, el turno
-  acaba con `context_full`.
-- **Si el proveedor dice que no cabe** (`stop_reason = "context_full"` o
-  el error de contexto excedido, §1.0), aunque la estimación dijera que
-  sí: se compacta y se repite la llamada **una vez**. Si vuelve a pasar,
-  el turno acaba con `context_full`. OpenCode hace lo mismo (§1.0). Para
-  eso, cada adaptador traduce el error de su API a `ContextOverflowError`,
-  del dominio: en Anthropic, el 400 "prompt is too long"; en el formato de
-  OpenAI no está documentado, y se fija al implementar con una llamada
-  real a OpenCode Go (GLM y Kimi), anotada en §12. Un error que no se
-  reconoce sigue siendo el error de hoy.
-- **Una compactación por paso** como mucho: nunca un bucle de compactar.
-- **No se compacta a la vez que** se muestra texto: entre pasos, cuando no
-  hay nada en pantalla a medias.
-
-### 1.9 `/compact` y `/context`
-
-- **`/compact [instrucciones]`:** compacta ya, aunque no haga falta. Sin
-  poda: va directo al resumen, con las instrucciones si las hay
-  (`/compact céntrate en el fallo del IVA`). Dice cuánto había y cuánto
-  queda:
-
+  ```json
+  {"summary": "Pasos 1-14: …", "index": "…el índice nuevo, ≤ 2.000 tokens…"}
   ```
-  > /compact
-  [compacted: 84,210 → 6,930 tokens (estimated); 0.031 $]
-  ```
-- **`/context`:** qué ocupa la ventana, por partes, con la última cifra
-  exacta y lo estimado:
+  El resumen de cada tramo va a `chunks` (se puede buscar) y el índice, a
+  la ventana. Se resume de forma recursiva (MemGPT, §1.0): el índice
+  nuevo integra el anterior; nunca se vuelve a leer todo lo archivado.
+- **Su prompt, en el repo:** `src/mharness/prompts/archive.md`, con
+  huecos, como `title.md` (spec 10, §1.3). Pide: lo que pidió la persona,
+  decisiones y por qué, lo hecho por fichero, errores y cómo se
+  resolvieron, lo pendiente y el siguiente paso; rutas, comandos y errores
+  exactos (como la plantilla de OpenCode, §1.0). Es código: se evalúa.
+- **Sin herramientas** (`tools = []`), con `complete()`, y `max_tokens =
+  4.000`.
+- **Si falla** (error del proveedor tras reintentos, JSON no válido dos
+  veces): se archiva igual, con un índice que construye el código solo
+  (§1.8). Nunca se pierde nada: está en el archivo.
+- **Su coste** cuenta en el turno, en la sesión y en los topes del turno,
+  como cualquier llamada (`ModelCallFinished`).
+
+### 1.8 Lo que ve el modelo tras archivar
+
+Un mensaje al principio de la conversación, delimitado. Una parte la
+escribe el código (exacta) y otra el archivero:
+
+```
+<context-archive>
+Earlier steps of this conversation are archived. Search or read them
+with the recall tool.
+
+What the user asked, in their words:
+- "Arregla el redondeo del IVA reducido"
+- "Ahora añade un test para el 4 %"
+
+Task list: [x] fix rounding · [ ] add 4 % test
+Files changed: tienda/iva.py, tests/test_iva.py
+
+Index (archivist):
+Steps 1-14: fixed rounding in tienda/iva.py (round half up) …
+</context-archive>
+```
+
+| Qué | Quién |
+|---|---|
+| System prompt, herramientas y permisos de la sesión | Intactos: no son conversación |
+| Los mensajes de la persona | El código, tal cual, hasta 20.000 caracteres (los más recientes; como Codex, §1.0) |
+| La lista de tareas | El código: la última de `todo_write` |
+| Ficheros cambiados | El código: rutas de `write_file` y `edit_file` con éxito |
+| El índice | El archivero (§1.7) |
+| La cola | Intacta, con sus resultados |
+| `AGENTS.md` de subcarpetas | Se olvidan; vuelven al leer allí (§1.14) |
+
+### 1.9 `recall`: recuperar del archivo
+
+Una herramienta de lectura, sin aprobación, siempre registrada (la lista
+de herramientas no cambia en la sesión, §1.13):
+
+```
+{"query": "test iva 4"}                        buscar: hasta 5 trozos, con su id
+{"id": "out-17", "offset": 200, "limit": 100}  leer un resultado o paso, por líneas
+```
+
+- **Buscar** usa FTS5, sin modelo (como Hermes, §1.0): es gratis, rápido
+  y exacto. Da hasta 5 trozos con su id y su paso, 8.000 caracteres en
+  total.
+- **Leer** da un elemento archivado por líneas, con el tope común (§1.6).
+- **Lo que devuelve va delimitado** como entrada no confiable: es lo que
+  dijeron las herramientas.
+- **Que el modelo sepa buscar:** el índice siempre está a la vista y una
+  línea del prompt base explica cuándo usar `recall`. MemGPT vio que el
+  modelo a veces deja de buscar antes de tiempo (§1.0): las evals (§5)
+  miden que encuentra lo que necesita.
+- Sin archivo todavía, responde "nothing archived yet".
+
+### 1.10 Cuándo se archiva
+
+- **Antes de cada llamada al modelo** (DESIGN §4): al empezar el turno,
+  con el mensaje nuevo, y antes de cada paso, con los resultados del
+  anterior.
+- **También a mitad de turno.** Un turno de agente puede tener 50 pasos;
+  se archivan sus pasos viejos igual que los de turnos anteriores. Por
+  pasos enteros: una respuesta del modelo y sus resultados van juntos.
+- **Si el proveedor dice que no cabe** (`context_full`, o el error de
+  contexto excedido, §1.0) aunque la estimación dijera que sí: se archiva
+  y se repite la llamada **una vez**. Si vuelve a pasar, el turno acaba
+  con `context_full`. Cada adaptador traduce el error de su API a
+  `ContextOverflowError`, del dominio: en Anthropic, el 400 "prompt is
+  too long"; en el formato de OpenAI se fija al implementar con una
+  llamada real (§1.0). Un error que no se reconoce sigue siendo el de hoy.
+- **Una vez por paso** como mucho: nunca un bucle de archivar.
+- **Atómico:** Ctrl+C o un fallo mientras archiva dejan la conversación
+  como estaba.
+- **La persona lo ve:** `[archiving 64,210 tokens of earlier steps…]` y
+  después `[archived: 98,400 → 31,200 tokens; 0.002 $]`.
+
+### 1.11 `/compact` y `/context`
+
+- **`/compact [instrucciones]`:** archiva ya todo menos la cola, aunque no
+  haga falta. Las instrucciones van al archivero (`/compact céntrate en
+  el fallo del IVA`). Se llama así porque es el nombre que conocen las
+  personas de Claude Code y OpenCode.
+- **`/context`:** qué ocupa la ventana de trabajo, por partes, con la
+  última cifra exacta y la caché:
 
   ```
   > /context
-  claude-haiku-5-5 · window 1,000,000 (limit 200,000) · auto-compact at 170,000
-  system prompt     2,140   (base 390 · AGENTS.md 1,610 · environment 140)
-  tools             1,960   (9 tools)
-  messages         71,300   (tool results 58,900 · summary 0)
-  total            75,400   37.7 % of 200,000 · last call 74,950 (exact)
+  budget 100,000 · window 262,144 · archives at 100,000
+  system prompt     2,140   (base 700 · AGENTS.md 1,300 · environment 140)
+  tools             2,110   (10 tools)
+  archive index         0   (nothing archived)
+  messages         61,300   (tool results 48,900)
+  total            65,550   65.6 % of budget · last call 64,950 (exact)
+  cache            last call 58,200 of 64,950 read from cache (89.6 %)
   ```
-- Los dos, solo en la sesión interactiva. En `-p` no hay comandos (spec
-  8): ahí compacta solo.
-- **`/help`** los lista.
+- Los dos, solo en la sesión interactiva; en `-p` archiva solo. `/help`
+  los lista.
 
-### 1.10 La sesión, y la política de versiones del formato
+### 1.12 La sesión, y la política de versiones del formato
 
-**Una entrada nueva**, sin reescribir el fichero (la sesión es
-`append-only`, spec 6, §1.2):
+**Una entrada nueva**, sin reescribir el fichero (spec 6, §1.2):
 
 ```python
-class CompactionEntry(BaseModel, frozen=True):
-    type: Literal["compaction"] = "compaction"
-    # Cuántos mensajes del historial, desde el principio, sustituye.
+class ArchiveEntry(BaseModel, frozen=True):
+    type: Literal["archive"] = "archive"
+    # Cuántos mensajes de la conversación, desde el principio, sustituye.
     replaces: int
-    # El mensaje que va en su lugar (§1.6): el resumen.
-    summary: Message
-    # "prune": cambió resultados; "summary": resumió; "manual": /compact.
-    kind: Literal["prune", "summary", "manual"]
-    # Para la poda: los ids de las llamadas cuyo resultado se podó.
-    pruned: list[str] = []
+    # El mensaje que va en su lugar: el de §1.8.
+    index: Message
+    manual: bool = False  # /compact
 ```
 
-- **Al retomar**, `replay()` aplica cada `CompactionEntry` en su sitio: la
-  conversación que vuelve es la compactada. Los mensajes originales siguen
-  en el fichero.
+- **Al retomar**, `replay()` aplica cada `ArchiveEntry` en su sitio: la
+  conversación que vuelve es la de trabajo, y el archivo se rehace si
+  falta.
 - **`/export` y `maha export`** dan la conversación entera, con una marca
-  donde se compactó y el resumen. Lo que se borra para el modelo no se
-  borra para la persona.
-- **`check_history`** comprueba también la conversación compactada.
+  donde se archivó. Lo que deja de ver el modelo no deja de verlo la
+  persona.
+- **`check_history`** comprueba también la conversación de trabajo.
 
 **Política de versiones del formato** (pendiente de la auditoría tras el
-hito 10). Hoy un `maha` viejo que encuentra una entrada que no conoce dice
-"fichero corrupto". Se decide:
+hito 10):
 - **El formato solo crece:** cada versión puede añadir tipos de entrada o
   campos opcionales; nunca cambia el significado de uno que existe.
-- **Un tipo desconocido** no es "corrupto": `SessionTooNew`, con el
-  mensaje "this session was written by a newer maha (X.Y.Z); update maha
-  to open it". La versión sale de la cabecera (`maha`, ya existe).
-- **Se aplica desde este hito**, que es el primero que añade un tipo que
-  cambia la conversación. Los `maha` de antes (≤ 0.10.2) seguirán diciendo
-  "corrupto" con una sesión compactada: se anota en las notas de la
-  release.
-- Un test fija que una entrada de un tipo inventado da `SessionTooNew` y
-  no `SessionCorrupt`.
+- **Un tipo desconocido** da `SessionTooNew` ("this session was written by
+  a newer maha (X.Y.Z); update maha to open it"), no "corrupto". La
+  versión sale de la cabecera (`maha`, ya existe).
+- Los `maha` anteriores (≤ 0.10.2) dirán "corrupto" con una sesión
+  archivada: va en las notas de la release.
 
-### 1.11 `AGENTS.md` de subcarpetas
+### 1.13 La caché del prompt, en los dos formatos
 
-Hoy se cargan, en el system prompt, los `AGENTS.md` de la raíz git hasta
-el directorio de trabajo (spec 10, §1.4). Los de carpetas más abajo
-(`packages/api/AGENTS.md`) no se ven nunca.
+- **Orden fijo:** herramientas, system prompt, índice, cola. Lo que menos
+  cambia, primero.
+- **No se reescribe lo enviado**, salvo al archivar (una escritura de
+  caché cada 60.000-70.000 tokens, §1.3). Por eso no hay poda (§1.6).
+- **La lista de herramientas no cambia en la sesión:** `recall` está
+  siempre (§1.9).
+- **Formato de Anthropic:** la caché automática de hoy (spec 9, §1.8).
+- **Formato de OpenAI:** se manda `prompt_cache_key` = id de sesión, como
+  OpenCode (§1.0). Si un proveedor no lo acepta (se comprueba con OpenCode
+  Go al implementar), el catálogo lo apaga por proveedor.
+- **Se mide:** la parte leída de caché de cada llamada, en `/context`, en
+  la traza y en el informe de `maha eval`.
+
+### 1.14 `AGENTS.md` de subcarpetas
+
+Hoy se cargan, en el system prompt, los de la raíz git hasta el directorio
+de trabajo (spec 10, §1.4). Los de más abajo no se ven nunca.
 
 - **Cuándo:** la primera vez que `read_file`, `edit_file` o `write_file`
-  toca un fichero de una carpeta que tiene, entre ella y el directorio de
-  trabajo, un `AGENTS.md` (o `CLAUDE.md`, con `compat_claude`) que no se ha
-  cargado.
-- **Dónde:** al final del resultado de esa herramienta, delimitado como en
-  el system prompt:
+  toca un fichero de una carpeta con un `AGENTS.md` (o `CLAUDE.md`, con
+  `compat_claude`) entre ella y el directorio de trabajo que aún no se ha
+  cargado. Como Claude Code (§1.0).
+- **Dónde:** al final del resultado de esa herramienta, delimitado:
 
   ```
-  …contenido del fichero…
-
   <instructions source="packages/api/AGENTS.md">
   Los tests de este paquete se lanzan con `make test`.
   </instructions>
   ```
-  No en el system prompt: cambiarlo a mitad de sesión rompe la caché
-  (spec 10, §1.2). OpenCode lo manda como un mensaje aparte de la persona
-  (§1.0); al final del resultado es más simple (no añade mensajes al
-  turno, y el par llamada-resultado no cambia) y el modelo lo ve igual de
-  cerca. Claude Code lo carga al leer, escribir o editar, como aquí.
-- **Una vez por sesión** cada fichero. Tras compactar se olvidan (§1.6):
-  vuelven la próxima vez que se lea allí.
-- **Las mismas reglas** que los de spec 10: dentro del proyecto, sin
-  secretos, sin enlaces fuera, UTF-8, y el tope de 64 KiB contando todos
-  los cargados en la sesión.
-- **Arquitectura:** el puerto `ProjectInfo` gana `nested(path) ->
-  list[Layer]`; la herramienta no lo llama (un adaptador no importa otro).
-  Lo hace el bucle: cada herramienta dice qué ruta tocó (`touched(params)
-  -> str | None`, nuevo en el puerto `Tool`, `None` por defecto), y el
-  agente añade lo que devuelva `nested()`.
-- **Confianza:** son instrucciones del proyecto, igual que las del system
-  prompt (spec 10, §1.6). El modelo ve de qué fichero salen.
+  No en el system prompt: cambiarlo rompe la caché (§1.13). OpenCode lo
+  manda en un mensaje aparte; al final del resultado es más simple y no
+  añade mensajes al turno.
+- **Una vez por sesión**; tras archivar se olvidan y vuelven al leer allí.
+- **Las mismas reglas** que spec 10: dentro del proyecto, sin secretos,
+  sin enlaces fuera, UTF-8 y el tope de 64 KiB contando todos.
+- **Arquitectura:** el puerto `ProjectInfo` gana `nested(path)`; cada
+  herramienta dice qué ruta tocó (`touched(params) -> str | None`, nuevo en
+  el puerto `Tool`); el bucle añade lo que dé `nested()`. Ningún adaptador
+  importa otro.
 
-### 1.12 Herramientas que gastan menos
+### 1.15 `grep` con contexto y solo ficheros
 
-**`grep`** (pendiente de la auditoría tras el hito 10). Hoy siempre da
-`ruta:línea: texto`. Se añaden dos parámetros:
+Pendiente de la auditoría tras el hito 10. Dos parámetros nuevos:
 
 ```json
 {"pattern": "def total", "context": 2}
 {"pattern": "TODO", "output": "files"}
 ```
-- `context` (0 a 10, 0 por defecto): líneas de antes y después, como
-  `grep -C`. Evita leer el fichero entero para ver una función.
-- `output`: `"lines"` (por defecto), `"files"` (solo las rutas) o
-  `"count"` (cuántas por fichero). Para saber dónde algo, sin traer todo.
+- `context` (0 a 10, 0 por defecto): líneas de antes y después. Evita
+  leer el fichero entero para ver una función.
+- `output`: `"lines"` (por defecto), `"files"` (solo rutas) o `"count"`.
+  Claude Code da solo ficheros por defecto (§1.0); aquí se mide antes de
+  cambiar el valor por defecto (§5).
 
-**El coste de las herramientas en cada llamada** (spec 4, §12.14). Medido
-hoy (2026-11-16) con sus esquemas en JSON: **9 herramientas, 7.840
-caracteres, unos 1.960 tokens** estimados. Las que más: `ask_user` (488)
-y `todo_write` (375). Se decide:
-- `/context` lo enseña en cada sesión (§1.9).
-- No se recortan descripciones en este hito sin evals: cada palabra de una
-  descripción cambia el comportamiento (spec 10). Se anota el número en
-  la guía y se mide con la caché: con la caché del proveedor, la parte
-  fija (system prompt y herramientas) se cobra a precio de caché.
+### 1.16 El tope de pasos
 
-### 1.13 El tope de pasos
+Hoy 25 llamadas por turno (spec 8, §1.1), bajo porque un turno largo
+llenaba el contexto. Con el presupuesto fijo ya no pasa, y el coste de
+cada paso queda acotado.
 
-Hoy son 25 llamadas por turno (`MAX_STEPS`, spec 8, §1.1). Se puso bajo
-porque un turno largo llenaba el contexto. Con la compactación ese motivo
-desaparece, y las tareas largas (renombrar en un proyecto, arreglar una
-batería de tests) pasan de 25.
+- **Propuesta: 50**, confirmado con las tareas largas de §5. Se cambia en
+  `[limits] max_steps`, como hoy. Los demás topes no cambian.
 
-- **Propuesta: 50**, confirmado con las tareas largas de §5 (cuántos pasos
-  usan de verdad). Se puede cambiar en `[limits] max_steps`, como hoy.
-- Los demás topes (coste, tokens, tiempo) no cambian.
+### 1.17 Trazas, eventos y `-p`
 
-### 1.14 Trazas y eventos
-
-- **Eventos nuevos del bucle** (`domain/agent_events.py`):
-  - `ContextCompacting(kind, before)`: va a compactar (la terminal dice
-    "compacting…");
-  - `ContextCompacted(kind, before, after, replaced)`: ya está.
-
-  El hito 18 (hooks) los usará.
-- **La traza** los apunta, con el coste del resumen en su
-  `ModelCallFinished`.
-- **`/trace`** enseña cada compactación en su sitio.
-
-### 1.15 `-p` y la salida JSON
-
-- En `maha -p` compacta solo, igual que en la sesión interactiva.
-- La salida JSON (spec 8) gana `compactions`: cuántas hubo en el turno.
+- **Eventos nuevos** (`domain/agent_events.py`): `ContextArchiving(before)`
+  y `ContextArchived(before, after, steps, manual)`. El hito 19 (hooks) los
+  usará.
+- **La traza** los apunta, con el coste del archivero en su
+  `ModelCallFinished`, y la parte de caché de cada llamada.
+- **`maha -p`** archiva solo; la salida JSON gana `archived` (cuántas veces
+  en el turno).
 
 ## 2. En la industria
 
 | Enfoque | Qué hace | Cuándo se elegiría |
 |---|---|---|
-| **Resumen** (Claude Code `/compact` y automático, OpenCode, Codex) | El modelo resume y la conversación sigue desde el resumen | Agentes de conversación larga: es lo de `maha` |
-| **Poda de resultados** (OpenCode V1 `prune`; Claude Code) | Borra salidas viejas de herramientas, sin llamar al modelo | Primer nivel, barato; es lo de `maha` |
-| **Ventana deslizante** (LangChain `ConversationBufferWindowMemory`, `trim_messages`) | Quita los mensajes más viejos | Chats sin herramientas; en un agente rompe los pares llamada-resultado |
-| **Edición y compactación del proveedor** (Anthropic *context editing*, *compaction*) | La API hace la poda o el resumen | Si solo se usa ese proveedor |
-| **Memoria externa** (MemGPT/Letta, RAG) | Lo viejo va a una base y se busca | Memoria entre sesiones: hito 14 |
-| **Tokenizador local** (`tiktoken`, `tokenizers` de Hugging Face) | Cuenta exacto antes de llamar | Con un solo proveedor y tokenizador público |
+| **Compactar por resumen** (Claude Code, OpenCode, Codex) | El modelo de la sesión resume todo y se sigue desde el resumen | Lo más probado; lo viejo se pierde para el modelo |
+| **Contexto virtual** (MemGPT/Letta, Hermes Agent) | Ventana fija, lo viejo a un almacén con búsqueda, y una herramienta para recuperarlo | Sesiones muy largas con coste acotado: es lo de `maha` |
+| **Poda de resultados** (OpenCode V1, Claude Code) | Borra salidas viejas, sin modelo | Barato, pero rompe la caché |
+| **Ventana deslizante** (LangChain `trim_messages`) | Quita lo más viejo | Chats sin herramientas |
+| **Del proveedor** (Anthropic *context editing* y *compaction*) | La API poda o resume | Con un solo proveedor |
+| **Memoria con fichero** (herramienta *memory* de Anthropic) | El modelo escribe notas en ficheros y las lee | Entre sesiones: hito 15 |
+| **Tokenizador local** (`tiktoken`) | Cuenta exacto antes de llamar | Con un solo proveedor |
 
 ## 3. Diseño de detalle
 
@@ -516,116 +563,120 @@ batería de tests) pasan de 25.
 
 | Fichero | Capa | Qué |
 |---|---|---|
-| `domain/context.py` (nuevo) | domain | `estimate()`, `ContextSize`, `ContextPolicy` (ventana, reserva, umbral, objetivo de la poda), `prune()` y `tail()` (qué se poda y cuál es la cola), puras y sin E/S |
+| `domain/context.py` (nuevo) | domain | `estimate()`, `ContextPolicy` (ventana, reserva, techo, cola), `fit()` (tope con principio y final), elegir los pasos que se archivan y el índice del código (§1.8). Puro, sin E/S |
+| `domain/archive.py` (nuevo) | domain | `ArchivedItem`, `Hit`, `ArchiveSummary` (lo que devuelve el archivero) |
 | `domain/errors.py` | domain | `ContextOverflowError` |
-| `domain/session.py` | domain | `CompactionEntry`, `SessionTooNew`, `replay()` con compactaciones |
-| `domain/agent_events.py` | domain | `ContextCompacting`, `ContextCompacted` |
-| `domain/trace.py` | domain | Los registros de compactación |
-| `ports/tools.py` | ports | `touched(params)` |
-| `ports/project.py` | ports | `nested(path)` |
-| `application/context.py` (nuevo) | application | `Compactor`: decide, poda o resume, y construye la parte del código (§1.6) |
-| `application/agent.py` | application | Comprobar antes de cada llamada; repetir una vez tras `ContextOverflowError`; `max_tokens` (§1.3); `AGENTS.md` de subcarpetas |
-| `application/sessions.py` | application | Guardar `CompactionEntry`; `/compact`; los datos de `/context` |
-| `adapters/models/openai_chat.py`, `anthropic.py` | adapters | Traducir el error de contexto excedido |
+| `domain/session.py` | domain | `ArchiveEntry`, `SessionTooNew`, `replay()` |
+| `domain/agent_events.py`, `domain/trace.py` | domain | Los eventos y registros de archivar |
+| `domain/limits.py` | domain | `MAX_STEPS = 50` |
+| `ports/archive.py` (nuevo) | ports | `ContextArchive` |
+| `ports/tools.py`, `ports/project.py` | ports | `touched()`, `nested()` |
+| `application/context.py` (nuevo) | application | `Archivist`: decide, llama al archivero, guarda y construye el índice |
+| `application/agent.py` | application | Archivar antes de cada llamada; repetir una vez tras `ContextOverflowError`; `max_tokens`; los `AGENTS.md` de subcarpetas |
+| `application/sessions.py` | application | `ArchiveEntry`; rehacer el archivo; `/compact`; los datos de `/context` |
+| `adapters/storage/archive_sqlite.py` (nuevo) | adapters | El archivo con `sqlite3` y FTS5 |
+| `adapters/tools/recall.py` (nuevo) | adapters | La herramienta `recall` |
+| `adapters/tools/files.py`, `shell.py` | adapters | El tope común; `touched()`; `grep` con `context` y `output` |
+| `adapters/models/openai_chat.py`, `anthropic.py` | adapters | `ContextOverflowError`; `prompt_cache_key` |
 | `adapters/project/local.py` | adapters | `nested()` |
-| `adapters/tools/files.py` | adapters | `touched()`; `grep` con `context` y `output` |
-| `adapters/cli/commands.py`, `conversation.py`, `headless.py`, `export.py` | adapters | `/compact`, `/context`, la línea al compactar, `compactions` en JSON, la marca en la exportación |
-| `adapters/evals/toml_suite.py`, `domain/evals.py` | adapters, domain | `history` y `context_window` en una tarea (§5) |
-| `src/mharness/prompts/compact.md` (nuevo) | — (datos) | El prompt del resumen |
+| `adapters/cli/*` | adapters | `/compact`, `/context`, la línea al archivar, `archived` en JSON, la marca en la exportación |
+| `adapters/evals/toml_suite.py`, `domain/evals.py`, `application/evals.py` | varias | `history` y `context_budget` en una tarea; la caché en el informe |
+| `src/mharness/prompts/archive.md` (nuevo) | — (datos) | El prompt del archivero |
+| `src/mharness/prompts/base.md`, `tools.md` | — (datos) | Una línea sobre `recall` y el índice |
 | `config.py` | — | `[context]` |
 | `bootstrap.py` | — | El cableado |
-| `domain/limits.py` | domain | `MAX_STEPS = 50` (§1.13) |
 
 ### 3.2 Configuración nueva
 
 ```toml
 [context]
-auto_compact = true        # §1.2
-window = 200_000           # §1.2; opcional
-compact_model = "…"        # §1.5; opcional, por defecto el de la sesión
+budget = 100_000          # §1.3
+archivist_model = "…"     # §1.7; opcional
 ```
 
-Comandos: `/compact [instrucciones]` y `/context`.
+En `models.toml`, por proveedor: `cache_key = false` si no acepta
+`prompt_cache_key` (§1.13). Comandos: `/compact [instrucciones]` y
+`/context`. Herramienta nueva: `recall`.
 
 ## 4. Plan de tests
 
-Con fakes; ninguna llamada real.
+Con fakes y ficheros temporales; ninguna llamada real.
 
 1. `estimate()`: vacío, ASCII, multibyte; redondea hacia arriba.
-2. `ContextPolicy`: umbral con y sin `window`; reserva del 15 % con mínimo de 16.000,
-   también con `max_output == context`; ventana desconocida, sin compactación
-   automática.
-3. `max_tokens` por llamada: nunca más que lo que queda; nunca menos que la
-   reserva.
-4. `prune()`: de atrás hacia delante; protege los últimos 40.000; no toca
-   errores, `todo_write`, `ask_user`, razonamiento ni texto; cada llamada
-   conserva su resultado; no poda si libera menos de 20.000.
-5. `tail()`: turnos enteros; como mínimo el último mensaje de la persona;
-   nunca una llamada sin resultado.
-6. Compactor con `FakeModelClient`: el resumen va delimitado, con la parte
-   del código (lista de tareas, ficheros cambiados) delante; la llamada de
-   resumen no lleva herramientas; las instrucciones de `/compact` llegan
-   al prompt.
-7. Atomicidad: Ctrl+C y error del proveedor durante el resumen dejan la
-   conversación igual.
-8. En el bucle: compacta antes de la primera llamada si el mensaje nuevo
-   no cabe; a mitad de turno; una vez como mucho por paso;
-   `ContextOverflowError` → compacta y repite una vez; la segunda vez,
-   `context_full`.
-9. Coste: el resumen cuenta en el turno, en la sesión y en los topes.
-10. Sesión: `CompactionEntry` se guarda y `replay()` la aplica; retomar da
-    la conversación compactada; `check_history` pasa; `/export` da todo
-    con la marca.
-11. Formato: una entrada de un tipo inventado da `SessionTooNew` con la
-    versión; una línea rota sigue siendo `SessionCorrupt`.
-12. `AGENTS.md` de subcarpetas: se añade al resultado una vez; no los del
-    system prompt; tras compactar, otra vez; secretos, enlaces fuera y el
-    tope de 64 KiB.
-13. `grep`: `context` (solapes, principio y fin de fichero), `output`
-    `files` y `count`; los valores fuera de rango vuelven como error al
-    modelo.
-14. Los adaptadores traducen el error de contexto excedido de cada API
-    (con respx y el cuerpo real documentado, §1.0).
-15. `/context` con un prompt y unas herramientas conocidas; `/compact`
-    dice antes y después.
-16. `-p`: compacta solo y el JSON lleva `compactions`.
-17. Evals: una tarea con `history` empieza con esa conversación; una con
-    `context_window` usa esa ventana.
-18. Arquitectura: import-linter en verde; `domain/context.py` sin E/S.
+2. `ContextPolicy`: techo con ventana grande, pequeña y desconocida;
+   reserva del 15 % con mínimo de 16.000; `budget` configurado.
+3. **Presupuesto de la parte fija:** base + herramientas ≤ 3.500 tokens
+   estimados (§1.1).
+4. `max_tokens` por llamada: nunca más que lo que queda.
+5. `fit()`: bajo el tope, intacto; encima, principio, final y la marca con
+   el id; las herramientas lo aplican.
+6. Pasos que se archivan: por pasos enteros, también a mitad de turno;
+   la cola en el 30 % del techo; nunca una llamada sin su resultado.
+7. Índice del código: mensajes de la persona (los más recientes, 20.000
+   caracteres), lista de tareas, ficheros cambiados.
+8. `Archivist` con `FakeModelClient`: el JSON válido; uno no válido se
+   repite una vez y después usa el índice del código; la llamada no lleva
+   herramientas; las instrucciones de `/compact` llegan.
+9. Atomicidad: Ctrl+C y error del proveedor dejan la conversación igual.
+10. En el bucle: archiva antes de la primera llamada y a mitad de turno;
+    una vez por paso; `ContextOverflowError` → archiva y repite una vez;
+    la segunda, `context_full`.
+11. Coste: el archivero cuenta en el turno, la sesión y los topes.
+12. Archivo SQLite (`tmp_path`): añadir, buscar con FTS5, leer por líneas;
+    `0600`; borrar con la sesión; rehacer desde los mensajes; uno roto se
+    rehace.
+13. `recall`: buscar (5 trozos, 8.000 caracteres), leer por id y líneas,
+    "nothing archived yet", id desconocido como error al modelo.
+14. Sesión: `ArchiveEntry` y `replay()`; retomar da la conversación de
+    trabajo; `/export` da todo con la marca.
+15. Formato: una entrada de un tipo inventado da `SessionTooNew`; una línea
+    rota sigue siendo `SessionCorrupt`.
+16. `AGENTS.md` de subcarpetas: una vez; no los del system prompt; tras
+    archivar, otra vez; secretos, enlaces y el tope de 64 KiB.
+17. `grep`: `context` y `output`; valores fuera de rango, error al modelo.
+18. Adaptadores: el error de contexto excedido (respx con el cuerpo
+    documentado); `prompt_cache_key` en el formato de OpenAI, y no con
+    `cache_key = false`.
+19. `/context` y `/compact` con un prompt y unas herramientas conocidos.
+20. `-p` archiva solo y el JSON lleva `archived`.
+21. Evals: una tarea con `history` empieza con esa conversación; una con
+    `context_budget` usa ese techo.
+22. Arquitectura: import-linter en verde; `domain/context.py` sin E/S.
 
 ## 5. Evals
 
-El hito toca el bucle, el contexto y un prompt nuevo: la batería entera.
+El hito toca el bucle, el contexto, dos prompts y una herramienta nueva:
+la batería entera.
 
 - **Tareas nuevas** (fixtures inventados):
   - `25-historial-previo` (train): empieza con una conversación anterior
-    (fichero `history.jsonl` en la tarea) donde la persona ya pidió algo
-    y el agente lo hizo a medias; la instrucción dice "sigue". Mide que el
-    agente usa lo que hay en el historial.
-  - `26-interrumpido` (train): el historial acaba en una respuesta
-    cortada con `[interrupted by the user]` (spec 6, §5) y la persona
-    corrige el rumbo. Mide que no sigue lo que estaba haciendo.
-  - `27-compactar-largo` (train): una tarea de muchos pasos con
-    `context_window = 30_000`: compacta al menos una vez. Mide que acaba
-    bien después de compactar.
-  - `28-compactar-tareas` (validation): igual, con una lista de tareas
-    larga: mide que la lista sobrevive y que se vuelve a medir el uso de
-    `todo_write` (pendiente de spec 10).
-  - `29-grep-contexto` (train): encontrar y arreglar algo en un proyecto
-    con ficheros grandes, donde `grep` con contexto ahorra lecturas.
+    (`history.jsonl` en la tarea) donde el agente hizo la mitad; la
+    instrucción dice "sigue".
+  - `26-interrumpido` (train): el historial acaba en una respuesta cortada
+    con `[interrupted by the user]` (spec 6, §5) y la persona corrige el
+    rumbo.
+  - `27-recuperar` (train): con `context_budget = 20_000`, una tarea larga
+    donde un dato del principio (un valor que dio un comando) hace falta
+    al final: solo está en el archivo. Mide que se archiva y que `recall`
+    lo encuentra.
+  - `28-tareas-largas` (validation): igual, con una lista de tareas larga;
+    mide que la lista sobrevive, y otra vez el uso de `todo_write`
+    (pendiente de spec 10).
+  - `29-grep-contexto` (train): encontrar y arreglar algo en ficheros
+    grandes, donde `grep` con contexto ahorra lecturas.
+
   Con ellas, 29 tareas; la validación, 6 de 29 (21 %).
-- **Dos pasadas:** tras el PR de la compactación y tras el de las
-  herramientas (§6). Tres modelos (`glm-5.3-flash`, `kimi-k2.7-code`,
-  `claude-haiku-5-5`), 5 repeticiones, contra las líneas base del
-  2026-11-10.
+- **Modelos:** los de las líneas base del 2026-11-10, 5 repeticiones. El
+  criterio es el mismo para todos: ningún ajuste para un modelo concreto.
 - **Aceptación:**
-  - sin ⚠ en las 24 tareas de antes (en ellas no debe compactar nunca: lo
-    fija la traza);
-  - las tareas nuevas, al menos 4/5 en cada modelo;
-  - en 27 y 28, la compactación ocurre en todas las ejecuciones (si no,
-    la tarea no mide nada);
-  - los pasos de las tareas largas, anotados, para el tope de §1.13.
-- **El conjunto de validación no se mira al escribir `compact.md`.**
+  - sin ⚠ en las 24 tareas de antes, y en ellas no se archiva nunca (lo
+    fija la traza): el presupuesto no cambia lo que ya funcionaba;
+  - las nuevas, al menos 4/5 en cada modelo;
+  - en 27 y 28 se archiva en todas las ejecuciones (si no, no miden nada);
+  - **coste por tarea:** igual o menor en las tareas largas; la parte
+    leída de caché, anotada por modelo;
+  - los pasos de las tareas largas, anotados, para el tope de §1.16.
+- **El conjunto de validación no se mira al escribir `archive.md`.**
 - **Líneas base nuevas** al final del hito, con la batería de 29.
 
 El resultado se anota aquí al implementar.
@@ -634,44 +685,50 @@ El resultado se anota aquí al implementar.
 
 Cada punto, un commit pequeño, con tests y lint en verde.
 
-**PR 1 — contar y ver** (`feature/hito-11-contar`)
-1. `domain/context.py`: `estimate`, `ContextSize`, `ContextPolicy`.
-   *Commit:* "Estimar el tamaño del contexto en el dominio"
-2. `[context]` en la configuración. *Commit:* "Añadir la sección context a
+**PR 1 — contar, acotar y ver** (`feature/hito-11-contar`)
+1. Los números de hito en los comentarios del código, al día con el plan
+   nuevo (§0). *Commit:* "Renumerar los hitos en los comentarios"
+2. `domain/context.py`: `estimate`, `ContextPolicy`, `fit`. *Commit:*
+   "Estimar el tamaño del contexto en el dominio"
+3. `[context]` en la configuración. *Commit:* "Añadir la sección context a
    la configuración"
-3. `max_tokens` por llamada (§1.3). *Commit:* "Limitar max_tokens a lo que
-   queda de ventana"
-4. El tamaño de cada llamada en el agente. *Commit:* "Llevar en el agente
-   el tamaño de la última llamada"
-5. `/context`. *Commit:* "Añadir /context"
+4. `max_tokens` por llamada. *Commit:* "Limitar max_tokens a lo que queda
+   de ventana"
+5. El presupuesto de la parte fija, con su test. *Commit:* "Fijar con un
+   test el tamaño de la parte fija"
+6. `prompt_cache_key` y la caché en la traza. *Commit:* "Mandar la clave
+   de caché en el formato de OpenAI"
+7. `/context`. *Commit:* "Añadir /context"
 
-**PR 2 — compactar** (`feature/hito-11-compactar`)
-1. `prune()` y `tail()`. *Commit:* "Elegir qué se poda y qué cola se
-   conserva"
-2. `prompts/compact.md` y el `Compactor`. *Commit:* "Resumir la
-   conversación con el modelo"
-3. Compactar en el bucle (§1.8). *Commit:* "Compactar antes de cada llamada
-   si no cabe"
-4. `ContextOverflowError` en los dos adaptadores y la repetición.
-   *Commit:* "Compactar y repetir cuando el proveedor dice que no cabe"
-5. `CompactionEntry`, `replay()` y `SessionTooNew`. *Commit:* "Guardar las
-   compactaciones en la sesión"
-6. `/compact`, la línea al compactar, `-p` y `/export`. *Commit:*
-   "Añadir /compact"
-7. Eventos y traza. *Commit:* "Apuntar las compactaciones en la traza"
-8. Evals: `history` y `context_window` en las tareas; tareas 25 a 28.
-   *Commit:* "Añadir a las evals tareas con historial y con compactación"
-9. Evals (§5), anotadas aquí. *Commit:* "Anotar las evals de la
-   compactación"
+**PR 2 — el archivo** (`feature/hito-11-archivo`)
+1. `ports/archive.py`, el fake y `archive_sqlite.py`. *Commit:* "Guardar
+   el archivo de la sesión en SQLite con FTS5"
+2. El tope común con el archivo (§1.6). *Commit:* "Acotar cada resultado y
+   archivar el resto"
+3. `recall`. *Commit:* "Añadir la herramienta recall"
 
-**PR 3 — instrucciones y herramientas** (`feature/hito-11-herramientas`)
+**PR 3 — archivar** (`feature/hito-11-archivar`)
+1. Pasos que se archivan e índice del código. *Commit:* "Elegir qué se
+   archiva y construir el índice"
+2. `prompts/archive.md` y el `Archivist`. *Commit:* "Resumir lo archivado
+   con el modelo barato"
+3. Archivar en el bucle y repetir tras `ContextOverflowError`. *Commit:*
+   "Archivar antes de cada llamada si no cabe"
+4. `ArchiveEntry`, `replay()` y `SessionTooNew`. *Commit:* "Guardar el
+   archivado en la sesión"
+5. `/compact`, la línea al archivar, `-p` y `/export`. *Commit:* "Añadir
+   /compact"
+6. Evals: `history` y `context_budget`; tareas 25 a 28; la pasada,
+   anotada aquí. *Commit:* "Añadir a las evals tareas con historial y con
+   archivo"
+
+**PR 4 — instrucciones y herramientas** (`feature/hito-11-herramientas`)
 1. `nested()` y `touched()`. *Commit:* "Cargar los AGENTS.md de subcarpetas
    al leer allí"
 2. `grep` con `context` y `output`. *Commit:* "Dar a grep líneas de
    contexto y modo solo ficheros"
-3. El tope de pasos (§1.13) con los números de §5. *Commit:* "Subir el
-   tope de pasos a 50"
-4. La tarea 29, la pasada de evals y las líneas base nuevas. *Commit:*
+3. El tope de pasos (§1.16). *Commit:* "Subir el tope de pasos a 50"
+4. La tarea 29, la pasada final y las líneas base nuevas. *Commit:*
    "Anotar las evals y las líneas base del hito 11"
 
 **Cierre** (`docs/cierre-hito-11`): spec IMPLEMENTADA, nota 11 de la
@@ -681,79 +738,88 @@ y ESTADO.
 ## 7. Verificación a mano
 
 En un directorio desechable, con OpenCode Go:
-1. `/context` en una sesión nueva: cifras razonables (system prompt,
-   herramientas).
-2. Con `[context] window = 30_000`: leer varios ficheros grandes hasta que
-   compacte solo; la línea lo dice; el agente sigue la tarea.
-3. `/compact céntrate en X`: antes y después; el resumen respeta la
-   instrucción.
-4. Ctrl+C mientras compacta: la conversación sigue como estaba.
-5. Salir y `/resume`: la conversación vuelve compactada; `/export` la da
-   entera.
-6. Un `AGENTS.md` en una subcarpeta: al leer un fichero de allí, el
-   resultado lo trae; la segunda vez, no.
-7. `maha -p` con `window` pequeña: compacta y el JSON lo cuenta.
-8. Con `kimi-k2.7-code`: una sesión larga no falla por `max_tokens`.
+1. `/context` en una sesión nueva: cifras razonables.
+2. Con `[context] budget = 20_000`: leer varios ficheros y lanzar comandos
+   hasta que archive solo; la línea lo dice; el agente sigue la tarea.
+3. Preguntar por algo del principio: el agente usa `recall` y lo
+   encuentra.
+4. `/compact céntrate en X`: antes y después; el índice lo respeta.
+5. Ctrl+C mientras archiva: la conversación sigue como estaba.
+6. Salir y `/resume`: vuelve la conversación de trabajo; `/export`, entera.
+   Borrar el `.db` y retomar: se rehace.
+7. Un comando con una salida enorme: principio, final y el id; `recall`
+   la lee por partes.
+8. Un `AGENTS.md` en una subcarpeta: al leer allí, el resultado lo trae.
+9. `maha -p` con un presupuesto pequeño: archiva y el JSON lo cuenta.
+10. La parte leída de caché en `/context`, en los dos formatos.
 
 ## 8. Lo que no viaja por git y lo que necesita la release
 
-- Nada en `.env`. `[context]` es opcional.
-- Notas de la release: una sesión compactada no la abre un `maha` anterior
-  a esta versión (§1.10).
-- `docs/MAPA.md`: `domain/context.py`, `application/context.py`,
-  `prompts/compact.md` y las tareas nuevas.
+- Nada en `.env`. `[context]` es opcional. El archivo vive en
+  `~/.local/state/maha/archive/` de cada máquina.
+- Notas de la release: una sesión archivada no la abre un `maha` anterior
+  (§1.12).
+- `docs/MAPA.md`: los ficheros nuevos y las tareas.
+- GitHub: los milestones de los hitos 12 a 23 se renombran a 13 a 24, y se
+  crea "Hito 12 — Órbita larga" (§0).
 
 ## 9. Guía
 
-`docs/guia/11-ventana-de-contexto.md`: la ventana de contexto.
-1. Qué es la ventana y por qué se llena (el modelo no recuerda: se le
-   manda todo, nota 2).
+`docs/guia/11-contexto-virtual.md`:
+1. Por qué un agente se encarece: cada paso reenvía todo (nota 2: el
+   modelo no recuerda).
 2. Contar tokens: lo que da el proveedor y lo que se estima.
-3. Podar y resumir: qué se pierde y qué sobrevive, y por qué el código
-   guarda una parte.
-4. En la industria: resumen, poda, ventana deslizante, la del proveedor.
+3. Ventana fija, archivo y `recall`: memoria de trabajo y archivo, como un
+   sistema operativo con memoria virtual.
+4. La caché del prompt: por qué no se reescribe lo enviado.
+5. En la industria: compactar, contexto virtual, poda, el del proveedor.
 
 ## 10. Riesgos
 
-- **Un resumen malo** hace que el agente olvide algo y repita o deshaga
-  trabajo. Mitigación: estructura fija, parte del código exacta, cola
-  intacta y tareas 27 y 28.
-- **La estimación se queda corta** (código, idiomas con muchos tokens por
-  carácter): la reserva de §1.2 y la repetición tras `ContextOverflowError`
-  lo cubren.
-- **Romper la caché** en cada compactación: solo al pasar el umbral, y la
-  poda solo si libera 20.000 o más.
-- **Inyección por el resumen:** un fichero leído con "ignora lo anterior"
-  acaba resumido. Mitigación: delimitado y marcado como no confiable en
-  `compact.md`; el resumen nunca cambia herramientas ni permisos.
-- **Sesiones que el `maha` anterior no abre:** §1.10 y las notas de la
+- **El modelo no busca lo que olvidó** (MemGPT, §1.0). Mitigación: índice
+  siempre visible, mensajes de la persona tal cual, una línea en el
+  prompt y las tareas 27 y 28.
+- **Un índice malo** del archivero barato. Mitigación: la parte del
+  código es exacta, lo archivado sigue entero en el archivo, y las evals
+  comparan; si el modelo pequeño no llega, `archivist_model` lo cambia.
+- **La estimación se queda corta:** la reserva y la repetición tras
+  `ContextOverflowError` lo cubren.
+- **Inyección por lo archivado:** un fichero leído con "ignora lo
+  anterior" acaba resumido o recuperado. Mitigación: delimitado y marcado
+  como no confiable en `archive.md` y en `recall`; nunca cambia
+  herramientas ni permisos.
+- **Un archivo en otro sitio con datos de la persona:** los mismos que la
+  sesión, mismos permisos, borrado con ella.
+- **Sesiones que el `maha` anterior no abre:** §1.12 y las notas de la
   release.
 
 ## 11. Decisiones
 
+Del mantenedor (2026-11-16):
+1. **El arnés tiene que ser barato con cualquier modelo**, sin ajustes
+   para modelos concretos (§1.1).
+2. **Contexto virtual** en lugar de la compactación clásica: archivo
+   SQLite + FTS5, modelo barato que resume e indexa, y `recall` (§1.5 a
+   §1.9).
+3. **Presupuesto de trabajo por defecto: 100.000 tokens**, igual para
+   todos los modelos (§1.3).
+4. **La órbita larga, hito 12 nuevo**; los siguientes se renumeran y la
+   1.0 pasa al hito 24 (§0).
+
 Propuestas del agente, para el mantenedor:
-1. **Contar con el uso del proveedor y estimar lo nuevo** con caracteres /
-   4, sin tokenizador (§1.1).
-2. **`window` sin límite por defecto**, y medir en las evals si conviene
-   uno (por coste, en modelos con tramo de precio como `claude-haiku-5-5`).
-   La alternativa es fijar 200.000 por defecto desde ya.
-3. **Dos niveles:** poda y, si no basta, resumen (§1.4, §1.5). Números de
-   partida: proteger 40.000, podar solo si libera 20.000, objetivo 60 %,
-   cola de 20.000; se ajustan con evals. OpenCode V2 quitó la poda: si en
-   las evals no gana al resumen solo, se quita (§1.4).
-4. **Resume el modelo de la sesión**, no el pequeño (§1.5).
-5. **Parte del código en el resumen**: lista de tareas y ficheros
-   cambiados (§1.6).
-6. **El error de contexto excedido compacta y repite una vez** (§1.8).
-7. **`CompactionEntry` en la sesión**, sin reescribir el fichero, y la
-   **política de versiones: el formato solo crece, y un tipo desconocido
-   pide actualizar** (§1.10).
-8. **`AGENTS.md` de subcarpetas al final del resultado de la herramienta**,
-   no en el system prompt (§1.11).
-9. **`grep` con `context` y `output`** (§1.12); las descripciones de las
-   herramientas no se recortan sin evals.
-10. **Tope de pasos a 50** (§1.13), confirmado con las evals.
-11. **Sin la compactación del proveedor** (§0).
+5. **Contar con el uso del proveedor y estimar lo nuevo** (caracteres /
+   4), sin tokenizador (§1.2).
+6. **Tope común de 40.000 caracteres por resultado**, y lo que sobra al
+   archivo; **sin poda** (§1.6).
+7. **`recall` sin modelo**, solo FTS5 (§1.9).
+8. **Archivar a mitad de turno**, por pasos enteros, y **repetir una vez**
+   tras el error de contexto excedido (§1.10).
+9. **`ArchiveEntry`** en la sesión y la **política de versiones: el formato
+   solo crece** (§1.12).
+10. **`prompt_cache_key`** en el formato de OpenAI (§1.13).
+11. **`AGENTS.md` de subcarpetas al final del resultado** (§1.14).
+12. **`grep` con `context` y `output`** (§1.15) y **tope de pasos a 50**
+    (§1.16).
 
 ## 12. Aprendido al implementar
 
