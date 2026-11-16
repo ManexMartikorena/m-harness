@@ -107,7 +107,7 @@ m-harness/
 │   ├── adapters/          # Implementaciones de los puertos: el contacto real con el exterior
 │   │   ├── models/        #   openai_chat.py, anthropic.py
 │   │   ├── tools/         #   files.py, search_worker.py, shell.py, web.py…
-│   │   ├── commands/      #   local.py; el aislado, en el hito 15
+│   │   ├── commands/      #   local.py; el aislado, en el hito 16
 │   │   ├── mcp/
 │   │   ├── storage/       #   sessions.py (JSONL), memoria (SQLite)
 │   │   ├── skills/
@@ -174,7 +174,7 @@ herramientas o se alcanza un límite:
 | 3 Herramientas · 4 Permisos · 12 Sandbox | La ejecución de cada petición |
 | 5 System prompt · 8 Skills · 9 Memoria | El principio de la conversación y la lista de herramientas |
 | 6 Historial | Persistir la conversación |
-| 7 Contexto | Antes de cada llamada: si no cabe, se compacta |
+| 7 Contexto | Antes de cada llamada: si no cabe, se compacta *(16/11/2026, spec del hito 11: se archiva lo viejo y queda un índice; `recall` lo recupera)* |
 | 10 MCP | Más herramientas, ejecutadas por un servidor externo |
 | 11 Subagentes | Una herramienta que lanza otro bucle con su propia conversación |
 | 13 Multimodal · 14 Web | Más tipos de contenido y más herramientas |
@@ -203,7 +203,7 @@ ToolCallBlock(id, name, arguments: str)
 ToolResultBlock(call_id, content: str, is_error)
 # (Corregido el 21/10/2026, spec del hito 4, §1.2: `arguments` es el texto JSON
 #  tal como lo escribió el modelo, que puede ser inválido y tiene que quedar en
-#  el historial; `content` es texto hasta que lleguen las imágenes, hito 18.) *(27/10/2026: hito 20.)*
+#  el historial; `content` es texto hasta que lleguen las imágenes, hito 18.) *(27/10/2026: hito 20.)* *(16/11/2026: hito 21.)*
 
 Message(role: "user" | "assistant" | "tool", blocks: list[Block])
 
@@ -293,8 +293,8 @@ Session(id, created_at, cwd, model, messages, usage)
 | `SessionStore` | Guardar, cargar, listar y borrar sesiones | JSONL en disco · en memoria. *(Ampliado el 27/10/2026, auditoría del hito 7: `exists()`, para que una sesión nueva no tome el id de otra.)* |
 | `MemoryStore` | Guardar, buscar y borrar recuerdos | SQLite con FTS5 · en memoria |
 | `SkillSource` | Listar y cargar skills | Carpetas con `SKILL.md` · en memoria |
-| `CommandRunner` | Ejecutar un comando con directorio, entorno y tiempo límite | Proceso local · proceso aislado (hito 15) · `FakeRunner` |
-| `TraceSink` | Recibir cada `AgentEvent` | JSONL en disco · exportador OpenTelemetry (hito 22) · lista en memoria. *(Concretado el 27/10/2026, spec del hito 7, §1.7 y §12: `TraceSink` abre, lee y borra la traza de cada sesión y `TraceLog` escribe; los registros llegan ya enmascarados, y la traza de una sesión nueva se crea en exclusiva para reservar su id.)* |
+| `CommandRunner` | Ejecutar un comando con directorio, entorno y tiempo límite | Proceso local · proceso aislado (hito 16) · `FakeRunner` |
+| `TraceSink` | Recibir cada `AgentEvent` | JSONL en disco · exportador OpenTelemetry (hito 23) · lista en memoria. *(Concretado el 27/10/2026, spec del hito 7, §1.7 y §12: `TraceSink` abre, lee y borra la traza de cada sesión y `TraceLog` escribe; los registros llegan ya enmascarados, y la traza de una sesión nueva se crea en exclusiva para reservar su id.)* |
 
 ## 7. Stack
 | Capa | Elección | Por qué (y desviación del stack por defecto) |
@@ -307,7 +307,7 @@ Session(id, created_at, cwd, model, messages, usage)
 | Validación y esquemas | Pydantic v2 | Herramientas, JSON Schema para el modelo, configuración, tipos del dominio |
 | Configuración | TOML (`tomllib`) validado con Pydantic. Usuario: `~/.config/maha/config.toml`; proyecto: `.maha/config.toml` | Biblioteca estándar. La configuración del proyecto prevalece sobre la del usuario, pero solo puede elegir proveedor y modelo: los proveedores (URL y variable de la clave) solo se declaran en la del usuario. *(Corregido el 20/10/2026, spec del hito 2, §1.10: un repositorio ajeno podría desviar la clave del usuario a otro servidor.)* *(Ampliado el 03/11/2026, spec del hito 9, §1.1: un proveedor declara su formato por defecto y, si sirve varios, una URL por formato.)* |
 | Credenciales | Variables de entorno (por ejemplo, `OPENCODE_API_KEY`). En desarrollo, `.env` cargado con `uv run --env-file .env` | `maha` nunca lee un `.env` por su cuenta, para no cargar secretos de los proyectos donde trabaja |
-| Interfaz de terminal | Rich (pintar) + prompt_toolkit (entrada) | Fontanería estándar. Textual queda como opción si algún día se quiere una TUI completa. *(Cambiado el 27/10/2026 por decisión del mantenedor: el hito 21 es una TUI completa, con Textual salvo que su spec justifique otra cosa; la interfaz de línea se conserva para el modo no interactivo, `maha < fichero` y los evals.)* |
+| Interfaz de terminal | Rich (pintar) + prompt_toolkit (entrada) | Fontanería estándar. Textual queda como opción si algún día se quiere una TUI completa. *(Cambiado el 27/10/2026 por decisión del mantenedor: el hito 22 es una TUI completa, con Textual salvo que su spec justifique otra cosa; la interfaz de línea se conserva para el modo no interactivo, `maha < fichero` y los evals.)* |
 | Argumentos de línea de comandos | `argparse` | Biblioteca estándar; bastan unas pocas opciones |
 | Persistencia | JSONL (sesiones, trazas) y SQLite (memoria) en `~/.local/share/maha/` | Sin servidor: es un producto local (XDG) |
 | Calidad | ruff (lint y formato), mypy estricto, pytest + pytest-asyncio, respx (simular httpx), import-linter | Stack por defecto + lo propio del proyecto |
@@ -350,7 +350,7 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
 | 14 | Web | Se decide en su hito | Brave Search, Tavily, Exa; búsqueda nativa de algunos proveedores; trafilatura, markdownify; Jina Reader |
 | 15 | Trazas | Eventos propios en local | OpenTelemetry (convenciones GenAI); Langfuse, LangSmith, Arize Phoenix, Helicone; OpenLLMetry, OpenLIT |
 | 16 | Evals | Runner propio | Inspect AI, promptfoo, DeepEval, Braintrust; benchmarks SWE-bench, Terminal-Bench |
-| 17 | Interfaz | Rich + prompt_toolkit *(27/10/2026: TUI completa, previsiblemente Textual; se decide en la spec del hito 21)* | Rich, prompt_toolkit, Textual; Typer, Click; las TUI de OpenCode y Claude Code como referencia de uso |
+| 17 | Interfaz | Rich + prompt_toolkit *(27/10/2026: TUI completa, previsiblemente Textual; se decide en la spec del hito 22)* | Rich, prompt_toolkit, Textual; Typer, Click; las TUI de OpenCode y Claude Code como referencia de uso |
 | — | Tests de adaptadores HTTP | respx | VCR.py y pytest-recording (graban y reproducen respuestas reales) |
 
 *Nombres y referencias comprobados el 19/10/2026.*
@@ -372,8 +372,8 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   user-agent y un identificador de sesión estable, como pide OpenCode Go a los
   clientes de terceros.
 - **Herramientas:** tipadas con Pydantic, con mínimo privilegio. Crecen por
-  hitos: solo lectura (hito 4) → efecto (5) → memoria (14) → subagentes (16) →
-  MCP (17) → web (19). *(Números al día con el plan del 27/10/2026.)*
+  hitos: solo lectura (hito 4) → efecto (5) → memoria (15) → subagentes (17) →
+  MCP (18) → web (20). *(Números al día con el plan del 16/11/2026.)*
 - **System prompt:** composición por capas (base + entorno + `AGENTS.md` del
   proyecto + skills + memoria), con plantillas versionadas en el repositorio y
   evaluadas como código (hito 10). *(Concretado el 04/11/2026, spec del
@@ -382,7 +382,7 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   orden; skills y memoria, detrás de "extra". Se construye una vez por
   sesión y no cambia hasta `/new` o `/resume`, por la caché.)*
 - **Skills:** formato Agent Skills (`SKILL.md`). El índice va en el prompt y el
-  contenido se carga bajo demanda (hito 13).
+  contenido se carga bajo demanda (hito 14).
 - **Supervisión:** toda herramienta con efecto pide aprobación. "Aprobar para
   toda la sesión" es la única forma de autonomía; no hay modo sin aprobaciones
   en v1. *(Cambiado el 27/10/2026 por decisión del mantenedor, spec del
@@ -390,7 +390,7 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   solo lo que tiene ámbito; lo que con persona pregunta "cada vez" (fuera del directorio,
   secretos, ficheros que ejecutan código) se deniega siempre. Solo por la
   línea de comandos, nunca por configuración. Los modos de permiso, en el
-  hito 15.)*
+  hito 16.)*
 
 ## 9. Evals
 - **Batería:** tareas genéricas en `evals/tasks/`. Cada tarea define un repo de
@@ -419,7 +419,7 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
 - *(Concretado el 27/10/2026, spec del hito 8, §1.5–§1.9, decisión del
   mantenedor: la comprobación también puede mirar la respuesta final; cada
   tarea corre en una copia temporal de su fixture, con `AllowList` y sin
-  `run_command` hasta el sandbox del hito 15; en paralelo (`--jobs`); 1
+  `run_command` hasta el sandbox del hito 16; en paralelo (`--jobs`); 1
   repetición al iterar y 5 para la línea base y antes de cada merge, con
   dos modelos (`glm-5.3-flash` y `kimi-k2.7-code`); la línea base guarda
   solo métricas; los errores del proveedor no cuentan como fallo;
@@ -448,7 +448,7 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   con `.npmrc`, `.pypirc`, `.envrc`, `*.env`, `*.p12`, los tokens de `gh`,
   `gcloud`, `.azure`, Cargo y Terraform, y la configuración de los
   submódulos.)*
-- **Terminal:** cada comando es `EFFECT`. Desde el hito 15 corre además en un
+- **Terminal:** cada comando es `EFFECT`. Desde el hito 16 corre además en un
   entorno aislado.
   *(Añadido el 21/10/2026, spec del hito 5, §1.9: el comando corre en su propio
   grupo de procesos, con tiempo límite, y sin las variables de entorno con
@@ -495,7 +495,7 @@ de las librerías las fija el lockfile en el hito 1, comprobadas ese día.*
   `WARNING`, rotado a 1 MiB; lo usan solo los adaptadores.)*
 - **En la interfaz:** modelo activo, tokens del contexto y coste de la sesión,
   siempre visibles.
-- **Exportador OpenTelemetry (hito 22, opcional):** permite enviar las trazas a
+- **Exportador OpenTelemetry (hito 23, opcional):** permite enviar las trazas a
   Langfuse (que las acepta en `/api/public/otel`), Phoenix u otra plataforma,
   sin que ninguna sea una dependencia.
 
@@ -541,7 +541,7 @@ método se convierte aquí en distribución.
 - **Cuando el proyecto esté maduro** ~~(fuera de alcance v1)~~: publicación en PyPI
   con *trusted publishing* desde GitHub Actions y documentación de usuario. Se
   documentará en `docs/DISTRIBUCION.md`. *(Cambiado el 27/10/2026 por
-  decisión del mantenedor: entra en la versión 1.0, hito 23. El canal (PyPI
+  decisión del mantenedor: entra en la versión 1.0, hito 24. El canal (PyPI
   u otro) y la documentación de usuario se deciden en su spec.)*
 
 ## 14. Orden de construcción (plan de la fase de código)
@@ -586,6 +586,11 @@ Las propuestas P1 a P15 se citan en cada hito; el detalle por áreas de la
 comparativa es la lista de partida de la spec de cada hito, y lo que allí
 queda abierto ("o", "mejora pequeña") se decide en esa spec.)*
 
+*(Ampliado el 16/11/2026 por decisión del mantenedor, spec del hito 11: el
+hito 11 pasa a ser el contexto virtual y entra un hito nuevo, la órbita
+larga (12). Los hitos 12 a 23 de antes pasan a ser los 13 a 24; la 1.0, el
+24. Los números de hito de este documento están al día con este plan.)*
+
 8. **Evals y modo no interactivo.** `maha -p "<instrucción>"`, batería inicial
    de 10 tareas, `maha eval` y primera línea base. Guía: cómo se evalúa un
    agente. *(Mata el riesgo de ajustar a ojo.)* Además (P1, P2): `-c` y
@@ -605,40 +610,57 @@ queda abierto ("o", "mejora pequeña") se decide en esa spec.)*
     04/11/2026, spec del hito 10, §0 y decisión 6: también `/rename`; los
     `AGENTS.md` de subcarpetas pasan al hito 11, las reglas por ruta al 13 y
     las instrucciones por URL al 19.)*
-11. **Gestión del contexto.** Conteo, umbral y compactación por resumen. Guía:
-    la ventana de contexto. Además (P6): `/compact`, `/context` y qué
-    sobrevive a la compactación. *(Concretado el 16/11/2026, spec del hito 11,
-    §0: también la poda de resultados viejos, `max_tokens` por llamada,
-    los `AGENTS.md` de subcarpetas, la política de versiones del formato
-    de sesión, `grep` con contexto y solo ficheros, y el tope de pasos.)*
-12. **Deshacer y puntos de control** *(nuevo, P8)*. `/undo`, `/redo` y volver
+11. **Contexto virtual.** *(Antes "Gestión del contexto. Conteo, umbral y
+    compactación por resumen. Guía: la ventana de contexto. Además (P6):
+    `/compact`, `/context` y qué sobrevive a la compactación". Cambiado el
+    16/11/2026 por decisión del mantenedor, spec del hito 11: el arnés
+    tiene que ser barato con cualquier modelo.)* Presupuesto de trabajo
+    fijo por llamada (100.000 tokens, igual para todos los modelos), tope
+    por resultado, archivo de la sesión en SQLite con FTS5, un modelo
+    barato que resume lo archivado y mantiene un índice, y la herramienta
+    `recall` para recuperarlo. Además (P6): `/compact`, `/context`,
+    `max_tokens` por llamada, la caché del prompt en los dos formatos, los
+    `AGENTS.md` de subcarpetas, la política de versiones del formato de
+    sesión, `grep` con contexto y solo ficheros, y el tope de pasos. Guía:
+    el contexto virtual.
+12. **Órbita larga** *(nuevo, 16/11/2026, decisión del mantenedor)*. Menos
+    idas y vueltas al modelo: el modelo da varios pasos de una vez, cada
+    uno con su resultado esperado (`run_plan`), y el código los ejecuta en
+    orden, con el permiso de cada uno, y solo vuelve al final o cuando uno
+    no sale como se esperaba. También, que el modelo agrupe en un paso las
+    llamadas independientes. Referencias: ReWOO, LLMCompiler, Code Mode de
+    Cloudflare y *programmatic tool calling* de Anthropic (spec del hito
+    11, §1.0). Code Mode (el modelo escribe código que llama a las
+    herramientas) necesita el sandbox: después del hito 16. Guía: la
+    órbita larga.
+13. **Deshacer y puntos de control** *(nuevo, P8)*. `/undo`, `/redo` y volver
     a un punto de la conversación, con los ficheros que cambió el agente.
     Guía: deshacer.
-13. **Skills y comandos personalizados.** Formato Agent Skills, índice en el
+14. **Skills y comandos personalizados.** Formato Agent Skills, índice en el
     prompt y carga bajo demanda; un fichero Markdown es también un comando
     `/nombre` con plantilla y argumentos (P7). Guía: skills.
-14. **Memoria persistente.** SQLite con FTS5, herramientas para guardar, buscar
+15. **Memoria persistente.** SQLite con FTS5, herramientas para guardar, buscar
     y borrar, y medición del ahorro de tokens con evals. Guía: memoria.
-15. **Sandbox y modos de permiso.** `CommandRunner` aislado (la tecnología se
+16. **Sandbox y modos de permiso.** `CommandRunner` aislado (la tecnología se
     decide en su spec). Además (P9): modos de permiso (plan, aceptar
     ediciones), reglas `allow`/`ask`/`deny` con patrones en la
     configuración, "siempre" que persiste por proyecto, detección de bucles
     y confianza en una carpeta nueva. Guía: aislamiento.
-16. **Subagentes y agentes propios.** Herramienta que lanza un agente hijo
+17. **Subagentes y agentes propios.** Herramienta que lanza un agente hijo
     con contexto limpio, herramientas acotadas y límites propios, con
     ejecución en paralelo. Además (P10, P11): agentes propios en Markdown,
     `@agente`, cambiar de agente principal y comandos en segundo plano.
     Guía: subagentes.
-17. **MCP.** Cliente de servidores MCP; sus herramientas entran en el bucle con
+18. **MCP.** Cliente de servidores MCP; sus herramientas entran en el bucle con
     el sistema de permisos. Además (P12): remotos con OAuth, activar y
     desactivar, recursos, *prompts* como comandos y herramientas bajo
     demanda. Guía: MCP.
-18. **Hooks** *(nuevo, P13)*. Acciones que el usuario configura antes y
+19. **Hooks** *(nuevo, P13)*. Acciones que el usuario configura antes y
     después de una herramienta, de un turno, de compactar…, que pueden
     bloquear o añadir contexto. Guía: hooks.
-19. **Web.** Buscar y leer páginas. Guía: el agente y la web.
-20. **Multimodal.** Imágenes y PDFs. Guía: entrada multimodal.
-21. **Interfaz completa.** Markdown renderizado, barra de estado (modelo,
+20. **Web.** Buscar y leer páginas. Guía: el agente y la web.
+21. **Multimodal.** Imágenes y PDFs. Guía: entrada multimodal.
+22. **Interfaz completa.** Markdown renderizado, barra de estado (modelo,
     tokens, coste), historial de entrada y atajos. Guía: la interfaz.
     *(Ampliado el 27/10/2026 por decisión del mantenedor:)* **una TUI
     completa, bonita y fácil de usar para cualquier persona**, con una
@@ -660,13 +682,13 @@ queda abierto ("o", "mejora pequeña") se decide en esa spec.)*
     pantallas que se recorren. Es otro adaptador sobre los mismos eventos y
     puertos: el núcleo no cambia, y la interfaz de línea se conserva para el
     modo no interactivo (hito 8), `maha < fichero` y los evals. Se hace en
-    el hito 21, y no antes, porque lo que tiene que enseñar llega en los
-    hitos 10 a 20 (contexto y compactación, deshacer, skills, memoria,
+    el hito 22, y no antes, porque lo que tiene que enseñar llega en los
+    hitos 10 a 21 (contexto y compactación, deshacer, skills, memoria,
     subagentes, MCP, hooks). La librería (previsiblemente Textual) y el diseño de pantallas se
     deciden en su spec.
-22. **Exportador OpenTelemetry.** Opcional; probado con Langfuse. Guía:
+23. **Exportador OpenTelemetry.** Opcional; probado con Langfuse. Guía:
     OpenTelemetry.
-23. **Versión 1.0.** README de uso, índice de la guía, batería de evals completa
+24. **Versión 1.0.** README de uso, índice de la guía, batería de evals completa
     y revisión de los criterios de éxito del análisis. Con él, **`v1.0.0`**.
     *(Ampliado el 27/10/2026 por decisión del mantenedor:)* también la
     distribución pública (instalable para cualquier usuario) y su

@@ -47,18 +47,24 @@ Lo más importante, en una tabla. El detalle, por áreas, después.
 | P4 | **`/init`**, compatibilidad con `CLAUDE.md` e instrucciones extra | Crear y reutilizar las instrucciones de proyecto | Hito 10 |
 | P5 | **Herramientas de flujo:** lista de tareas (*todo*) y pregunta estructurada al usuario | Los dos las tienen; mejoran tareas largas | Hito 10 |
 | P6 | **`/compact`, `/context` y compactación automática** con lo que sobrevive | Ya en el plan; se concreta | Hito 11 |
-| P7 | **Comandos personalizados** (`/nombre` con plantilla y argumentos) como parte de las skills | Claude Code los une a las skills; OpenCode los tiene aparte | Hito 13 |
-| P8 | **Deshacer y puntos de control** (`/undo`, `/redo`, volver a un punto) | Los dos lo tienen; da confianza para dejar trabajar al agente | **Hito 12, nuevo** |
-| P9 | **Modos y reglas de permisos:** modo plan, aceptar ediciones, reglas `allow`/`ask`/`deny` con patrones en la configuración, "siempre" que persiste por proyecto, detección de bucles | Los dos lo tienen; hoy solo hay "una vez" y "esta sesión" | Hito 15, junto al sandbox |
-| P10 | **Agentes personalizados** (Markdown con modelo, herramientas y permisos), `@agente`, subagentes en segundo plano | Los dos lo tienen | Hito 16 |
-| P11 | **Comandos en segundo plano** (un servidor de desarrollo, un `watch`) | Los dos lo tienen | Hito 16 |
-| P12 | **MCP completo:** remoto con OAuth, *prompts* como comandos, recursos, activar y desactivar | Los dos lo tienen | Hito 17 |
-| P13 | **Hooks:** acciones antes o después de una herramienta, de un turno, de compactar… | Claude Code tiene 33 eventos; OpenCode, eventos para plugins | **Hito 18, nuevo** |
-| P14 | **Distribución:** instalación sencilla, `maha upgrade`, `maha doctor`, credenciales con `maha auth login` | Un producto para cualquier usuario | Hito 23 (ya decidido) |
+| P7 | **Comandos personalizados** (`/nombre` con plantilla y argumentos) como parte de las skills | Claude Code los une a las skills; OpenCode los tiene aparte | Hito 14 |
+| P8 | **Deshacer y puntos de control** (`/undo`, `/redo`, volver a un punto) | Los dos lo tienen; da confianza para dejar trabajar al agente | **Hito 13, nuevo** |
+| P9 | **Modos y reglas de permisos:** modo plan, aceptar ediciones, reglas `allow`/`ask`/`deny` con patrones en la configuración, "siempre" que persiste por proyecto, detección de bucles | Los dos lo tienen; hoy solo hay "una vez" y "esta sesión" | Hito 16, junto al sandbox |
+| P10 | **Agentes personalizados** (Markdown con modelo, herramientas y permisos), `@agente`, subagentes en segundo plano | Los dos lo tienen | Hito 17 |
+| P11 | **Comandos en segundo plano** (un servidor de desarrollo, un `watch`) | Los dos lo tienen | Hito 17 |
+| P12 | **MCP completo:** remoto con OAuth, *prompts* como comandos, recursos, activar y desactivar | Los dos lo tienen | Hito 18 |
+| P13 | **Hooks:** acciones antes o después de una herramienta, de un turno, de compactar… | Claude Code tiene 33 eventos; OpenCode, eventos para plugins | **Hito 19, nuevo** |
+| P14 | **Distribución:** instalación sencilla, `maha upgrade`, `maha doctor`, credenciales con `maha auth login` | Un producto para cualquier usuario | Hito 24 (ya decidido) |
 | P15 | **Después de la 1.0:** LSP y formateadores, plugins y herramientas propias, servidor/API y SDK, ACP e IDE, GitHub Action, más APIs de modelo (Responses de OpenAI, Google), worktrees, tareas programadas, voz | Valiosos, pero no imprescindibles para la 1.0 | Versiones `v1.N` |
+| P16 | **Órbita larga:** el modelo da varios pasos de una vez, con su resultado esperado, y el código los ejecuta y solo vuelve al final o si algo falla; Code Mode tras el sandbox *(16/11/2026, decisión del mantenedor)* | Menos idas y vueltas al modelo: más barato con cualquier modelo (ReWOO, LLMCompiler, Code Mode, *programmatic tool calling*) | **Hito 12, nuevo** |
 
 P8 y P13 entran como hitos nuevos (12 y 18): la 1.0 pasa del hito 21 al 23
 y los tags `v0.N.0` siguientes se renumeran (DESIGN §14).
+
+*(16/11/2026, por decisión del mantenedor, spec del hito 11: el hito 11
+pasa a ser el contexto virtual y P16 entra como hito nuevo, el 12; la 1.0
+pasa al hito 24. Los números de hito de este documento están al día con
+ese plan.)*
 
 ## 1. Interfaz y navegación
 
@@ -66,29 +72,29 @@ Fuentes: https://opencode.ai/docs/tui/, https://opencode.ai/docs/keybinds/,
 https://code.claude.com/docs/en/interactive-mode.md,
 https://code.claude.com/docs/en/keybindings.md.
 
-Casi todo va al hito 21 (TUI completa, decisión del mantenedor del
+Casi todo va al hito 22 (TUI completa, decisión del mantenedor del
 2026-10-27).
 
 | Capacidad | OpenCode | Claude Code | `maha` | Propuesta |
 |---|---|---|---|---|
-| Paleta de comandos que se filtra al escribir | `ctrl+p` | menú de `/` con filtro | — | h21 |
-| `/` sugiere comandos | sí | sí, también a mitad del prompt | — | h21 |
-| Ayuda de atajos | panel *which-key* | `?` con el prompt vacío | — | h21 |
-| Atajos configurables y tecla líder | `ctrl+x`, `tui.json` | `keybindings.json`, acordes | — | h21 |
-| `@fichero` para meter un fichero | búsqueda difusa | sí, con rangos de líneas | — | h21 |
-| `!comando` de shell desde el prompt | sí | sí | — | h21 |
-| Editor externo para escribir el mensaje | `/editor` | `ctrl+g` | — | h21 |
-| Encolar o redirigir mientras trabaja | V2: Enter redirige | Enter encola | — | h21 |
-| Historial de entrada y búsqueda | sí | `ctrl+r` | — | h21 |
-| Visor de diferencias | V2 `/diff` | `/diff` | — | h21 |
-| Línea de estado (modelo, contexto, coste) | barra lateral | *status line* configurable | — | h21 |
-| Temas | `/themes`, propios | `/theme`, daltónicos | — | h21 |
-| Ratón, desplazamiento, copiar | sí | sí, pantalla completa | — | h21 |
-| Notificaciones al acabar o al preguntar | sí (opcional) | sí | — | h21 |
-| Ver el razonamiento del modelo | `/thinking` | `alt+t` | — | h21 |
-| Pegar imágenes | arrastrar | `ctrl+v` | — | h21 (con h20) |
+| Paleta de comandos que se filtra al escribir | `ctrl+p` | menú de `/` con filtro | — | h22 |
+| `/` sugiere comandos | sí | sí, también a mitad del prompt | — | h22 |
+| Ayuda de atajos | panel *which-key* | `?` con el prompt vacío | — | h22 |
+| Atajos configurables y tecla líder | `ctrl+x`, `tui.json` | `keybindings.json`, acordes | — | h22 |
+| `@fichero` para meter un fichero | búsqueda difusa | sí, con rangos de líneas | — | h22 |
+| `!comando` de shell desde el prompt | sí | sí | — | h22 |
+| Editor externo para escribir el mensaje | `/editor` | `ctrl+g` | — | h22 |
+| Encolar o redirigir mientras trabaja | V2: Enter redirige | Enter encola | — | h22 |
+| Historial de entrada y búsqueda | sí | `ctrl+r` | — | h22 |
+| Visor de diferencias | V2 `/diff` | `/diff` | — | h22 |
+| Línea de estado (modelo, contexto, coste) | barra lateral | *status line* configurable | — | h22 |
+| Temas | `/themes`, propios | `/theme`, daltónicos | — | h22 |
+| Ratón, desplazamiento, copiar | sí | sí, pantalla completa | — | h22 |
+| Notificaciones al acabar o al preguntar | sí (opcional) | sí | — | h22 |
+| Ver el razonamiento del modelo | `/thinking` | `alt+t` | — | h22 |
+| Pegar imágenes | arrastrar | `ctrl+v` | — | h22 (con h21) |
 | Modo vim al escribir | — | sí | — | después de la 1.0 |
-| Accesibilidad (lector de pantalla) | — | `--ax-screen-reader` | — | h21 |
+| Accesibilidad (lector de pantalla) | — | `--ax-screen-reader` | — | h22 |
 | Interfaz web o de escritorio | `opencode web`, app | app, web, móvil | — | fuera de alcance (ANALISIS §5) |
 
 ## 2. Comandos dentro de la conversación
@@ -97,30 +103,30 @@ Fuentes: https://opencode.ai/docs/tui/, https://code.claude.com/docs/en/commands
 
 | Capacidad | OpenCode | Claude Code | `maha` | Propuesta |
 |---|---|---|---|---|
-| Ayuda | `/help` | `/help` | ✓ `/help` | h21 la amplía |
+| Ayuda | `/help` | `/help` | ✓ `/help` | h22 la amplía |
 | Salir | `/exit` | `/exit` | ✓ | — |
-| Elegir modelo | `/models` (lista) | `/model` (selector) | ✓ `/model ID` | h21: selector |
+| Elegir modelo | `/models` (lista) | `/model` (selector) | ✓ `/model ID` | h22: selector |
 | Sesiones: listar, retomar, borrar | `/sessions` | `/resume` | ✓ | — |
 | Nueva sesión | `/new` | `/clear` | ✓ `/new` (h8) | h8 o mejora pequeña |
 | Renombrar sesión | sí | `/rename` | ✓ `/rename` (h10) | h10 *(04/11/2026, spec del hito 10, con los títulos)* |
 | Exportar la conversación | `/export` (Markdown) | `/export` | ✓ `/export` (h8) | h8 |
-| Copiar la última respuesta | sí | `/copy` | — | h21 |
+| Copiar la última respuesta | sí | `/copy` | — | h22 |
 | Bifurcar la sesión | `--fork` | `/branch`, `/fork` | — | h8 o después |
 | Compactar | `/compact` | `/compact` | — | h11 |
 | Ver qué ocupa el contexto | — | `/context` | — | h11 |
 | Crear `AGENTS.md`/`CLAUDE.md` | `/init` | `/init` | ✓ `/init` (h10) | h10 |
-| Memoria | — | `/memory` | — | h14 |
-| Deshacer y rehacer | `/undo`, `/redo` | `/rewind` | — | h12 (P8, nuevo) |
+| Memoria | — | `/memory` | — | h15 |
+| Deshacer y rehacer | `/undo`, `/redo` | `/rewind` | — | h13 (P8, nuevo) |
 | Coste y uso | `opencode stats` | `/usage` | ✓ `/trace` (por sesión) | h8: `stats` acumulado |
-| Gestionar permisos | paleta (modo auto) | `/permissions` | — | h15 (P9) |
-| Modo plan | Tab | `/plan`, `shift+tab` | — | h15 (P9) |
+| Gestionar permisos | paleta (modo auto) | `/permissions` | — | h16 (P9) |
+| Modo plan | Tab | `/plan`, `shift+tab` | — | h16 (P9) |
 | Esfuerzo de razonamiento | `ctrl+t` (variantes) | `/effort` | ✓ `/effort`, `--effort` (h9) | — |
-| MCP | — | `/mcp` | — | h17 |
-| Skills y agentes | — | `/skills`, `/agents` | — | h13, h16 |
+| MCP | — | `/mcp` | — | h18 |
+| Skills y agentes | — | `/skills`, `/agents` | — | h14, h17 |
 | Pregunta aparte que no entra en el historial | V2 `/btw` | `/btw` | — | después de la 1.0 |
-| Cambiar de directorio | V2 `cd` | `/cd`, `/add-dir` | — | h15 |
-| Diagnóstico de la instalación | `debug` | `/doctor` | — | h23 |
-| Revisión de código, seguridad | — | `/code-review`, `/security-review` | — | h13 (skills incluidas) |
+| Cambiar de directorio | V2 `cd` | `/cd`, `/add-dir` | — | h16 |
+| Diagnóstico de la instalación | `debug` | `/doctor` | — | h24 |
+| Revisión de código, seguridad | — | `/code-review`, `/security-review` | — | h14 (skills incluidas) |
 | Objetivo y bucle (`/goal`, `/loop`) | V2 | sí | — | después de la 1.0 |
 
 ## 3. Comandos personalizados
@@ -129,12 +135,12 @@ Fuentes: https://opencode.ai/docs/commands/, https://code.claude.com/docs/en/ski
 
 | Capacidad | OpenCode | Claude Code | `maha` | Propuesta |
 |---|---|---|---|---|
-| Un fichero Markdown = un comando `/nombre` | `commands/` | `skills/` (y `commands/` heredado) | — | h13 (P7) |
-| Argumentos `$ARGUMENTS`, `$1` | sí | sí | — | h13 |
-| Insertar la salida de un comando | `` !`cmd` `` | `` !`cmd` `` | — | h13, con permiso |
-| Elegir modelo o agente por comando | sí | sí | — | h13 |
-| Ejecutar como subagente | `subtask` | `context: fork` | — | h16 |
-| *Prompts* de MCP como comandos | V2 | sí | — | h17 |
+| Un fichero Markdown = un comando `/nombre` | `commands/` | `skills/` (y `commands/` heredado) | — | h14 (P7) |
+| Argumentos `$ARGUMENTS`, `$1` | sí | sí | — | h14 |
+| Insertar la salida de un comando | `` !`cmd` `` | `` !`cmd` `` | — | h14, con permiso |
+| Elegir modelo o agente por comando | sí | sí | — | h14 |
+| Ejecutar como subagente | `subtask` | `context: fork` | — | h17 |
+| *Prompts* de MCP como comandos | V2 | sí | — | h18 |
 
 ## 4. Línea de comandos y modo no interactivo
 
@@ -145,17 +151,17 @@ https://code.claude.com/docs/en/headless.md.
 |---|---|---|---|---|
 | Una instrucción y salir | `opencode run` | `claude -p` | ✓ `-p` (h8) | h8 (P1) |
 | Seguir o retomar al arrancar | `-c`, `-s` | `-c`, `-r` | ✓ `-c`, `-r` (h8) | h8 |
-| Modelo y agente al arrancar | `-m`, `--agent` | `--model`, `--agent` | ✓ `-m` (h8) | h8 (agente: h16) |
+| Modelo y agente al arrancar | `-m`, `--agent` | `--model`, `--agent` | ✓ `-m` (h8) | h8 (agente: h17) |
 | Salida JSON / eventos en JSON | `--format json` | `--output-format json`, `stream-json` | ✓ `--output-format json`, `stream-json` (h8) | h8 |
 | Entrada por stdin | sí | sí | parcial (`maha < fichero`) | h8 |
 | Tope de pasos y de coste | `steps` | `--max-turns`, `--max-budget-usd` | parcial (25 pasos fijos) | h8 |
-| Permisos sin preguntar en scripts | `--auto` | `--permission-mode`, `--allowedTools` | ✓ `--allow TOOL` (h8); lo demás deniega | h8 y h15 |
+| Permisos sin preguntar en scripts | `--auto` | `--permission-mode`, `--allowedTools` | ✓ `--allow TOOL` (h8); lo demás deniega | h8 y h16 |
 | Listar modelos | `opencode models` | — | ✓ `maha models` (h8) | h8 (P2) |
 | Sesiones desde la línea | `session list/delete` | `--resume` | ✓ `maha sessions` (h8) | h8 |
 | Estadísticas de coste | `opencode stats` | `/usage`, `/insights` | ✓ `maha stats` (h8) | h8 |
 | Exportar e importar sesiones | `export`, `import` | `/export` | ✓ `maha export`, `maha import` (h8) | h8 |
-| Iniciar sesión con un proveedor | `auth login` | `auth login` | — (variable de entorno) | h23 |
-| Actualizar y desinstalar | `upgrade`, `uninstall` | `update`, `install` | — | h23 |
+| Iniciar sesión con un proveedor | `auth login` | `auth login` | — (variable de entorno) | h24 |
+| Actualizar y desinstalar | `upgrade`, `uninstall` | `update`, `install` | — | h24 |
 | Servidor HTTP con API | `serve` | — | — | después de la 1.0 |
 | Protocolo para editores (ACP) | `opencode acp` | — | — | después de la 1.0 |
 
@@ -166,10 +172,10 @@ Fuentes: https://opencode.ai/docs/config/, https://code.claude.com/docs/en/setti
 | Capacidad | OpenCode | Claude Code | `maha` | Propuesta |
 |---|---|---|---|---|
 | Usuario y proyecto | sí | usuario, proyecto, local | ✓ (TOML) | — |
-| Configuración local no compartida | — | `settings.local.json` | — | h15 (con los permisos) |
+| Configuración local no compartida | — | `settings.local.json` | — | h16 (con los permisos) |
 | Variables de entorno en la configuración | `{env:VAR}` | — | — | mejora pequeña |
 | Gestionada por la empresa | sí | sí | — | después de la 1.0 |
-| Editar la configuración desde la conversación | paleta | `/config` | — | h21 |
+| Editar la configuración desde la conversación | paleta | `/config` | — | h22 |
 | Catálogo de modelos propio | models.dev | — | ✓ (`models.toml`) | — |
 
 ## 6. Herramientas
@@ -182,17 +188,17 @@ Fuentes: https://opencode.ai/docs/tools/, https://code.claude.com/docs/en/tools-
 | Escribir y editar | sí | sí | ✓ | — |
 | Parche de varios ficheros | `apply_patch` | — | — | después de la 1.0, con la API Responses *(decidido el 03/11/2026, spec del hito 9, decisión 7)* |
 | Ejecutar comandos | `bash` | `Bash` | ✓ `run_command` | — |
-| Comandos en segundo plano | V2 | `Monitor`, `ctrl+b` | — | h16 (P11) |
-| Leer y buscar en la web | `webfetch`, `websearch` | `WebFetch`, `WebSearch` | — | h19 |
+| Comandos en segundo plano | V2 | `Monitor`, `ctrl+b` | — | h17 (P11) |
+| Leer y buscar en la web | `webfetch`, `websearch` | `WebFetch`, `WebSearch` | — | h20 |
 | Lista de tareas | `todowrite` | `TaskCreate`… | ✓ `todo_write` (h10) | h10 (P5) |
 | Pregunta estructurada al usuario | `question` | `AskUserQuestion` | ✓ `ask_user` (h10) | h10 (P5) |
-| Cargar una skill | `skill` | `Skill` | — | h13 |
-| Lanzar un subagente | `task` | `Agent` | — | h16 |
-| Modo plan | agente Plan | `EnterPlanMode` | — | h15 (P9) |
+| Cargar una skill | `skill` | `Skill` | — | h14 |
+| Lanzar un subagente | `task` | `Agent` | — | h17 |
+| Modo plan | agente Plan | `EnterPlanMode` | — | h16 (P9) |
 | Inteligencia de código (LSP) | `lsp` (experimental) | `LSP` | — | después de la 1.0 |
 | Cuadernos Jupyter | — | `NotebookEdit` | — | después de la 1.0 |
 | Herramientas propias del usuario | `tools/` | plugins | — | después de la 1.0 |
-| Cargar herramientas bajo demanda | — | `ToolSearch` | — | h17 (muchas herramientas MCP) |
+| Cargar herramientas bajo demanda | — | `ToolSearch` | — | h18 (muchas herramientas MCP) |
 
 ## 7. Permisos
 
@@ -204,13 +210,13 @@ https://code.claude.com/docs/en/permissions.md *(sin comprobar del todo)*.
 |---|---|---|---|---|
 | Preguntar antes de cada efecto | `ask` | modo manual | ✓ | — |
 | "Una vez" / "esta sesión" / "no" | once, always, reject | sí | ✓ | — |
-| "Siempre" que persiste por proyecto | V2 | `settings.local.json` | — | h15 (P9) |
-| Reglas con patrones (`git *`, rutas) | sí | sí | — | h15 |
-| Modos (plan, aceptar ediciones, automático) | Plan, `--auto` | 6 modos, `shift+tab` | — | h15 |
+| "Siempre" que persiste por proyecto | V2 | `settings.local.json` | — | h16 (P9) |
+| Reglas con patrones (`git *`, rutas) | sí | sí | — | h16 |
+| Modos (plan, aceptar ediciones, automático) | Plan, `--auto` | 6 modos, `shift+tab` | — | h16 |
 | Fuera del directorio de trabajo | `external_directory` | `/add-dir` | ✓ (pregunta) | — |
 | Ficheros secretos | `.env` pregunta | rutas protegidas | ✓ | — |
-| Detección de bucles (misma llamada repetida) | `doom_loop` | — | — | h15 |
-| Confianza en una carpeta nueva | — | diálogo de confianza | — | h15 |
+| Detección de bucles (misma llamada repetida) | `doom_loop` | — | — | h16 |
+| Confianza en una carpeta nueva | — | diálogo de confianza | — | h16 |
 | Clasificador automático | — | modo `auto` | — | después de la 1.0 |
 
 ## 8. Agentes y subagentes
@@ -219,12 +225,12 @@ Fuentes: https://opencode.ai/docs/agents/, https://code.claude.com/docs/en/sub-a
 
 | Capacidad | OpenCode | Claude Code | `maha` | Propuesta |
 |---|---|---|---|---|
-| Subagente con contexto propio | General, Explore | Explore, Plan, general | h16 | — |
-| Agentes propios en Markdown | sí | sí | — | h16 (P10) |
-| Llamarlos con `@agente` | sí | sí | — | h16 |
-| Cambiar de agente principal | Tab | `--agent` | — | h16 |
-| En segundo plano y en paralelo | experimental | sí | — | h16 |
-| Profundidad máxima | `subagent_depth` | 3 niveles | — | h16 |
+| Subagente con contexto propio | General, Explore | Explore, Plan, general | h17 | — |
+| Agentes propios en Markdown | sí | sí | — | h17 (P10) |
+| Llamarlos con `@agente` | sí | sí | — | h17 |
+| Cambiar de agente principal | Tab | `--agent` | — | h17 |
+| En segundo plano y en paralelo | experimental | sí | — | h17 |
+| Profundidad máxima | `subagent_depth` | 3 niveles | — | h17 |
 | Aislado en un *worktree* de git | V2 | `isolation: worktree` | — | después de la 1.0 |
 | Equipos de agentes | — | experimental | — | después de la 1.0 |
 
@@ -237,14 +243,14 @@ Fuentes: https://opencode.ai/docs/rules/, https://code.claude.com/docs/en/memory
 |---|---|---|---|---|
 | `AGENTS.md` del proyecto y del usuario | sí | lee `AGENTS.md` | h10 | los de subcarpetas, al leer allí: h11 *(04/11/2026, spec del hito 10)* |
 | Compatibilidad con `CLAUDE.md` | sí | propio | ✓ (h10) | h10 (P4) |
-| Instrucciones extra (rutas, URL) | `instructions` | `.claude/rules/` con rutas | ✓ `instructions`, rutas y globs (h10) | h10 *(04/11/2026, spec del hito 10: rutas y globs; las URL, h19; las reglas por ruta, h13)* |
+| Instrucciones extra (rutas, URL) | `instructions` | `.claude/rules/` con rutas | ✓ `instructions`, rutas y globs (h10) | h10 *(04/11/2026, spec del hito 10: rutas y globs; las URL, h20; las reglas por ruta, h14)* |
 | `/init` | sí | sí | ✓ (h10) | h10 |
 | Compactación automática y manual | sí | sí | h11 | — |
 | Qué sobrevive a la compactación | `prune` | lista documentada | — | h11 |
 | Ver qué ocupa el contexto | — | `/context` | — | h11 |
 | Caché del prompt del proveedor | V2 *warming* | documentada | ✓ automática (h9) | h11 |
-| Memoria entre sesiones | plugin de la comunidad | memoria automática | h14 | — |
-| Skills | `SKILL.md` | `SKILL.md` | h13 | — |
+| Memoria entre sesiones | plugin de la comunidad | memoria automática | h15 | — |
+| Skills | `SKILL.md` | `SKILL.md` | h14 | — |
 
 ## 10. Sesiones
 
@@ -259,8 +265,8 @@ https://code.claude.com/docs/en/checkpointing.md.
 | Renombrar | sí | sí | ✓ (h10) | h10 *(04/11/2026, spec del hito 10)* |
 | Bifurcar | sí | sí | — | h8 o después |
 | Exportar e importar | sí | exportar | ✓ (h8) | h8 |
-| Deshacer cambios en ficheros | `/undo` (git) | puntos de control | — | h12 (P8, nuevo) |
-| Borrado automático de las antiguas | — | 30 días | — | h23 |
+| Deshacer cambios en ficheros | `/undo` (git) | puntos de control | — | h13 (P8, nuevo) |
+| Borrado automático de las antiguas | — | 30 días | — | h24 |
 | Trazas por sesión | — | — | ✓ | — |
 
 ## 11. Modelos y proveedores
@@ -274,11 +280,11 @@ https://code.claude.com/docs/en/model-config.md *(sin comprobar del todo)*.
 | Formato de Anthropic | sí | propio | ✓ (h9) | — |
 | Responses de OpenAI y API de Google | sí | — | — | después de la 1.0 (decisión pendiente) |
 | Proveedores compatibles propios | sí | pasarelas | ✓ (configuración) | — |
-| Modelos locales (Ollama, LM Studio) | sí | — | ✓ (compatibles con OpenAI) | documentar en h23 |
+| Modelos locales (Ollama, LM Studio) | sí | — | ✓ (compatibles con OpenAI) | documentar en h24 |
 | Esfuerzo o variantes de razonamiento | variantes | `/effort` | ✓ (h9) | — |
 | Modelo de respaldo | — | `--fallback-model` | ✓ `--fallback-model` (h8) | h8 (P3) |
 | Modelo pequeño para títulos | `small_model` | — | ✓ `small_model` (h10) | h10 |
-| Iniciar sesión (OAuth, clave guardada) | `/connect` | `/login` | — | h23 |
+| Iniciar sesión (OAuth, clave guardada) | `/connect` | `/login` | — | h24 |
 
 ## 12. MCP y conectores
 
@@ -287,12 +293,12 @@ Fuentes: https://opencode.ai/docs/mcp-servers/, https://code.claude.com/docs/en/
 
 | Capacidad | OpenCode | Claude Code | `maha` | Propuesta |
 |---|---|---|---|---|
-| Servidores locales (stdio) | sí | sí | h17 | — |
-| Remotos (HTTP) con OAuth | sí | sí | — | h17 (P12) |
-| Activar y desactivar servidores | sí | `/mcp` | — | h17 |
-| Recursos y *prompts* | V2 | sí | — | h17 |
-| Herramientas bajo demanda | V2 Code Mode | *tool search* | — | h17 |
-| Límite de lo que devuelve una herramienta | — | 25 000 tokens | — | h17 |
+| Servidores locales (stdio) | sí | sí | h18 | — |
+| Remotos (HTTP) con OAuth | sí | sí | — | h18 (P12) |
+| Activar y desactivar servidores | sí | `/mcp` | — | h18 |
+| Recursos y *prompts* | V2 | sí | — | h18 |
+| Herramientas bajo demanda | V2 Code Mode | *tool search* | — | h18 |
+| Límite de lo que devuelve una herramienta | — | 25 000 tokens | — | h18 |
 
 ## 13. Extensibilidad
 
@@ -301,7 +307,7 @@ https://code.claude.com/docs/en/hooks.md, https://code.claude.com/docs/en/plugin
 
 | Capacidad | OpenCode | Claude Code | `maha` | Propuesta |
 |---|---|---|---|---|
-| Hooks antes y después de herramientas, turnos… | eventos de plugin | 33 eventos | — | h18 (P13, nuevo) |
+| Hooks antes y después de herramientas, turnos… | eventos de plugin | 33 eventos | — | h19 (P13, nuevo) |
 | Plugins | JS/TS | plugins y *marketplaces* | — | después de la 1.0 |
 | Herramientas propias | `tools/` | plugins | — | después de la 1.0 |
 | Servidor con API y SDK | `serve`, SDK | Agent SDK | — | después de la 1.0 |
@@ -316,7 +322,7 @@ https://code.claude.com/docs/en/github-actions.md.
 | GitHub Action (`/opencode`, `@claude`) | sí | sí | — | después de la 1.0 |
 | Extensión de VS Code / JetBrains | sí | sí | — | después de la 1.0 (vía ACP) |
 | Navegador (Chrome) | — | sí | — | después de la 1.0 |
-| Docker | imagen oficial | contenedor de desarrollo | — | h23 |
+| Docker | imagen oficial | contenedor de desarrollo | — | h24 |
 
 ## 15. Coste, uso y observabilidad
 
@@ -328,7 +334,7 @@ https://code.claude.com/docs/en/monitoring-usage.md *(sin comprobar del todo)*.
 | Coste por turno y sesión | — (no documentado en V1) | `/usage` | ✓ | — |
 | Coste acumulado por días, modelos | `stats` | `/usage`, `/insights` | ✓ `maha stats` (h8) | h8 (P2) |
 | Traza de cada sesión | — | — | ✓ | — |
-| OpenTelemetry | V1 no soportado | sí (métricas, eventos, trazas) | h22 | — |
+| OpenTelemetry | V1 no soportado | sí (métricas, eventos, trazas) | h23 | — |
 | Registro de diagnóstico | `opencode.log` | `--debug` | ✓ `maha.log` | — |
 
 ## 16. Seguridad y aislamiento
@@ -338,10 +344,10 @@ todo)*, https://code.claude.com/docs/en/security.md.
 
 | Capacidad | OpenCode | Claude Code | `maha` | Propuesta |
 |---|---|---|---|---|
-| Sandbox de comandos | (plugins de la comunidad) | bubblewrap / Seatbelt | h15 | — |
+| Sandbox de comandos | (plugins de la comunidad) | bubblewrap / Seatbelt | h16 | — |
 | Sin la clave en los comandos | — | — | ✓ | — |
-| Detectar comandos que no puede analizar | — | sí | — | h15 |
-| Credenciales en el llavero del sistema | `auth.json` | Keychain / `0600` | — | h23 |
+| Detectar comandos que no puede analizar | — | sí | — | h16 |
+| Credenciales en el llavero del sistema | `auth.json` | Keychain / `0600` | — | h24 |
 
 ## OpenCode 2: hacia dónde va
 
@@ -359,6 +365,6 @@ tocan cada cosa, no como propuesta cerrada:
 
 Acepta todas las recomendaciones: P1 a P7 y P9 a P12 amplían sus hitos; P8
 (deshacer) y P13 (hooks) son hitos nuevos, el 12 y el 18; P14 entra en la
-1.0 (hito 23); P15 y las APIs de Responses y de Google, después de la 1.0.
+1.0 (hito 24); P15 y las APIs de Responses y de Google, después de la 1.0.
 "El objetivo es tener un programa completo, muy bueno y llamativo para el
 usuario final."

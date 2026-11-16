@@ -20,16 +20,17 @@ Cada nota se escribe en el mismo PR que cierra su hito.
 | 08 | [Cómo se evalúa un agente](08-evals.md) | Escrita (hito 8, `v0.8.0`) |
 | 09 | [Dos formatos para hablar con un modelo](09-formatos-de-api.md) | Escrita (hito 9, `v0.9.0`) |
 | 10 | [El system prompt: lo que el modelo sabe antes de leerte](10-system-prompt.md) | Escrita (hito 10, `v0.10.0`) |
-| 11 | La ventana de contexto y la compactación | Pendiente (hito 11) |
-| 12 | Deshacer: puntos de control | Pendiente (hito 12) |
-| 13 | Skills y comandos personalizados | Pendiente (hito 13) |
-| 14 | Memoria persistente | Pendiente (hito 14) |
-| 15 | Aislamiento (sandbox) y modos de permiso | Pendiente (hito 15) |
-| 16 | Subagentes | Pendiente (hito 16) |
-| 17 | MCP | Pendiente (hito 17) |
-| 18 | Hooks | Pendiente (hito 18) |
-| 19 | El agente y la web | Pendiente (hito 19) |
-| 20 | Entrada multimodal | Pendiente (hito 20) |
-| 21 | La interfaz de terminal | Pendiente (hito 21) |
-| 22 | OpenTelemetry | Pendiente (hito 22) |
-| 23 | Recorrido completo: de la primera llamada a la v1.0 | Pendiente (hito 23) |
+| 11 | El contexto virtual: ventana fija, archivo y `recall` | Pendiente (hito 11) |
+| 12 | La órbita larga: menos idas y vueltas al modelo | Pendiente (hito 12) |
+| 13 | Deshacer: puntos de control | Pendiente (hito 13) |
+| 14 | Skills y comandos personalizados | Pendiente (hito 14) |
+| 15 | Memoria persistente | Pendiente (hito 15) |
+| 16 | Aislamiento (sandbox) y modos de permiso | Pendiente (hito 16) |
+| 17 | Subagentes | Pendiente (hito 17) |
+| 18 | MCP | Pendiente (hito 18) |
+| 19 | Hooks | Pendiente (hito 19) |
+| 20 | El agente y la web | Pendiente (hito 20) |
+| 21 | Entrada multimodal | Pendiente (hito 21) |
+| 22 | La interfaz de terminal | Pendiente (hito 22) |
+| 23 | OpenTelemetry | Pendiente (hito 23) |
+| 24 | Recorrido completo: de la primera llamada a la v1.0 | Pendiente (hito 24) |

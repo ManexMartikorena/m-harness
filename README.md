@@ -302,7 +302,8 @@ user. It honors the `XDG_*` variables.
 
 `maha` grows milestone by milestone up to version 1.0. Next:
 
-- **Context compaction**, for long conversations, and **undo**.
+- **Virtual context**, so that a long conversation stays cheap with any
+  model; **fewer round trips** to the model; and **undo**.
 - **Skills and custom commands, memory across sessions, sandbox, permission
   modes, subagents, MCP and hooks.**
 - **Web and images.**
