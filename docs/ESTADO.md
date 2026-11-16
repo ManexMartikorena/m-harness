@@ -3,7 +3,8 @@
 Última actualización: 2026-11-16. **Hito 10 cerrado: `v0.10.0` (system
 prompt por capas), `v0.10.1` (la auditoría tras el hito 10) y `v0.10.2`
 (su segunda, tercera y cuarta revisión, cero deuda). En curso: la spec
-del hito 11 (gestión del contexto), PROPUESTA, en su PR.**
+del hito 11 (contexto virtual), PROPUESTA, en su PR. Plan ampliado a
+24 hitos (la órbita larga, hito 12 nuevo).**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -12,7 +13,8 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 **Desarrollo. Hitos 1 a 10 cerrados, con la auditoría tras el hito 10
 (`v0.10.1`) y sus revisiones (`v0.10.2`). En curso, el hito 11 (gestión
-del contexto): su spec. Plan: 23 hitos hasta la 1.0 (DESIGN §14).**
+del contexto, ahora contexto virtual): su spec. Plan: 24 hitos hasta la
+1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.10.2` — Revisiones de la auditoría tras el hito
@@ -54,11 +56,16 @@ trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
 1. **Mantenedor:** revisar el PR de la spec del hito 11
    (`docs/specs/hito-11-contexto.md`, rama `docs/spec-hito-11-contexto`),
-   y sus 11 decisiones (§11). Integrarlo es la aprobación (el mantenedor
-   dio la salida al hito el 2026-11-16).
-2. **Agente, con la spec aprobada:** el PR 1 de la spec (contar y ver),
-   en `feature/hito-11-contar`.
-3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+   y sus decisiones (§11): las 4 del mantenedor (2026-11-16) y las 8
+   propuestas del agente. Integrarlo es la aprobación. El PR también
+   renumera el plan: la órbita larga entra como hito 12 y la 1.0 pasa al
+   24.
+2. **Agente o mantenedor, al integrar el PR:** en GitHub, renombrar los
+   milestones de los hitos 12 a 23 a 13 a 24 y crear "Hito 12 — Órbita
+   larga" (spec 11, §8).
+3. **Agente, con la spec aprobada:** el PR 1 de la spec (contar, acotar y
+   ver), en `feature/hito-11-contar`.
+4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -116,26 +123,26 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 **Decisiones del mantenedor para hitos futuros** (todas del 2026-10-27):
 - **Producto profesional** (ANALISIS §4): lo más completo posible e
   intuitivo; las 17 piezas son el mínimo.
-- **El plan de 23 hitos** de DESIGN §14, a partir de
+- **El plan de 23 hitos** (24 desde el 2026-11-16) de DESIGN §14, a partir de
   `docs/COMPARATIVA.md`. Después de la 1.0: LSP y formateadores, plugins,
   API y SDK, editores, GitHub Action, las APIs de Responses de OpenAI y de
   Google, *worktrees*, tareas programadas y voz.
-- **Hito 21, una TUI completa**, bonita y fácil para cualquier persona:
+- **Hito 22, una TUI completa**, bonita y fácil para cualquier persona:
   todos los comandos, descubribles en un menú de comandos (como la paleta
   `ctrl+p` de OpenCode), con `/help`, `/` y atajos. La interfaz de línea se
   conserva.
-- **Distribución pública en la 1.0** (hito 23), con documentación de
+- **Distribución pública en la 1.0** (hito 24), con documentación de
   usuario.
 - **Dos caras en GitHub**, al día en cada cierre de hito (AGENTS.md).
 
 **Se deciden en la spec de su hito:**
-- búsqueda en la memoria (hito 14);
-- tecnología del sandbox (hito 15);
-- cliente MCP a mano o con el SDK oficial (hito 17);
-- proveedor de búsqueda web (hito 19);
-- tratamiento de PDFs (hito 20);
-- librería y pantallas de la TUI (hito 21);
-- canal de distribución (hito 23).
+- búsqueda en la memoria (hito 15);
+- tecnología del sandbox (hito 16);
+- cliente MCP a mano o con el SDK oficial (hito 18);
+- proveedor de búsqueda web (hito 20);
+- tratamiento de PDFs (hito 21);
+- librería y pantallas de la TUI (hito 22);
+- canal de distribución (hito 24).
 
 **Con hito asignado** (salieron de hitos anteriores; cada uno, de su spec):
 - **Hito 11:** los `AGENTS.md` de subcarpetas, cargados al leer un fichero
@@ -147,29 +154,29 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   la política de versiones del formato de sesión y subir el tope de
   pasos (auditoría tras el hito 10, "A su hito"; faltaban aquí, añadidos
   el 2026-11-16). Todo, en la spec 11.
-- **Hito 12:** bifurcar una sesión (spec 8, §11.8).
-- **Hito 13:** las reglas de instrucciones por ruta, como `.claude/rules/`
+- **Hito 13:** bifurcar una sesión (spec 8, §11.8).
+- **Hito 14:** las reglas de instrucciones por ruta, como `.claude/rules/`
   con `paths` (spec 10, decisión 6).
-- **Hito 15:** que un comando no llegue a los *sockets* de la sesión de la
+- **Hito 16:** que un comando no llegue a los *sockets* de la sesión de la
   persona (D-Bus, el agente SSH): quitar `XDG_RUNTIME_DIR` de su entorno
   es una defensa más, no una frontera, porque un comando corre como la
   persona y puede rehacer la ruta; la frontera es el sandbox (segunda
   revisión de la auditoría tras el hito 10).
-- **Hito 15:** detectar secretos con otro nombre (`credenciales.txt`)
+- **Hito 16:** detectar secretos con otro nombre (`credenciales.txt`)
   mirando el contenido (mejora `2026-10-23`, E5); con el sandbox,
   `run_command` en las evals y tareas de "ejecuta y arregla" (spec 8,
   §11.2).
-- **Hito 15:** (también) que una comprobación de las evals no se pueda
+- **Hito 16:** (también) que una comprobación de las evals no se pueda
   engañar con un módulo que tapa uno de la biblioteca estándar
   (`unittest.py` en la copia): el aislamiento completo de las comprobaciones
   (auditoría profunda tras el hito 9, I14 e I5; decisión del mantenedor,
   2026-11-03).
-- **Hito 15:** (también) el análisis de comandos peligrosos, las reglas
+- **Hito 16:** (también) el análisis de comandos peligrosos, las reglas
   por patrón, el `cd` que dura, la lista de variables de los comandos
   como parte del sandbox y qué ve el modelo tras una negativa en `-p`
   (auditoría tras el hito 10, "A su hito"; faltaban aquí, añadidos el
   2026-11-16).
-- **Hito 16:** llamadas a herramientas en paralelo (spec 4, §11); comandos
+- **Hito 17:** llamadas a herramientas en paralelo (spec 4, §11); comandos
   que esperan entrada, con los comandos en segundo plano (spec 5, §10);
   varios comandos a la vez, hoy uno a uno por el subreaper (spec 8, §12.10);
   con ellos, que la limpieza de un comando no mate otros hijos de `maha`
@@ -177,24 +184,24 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   nuevo, y no pasa porque las herramientas van de una en una (cuarta
   revisión de la auditoría tras el hito 10; decisión del mantenedor,
   2026-11-13).
-- **Hito 17:** que `main()` no calle un `BrokenPipeError` que no sea de
+- **Hito 18:** que `main()` no calle un `BrokenPipeError` que no sea de
   stdout: los procesos hijo de MCP tratan sus propias tuberías, con su
   test (spec 8, §12.56; decisión del mantenedor, 2026-11-03).
-- **Hito 21:** tras Ctrl+Z y `fg` en el prompt, repintar `> ` y la línea
+- **Hito 22:** tras Ctrl+Z y `fg` en el prompt, repintar `> ` y la línea
   tecleada, en modo raw (decisión del mantenedor, 2026-11-12; auditoría
   tras el hito 10, R42).
-- **Hito 21:** lo que se teclea mientras gira el spinner y el eco de `^C`
+- **Hito 22:** lo que se teclea mientras gira el spinner y el eco de `^C`
   se mezclan con la salida (spec 3, §12.10; spec 4, §12.13); ver el texto
   del razonamiento (spec 7); con el selector de modelo, que un id que no
   está en el catálogo (`-m kimi`, `model = "kimi"`) sugiera los parecidos
   y que el error del proveedor diga qué hacer (`/model`, `maha models`):
   hoy da solo `HTTP 400 … Model is unavailable` (prueba del mantenedor,
   2026-11-03).
-- **Hito 21:** (también) el indicador de una herramienta larga,
+- **Hito 22:** (también) el indicador de una herramienta larga,
   distinguir a la vista el texto del modelo, `maha "texto"`, el selector
   de `-r` y explicar un `effort` no admitido (auditoría tras el hito 10,
   "A su hito"; faltaban aquí, añadidos el 2026-11-16).
-- **Hito 23:** la limpieza de las sesiones antiguas (auditoría tras el
+- **Hito 24:** la limpieza de las sesiones antiguas (auditoría tras el
   hito 10, "A su hito"; faltaba aquí, añadido el 2026-11-16).
 - **Con la batería más larga (hito 11):** volver a medir cuándo usan los
   modelos `todo_write`. Hoy solo la 12 (train) y la 23 (validación) son
@@ -230,7 +237,7 @@ código y los tests cubren los dos casos):
 
 **Límites aceptados por el mantenedor** (cada uno, con su decisión en su
 spec; los cuatro primeros, confirmados de nuevo el 2026-10-27):
-- los secretos con otro nombre no se detectan hasta el hito 15 (mejora
+- los secretos con otro nombre no se detectan hasta el hito 16 (mejora
   `2026-10-23`, E5);
 - D7 y D14 de `write_file`/`edit_file` (mejora `2026-10-23`);
 - la rotación de `maha.log` no se coordina entre varios `maha` a la vez
@@ -245,7 +252,7 @@ no eran una decisión del mantenedor. Arreglados el 2026-10-27: fallan al
 momento (spec 5, §10).
 
 **Por medir:**
-- Ahorro de tokens de la memoria (hito 14).
+- Ahorro de tokens de la memoria (hito 15).
 
 **Medido:** la primera línea base de las evals (2026-10-27, `evals/baselines/`;
 spec 8, §5). La batería tiene que crecer con tareas exigentes hasta 30 o
@@ -272,21 +279,23 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 10. System prompt por capas. `v0.10.0` (2026-11-10) y los arreglos
   `v0.10.1` (2026-11-11, la auditoría) y `v0.10.2` (2026-11-13, sus
   revisiones)
-- [ ] 11. Gestión del contexto. `v0.11.0`
-- [ ] 12. Deshacer y puntos de control. `v0.12.0` *(nuevo, 2026-10-27)*
-- [ ] 13. Skills y comandos personalizados. `v0.13.0`
-- [ ] 14. Memoria persistente. `v0.14.0`
-- [ ] 15. Sandbox y modos de permiso. `v0.15.0`
-- [ ] 16. Subagentes y agentes propios. `v0.16.0`
-- [ ] 17. MCP. `v0.17.0`
-- [ ] 18. Hooks. `v0.18.0` *(nuevo, 2026-10-27)*
-- [ ] 19. Web. `v0.19.0`
-- [ ] 20. Multimodal. `v0.20.0`
-- [ ] 21. Interfaz completa (TUI). `v0.21.0`
-- [ ] 22. Exportador OpenTelemetry. `v0.22.0`
-- [ ] 23. Versión 1.0 y distribución. `v1.0.0`
+- [ ] 11. Contexto virtual. `v0.11.0` *(antes "Gestión del contexto"; 2026-11-16)*
+- [ ] 12. Órbita larga. `v0.12.0` *(nuevo, 2026-11-16)*
+- [ ] 13. Deshacer y puntos de control. `v0.13.0` *(nuevo, 2026-10-27)*
+- [ ] 14. Skills y comandos personalizados. `v0.14.0`
+- [ ] 15. Memoria persistente. `v0.15.0`
+- [ ] 16. Sandbox y modos de permiso. `v0.16.0`
+- [ ] 17. Subagentes y agentes propios. `v0.17.0`
+- [ ] 18. MCP. `v0.18.0`
+- [ ] 19. Hooks. `v0.19.0` *(nuevo, 2026-10-27)*
+- [ ] 20. Web. `v0.20.0`
+- [ ] 21. Multimodal. `v0.21.0`
+- [ ] 22. Interfaz completa (TUI). `v0.22.0`
+- [ ] 23. Exportador OpenTelemetry. `v0.23.0`
+- [ ] 24. Versión 1.0 y distribución. `v1.0.0`
 
 *(Plan reordenado el 2026-10-27 por decisión del mantenedor, DESIGN §14 y
-`docs/COMPARATIVA.md`.)*
+`docs/COMPARATIVA.md`; ampliado el 2026-11-16 con el hito 12, la órbita
+larga, spec del hito 11.)*
 
 **Mantenimiento.** `v1.N.0` para una mejora y `v1.N.M` para un arreglo.
