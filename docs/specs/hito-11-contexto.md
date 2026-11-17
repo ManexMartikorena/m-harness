@@ -1005,3 +1005,67 @@ Del mantenedor, tras el PR 1 (2026-11-17):
   archivo es un índice que se rehace desde el JSONL. En el PR 3, pieza 4,
   la sesión guarda también cada salida entera archivada (una entrada
   nueva, como `ArchiveEntry`), y `rebuild()` la recupera de ahí.
+
+**PR 3 (2026-11-17):**
+- **La conversación entera se queda; el modelo recibe la de trabajo.** El
+  agente guarda todos los mensajes, cuántos sustituye el índice y el
+  índice; lo que manda es `[índice, *mensajes[archivados:]]`.
+  `ArchiveEntry.replaces` cuenta desde el principio de la conversación
+  entera, no de la de trabajo: varios archivados se componen sin
+  reescribir nada, y `/export` tiene todos los mensajes.
+- **Un turno que archivó pasos suyos se guarda entero**, termine como
+  termine: si no, el índice hablaría de mensajes que no están.
+- **Atómico de verdad:** el archivero y el archivo se esperan primero, y el
+  cambio de la ventana se hace de una vez al final. Los mensajes
+  archivados tienen la id de su posición (`msg-1` es el primero) y el
+  resumen, la de su corte (`sum-N`): si un Ctrl+C corta tras escribir en
+  el archivo, archivar otra vez lo mismo no añade nada (`ON CONFLICT DO
+  NOTHING`; `INSERT OR IGNORE` también se tragaba un `NOT NULL` roto, y lo
+  vio un test).
+- **El prompt cortado en silencio (decisión 14) se detecta por la cuenta,
+  no por la ventana.** La regla de la decisión ("lo mandado no cabía en la
+  ventana") casi nunca salta: el bucle archiva antes de pasar del techo, y
+  `hy3` corta en un tope suyo (196.608, el 75 % de 262.144), por debajo de
+  la ventana del catálogo. La señal robusta: un prompt contiene entero al
+  anterior, así que el proveedor no puede contar menos que la llamada
+  anterior más una cuarta parte de lo añadido, cuando lo añadido son
+  1.000 tokens o más. Solo con el mismo modelo, porque otro cuenta con
+  otro tokenizador. La regla de la ventana se queda como segunda señal.
+  La respuesta de un prompt cortado se paga y no se guarda.
+- **Un `context_full` como motivo de parada** (Anthropic,
+  `model_context_window_exceeded`) se trata como el error: se archiva y se
+  repite una vez. Tras el error, se archiva todo menos el último paso
+  (cola 0). Si ni así cabe, el turno acaba en `context_full` y, como tras
+  cualquier llamada fallida, no se guarda si nada se ejecutó. "Una vez
+  por paso" queda en un archivado antes de la llamada y, como mucho, uno
+  tras el error.
+- **El archivero cuesta, pero no es un paso.** Sus llamadas son
+  `ModelCallFinished` con `archivist`: cuentan en el turno, en la sesión y
+  en los topes, pero `-p` y las evals no las cuentan como pasos ni toman su
+  texto como respuesta.
+- **El archivero lee cada bloque cortado a 2.000 caracteres** (como el
+  `session_search` de Hermes, §1.0): lo entero ya está en el archivo, y así
+  cuesta mucho menos. Lee por partes si su ventana no da. Si falla, el
+  índice del archivero anterior se conserva, no se pierde.
+- **`call_cost()` sale del bucle a `application/pricing.py`**: el bucle
+  importa el archivero, y el archivero lo necesitaba.
+- **Cada salida entera va también a la sesión** (`OutputEntry`, pieza 4).
+  Al retomar, si el archivo falta o está roto, se rehace con los mensajes
+  archivados, los resúmenes y las salidas, con sus ids.
+- **`SessionTooNew`**: "line N is of a newer maha ('tipo'); update maha to
+  open it". La versión de la cabecera es la del `maha` que creó la
+  sesión, no la del último que escribió, así que el mensaje no la nombra.
+- **`/context` enseña siempre la fila del índice** ("nothing archived"
+  hasta que lo haya), como en §1.11; el PR 1 la dejó para cuando hubiera
+  archivo.
+- **Las evals:** `Sessions.start(history=…)` y el `history.jsonl` de una
+  tarea; `context_budget` por tarea. La tarea 27 no tiene `run_command`
+  (no lo hay en las evals hasta el hito 16): el dato del principio sale de
+  un fichero que el agente cambia después. La 28 lleva `max_steps = 40`,
+  hasta que el PR 4 sube el tope a 50. El informe de `maha eval` dice la
+  parte leída de caché y en qué tareas se archivó y se usó `recall`
+  (§3.1; pendiente del PR 1).
+- **Visto con un modelo real** (GLM, tarea 27, una ejecución): archivó a
+  22.506 tokens y quedaron 7.092; el índice del archivero guardaba el
+  código de lote, lo hecho por fichero y lo pendiente; el archivero costó
+  0,001 $. No usó `recall`: el índice ya tenía el dato.
