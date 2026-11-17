@@ -18,6 +18,7 @@ from pydantic import BaseModel, ValidationError
 
 from mharness.application.approvals import SessionApprovals
 from mharness.application.collect import Accumulator
+from mharness.application.recall import ArchiveSlot
 from mharness.application.tools import ToolRegistry
 from mharness.domain.agent_events import (
     AgentEvent,
@@ -115,6 +116,7 @@ class Agent:
         effort: Effort | None = None,
         system: str | None = None,
         context_budget: int = DEFAULT_BUDGET,
+        slot: ArchiveSlot | None = None,
     ) -> None:
         self._client = client
         self._tools = tools
@@ -147,10 +149,19 @@ class Agent:
         self._measured: _Measured | None = None
         # Tokens per call at most (spec hito 11, §1.3).
         self.context_budget = context_budget
-        # The session's archive, where a whole output too big for the
-        # context goes (§1.6); the session sets it. None: none, and such an
-        # output is only cut.
-        self.archive: ContextArchive | None = None
+        # Where the session puts its archive, shared with `recall` (§1.9).
+        self._slot = slot if slot is not None else ArchiveSlot()
+
+    @property
+    def archive(self) -> ContextArchive | None:
+        """The session's archive, where a whole output too big for the
+        context goes (spec hito 11, §1.6). None: none, and such an output
+        is only cut."""
+        return self._slot.archive
+
+    @archive.setter
+    def archive(self, archive: ContextArchive | None) -> None:
+        self._slot.archive = archive
 
     @property
     def messages(self) -> Sequence[Message]:

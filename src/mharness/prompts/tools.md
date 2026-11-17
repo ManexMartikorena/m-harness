@@ -34,3 +34,8 @@ for one or two edits, nor for a question.
 Ask only when you cannot go on without the answer and the project does not
 give it: a choice between real options. Never to confirm a plan, nor what
 the tools can find.
+
+## recall
+When an output was cut, or you need something said earlier that is no
+longer in the conversation, search the archive with a few precise words,
+then read the item by its id. Never guess what it said.

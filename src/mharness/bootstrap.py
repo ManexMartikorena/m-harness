@@ -51,6 +51,7 @@ from mharness.application.agent import Agent
 from mharness.application.approvals import AllowList
 from mharness.application.evals import Evaluator, choose
 from mharness.application.prompt import PromptTemplates, SystemPromptBuilder
+from mharness.application.recall import ArchiveSlot, Recall
 from mharness.application.routing import ModelRouter
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.titles import Titler, small_model
@@ -260,7 +261,7 @@ async def _show_prompt(
 ) -> int:
     """`maha prompt`: the system prompt of a session here, with the tools
     of a conversation, without calling the model (spec hito 10, §1.8)."""
-    tools = _tools(cwd, {}, _questions(cli.StdinLines()))
+    tools = _with_recall(_tools(cwd, {}, _questions(cli.StdinLines())))
     prompt = await _prompt(settings, catalog, cwd, tools, files).build(model or "")
     for note in cli.prompt_notes(prompt):
         print(f"  {note}", file=sys.stderr)
@@ -441,6 +442,14 @@ def _eval_prompt(
     )
 
 
+def _with_recall(tools: ToolRegistry, slot: ArchiveSlot | None = None) -> ToolRegistry:
+    """The tools of one agent: these, and `recall` over the archive that its
+    session puts in `slot` (spec hito 11, §1.9). One slot per agent: a
+    conversation left behind never points another one's `recall` at its
+    archive. Without `slot`, only to name the tools."""
+    return tools.plus(Recall(slot if slot is not None else ArchiveSlot()))
+
+
 def _eval_tools(cwd: Path) -> ToolRegistry:
     """The tools of an eval run: all but `run_command`, until the sandbox
     of hito 16 (spec hito 8, decision 2), and `ask_user`: nobody answers
@@ -515,9 +524,10 @@ async def _eval(
             tools = _eval_tools(cwd)
 
             def new_agent(model: str, history: Sequence[Message]) -> Agent:
+                slot = ArchiveSlot()
                 return Agent(
                     client,
-                    tools,
+                    _with_recall(tools, slot),
                     gate=AllowList(task.allow),
                     model=model,
                     catalog=catalog,
@@ -526,6 +536,7 @@ async def _eval(
                     history=history,
                     # Retries, but no fallback: an eval measures the model
                     # it names.
+                    slot=slot,
                 )
 
             sessions = Sessions(
@@ -538,7 +549,7 @@ async def _eval(
                 traces=JsonlTraceSink(run_dir / "traces"),
                 masked=masked,
                 effort=effort,
-                prompt=_eval_prompt(settings, catalog, cwd, tools),
+                prompt=_eval_prompt(settings, catalog, cwd, _with_recall(tools)),
                 archives=SqliteArchiveStore(run_dir / "archive"),
             )
             conversation = await sessions.start()
@@ -618,7 +629,7 @@ async def _eval(
     await asyncio.to_thread(_write_runs, run_dir / "runs.json", runs)
     # The base prompt of each model, as its runs had it (spec hito 10, §1.13).
     here = Path.cwd()
-    builder = _eval_prompt(settings, catalog, here, _eval_tools(here))
+    builder = _eval_prompt(settings, catalog, here, _with_recall(_eval_tools(here)))
     prompts = {model: builder.base_fingerprint(model) for model in models}
     regressed = out.show(
         lambda stream: cli.eval_report(
@@ -775,9 +786,10 @@ def _sessions(
     tools = _tools(cwd, env, questions)
 
     def new_agent(model: str, history: Sequence[Message]) -> Agent:
+        slot = ArchiveSlot()
         return Agent(
             client,
-            tools,
+            _with_recall(tools, slot),
             gate=gate,
             model=model,
             catalog=catalog,
@@ -787,6 +799,7 @@ def _sessions(
             # Retries with the default policy (spec hito 8, §1.14).
             fallback=settings.fallback_model,
             context_budget=settings.context_budget,
+            slot=slot,
         )
 
     return Sessions(
@@ -801,7 +814,7 @@ def _sessions(
         # reach a trace (spec hito 7, §1.8).
         masked=known_secrets(os.environ, also=[settings.api_key]),
         effort=settings.effort,
-        prompt=_prompt(settings, catalog, cwd, tools, files),
+        prompt=_prompt(settings, catalog, cwd, _with_recall(tools), files),
         titler=titler,
         # What leaves the context, whole (spec hito 11, §1.5).
         archives=SqliteArchiveStore(config.state_dir(os.environ) / "archive"),
