@@ -869,3 +869,31 @@ Del mantenedor, al aprobar (2026-11-16):
   arriba, no se empieza a mandar: `ModelRequest.max_tokens` pasa a ser
   `min(max_output, ventana − prompt estimado)` y cada adaptador sigue
   decidiendo si lo manda.
+- **La reserva, como mucho media ventana.** Con la fórmula de §1.3, un
+  modelo local de 8.192 tendría una reserva de 16.000 y un techo
+  negativo. La reserva queda en `min(max(15 %, 16.000), ventana / 2)`:
+  con 8.192, techo de 4.096.
+- **Lo que §1.3 no decía del presupuesto:** 10.000 como mínimo (la parte
+  fija ya ronda los 3.500, y las instrucciones del proyecto llegan a
+  16.000), y un proyecto solo puede bajarlo, como los límites (spec 8,
+  §3.2): un repositorio ajeno no hace más cara cada llamada. Un
+  `archivist_model` del proyecto se avisa al arrancar, como
+  `small_model`.
+- **La parte fija, medida con el test:** base 706 y herramientas 1.829
+  (2.535 en total, de 3.500); §1.1 estimaba 700 y 1.960.
+- **La estimación se queda corta, y la reserva lo cubre.** En una sesión
+  nueva con `glm-5.3-flash`, `/context` estimó 2.083 tokens y el
+  proveedor contó 2.385 (un 13 % menos). Tras la primera llamada, el
+  total parte de la cifra exacta (§1.2). Se vuelve a mirar con el PR 3,
+  con sesiones largas.
+- **`prompt_cache_key` es el id de sesión del proveedor**, el de la
+  cabecera (uno por ejecución de `maha`, spec 2), no el de la sesión de
+  `maha`: el cliente se crea antes que la sesión, y la clave solo
+  reparte, la caché va por prefijo. Va también sin cabecera de sesión.
+- **La caché ya estaba en la traza:** cada `ModelCallFinished` lleva su
+  `Usage` con `cache_read_tokens`, y `/trace` la enseña. El informe de
+  `maha eval`, con el PR 3 (§3.1).
+- **`/context`, sin la línea del índice** hasta que haya archivo (PR 3).
+  El porcentaje del total es del techo ("archives at"), no del
+  presupuesto: con una ventana pequeña son distintos, y lo que importa es
+  cuánto falta para archivar.
