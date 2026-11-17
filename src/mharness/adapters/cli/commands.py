@@ -426,6 +426,7 @@ _CHOICES = {
     "small_model": "titles with",
     "effort": "effort",
     "cache_ttl": "cache",
+    "archivist_model": "archives with",
 }
 
 

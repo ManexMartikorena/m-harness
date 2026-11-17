@@ -134,6 +134,18 @@ las sesiones. Sin él, el que el catálogo da al proveedor (en OpenCode Go,
 small_model = "glm-5.3-flash"
 ```
 
+Desde el hito 11, también opcional, el contexto: cuántos tokens manda
+`maha` al modelo en cada llamada como mucho (100.000 por defecto, con
+cualquier modelo; 10.000 como mínimo) y el modelo que resume lo que se
+archiva (sin él, `small_model`). Un proyecto puede bajar el presupuesto,
+nunca subirlo; su `archivist_model` se avisa al arrancar.
+
+```toml
+[context]
+budget = 100_000
+archivist_model = "glm-5.3-flash"
+```
+
 Un proyecto puede tener `.maha/config.toml` (el más cercano desde la
 carpeta actual hasta la raíz git, desde la `v0.10.1`) con `provider`, `model` y
 `fallback_model`, que ganan a los del usuario, y `[limits]`, de los que vale el más estricto de

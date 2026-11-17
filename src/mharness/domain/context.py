@@ -24,6 +24,9 @@ CHARS_PER_TOKEN = 4
 # Tokens sent to the model in one call at most, with any model (§1.3,
 # decision 3 of the maintainer).
 DEFAULT_BUDGET = 100_000
+# Less would archive at every step: the fixed part alone has some 3,500
+# tokens, and the project's instructions up to 16,000 (spec hito 10).
+MIN_BUDGET = 10_000
 
 # What is kept free for the answer and for an estimate that falls short:
 # 15 % of the window, and never less than 16,000 tokens (as OpenCode V2).
@@ -86,7 +89,7 @@ class ContextPolicy(BaseModel, frozen=True):
     """How much `maha` sends to the model in one call (§1.3)."""
 
     # Tokens per call at most, the same with every model.
-    budget: int = Field(default=DEFAULT_BUDGET, gt=0)
+    budget: int = Field(default=DEFAULT_BUDGET, ge=MIN_BUDGET)
     # The model's context window, from the catalog; None: unknown, and the
     # budget stands for it.
     window: int | None = Field(default=None, gt=0)

@@ -886,3 +886,10 @@ def test_a_resume_tells_the_unreadable_sessions_it_may_have_skipped() -> None:
         "[session 20261027-091502-dead cannot be read and may be the last one "
         "here: see /sessions]"
     )
+
+
+def test_the_project_note_names_the_archivist() -> None:
+    # Spec hito 11, §1.7: the archivist is one more call, and it costs.
+    note = commands.project_note({"archivist_model": "caro"})
+
+    assert note == "[from .maha/config.toml: archives with caro]"
