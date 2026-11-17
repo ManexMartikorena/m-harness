@@ -785,6 +785,7 @@ def _sessions(
             history=history,
             # Retries with the default policy (spec hito 8, §1.14).
             fallback=settings.fallback_model,
+            context_budget=settings.context_budget,
         )
 
     return Sessions(

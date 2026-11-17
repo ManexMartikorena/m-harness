@@ -133,6 +133,32 @@ class ContextPolicy(BaseModel, frozen=True):
         return room if max_output is None else min(max_output, room)
 
 
+class ContextUsage(BaseModel, frozen=True):
+    """What the working window holds, by parts, for `/context` (§1.11).
+    Tokens; the parts are estimated, the total uses the exact count of the
+    last call when it can."""
+
+    budget: int
+    # None: not in the catalog.
+    window: int | None
+    # Past it, the oldest steps are archived.
+    ceiling: int
+    system: int
+    tools: int
+    tool_count: int
+    messages: int
+    # Of `messages`, the tool results.
+    tool_results: int
+    # The prompt of the next call, as `maha` counts it (§1.2).
+    total: int
+    # Whether `total` starts from the provider's exact count.
+    exact: bool
+    # The prompt of the last call that answered, and the part of it read
+    # from the cache, as the provider said; None before the first one.
+    last_prompt: int | None = None
+    last_cached: int | None = None
+
+
 def fit(text: str, limit: int = OUTPUT_LIMIT, *, archived_as: str | None = None) -> str:
     """A tool result of at most `limit` characters: as it is if it fits;
     if not, its beginning and its end, and a line that says what was cut

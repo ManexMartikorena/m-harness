@@ -35,7 +35,9 @@ from mharness.domain.agent_events import (
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import add_cost, cost
 from mharness.domain.context import (
+    DEFAULT_BUDGET,
     ContextPolicy,
+    ContextUsage,
     estimate,
     estimate_messages,
     estimate_tools,
@@ -108,6 +110,7 @@ class Agent:
         fallback: str | None = None,
         effort: Effort | None = None,
         system: str | None = None,
+        context_budget: int = DEFAULT_BUDGET,
     ) -> None:
         self._client = client
         self._tools = tools
@@ -138,6 +141,8 @@ class Agent:
         # last one that answered (spec hito 11, §1.2).
         self._sent: ModelRequest | None = None
         self._measured: _Measured | None = None
+        # Tokens per call at most (spec hito 11, §1.3).
+        self.context_budget = context_budget
 
     @property
     def messages(self) -> Sequence[Message]:
@@ -564,6 +569,39 @@ class Agent:
             effort=self.effort,
         )
 
+    def context_usage(self) -> ContextUsage:
+        """What the next call would send, by parts (spec hito 11, §1.11)."""
+        info = self._catalog.get(self._provider, self.model)
+        policy = ContextPolicy(
+            budget=self.context_budget,
+            window=info.context if info is not None else None,
+        )
+        tools = self._tools.specs()
+        messages = self._messages
+        results = sum(
+            estimate(block.content)
+            for message in messages
+            for block in message.blocks
+            if isinstance(block, ToolResultBlock)
+        )
+        measured = self._measured
+        return ContextUsage(
+            budget=policy.budget,
+            window=policy.window,
+            ceiling=policy.ceiling,
+            system=estimate(self.system or ""),
+            tools=estimate_tools(tools),
+            tool_count=len(tools),
+            messages=estimate_messages(list(messages)),
+            tool_results=results,
+            total=self.prompt_tokens(self.system, tools, messages),
+            exact=measured is not None
+            and measured.matches(self.system, tools)
+            and any(message is measured.answer for message in messages),
+            last_prompt=measured.prompt if measured is not None else None,
+            last_cached=measured.cached if measured is not None else None,
+        )
+
     def prompt_tokens(
         self, system: str | None, tools: list[ToolSpec], messages: Sequence[Message]
     ) -> int:
@@ -595,6 +633,8 @@ class Agent:
         self._measured = _Measured(
             answer=answer,
             tokens=tokens,
+            prompt=usage.input_tokens,
+            cached=usage.cache_read_tokens,
             system=sent.system,
             tools=tuple(sent.tools),
         )
@@ -736,6 +776,9 @@ class _Measured:
 
     answer: Message
     tokens: int
+    # Of `tokens`, the prompt's, and of those, the ones read from the cache.
+    prompt: int
+    cached: int
     system: str | None
     tools: tuple[ToolSpec, ...]
 

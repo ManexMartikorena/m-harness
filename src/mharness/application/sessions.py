@@ -26,6 +26,7 @@ from mharness.domain.agent_events import (
     TurnFinished,
     TurnStarted,
 )
+from mharness.domain.context import ContextUsage
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
 from mharness.domain.model import Effort, Usage
@@ -199,6 +200,10 @@ class Conversation:
     def tools(self) -> list[str]:
         """The names of the tools the model has."""
         return self._agent.tool_names
+
+    def context(self) -> ContextUsage:
+        """What the working window holds, by parts (spec hito 11, §1.11)."""
+        return self._agent.context_usage()
 
     @property
     def effort(self) -> Effort | None:

@@ -19,6 +19,7 @@ from mharness.application.sessions import (
     TraceReport,
 )
 from mharness.application.traces import TraceSummary, TurnSummary
+from mharness.domain.context import ContextUsage, estimate
 from mharness.domain.model import EFFORTS, Usage
 from mharness.domain.prompt import INSTRUCTION_KINDS, SystemPrompt
 from mharness.domain.session import SessionError, SessionNotFound
@@ -40,6 +41,7 @@ COMMANDS = {
     "init": "/init [TEXT] — write or improve the project's AGENTS.md; TEXT, what "
     "to stress",
     "export": "/export [FILE] — this conversation in Markdown; by default, ID.md",
+    "context": "/context — what the context of the next call holds, by parts",
     "help": "/help — this list",
     "exit": "/exit — quit",
 }
@@ -123,6 +125,11 @@ class Commands:
                     await self._new()
                 case "rename":
                     await self._rename(command.argument)
+                case "context":
+                    for line in context_lines(
+                        self.conversation.context(), self.conversation.prompt
+                    ):
+                        self._say(line)
                 case _:
                     self._say(f"unknown command: /{command.name} (see /help)")
         except (SessionError, TraceError) as exc:
@@ -428,6 +435,61 @@ _CHOICES = {
     "cache_ttl": "cache",
     "archivist_model": "archives with",
 }
+
+
+def context_lines(usage: ContextUsage, prompt: SystemPrompt | None) -> list[str]:
+    """`/context`: what the next call would send, by parts, and the cache
+    of the last one (spec hito 11, §1.11). The parts are estimated; the
+    total starts from the provider's count when there is one."""
+    window = "unknown" if usage.window is None else f"{usage.window:,}"
+    share = 100 * usage.total / usage.ceiling
+    last = (
+        "nothing sent yet"
+        if usage.last_prompt is None
+        else f"last call {usage.last_prompt:,}"
+    )
+    total = f"{share:.1f} % of {usage.ceiling:,} · {last}"
+    lines = [
+        f"budget {usage.budget:,} · window {window} · archives at {usage.ceiling:,}",
+        _context_row("system prompt", usage.system, _layers(prompt)),
+        _context_row("tools", usage.tools, _count(usage.tool_count, "tool")),
+        _context_row(
+            "messages", usage.messages, f"tool results {usage.tool_results:,}"
+        ),
+        _context_row(
+            "total", usage.total, f"{total}{'' if usage.exact else ' (estimated)'}"
+        ),
+    ]
+    if usage.last_prompt is not None and usage.last_cached is not None:
+        if usage.last_cached and usage.last_prompt:
+            part = 100 * usage.last_cached / usage.last_prompt
+            cache = (
+                f"last call {usage.last_cached:,} of {usage.last_prompt:,} "
+                f"read from cache ({part:.1f} %)"
+            )
+        else:
+            cache = "last call: nothing read from cache"
+        lines.append(f"{'cache':<14}{cache}")
+    return [clean_line(line) for line in lines]
+
+
+def _context_row(name: str, tokens: int, detail: str) -> str:
+    return f"{name:<14}{tokens:>9,}   ({detail})"
+
+
+def _layers(prompt: SystemPrompt | None) -> str:
+    """`base 700 · AGENTS.md 1,300 · environment 140`: each layer of the
+    system prompt with its tokens, named by its kind or its file."""
+    if prompt is None:
+        return "none"
+    named = ("base", "family", "environment")
+    parts = [
+        f"{layer.kind if layer.kind in named else layer.source} "
+        f"{estimate(layer.text):,}"
+        for layer in prompt.layers
+        if layer.text.strip()
+    ]
+    return " · ".join(parts) or "none"
 
 
 def project_note(chosen: Mapping[str, str]) -> str | None:

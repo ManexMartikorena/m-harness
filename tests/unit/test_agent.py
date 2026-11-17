@@ -78,6 +78,7 @@ def agent(
     retry: RetryPolicy = NO_RETRIES,
     sleep: Callable[[float], Awaitable[None]] | None = None,
     fallback: str | None = None,
+    context_budget: int = 100_000,
 ) -> Agent:
     registry = ToolRegistry(tools or [FakeTool()])
     # With no script, being asked fails the test.
@@ -93,6 +94,7 @@ def agent(
         retry=retry,
         sleep=sleep or asyncio.sleep,
         fallback=fallback,
+        context_budget=context_budget,
     )
 
 
@@ -1888,6 +1890,34 @@ async def test_a_call_without_usage_leaves_the_prompt_estimated() -> None:
     tokens = subject.prompt_tokens(request.system, request.tools, messages)
 
     assert tokens == _estimated(request.model_copy(update={"messages": messages}))
+
+
+async def test_context_usage_has_each_part_and_the_last_call() -> None:
+    echo = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    fake = FakeModelClient(
+        [
+            tool_calls(echo),
+            reply(
+                "Hecho.",
+                usage=Usage(
+                    input_tokens=1_000, output_tokens=50, cache_read_tokens=800
+                ),
+            ),
+        ]
+    )
+    catalog = MemoryCatalog([ModelInfo(provider=PROVIDER, model=MODEL, context=64_000)])
+    subject = agent(fake, FakeTool(), catalog=catalog, context_budget=20_000)
+    subject.system = "s" * 400
+
+    await run(subject)
+    usage = subject.context_usage()
+
+    assert (usage.budget, usage.window, usage.ceiling) == (20_000, 64_000, 20_000)
+    assert usage.system == 100
+    assert usage.tool_count == 1
+    assert usage.tool_results == estimate("echo: x")
+    assert (usage.total, usage.exact) == (1_050, True)
+    assert (usage.last_prompt, usage.last_cached) == (1_000, 800)
 
 
 def _estimated(request: ModelRequest) -> int:
