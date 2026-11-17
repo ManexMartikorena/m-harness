@@ -1,10 +1,11 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-16. **Hito 10 cerrado: `v0.10.0` (system
+Última actualización: 2026-11-17. **Hito 10 cerrado: `v0.10.0` (system
 prompt por capas), `v0.10.1` (la auditoría tras el hito 10) y `v0.10.2`
 (su segunda, tercera y cuarta revisión, cero deuda). En curso: el hito 11
-(contexto virtual), con su spec APROBADA e integrada (#116). Lo siguiente:
-su PR 1. Plan ampliado a 24 hitos (la órbita larga, hito 12 nuevo).**
+(contexto virtual), con su spec APROBADA e integrada (#116) y su PR 1
+commiteado en `feature/hito-11-contar`, sin push. Lo siguiente: revisar y
+abrir ese PR. Plan ampliado a 24 hitos (la órbita larga, hito 12 nuevo).**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -13,14 +14,15 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 **Desarrollo. Hitos 1 a 10 cerrados, con la auditoría tras el hito 10
 (`v0.10.1`) y sus revisiones (`v0.10.2`). En curso, el hito 11 (contexto
-virtual): spec aprobada, implementación sin empezar. Plan: 24 hitos hasta
+virtual): spec aprobada; el PR 1 (contar, acotar y ver), commiteado. Plan: 24 hitos hasta
 la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.10.2` — Revisiones de la auditoría tras el hito
   10** (2026-11-13):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.2
-- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
+- Ramas abiertas: `feature/hito-11-contar` (PR 1 del hito 11), solo en
+  local hasta el push. Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -53,19 +55,11 @@ spec, su nota de la guía y su release.
 Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
 trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
-1. **Agente:** el PR 1 del hito 11, "contar, acotar y ver"
-   (`docs/specs/hito-11-contexto.md`, §6), en la rama
-   `feature/hito-11-contar`, desde `main` al día. Antes de leer la spec
-   entera: §0 (alcance), §1.1 (el principio) y §11 (las 13 decisiones,
-   todas aprobadas el 2026-11-16).
-   - Su primer commit renumera los hitos en los comentarios del código
-     (12-23 → 13-24, §6).
-   - Lo primero que se comprueba, con llamadas reales a OpenCode Go
-     (§1.0, "Sin comprobar"): qué error da el formato de OpenAI cuando el
-     prompt no cabe y si acepta `prompt_cache_key`. Se anota en §12.
-   - Criterio del mantenedor (decisión 13): solo entra lo que hace el
-     producto verdaderamente competitivo, útil y profesional; lo que no,
-     se quita y se anota en §12.
+1. **Humano:** revisar los 9 commits de `feature/hito-11-contar`
+   (`git log main..feature/hito-11-contar`), hacer push y abrir el PR 1
+   al milestone "Hito 11 — Contexto virtual" (o pedírselo al agente).
+   Decidir antes del PR 3 qué hacer con el proveedor que corta el prompt
+   en silencio (spec 11, §12, `hy3`).
 2. **Agente, tras el PR 1:** los PRs 2 (el archivo), 3 (archivar) y 4
    (instrucciones y herramientas), en ese orden (§6), con las evals de §5.
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
