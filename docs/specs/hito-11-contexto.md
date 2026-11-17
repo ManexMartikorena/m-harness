@@ -953,11 +953,16 @@ Del mantenedor, tras el PR 1 (2026-11-17):
   cada herramienta: vale igual para las de hoy y para las de MCP (hito
   18). El resumen de la terminal ("4.210 líneas") sale de la salida
   entera.
-- **Un comando guarda hasta 1.000.000 de caracteres** (250.000 del
-  principio y 750.000 del final; antes, 30.000) para que haya algo entero
-  que archivar. Por encima, el centro se pierde también del archivo, con
-  la marca de cuántos bytes. La memoria de un comando queda acotada (unos
-  4 MB de búfer en el peor caso).
+- **Un comando guarda entera su salida hasta 8.000.000 de caracteres**
+  (2 M del principio y 6 M del final; antes, 30.000), para que vaya
+  entera al archivo. Decisión del mantenedor (2026-11-17): "la más
+  competitiva". Claude Code y OpenCode guardan en disco la salida entera
+  de un comando largo (§1.0); sin ningún tope, un comando desbocado
+  (`yes`) llenaría la memoria o el disco hasta el tiempo límite. Ocho
+  millones cubren entero cualquier log, build o batería de tests real;
+  por encima, el centro se pierde y la marca dice cuántos bytes. Unos 8
+  MB de memoria normalmente, 32 MB como mucho. El ejecutor recibe el tope
+  (`head`, `tail`), y sus tests lo prueban con uno pequeño (AGENTS.md).
 - **`read_file` baja a 36.000 caracteres**, no a 40.000 (§1.6): con los
   números de línea, una lectura entera sigue por debajo del tope común y
   nunca se archiva. El fichero está en disco y se lee por partes.
