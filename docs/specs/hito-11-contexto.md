@@ -736,6 +736,82 @@ Anthropic, `prompt_cache_key` en el de OpenAI), no el prompt.
   `run_command` ni pasa de 40.000 caracteres, así que no cambia nada; el
   mantenedor da la pasada por buena sin repetirla (2026-11-17).
 
+### Resultados (PR 3)
+
+2026-11-17 (15:23-16:49), la misma orden, con 28 tareas (las 24 de
+antes y de la 25 a la 28), contra las líneas base del 2026-11-10. El
+PR 3 archiva, resume con el modelo barato y añade `/compact`. Una pasada
+anterior (12:17) se cortó por un reinicio del PC a las 232 de 420
+ejecuciones y no cuenta.
+
+| Modelo | Éxito | Validación | Coste total | Caché leída | Llamadas |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 139/140 | 30/30 | 0,246 $ | 70,1 % | 733 |
+| `kimi-k2.7-code` | 136/140 | 29/30 | 1,730 $ | 78,9 % | 791 |
+| `claude-haiku-5-5` | 138/140 | 28/30 → 30/30 | 1,080 $ | 59,7 % | 563 |
+
+Solo las 24 tareas de antes, frente al PR 2:
+
+| Modelo | Coste | Caché leída | Llamadas |
+|---|---|---|---|
+| `glm-5.3-flash` | 0,150 $ (0,143 $) | 73,5 % (72,8 %) | 603 (601) |
+| `kimi-k2.7-code` | 1,019 $ (1,024 $) | 87,1 % (87,2 %) | 639 (649) |
+| `claude-haiku-5-5` | 0,610 $ (0,614 $) | 69,4 % (69,8 %) | 451 (458) |
+
+Las tareas largas nuevas (media de 5; la caché, de toda la tarea):
+
+| Tarea | Modelo | Pasos | Coste | Caché leída | Archivados |
+|---|---|---|---|---|---|
+| 27 | `glm-5.3-flash` | 12,0 | 0,0083 $ | 69,1 % | 1 en cada una |
+| 27 | `kimi-k2.7-code` | 5,8 | 0,0438 $ | 24,5 % | 2-4 |
+| 27 | `claude-haiku-5-5` | 6,6 | 0,0316 $ | 21,6 % | 2-3 |
+| 28 | `glm-5.3-flash` | 9,8 | 0,0097 $ | 57,3 % | 1-2 |
+| 28 | `kimi-k2.7-code` | 20,4 | 0,0910 $ | 77,7 % | 2 en cada una |
+| 28 | `claude-haiku-5-5` | 10,6 | 0,0534 $ | 50,8 % | 3 en cada una |
+
+(La fila de Haiku en la 28 es la de la repetición, más abajo.)
+
+La aceptación de §5, punto por punto:
+
+- **Las 24 de antes, sin ⚠ y sin archivar: se cumple.** Ninguna archiva
+  (el informe solo da `archived` en la 27 y la 28). Las bajadas de Kimi
+  (04, 08 y 12, de 5/5 a 4/5) son ruido (p = 0,5) y fallos del modelo. El
+  único ⚠ es el coste de Kimi (+56 %), el ya aceptado (PR 1): con las 24
+  tareas, Kimi cuesta lo mismo que en el PR 2.
+- **Las nuevas, al menos 4/5 en cada modelo: se cumple tras la
+  repetición.** La 25 y la 26, 5/5 en los tres. La 27: GLM 5/5, Kimi 4/5,
+  Haiku 5/5; el fallo de Kimi es un `timeout` a los 300 s con solo 4
+  pasos, por la lentitud del proveedor esa tarde. La 28: GLM 5/5, Kimi
+  5/5 y **Haiku 3/5**.
+- **Los dos fallos de Haiku en la 28 no son del archivo.** Los dos
+  escribieron `informes/indice.md` en vez de `indice.md`: todas las demás
+  rutas de la instrucción empiezan por `informes/`. Uno lo decidió en su
+  primera lista de tareas, antes de archivar nada; en el otro, el índice
+  del archivo copiaba tal cual las palabras de la persona («Escribe
+  indice.md»). **Decisión del mantenedor (2026-11-17):** la comprobación
+  acepta el índice en la raíz o en `informes/`; la instrucción no cambia
+  (`eecfc19`). Repetida la 28 con Haiku (17:56): **5/5**, una de ellas con
+  el índice en `informes/`. Una repetición anterior con los tres modelos
+  (17:00) coincidió con un corte de OpenCode Go (sin datos durante 120 s,
+  respuestas que no llegaban) y casi todo quedó en errores del proveedor;
+  no cuenta. La 28 de GLM y de Kimi no se repite: ya tenían 5/5 con el
+  índice en la raíz, y el cambio solo afloja la comprobación.
+- **En la 27 y la 28 se archiva en todas las ejecuciones: se cumple**
+  (15/15 en cada tarea).
+- **Coste de las tareas largas:** las de antes (12, 23 y 24) no archivan y
+  cuestan lo mismo que en la línea base y en el PR 2. La 27 y la 28 no
+  tienen con qué compararse; quedan como referencia para la línea base
+  del final del hito. Archivar reescribe el principio del prompt y la caché
+  se pierde desde ahí: en la 27, Kimi y Haiku leen de caché solo un
+  22-25 %.
+- **Pasos de las tareas largas, para el tope de §1.16:** como mucho 27
+  (Kimi en la 28), con un tope de 40. Ninguna ejecución llega al tope.
+- **`recall` casi no se usa:** ninguna vez en la pasada completa, y una
+  vez en la repetición de Haiku. La 27 se resuelve sin él porque el índice
+  del archivero ya trae el dato. La 27 mide que se archiva y que el dato
+  sobrevive, pero no que `recall` lo encuentre. Queda para el PR 4
+  (instrucciones y herramientas, §6), a decidir con el mantenedor.
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit pequeño, con tests y lint en verde.
