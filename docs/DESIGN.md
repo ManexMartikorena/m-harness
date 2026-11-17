@@ -218,6 +218,10 @@ ModelRequest(model, system, messages, tools: list[ToolSpec], max_tokens)
 # (Adelantado el 03/11/2026, spec del hito 9, §1.6 y §1.7: Anthropic exige
 #  `max_tokens`. ModelRequest gana `max_tokens` (la salida máxima del modelo,
 #  del catálogo) y `effort`.)
+# (Cerrado el 17/11/2026, spec del hito 11, §1.4: `max_tokens` es lo que
+#  queda de ventana, `min(max_output, ventana − prompt)`; el prompt, con la
+#  cifra exacta de la última llamada y lo nuevo estimado, §1.2. El formato
+#  de OpenAI sigue sin mandarlo, §12.)
 ToolSpec(name, description, input_schema)       # JSON Schema generado por Pydantic
 
 # Respuesta del modelo, en streaming             (adaptador → bucle)

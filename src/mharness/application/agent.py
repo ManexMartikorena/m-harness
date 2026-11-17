@@ -34,6 +34,12 @@ from mharness.domain.agent_events import (
 )
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import add_cost, cost
+from mharness.domain.context import (
+    ContextPolicy,
+    estimate,
+    estimate_messages,
+    estimate_tools,
+)
 from mharness.domain.errors import RetryableModelError
 from mharness.domain.events import ModelEvent, TextDelta, UsageSoFar
 from mharness.domain.limits import TurnLimits
@@ -49,6 +55,7 @@ from mharness.domain.model import (
     ModelRequest,
     ModelResponse,
     StopReason,
+    ToolSpec,
     Usage,
 )
 from mharness.domain.money import known
@@ -127,6 +134,10 @@ class Agent:
         # A resumed session starts with its history (spec hito 6, §1.6); its
         # approvals do not come back (§1.9).
         self._messages: list[Message] = list(history)
+        # The request of the call in progress, and the exact size of the
+        # last one that answered (spec hito 11, §1.2).
+        self._sent: ModelRequest | None = None
+        self._measured: _Measured | None = None
 
     @property
     def messages(self) -> Sequence[Message]:
@@ -321,7 +332,9 @@ class Agent:
         # In the turn before it is told: a turn closed right at
         # ModelCallFinished keeps the answer the person saw (deep
         # audit after hito 9).
-        turn.messages.append(_stamped(response.message, turn.model))
+        answer = _stamped(response.message, turn.model)
+        turn.messages.append(answer)
+        self._measure(answer, response.usage)
         turn.calls = [
             b for b in response.message.blocks if isinstance(b, ToolCallBlock)
         ]
@@ -474,6 +487,7 @@ class Agent:
             began = False
             try:
                 request = self._request(turn, model)
+                self._sent = request
                 async with aclosing(self._client.stream(request)) as events:
                     async for event in events:
                         if not isinstance(event, UsageSoFar):
@@ -532,13 +546,57 @@ class Agent:
         system = self.system
         if model != self.model and self.system_for is not None:
             system = self.system_for(model)
+        messages = [*self._messages, *turn]
+        tools = self._tools.specs()
+        # What the model may write without passing its window (spec hito
+        # 11, §1.4).
+        policy = ContextPolicy(window=info.context if info is not None else None)
+        max_tokens = policy.answer_room(
+            self.prompt_tokens(system, tools, messages),
+            info.max_output if info is not None else None,
+        )
         return ModelRequest(
             model=model,
             system=system,
-            messages=[*self._messages, *turn],
-            tools=self._tools.specs(),
-            max_tokens=info.max_output if info is not None else None,
+            messages=messages,
+            tools=tools,
+            max_tokens=max_tokens,
             effort=self.effort,
+        )
+
+    def prompt_tokens(
+        self, system: str | None, tools: list[ToolSpec], messages: Sequence[Message]
+    ) -> int:
+        """The tokens of a prompt: the provider's exact count of the last
+        call, if this prompt goes on from it, and an estimate of what came
+        after; all estimated if not (spec hito 11, §1.2)."""
+        measured = self._measured
+        if measured is not None and measured.matches(system, tools):
+            for index in range(len(messages) - 1, -1, -1):
+                if messages[index] is measured.answer:
+                    return measured.tokens + estimate_messages(
+                        list(messages[index + 1 :])
+                    )
+        return (
+            estimate(system or "")
+            + estimate_tools(tools)
+            + estimate_messages(list(messages))
+        )
+
+    def _measure(self, answer: Message, usage: Usage) -> None:
+        """Keep the exact size of the call that just answered: its prompt
+        and its answer, as the provider counted them."""
+        sent = self._sent
+        tokens = usage.input_tokens + usage.output_tokens
+        if sent is None or usage.input_tokens == 0:
+            # The provider did not say: the next one is estimated.
+            self._measured = None
+            return
+        self._measured = _Measured(
+            answer=answer,
+            tokens=tokens,
+            system=sent.system,
+            tools=tuple(sent.tools),
         )
 
     async def _prepare(self, call: ToolCallBlock) -> _Ready | _Outcome:
@@ -669,6 +727,22 @@ class _Outcome:
     result: ToolResultBlock
     summary: str
     internal_error: str | None = None
+
+
+@dataclass(frozen=True)
+class _Measured:
+    """The last call that answered, as the provider counted it: its
+    prompt and its `answer` came to `tokens` (spec hito 11, §1.2)."""
+
+    answer: Message
+    tokens: int
+    system: str | None
+    tools: tuple[ToolSpec, ...]
+
+    def matches(self, system: str | None, tools: list[ToolSpec]) -> bool:
+        """Whether a prompt with this system and these tools begins as the
+        measured one did."""
+        return self.system == system and self.tools == tuple(tools)
 
 
 @dataclass
