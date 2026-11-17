@@ -730,6 +730,11 @@ Anthropic, `prompt_cache_key` en el de OpenAI), no el prompt.
 - **Coste:** Kimi +4 % y Haiku +4 % frente al PR 1, por la herramienta
   nueva en cada llamada (unos 250 tokens, casi todos de caché). El ⚠ de
   Kimi frente a la línea base es el ya aceptado (PR 1).
+- **La pasada completa (10:31-11:19) no lleva `fefbd7e`** (la salida de un
+  comando, entera hasta 8.000.000 de caracteres): arrancó antes. Las 10
+  repeticiones de la tarea 20 sí lo llevan. Ninguna tarea usa
+  `run_command` ni pasa de 40.000 caracteres, así que no cambia nada; el
+  mantenedor da la pasada por buena sin repetirla (2026-11-17).
 
 ## 6. Orden de piezas para el implementador
 
