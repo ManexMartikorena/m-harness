@@ -269,3 +269,14 @@ def test_ids_are_parsed_strictly() -> None:
 def test_search_terms_are_the_words() -> None:
     assert search_terms('test "iva" 4%') == ["test", "iva", "4"]
     assert search_terms("año café") == ["año", "café"]
+
+
+async def test_a_hit_shows_the_text_as_it_is(tmp_path: Path) -> None:
+    # Seen with a real model (spec hito 11, §12): marks around the match
+    # ended up quoted as part of the log line, "[ERROR]".
+    archive = SqliteArchive(tmp_path / f"{SESSION}.db")
+    await archive.add([output("013458 ERROR payment failed code=PX-4471")])
+
+    [hit] = await archive.search("ERROR", 5)
+
+    assert hit.snippet == "013458 ERROR payment failed code=PX-4471"

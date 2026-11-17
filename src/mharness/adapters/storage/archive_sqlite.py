@@ -86,7 +86,7 @@ class SqliteArchive:
             rows = db.execute(
                 "SELECT items.kind, items.number, items.position, items.role,"
                 " items.tool,"
-                " snippet(items_fts, 0, '[', ']', '…', ?)"
+                " snippet(items_fts, 0, '', '', '…', ?)"
                 " FROM items_fts JOIN items ON items.id = items_fts.rowid"
                 " WHERE items_fts MATCH ? ORDER BY bm25(items_fts) LIMIT ?",
                 (_SNIPPET_TOKENS, match, limit),
