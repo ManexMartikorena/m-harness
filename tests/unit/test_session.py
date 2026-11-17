@@ -10,8 +10,10 @@ from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResu
 from mharness.domain.model import Usage
 from mharness.domain.session import (
     TITLE_MAX,
+    ArchiveEntry,
     MessageEntry,
     ModelEntry,
+    OutputEntry,
     SessionCorrupt,
     SessionEntry,
     SessionError,
@@ -408,3 +410,75 @@ def test_a_negative_cost_is_not_a_cost() -> None:
     # A hand-edited file: never "$-0.5000" (final review of hito 7).
     with pytest.raises(ValidationError):
         UsageEntry(usage=Usage(), cost=Decimal("-0.5"))
+
+
+# What was archived (spec hito 11, §1.12, and §4, test 14).
+
+
+def index_message() -> Message:
+    return user("<context-archive>\nindex\n</context-archive>")
+
+
+def test_replay_gives_the_working_conversation_after_an_archive() -> None:
+    history = [user("a"), calls("c1"), results("c1"), user("b"), answer()]
+    archive = ArchiveEntry(replaces=3, index=index_message(), notes="n")
+    entries: list[SessionEntry] = [*(MessageEntry(message=m) for m in history), archive]
+
+    session = replay(HEADER, entries)
+
+    assert session.messages == history
+    assert session.archived == 3
+    assert session.working == [index_message(), user("b"), answer()]
+
+
+def test_an_archive_past_the_messages_written_is_corrupt() -> None:
+    entries: list[SessionEntry] = [
+        MessageEntry(message=user("a")),
+        ArchiveEntry(replaces=2, index=index_message()),
+        MessageEntry(message=answer()),
+    ]
+
+    with pytest.raises(SessionCorrupt, match="past the end"):
+        replay(HEADER, entries)
+
+
+def test_an_archive_that_goes_back_is_corrupt() -> None:
+    history = [user("a"), answer(), user("b"), answer()]
+    entries: list[SessionEntry] = [
+        *(MessageEntry(message=m) for m in history),
+        ArchiveEntry(replaces=3, index=index_message()),
+        ArchiveEntry(replaces=1, index=index_message()),
+    ]
+
+    with pytest.raises(SessionCorrupt, match="goes back"):
+        replay(HEADER, entries)
+
+
+def test_an_archive_that_splits_a_call_from_its_result_is_corrupt() -> None:
+    history = [user("a"), calls("c1"), results("c1"), answer()]
+    entries: list[SessionEntry] = [
+        *(MessageEntry(message=m) for m in history),
+        ArchiveEntry(replaces=2, index=index_message()),
+    ]
+
+    with pytest.raises(SessionCorrupt, match="without its call"):
+        replay(HEADER, entries)
+
+
+def test_outputs_come_back_in_order() -> None:
+    entries: list[SessionEntry] = [
+        MessageEntry(message=user("a")),
+        OutputEntry(id="out-1", position=2, tool="run_command", text="uno"),
+        OutputEntry(id="out-2", position=4, tool="grep", text="dos"),
+    ]
+
+    session = replay(HEADER, entries)
+
+    assert [output.id for output in session.outputs] == ["out-1", "out-2"]
+    assert session.working == [user("a")]
+
+
+def test_a_manual_archive_says_so_only_when_it_is() -> None:
+    plain = ArchiveEntry(replaces=1, index=index_message())
+    assert "manual" not in plain.model_dump()
+    assert ArchiveEntry(replaces=1, index=index_message(), manual=True).manual

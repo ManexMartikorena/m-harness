@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel, Field
 
+from mharness.domain.archive import ArchiveItem, message_item
 from mharness.domain.messages import (
     Message,
     ReasoningBlock,
@@ -333,3 +334,35 @@ def _path_of(arguments: str) -> str | None:
 def _unclosed(text: str) -> str:
     """Text in the index cannot close it early."""
     return text.replace(f"</{ARCHIVE_TAG}>", f"<\\/{ARCHIVE_TAG}>")
+
+
+def archive_items(
+    messages: Sequence[Message], first: int, cut: int
+) -> list[ArchiveItem]:
+    """The messages from `first` to `cut` as the archive keeps them: each
+    one numbered by its position, and a tool message named by its tools."""
+    names = {
+        block.id: block.name
+        for message in messages[:cut]
+        for block in message.blocks
+        if isinstance(block, ToolCallBlock)
+    }
+    items: list[ArchiveItem] = []
+    for position in range(first, cut):
+        message = messages[position]
+        used = [
+            names.get(block.call_id, "tool")
+            for block in message.blocks
+            if isinstance(block, ToolResultBlock)
+        ]
+        tool = ", ".join(dict.fromkeys(used)) if used else None
+        items.append(message_item(position, message.role, message_text(message), tool))
+    return items
+
+
+def summary_item(cut: int, summary: str) -> ArchiveItem:
+    """The archivist's summary of the steps before `cut`, numbered by it:
+    archiving them again adds nothing."""
+    return ArchiveItem(
+        kind="summary", position=cut - 1, role="assistant", text=summary, number=cut
+    )

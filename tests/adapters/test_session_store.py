@@ -22,6 +22,7 @@ from mharness.domain.session import (
     SessionHeader,
     SessionInUse,
     SessionNotFound,
+    SessionTooNew,
     UsageEntry,
 )
 from mharness.ports.sessions import SessionStore
@@ -806,3 +807,27 @@ async def test_read_of_a_session_that_does_not_exist(folder: Path) -> None:
         await JsonlSessionStore(folder).read(HEADER.id)
     with pytest.raises(SessionNotFound):
         await JsonlSessionStore(folder).read("../etc/passwd")
+
+
+# The format only grows (spec hito 11, §1.12, and §4, test 15).
+
+
+async def test_an_entry_of_an_unknown_type_is_of_a_newer_maha(folder: Path) -> None:
+    path = await saved(folder, HOLA, ANSWER)
+    lines = lines_of(path)
+    set_lines(path, [*lines, '{"type": "checkpoint", "at": 3}'])
+
+    with pytest.raises(SessionTooNew, match="line 4 is of a newer maha"):
+        await JsonlSessionStore(folder).open(HEADER.id)
+    [summary] = await JsonlSessionStore(folder).summaries()
+    assert summary.unreadable is not None
+    assert "update maha" in summary.unreadable
+
+
+async def test_a_broken_entry_of_a_known_type_is_still_corrupt(folder: Path) -> None:
+    path = await saved(folder, HOLA, ANSWER)
+    lines = lines_of(path)
+    set_lines(path, [*lines, '{"type": "archive", "replaces": "dos"}'])
+
+    with pytest.raises(SessionCorrupt, match="line 4 is not valid"):
+        await JsonlSessionStore(folder).open(HEADER.id)

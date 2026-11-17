@@ -38,12 +38,7 @@ from mharness.domain.agent_events import (
     TurnStarted,
 )
 from mharness.domain.approval import ApprovalRequest, Decision
-from mharness.domain.archive import (
-    ArchiveError,
-    ArchiveItem,
-    ArchiveNotes,
-    message_item,
-)
+from mharness.domain.archive import ArchiveError, ArchiveItem, ArchiveNotes
 from mharness.domain.catalog import add_cost
 from mharness.domain.context import (
     DEFAULT_BUDGET,
@@ -52,12 +47,14 @@ from mharness.domain.context import (
     ContextUsage,
     archive_cut,
     archive_index,
+    archive_items,
     estimate,
     estimate_messages,
     estimate_tools,
     fit,
     message_text,
     step_starts,
+    summary_item,
 )
 from mharness.domain.errors import (
     ContextOverflowError,
@@ -82,6 +79,7 @@ from mharness.domain.model import (
     Usage,
 )
 from mharness.domain.retry import RetryPolicy
+from mharness.domain.session import ArchiveEntry, OutputEntry
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
 from mharness.ports.archive import ContextArchive
@@ -193,6 +191,9 @@ class Agent:
         # cut it (decision 14).
         self._sent_tokens = 0
         self._sent_growth: tuple[int, int] | None = None
+        # What the session has to save of the archive, in order: each whole
+        # output archived, and each time the window was archived (§1.12).
+        self._entries: list[ArchiveEntry | OutputEntry] = []
 
     @property
     def archive(self) -> ContextArchive | None:
@@ -222,6 +223,21 @@ class Agent:
         """How many messages of the conversation, from the start, the index
         stands for."""
         return self._archived
+
+    def restore(self, archived: int, index: Message, notes: str | None) -> None:
+        """Start as a resumed session left it: its first `archived`
+        messages stand behind `index`, and the archivist's last index was
+        `notes` (spec hito 11, §1.12)."""
+        self._archived = archived
+        self._index = index
+        self._notes = notes
+        self._measured = None
+
+    def take_entries(self) -> list[ArchiveEntry | OutputEntry]:
+        """What the session has to save of the archive since the last time,
+        once."""
+        entries, self._entries = self._entries, []
+        return entries
 
     def _working(self, turn: Sequence[Message]) -> list[Message]:
         full = [*self._messages, *turn]
@@ -591,6 +607,15 @@ class Agent:
         self._index = archive_index(full[:cut], self._notes)
         self._archived = cut
         self._measured = None
+        self._entries.append(
+            ArchiveEntry(
+                replaces=cut,
+                index=self._index,
+                manual=manual,
+                notes=self._notes,
+                summary=notes.summary if notes is not None else None,
+            )
+        )
         turn.archived = turn.archived or cut > len(self._messages)
         for paid in calls:
             yield paid
@@ -611,34 +636,9 @@ class Agent:
         summary of them; why it could not, if it could not."""
         if self.archive is None:
             return None
-        names = {
-            block.id: block.name
-            for message in full[:cut]
-            for block in message.blocks
-            if isinstance(block, ToolCallBlock)
-        }
-        items: list[ArchiveItem] = []
-        for position in range(first, cut):
-            message = full[position]
-            used = [
-                names.get(block.call_id, "tool")
-                for block in message.blocks
-                if isinstance(block, ToolResultBlock)
-            ]
-            tool = ", ".join(dict.fromkeys(used)) if used else None
-            items.append(
-                message_item(position, message.role, message_text(message), tool)
-            )
+        items = archive_items(full, first, cut)
         if notes is not None:
-            items.append(
-                ArchiveItem(
-                    kind="summary",
-                    position=cut - 1,
-                    role="assistant",
-                    text=notes.summary,
-                    number=cut,
-                )
-            )
+            items.append(summary_item(cut, notes.summary))
         try:
             await self.archive.add(items)
         except ArchiveError as exc:
@@ -1061,6 +1061,10 @@ class Agent:
             [archived] = await self.archive.add([item])
         except ArchiveError as exc:
             return fit(content), f"archive: {exc}"
+        # Whole in the session too: the archive is made again from it.
+        self._entries.append(
+            OutputEntry(id=archived, position=position, tool=tool, text=content)
+        )
         return fit(content, archived_as=archived), None
 
 

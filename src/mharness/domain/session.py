@@ -4,6 +4,11 @@
 A session file is a header and then entries, one per line, only ever
 appended: the messages of each turn, the tokens it used, and the model
 changes. Reading it back gives a `Session`.
+
+The format only grows (spec hito 11, §1.12): each version may add types of
+entry or optional fields, and never changes what one that exists means. An
+entry of a type this maha does not know is of a newer one: `SessionTooNew`,
+not a broken file.
 """
 
 import re
@@ -97,10 +102,43 @@ class TitleEntry(BaseModel, frozen=True):
     manual: bool = False
 
 
+class ArchiveEntry(BaseModel, frozen=True):
+    """The first `replaces` messages of the conversation left the working
+    window: `index` stands for them from here on (spec hito 11, §1.12).
+    The messages stay in the file: `/export` gives them all."""
+
+    type: Literal["archive"] = "archive"
+    replaces: int = Field(ge=1)
+    # The message that goes in their place (§1.8).
+    index: Message
+    # By /compact.
+    manual: bool = Field(default=False, exclude_if=lambda manual: not manual)
+    # The archivist's index, which it takes in the next time, and its
+    # summary of these steps alone; None if it failed.
+    notes: str | None = None
+    summary: str | None = None
+
+
+class OutputEntry(BaseModel, frozen=True):
+    """A tool output too big for the context, whole: the archive is made
+    again from here (spec hito 11, §1.5). The model got its ends and `id`."""
+
+    type: Literal["output"] = "output"
+    id: str
+    # The index of its message in the conversation.
+    position: int = Field(ge=0)
+    tool: str | None = None
+    text: str
+
+
 # Validated by `type`, as the blocks of a message.
 type SessionEntry = Annotated[
-    MessageEntry | UsageEntry | ModelEntry | TitleEntry, Field(discriminator="type")
+    MessageEntry | UsageEntry | ModelEntry | TitleEntry | ArchiveEntry | OutputEntry,
+    Field(discriminator="type"),
 ]
+
+# The types of entry this maha knows; another one is of a newer maha.
+ENTRY_TYPES = frozenset({"message", "usage", "model", "title", "archive", "output"})
 
 
 class Session(BaseModel, frozen=True):
@@ -122,6 +160,24 @@ class Session(BaseModel, frozen=True):
     models: dict[str, str] = Field(default_factory=dict)
     # Its last title, and whether the person gave it; None: none yet.
     title: TitleEntry | None = None
+    # Each time it archived, in order, and the outputs too big for the
+    # context, whole (spec hito 11, §1.12); empty before hito 11.
+    archives: list[ArchiveEntry] = Field(default_factory=list)
+    outputs: list[OutputEntry] = Field(default_factory=list)
+
+    @property
+    def archived(self) -> int:
+        """How many messages, from the start, the last index stands for."""
+        return self.archives[-1].replaces if self.archives else 0
+
+    @property
+    def working(self) -> list[Message]:
+        """What the model gets of the conversation: the last index and the
+        messages after what it stands for."""
+        if not self.archives:
+            return list(self.messages)
+        last = self.archives[-1]
+        return [last.index, *self.messages[last.replaces :]]
 
 
 class SessionSummary(BaseModel, frozen=True):
@@ -157,6 +213,11 @@ class SessionInUse(SessionError):
 
 class SessionCorrupt(SessionError):
     """The file cannot be read back as a session."""
+
+
+class SessionTooNew(SessionError):
+    """The file has entries of a newer maha, which this one cannot read
+    (spec hito 11, §1.12)."""
 
 
 def check_history(messages: list[Message]) -> None:
@@ -225,10 +286,22 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
     cost = Decimal(0)
     uncosted = 0
     title: TitleEntry | None = None
+    archives: list[ArchiveEntry] = []
+    outputs: list[OutputEntry] = []
     for entry in entries:
         match entry:
             case MessageEntry(message=message):
                 messages.append(message)
+            case ArchiveEntry(replaces=replaces):
+                # Of messages written before it, and never fewer than the
+                # last time: an index stands for a start of the conversation.
+                if replaces > len(messages):
+                    raise _broken(f"an archive of {replaces} messages, past the end")
+                if archives and replaces < archives[-1].replaces:
+                    raise _broken("an archive goes back")
+                archives.append(entry)
+            case OutputEntry():
+                outputs.append(entry)
             case TitleEntry():
                 title = latest_title(title, entry)
             case ModelEntry(model=changed, provider=provider):
@@ -242,6 +315,10 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
                 else:
                     cost += spent
     check_history(messages)
+    if archives:
+        # What the model gets has to be a history the API takes too.
+        last = archives[-1]
+        check_history([last.index, *messages[last.replaces :]])
     return Session(
         header=header,
         messages=messages,
@@ -251,6 +328,8 @@ def replay(header: SessionHeader, entries: list[SessionEntry]) -> Session:
         uncosted_turns=uncosted,
         models=models,
         title=title,
+        archives=archives,
+        outputs=outputs,
     )
 
 
