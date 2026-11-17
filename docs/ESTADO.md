@@ -3,11 +3,12 @@
 Última actualización: 2026-11-17. **Hito 10 cerrado: `v0.10.0` (system
 prompt por capas), `v0.10.1` (la auditoría tras el hito 10) y `v0.10.2`
 (su segunda, tercera y cuarta revisión, cero deuda). En curso: el hito 11
-(contexto virtual): spec integrada (#116), PR 1 integrado (#117) y PR 2
-(el archivo) abierto (#118), con sus evals. Lo siguiente: revisar e
-integrar el #118, y después los PRs 3 y 4. Tras el hito 11, auditorías
-hasta cero deuda antes del hito 12. Plan ampliado a 24 hitos (la órbita
-larga, hito 12 nuevo).**
+(contexto virtual): spec integrada (#116), PRs 1 y 2 integrados (#117,
+#118) y PR 3 (archivar) commiteado y subido en `feature/hito-11-archivar`;
+faltan sus evals. Lo siguiente: pasar las evals, abrir e integrar el PR 3,
+y después el PR 4.
+Tras el hito 11, auditorías hasta cero deuda antes del hito 12. Plan
+ampliado a 24 hitos (la órbita larga, hito 12 nuevo).**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -16,14 +17,15 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 **Desarrollo. Hitos 1 a 10 cerrados, con la auditoría tras el hito 10
 (`v0.10.1`) y sus revisiones (`v0.10.2`). En curso, el hito 11 (contexto
-virtual): spec aprobada; el PR 1 (contar, acotar y ver), integrado; el
-PR 2 (el archivo), abierto. Plan: 24 hitos hasta la 1.0 (DESIGN §14).**
+virtual): spec aprobada; los PRs 1 (contar, acotar y ver) y 2 (el
+archivo), integrados; el PR 3 (archivar), commiteado. Plan: 24 hitos
+hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.10.2` — Revisiones de la auditoría tras el hito
   10** (2026-11-13):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.2
-- Ramas abiertas: `feature/hito-11-archivo` (PR 2 del hito 11, #118). Las
+- Ramas abiertas: `feature/hito-11-archivar` (PR 3 del hito 11). Las
   integradas se conservan en GitHub.
 
 ## Para la release
@@ -57,16 +59,25 @@ spec, su nota de la guía y su release.
 Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
 trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
-1. **Humano:** revisar e integrar el PR 2 (#118, `feature/hito-11-archivo`,
-   con merge commit). Sus evals, en la spec 11, §5 "Resultados (PR 2)".
-2. **Agente, tras el PR 2:** los PRs 3 (archivar) y 4 (instrucciones y
-   herramientas), en ese orden (§6), con las evals de §5. El proveedor que
-   corta el prompt en silencio se detecta en el PR 3 (spec 11, decisión
-   14: ningún límite aceptado).
-3. **Agente y humano, tras cerrar el hito 11:** auditorías del código
+1. **Agente:** pasar las evals del PR 3 en `feature/hito-11-archivar`
+   (ya en GitHub, código terminado): `uv run --env-file .env maha eval
+   --models glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5 --repeat 5
+   --retry-errors` (28 tareas; unos 50-60 min). Una pasada empezada el
+   2026-11-17 a las 12:20 se cortó por un reinicio del PC: se repite
+   entera. Anotar el resultado en la spec 11, §5, "Resultados (PR 3)",
+   con la aceptación de §5: sin ⚠ en las 24 de antes y sin archivar en
+   ellas; las nuevas al menos 4/5; en 27 y 28 se archiva en todas; coste,
+   caché y pasos de las largas. El informe ya dice la caché y dónde se
+   archivó y se usó `recall`.
+2. **Agente (con permiso del mantenedor) o humano:** abrir el PR 3 al
+   milestone "Hito 11 — Contexto virtual" e integrarlo con merge commit
+   con el CI en verde.
+3. **Agente, tras el PR 3:** el PR 4 (instrucciones y herramientas, §6),
+   con la tarea 29, la pasada final y las líneas base nuevas.
+4. **Agente y humano, tras cerrar el hito 11:** auditorías del código
    hasta dejar cero deuda técnica, antes de empezar el hito 12, como tras
    el hito 10 (decisión del mantenedor, 2026-11-17).
-4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+5. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -280,7 +291,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 10. System prompt por capas. `v0.10.0` (2026-11-10) y los arreglos
   `v0.10.1` (2026-11-11, la auditoría) y `v0.10.2` (2026-11-13, sus
   revisiones)
-- [ ] 11. Contexto virtual. `v0.11.0` *(antes "Gestión del contexto"; 2026-11-16)*
+- [ ] 11. Contexto virtual (PRs 1 y 2 integrados; el 3, commiteado). `v0.11.0` *(antes "Gestión del contexto"; 2026-11-16)*
 - [ ] 12. Órbita larga. `v0.12.0` *(nuevo, 2026-11-16)*
 - [ ] 13. Deshacer y puntos de control. `v0.13.0` *(nuevo, 2026-10-27)*
 - [ ] 14. Skills y comandos personalizados. `v0.14.0`
