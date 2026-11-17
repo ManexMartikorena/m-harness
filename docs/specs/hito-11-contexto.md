@@ -709,6 +709,28 @@ Anthropic, `prompt_cache_key` en el de OpenAI), no el prompt.
   (GLM 67-73 %, Kimi 84,5-86,1 %, Haiku 68,9-71,2 %).
 - Las líneas base nuevas, al final del hito (§5).
 
+### Resultados (PR 2)
+
+2026-11-17, la misma orden. El PR 2 añade `recall` (y su guía en
+`tools.md`), el tope común y baja `read_file` a 36.000 caracteres.
+
+| Modelo | Éxito | Validación | Coste total | Caché leída | Llamadas |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 116/120 | 25/25 | 0,143 $ | 72,8 % | 601 |
+| `kimi-k2.7-code` | 120/120 | 25/25 | 1,024 $ | 87,2 % | 649 |
+| `claude-haiku-5-5` | 120/120 | 25/25 | 0,614 $ | 69,8 % | 458 |
+
+- **GLM, `20-total-value` en 2/5** (p = 0,083, "dentro del ruido"). Los
+  tres fallos son del modelo: su propio test espera un total que su
+  método no da, en 4 pasos con salidas pequeñas; nada se archivó ni se
+  usó `recall`. Repetida 10 veces: **9/10 con este PR y 8/10 con `main`
+  sin él**; en pasadas anteriores, 3/5 y 4/5. Es ruido de la tarea.
+- **Ninguna tarea de la batería archiva** (ninguna salida pasa de 40.000
+  caracteres) ni usa `recall`: lo miden las tareas 27 y 28 del PR 3.
+- **Coste:** Kimi +4 % y Haiku +4 % frente al PR 1, por la herramienta
+  nueva en cada llamada (unos 250 tokens, casi todos de caché). El ⚠ de
+  Kimi frente a la línea base es el ya aceptado (PR 1).
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit pequeño, con tests y lint en verde.
