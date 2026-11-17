@@ -870,6 +870,11 @@ y ESTADO.
 
 ## 7. Verificación a mano
 
+**Cuándo** *(decisión del mantenedor, 2026-11-17)*: la lista entera se
+hace al cerrar el hito, después del PR 4. El PR 3 se integró sin ella;
+sus puntos (2, 4, 5, 6 y 9) solo se han visto en las evals (§5,
+"Resultados (PR 3)").
+
 En un directorio desechable, con OpenCode Go:
 1. `/context` en una sesión nueva: cifras razonables.
 2. Con `[context] budget = 20_000`: leer varios ficheros y lanzar comandos
