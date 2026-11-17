@@ -37,16 +37,11 @@ from typing import Any
 
 from mharness.domain.commands import (
     OUTPUT_HEAD_CHARS,
-    OUTPUT_MAX_CHARS,
     OUTPUT_TAIL_CHARS,
     CommandResult,
     cut_here,
 )
 
-# Enough bytes for that many characters in UTF-8; the middle is read and
-# thrown away.
-_HEAD_BYTES = 4 * OUTPUT_HEAD_CHARS
-_TAIL_BYTES = 4 * OUTPUT_TAIL_CHARS
 _CHUNK = 64 * 1024
 # How often the exit of the shell is checked.
 EXIT_POLL_SECONDS = 0.05
@@ -86,8 +81,20 @@ def command_shell() -> str:
 
 
 class LocalCommandRunner:
-    def __init__(self, shell: str = FALLBACK_SHELL) -> None:
+    """Runs commands in `shell`; of the output, keeps `head` characters of
+    the start and `tail` of the end (the domain's, unless a test asks for
+    smaller ones)."""
+
+    def __init__(
+        self,
+        shell: str = FALLBACK_SHELL,
+        *,
+        head: int = OUTPUT_HEAD_CHARS,
+        tail: int = OUTPUT_TAIL_CHARS,
+    ) -> None:
         self._shell = shell
+        self._head = head
+        self._tail = tail
         _become_subreaper()
 
     async def run(
@@ -143,7 +150,7 @@ class LocalCommandRunner:
                     raise stopped from exc
                 raise
         assert process.stdout is not None
-        output = _Output()
+        output = _Output(self._head, self._tail)
         reader = asyncio.create_task(output.read(process.stdout))
         timed_out = False
         try:
@@ -179,7 +186,13 @@ class _Output:
     """The output read so far: its first bytes and its last ones, and how
     many came (audit after hito 10, H4)."""
 
-    def __init__(self) -> None:
+    def __init__(self, head: int, tail: int) -> None:
+        # Characters kept of the start and of the end, and enough bytes for
+        # them in UTF-8; the middle is read and thrown away.
+        self.head_chars = head
+        self.tail_chars = tail
+        self.head_bytes = 4 * head
+        self.tail_bytes = 4 * tail
         self.head = bytearray()
         self.tail = bytearray()
         self.seen = 0
@@ -188,10 +201,10 @@ class _Output:
         # Read while the command runs, so it never blocks on a full pipe.
         while chunk := await stream.read(_CHUNK):
             self.seen += len(chunk)
-            room = max(_HEAD_BYTES - len(self.head), 0)
+            room = max(self.head_bytes - len(self.head), 0)
             self.head += chunk[:room]
             self.tail += chunk[room:]
-            del self.tail[:-_TAIL_BYTES]
+            del self.tail[: -self.tail_bytes]
 
     def text(self) -> tuple[str, bool]:
         """What is kept, and whether it is cut: the start, `cut_here` and
@@ -202,18 +215,18 @@ class _Output:
         dropped = self.seen - len(self.head) - len(self.tail)
         if not dropped:
             whole = (self.head + self.tail).decode("utf-8", errors="surrogateescape")
-            if len(whole) <= OUTPUT_MAX_CHARS:
+            if len(whole) <= self.head_chars + self.tail_chars:
                 return _shown(whole), False
-            head, tail = whole[:OUTPUT_HEAD_CHARS], whole[-OUTPUT_TAIL_CHARS:]
+            head, tail = whole[: self.head_chars], whole[-self.tail_chars :]
         else:
             head = self.head.decode("utf-8", errors="surrogateescape")
-            head = head[:OUTPUT_HEAD_CHARS]
+            head = head[: self.head_chars]
             # The end kept may start inside a character.
             start = 0
             while start < min(3, len(self.tail)) and self.tail[start] & 0xC0 == 0x80:
                 start += 1
             end = self.tail[start:].decode("utf-8", errors="surrogateescape")
-            tail = end[-OUTPUT_TAIL_CHARS:]
+            tail = end[-self.tail_chars :]
         kept = len(_raw(head)) + len(_raw(tail))
         return _shown(head) + cut_here(self.seen - kept) + _shown(tail), True
 

@@ -53,7 +53,9 @@ MIB = 1024 * 1024
 # A file with a NUL byte in its first bytes is binary.
 BINARY_PROBE = 8 * 1024
 READ_MAX_LINES = 2000
-READ_MAX_CHARS = 100_000
+# Under the common limit of a result (spec hito 11, §1.6), with room for
+# the line numbers: the file is on the disk, and is read by parts.
+READ_MAX_CHARS = 36_000
 # A longer line is cut: one huge line must not fill the context.
 READ_MAX_LINE = 2000
 # Reading never goes through more than this: a huge line or a far offset

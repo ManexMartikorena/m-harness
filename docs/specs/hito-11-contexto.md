@@ -709,6 +709,33 @@ Anthropic, `prompt_cache_key` en el de OpenAI), no el prompt.
   (GLM 67-73 %, Kimi 84,5-86,1 %, Haiku 68,9-71,2 %).
 - Las líneas base nuevas, al final del hito (§5).
 
+### Resultados (PR 2)
+
+2026-11-17, la misma orden. El PR 2 añade `recall` (y su guía en
+`tools.md`), el tope común y baja `read_file` a 36.000 caracteres.
+
+| Modelo | Éxito | Validación | Coste total | Caché leída | Llamadas |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 116/120 | 25/25 | 0,143 $ | 72,8 % | 601 |
+| `kimi-k2.7-code` | 120/120 | 25/25 | 1,024 $ | 87,2 % | 649 |
+| `claude-haiku-5-5` | 120/120 | 25/25 | 0,614 $ | 69,8 % | 458 |
+
+- **GLM, `20-total-value` en 2/5** (p = 0,083, "dentro del ruido"). Los
+  tres fallos son del modelo: su propio test espera un total que su
+  método no da, en 4 pasos con salidas pequeñas; nada se archivó ni se
+  usó `recall`. Repetida 10 veces: **9/10 con este PR y 8/10 con `main`
+  sin él**; en pasadas anteriores, 3/5 y 4/5. Es ruido de la tarea.
+- **Ninguna tarea de la batería archiva** (ninguna salida pasa de 40.000
+  caracteres) ni usa `recall`: lo miden las tareas 27 y 28 del PR 3.
+- **Coste:** Kimi +4 % y Haiku +4 % frente al PR 1, por la herramienta
+  nueva en cada llamada (unos 250 tokens, casi todos de caché). El ⚠ de
+  Kimi frente a la línea base es el ya aceptado (PR 1).
+- **La pasada completa (10:31-11:19) no lleva `fefbd7e`** (la salida de un
+  comando, entera hasta 8.000.000 de caracteres): arrancó antes. Las 10
+  repeticiones de la tarea 20 sí lo llevan. Ninguna tarea usa
+  `run_command` ni pasa de 40.000 caracteres, así que no cambia nada; el
+  mantenedor da la pasada por buena sin repetirla (2026-11-17).
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit pequeño, con tests y lint en verde.
@@ -743,8 +770,9 @@ Cada punto, un commit pequeño, con tests y lint en verde.
 3. Archivar en el bucle y repetir tras `ContextOverflowError`, también
    cuando el proveedor corta el prompt en silencio (decisión 14).
    *Commit:* "Archivar antes de cada llamada si no cabe"
-4. `ArchiveEntry`, `replay()` y `SessionTooNew`. *Commit:* "Guardar el
-   archivado en la sesión"
+4. `ArchiveEntry`, `replay()` y `SessionTooNew`; también cada salida
+   entera archivada, para rehacer el archivo desde la sesión (§12, PR 2).
+   *Commit:* "Guardar el archivado en la sesión"
 5. `/compact`, la línea al archivar, `-p` y `/export`. *Commit:* "Añadir
    /compact"
 6. Evals: `history` y `context_budget`; tareas 25 a 28; la pasada,
@@ -931,3 +959,49 @@ Del mantenedor, tras el PR 1 (2026-11-17):
   El porcentaje del total es del techo ("archives at"), no del
   presupuesto: con una ventana pequeña son distintos, y lo que importa es
   cuánto falta para archivar.
+
+**PR 2 (2026-11-17):**
+- **`recall` vive en `application`, no en `adapters`** (§3.1 decía
+  `adapters/tools/recall.py`). No hace E/S propia: usa el puerto
+  `ContextArchive`. Y necesita el archivo de *la sesión en curso*, que
+  cambia con `/resume` y `/new`, mientras las herramientas se crean una
+  vez por `maha`. Cada agente tiene su `ArchiveSlot`, compartido con su
+  `recall`; la sesión pone ahí su archivo. Un hueco común se descartó:
+  al cerrar la conversación que se deja tras `/resume`, su guardado puede
+  cambiarle el id y reapuntaría el hueco a su archivo.
+- **El archivo sigue al id de la sesión.** El id puede cambiar antes de
+  que exista el fichero de la sesión (otro `maha` tomó el mismo): las
+  salidas de su primer turno ya están archivadas con el id viejo, y se
+  mueven con él. Se borra con la sesión (`/delete`, `maha sessions
+  delete`).
+- **Perezoso:** el `.db` se crea con lo primero que se archiva. Abrir una
+  sesión que no archiva nada no deja fichero.
+- **Lo que el modelo ve de una salida cortada lo calcula el bucle**, no
+  cada herramienta: vale igual para las de hoy y para las de MCP (hito
+  18). El resumen de la terminal ("4.210 líneas") sale de la salida
+  entera.
+- **Un comando guarda entera su salida hasta 8.000.000 de caracteres**
+  (2 M del principio y 6 M del final; antes, 30.000), para que vaya
+  entera al archivo. Decisión del mantenedor (2026-11-17): "la más
+  competitiva". Claude Code y OpenCode guardan en disco la salida entera
+  de un comando largo (§1.0); sin ningún tope, un comando desbocado
+  (`yes`) llenaría la memoria o el disco hasta el tiempo límite. Ocho
+  millones cubren entero cualquier log, build o batería de tests real;
+  por encima, el centro se pierde y la marca dice cuántos bytes. Unos 8
+  MB de memoria normalmente, 32 MB como mucho. El ejecutor recibe el tope
+  (`head`, `tail`), y sus tests lo prueban con uno pequeño (AGENTS.md).
+- **`read_file` baja a 36.000 caracteres**, no a 40.000 (§1.6): con los
+  números de línea, una lectura entera sigue por debajo del tope común y
+  nunca se archiva. El fichero está en disco y se lee por partes.
+- **Visto con un modelo real:** `cat` de un log de unos 980 KB, salida
+  cortada y archivada, y el modelo usó `recall(query="ERROR")` y dio el
+  código bien. Pero citó la línea como `[ERROR]`: los corchetes eran el
+  resaltado que FTS5 pone alrededor de lo encontrado, y el modelo los tomó
+  como parte del dato. El fragmento va ahora tal cual, con su test.
+- **La parte fija, con `recall`:** base 758 y herramientas 2.078 (2.836
+  de 3.500).
+- **Para el PR 3 (decisión 14):** hoy las salidas enteras solo están en
+  el `.db`. Si se borra, `recall` ya no las encuentra, y §1.5 dice que el
+  archivo es un índice que se rehace desde el JSONL. En el PR 3, pieza 4,
+  la sesión guarda también cada salida entera archivada (una entrada
+  nueva, como `ArchiveEntry`), y `rebuild()` la recupera de ahí.

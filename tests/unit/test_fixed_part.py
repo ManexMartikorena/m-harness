@@ -6,12 +6,13 @@ bound, this fails and the maintainer decides."""
 from importlib import resources
 from pathlib import Path
 
-from mharness.bootstrap import _tools
+from mharness.bootstrap import _tools, _with_recall
 from mharness.domain.context import estimate, estimate_tools
 from mharness.domain.prompt import render, sections, tool_guidance
 from tests.fakes.questions import FakePerson
 
-# Tokens, estimated. Measured on 2026-11-17: base 706, tools 1,829.
+# Tokens, estimated. Measured on 2026-11-17: base 758, tools 2,078 (with
+# recall; without it, 706 and 1,829).
 FIXED_PART_MAX = 3_500
 
 PROMPTS = resources.files("mharness") / "prompts"
@@ -23,7 +24,7 @@ def read(name: str) -> str:
 
 def test_the_base_prompt_and_the_tools_stay_under_the_bound() -> None:
     # Every tool, `ask_user` too: the prompt of a conversation has it.
-    tools = _tools(Path.cwd(), {}, FakePerson())
+    tools = _with_recall(_tools(Path.cwd(), {}, FakePerson()))
     guidance = tool_guidance(sections(read("tools.md")), tools.names())
     base = render(read("base.md"), {"tools": guidance})
 

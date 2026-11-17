@@ -23,6 +23,7 @@ from mharness.domain.agent_events import (
     TurnStarted,
 )
 from mharness.domain.approval import ApprovalRequest
+from mharness.domain.archive import ArchiveError
 from mharness.domain.catalog import ModelInfo, Prices
 from mharness.domain.errors import ModelUnavailableError
 from mharness.domain.events import TextDelta, UsageSoFar
@@ -52,6 +53,7 @@ from mharness.domain.session import (
 )
 from mharness.domain.trace import PromptUsed, TraceError, TraceRecord, TurnFailed
 from tests.fakes.approval import FakeApproval
+from tests.fakes.archive import MemoryArchiveStore
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import HANG, FakeModelClient, reply, tool_calls
 from tests.fakes.project import MemoryProject
@@ -102,6 +104,7 @@ class World:
         limits: TurnLimits | None = None,
         prompt: SystemPromptBuilder | None = None,
         titler: Titler | None = None,
+        archives: MemoryArchiveStore | None = None,
     ) -> None:
         self.gate = gate or FakeApproval()
         self.traces = traces or MemoryTraceSink()
@@ -140,6 +143,7 @@ class World:
             effort=effort,
             prompt=prompt,
             titler=titler,
+            archives=archives,
         )
 
 
@@ -1961,3 +1965,92 @@ async def test_the_trace_has_the_prompt_once_and_again_after_model() -> None:
     assert first.base != second.base
     assert [layer.kind for layer in first.layers] == ["base", "family", "environment"]
     assert "GLM" not in str(first)
+
+
+# The archive of each session (spec hito 11, §1.5 and §1.6).
+
+BIG = "x" * 50_000
+
+
+async def test_a_big_output_goes_to_the_archive_of_its_session() -> None:
+    archives = MemoryArchiveStore()
+    world = World(
+        MemorySessionStore(),
+        FakeModelClient([tool_calls(echo_call()), reply("Visto.")]),
+        tools=[FakeTool(results=[BIG])],
+        archives=archives,
+    )
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "Lanza")
+
+    archive = archives.archives[FIRST]
+    assert archive.items["out-1"].text == BIG
+    # user, assistant with the call, and then its result.
+    assert archive.items["out-1"].position == 2
+    [result] = conversation.messages[2].blocks
+    assert isinstance(result, ToolResultBlock)
+    assert "archived as out-1" in result.content
+    assert len(result.content) <= 40_000
+
+
+async def test_the_archive_moves_with_the_id_of_its_session() -> None:
+    # The id was taken by another maha: the outputs of its first turn go
+    # with it to the new id.
+    store = Liar()
+    old = World(store, FakeModelClient([reply("Viejo")]))
+    first = await old.sessions.start()
+    await turn(first, "A")
+    await first.close()
+    archives = MemoryArchiveStore()
+    world = World(
+        store,
+        FakeModelClient([tool_calls(echo_call()), reply("Nuevo")]),
+        tools=[FakeTool(results=[BIG])],
+        archives=archives,
+    )
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "B")
+
+    assert conversation.id == "20261026-091502-b01c"
+    assert FIRST not in archives.archives
+    assert archives.archives[conversation.id].items["out-1"].text == BIG
+
+
+async def test_delete_removes_the_archive_too() -> None:
+    archives = MemoryArchiveStore()
+    world = World(
+        MemorySessionStore(),
+        FakeModelClient([tool_calls(echo_call()), reply("Uno")]),
+        tools=[FakeTool(results=[BIG])],
+        archives=archives,
+    )
+    first = await world.sessions.start()
+    await turn(first, "A")
+    await first.close()
+    current = await world.sessions.start()
+
+    await world.sessions.delete(FIRST, current=current)
+
+    assert FIRST not in archives.archives
+
+
+class StuckArchives(MemoryArchiveStore):
+    async def delete(self, session_id: str) -> None:
+        raise ArchiveError(f"cannot delete the archive of {session_id}: Busy")
+
+
+async def test_an_archive_that_cannot_be_deleted_is_said() -> None:
+    world = World(
+        MemorySessionStore(),
+        FakeModelClient([reply("Uno")]),
+        archives=StuckArchives(),
+    )
+    first = await world.sessions.start()
+    await turn(first, "A")
+    await first.close()
+    current = await world.sessions.start()
+
+    with pytest.raises(SessionError, match="deleted, but not its archive"):
+        await world.sessions.delete(FIRST, current=current)

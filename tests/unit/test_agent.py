@@ -28,7 +28,12 @@ from mharness.domain.agent_events import (
 )
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import ModelInfo, Prices
-from mharness.domain.context import estimate, estimate_messages, estimate_tools
+from mharness.domain.context import (
+    OUTPUT_LIMIT,
+    estimate,
+    estimate_messages,
+    estimate_tools,
+)
 from mharness.domain.errors import (
     ModelAuthError,
     ModelError,
@@ -51,6 +56,7 @@ from mharness.domain.retry import RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
 from tests.fakes.approval import FakeApproval, HangingApproval
+from tests.fakes.archive import MemoryArchive
 from tests.fakes.catalog import MemoryCatalog
 from tests.fakes.model import FAKE_MODEL, HANG, FakeModelClient, reply, tool_calls
 from tests.fakes.retry import NO_RETRIES
@@ -1918,6 +1924,103 @@ async def test_context_usage_has_each_part_and_the_last_call() -> None:
     assert usage.tool_results == estimate("echo: x")
     assert (usage.total, usage.exact) == (1_050, True)
     assert (usage.last_prompt, usage.last_cached) == (1_000, 800)
+
+
+# Each result, bounded; the rest of a big one, to the archive (spec hito
+# 11, §1.6).
+
+
+def lines(count: int) -> str:
+    return "\n".join(f"line {i}" for i in range(count))
+
+
+async def result_of(subject: Agent) -> ToolFinished:
+    events = await run(subject)
+    [finished] = [e for e in events if isinstance(e, ToolFinished)]
+    return finished
+
+
+async def test_a_result_that_fits_is_left_as_it_is() -> None:
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Visto.")])
+    subject = agent(fake, FakeTool(results=["corto"]))
+    subject.archive = MemoryArchive()
+
+    finished = await result_of(subject)
+
+    assert finished.result.content == "corto"
+    assert subject.archive.items == {}
+
+
+async def test_a_big_result_is_archived_and_the_model_gets_its_ends() -> None:
+    big = lines(10_000)
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Visto.")])
+    subject = agent(fake, FakeTool(results=[big]))
+    archive = MemoryArchive()
+    subject.archive = archive
+
+    finished = await result_of(subject)
+
+    content = finished.result.content
+    assert len(content) <= OUTPUT_LIMIT
+    assert content.startswith("line 0\n")
+    assert content.endswith("line 9999")
+    assert 'recall(id="out-1", offset=…)' in content
+    item = archive.items["out-1"]
+    assert (item.text, item.tool, item.position) == (big, "echo", 2)
+    # What the model gets is what goes into the history.
+    assert fake.requests[1].messages[-1].blocks[0] == finished.result
+
+
+async def test_without_an_archive_a_big_result_is_only_cut() -> None:
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Visto.")])
+    subject = agent(fake, FakeTool(results=[lines(10_000)]))
+
+    finished = await result_of(subject)
+
+    assert len(finished.result.content) <= OUTPUT_LIMIT
+    assert "[output cut:" in finished.result.content
+    assert "recall" not in finished.result.content
+    assert finished.internal_error is None
+
+
+async def test_a_broken_archive_cuts_the_result_and_says_so() -> None:
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Visto.")])
+    subject = agent(fake, FakeTool(results=[lines(10_000)]))
+    subject.archive = MemoryArchive(broken=True)
+
+    finished = await result_of(subject)
+
+    assert "[output cut:" in finished.result.content
+    assert "recall" not in finished.result.content
+    assert finished.internal_error is not None
+    assert finished.internal_error.startswith("archive: ")
+    assert not finished.result.is_error
+
+
+async def test_the_summary_is_of_the_whole_result() -> None:
+    class Counting(FakeTool):
+        def summary(self, result: str) -> str:
+            return f"{result.count(chr(10)) + 1} lines"
+
+    fake = FakeModelClient([tool_calls(call("c1")), reply("Visto.")])
+    subject = agent(fake, Counting(results=[lines(10_000)]))
+
+    finished = await result_of(subject)
+
+    assert finished.summary == "10000 lines"
+
+
+async def test_results_of_a_later_turn_have_their_own_position() -> None:
+    fake = FakeModelClient([reply("Hola."), tool_calls(call("c1")), reply("Visto.")])
+    subject = agent(fake, FakeTool(results=[lines(10_000)]))
+    archive = MemoryArchive()
+    subject.archive = archive
+
+    await run(subject)
+    await run(subject, "Otra")
+
+    # Hola, Hola., Otra, the call, and then its result.
+    assert archive.items["out-1"].position == 4
 
 
 def _estimated(request: ModelRequest) -> int:

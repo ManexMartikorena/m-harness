@@ -237,6 +237,8 @@ def test_maha_offers_its_tools(workspace: Path, stdin: Callable[[str], None]) ->
         "edit_file",
         "run_command",
         "todo_write",
+        # Always, also before anything is archived (spec hito 11, §1.9).
+        "recall",
     ]
 
 
@@ -255,7 +257,7 @@ def test_with_a_terminal_the_model_can_ask_the_person(
         main([])
 
     tools = json.loads(last_turn(route))["tools"]
-    assert tools[-1]["function"]["name"] == "ask_user"
+    assert [tool["function"]["name"] for tool in tools][-2:] == ["ask_user", "recall"]
 
 
 @respx.mock

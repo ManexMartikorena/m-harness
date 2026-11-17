@@ -33,6 +33,11 @@ class ToolRegistry:
             raise ValueError(f'tool "{tool.name}" is registered twice')
         self._tools[tool.name] = tool
 
+    def plus(self, *more: Tool[Any]) -> ToolRegistry:
+        """A new registry with these tools after the others; this one does
+        not change."""
+        return ToolRegistry([*self._tools.values(), *more])
+
     def get(self, name: str) -> Tool[Any] | None:
         return self._tools.get(name)
 

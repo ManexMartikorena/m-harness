@@ -30,8 +30,14 @@ from mharness.ports.commands import CommandRunner
 ENV = {"PATH": os.environ["PATH"]}
 
 
+# The cut, with small limits that say the same as the real ones (AGENTS.md:
+# a test of a bound never needs the bound's size).
+HEAD = 10_000
+TAIL = 20_000
+
+
 async def run(command: str, cwd: Path, time_limit: float = 10) -> CommandResult:
-    return await LocalCommandRunner().run(
+    return await LocalCommandRunner(head=HEAD, tail=TAIL).run(
         command, cwd=cwd, time_limit=time_limit, env=ENV
     )
 
@@ -148,9 +154,9 @@ async def test_a_long_output_is_cut_without_blocking(tmp_path: Path) -> None:
     assert result.truncated
     assert result.exit_code == 0
     head, _, tail = result.output.partition("\n… [output cut here: ")
-    assert head == "x" * OUTPUT_HEAD_CHARS
-    assert tail.endswith("]\n" + "x" * (OUTPUT_TAIL_CHARS - 1) + "\n")
-    assert len(result.output) < OUTPUT_MAX_CHARS + 100
+    assert head == "x" * HEAD
+    assert tail.endswith("]\n" + "x" * (TAIL - 1) + "\n")
+    assert len(result.output) < HEAD + TAIL + 100
 
 
 async def test_a_long_output_keeps_its_end(tmp_path: Path) -> None:
@@ -612,6 +618,18 @@ async def test_the_bytes_left_out_count_bytes_that_are_not_utf8(
     tmp_path: Path,
 ) -> None:
     # Review: each U+FFFD counted as three bytes.
-    result = await run("head -c 100000 /dev/zero | tr '\\0' '\\377'", tmp_path)
+    kept = HEAD + TAIL
+    result = await run(
+        f"head -c {kept + 100_000} /dev/zero | tr '\\0' '\\377'", tmp_path
+    )
 
-    assert "[output cut here: 70000 bytes left out]" in result.output
+    assert "[output cut here: 100000 bytes left out]" in result.output
+
+
+def test_by_default_it_keeps_what_the_domain_says() -> None:
+    # Spec hito 11, §12: eight million characters, whole to the archive.
+    output = local._Output(OUTPUT_HEAD_CHARS, OUTPUT_TAIL_CHARS)
+    assert OUTPUT_MAX_CHARS == 8_000_000
+    runner = LocalCommandRunner()
+    assert (runner._head, runner._tail) == (OUTPUT_HEAD_CHARS, OUTPUT_TAIL_CHARS)
+    assert output.head_bytes == 4 * OUTPUT_HEAD_CHARS
