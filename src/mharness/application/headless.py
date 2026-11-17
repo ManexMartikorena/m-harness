@@ -14,10 +14,12 @@ from typing import Literal
 from pydantic import BaseModel
 
 from mharness.application.collect import Accumulator
+from mharness.application.recall import Recall
 from mharness.application.sessions import Conversation
 from mharness.domain.agent_events import (
     AgentEvent,
     ApprovalRequested,
+    ContextArchived,
     ModelCallFinished,
     ToolFinished,
     TurnFinished,
@@ -83,6 +85,10 @@ class RunResult(BaseModel, frozen=True):
     error: str | None
     # Whose that failure is, if it failed.
     failure: Failure | None = None
+    # Times the working window was archived, and calls to `recall` (spec
+    # hito 11, §5): what the evals measure; not in the JSON of `-p`.
+    archives: int = 0
+    recalls: int = 0
 
 
 def instruction(text: str, piped: str | None, *, tag: str | None = None) -> str:
@@ -134,6 +140,7 @@ async def run_once(
     denials: list[str] = []
     tool_errors = 0
     tool_calls = 0
+    archives = recalls = 0
     reason: Reason = "error"
     error: str | None = None
 
@@ -155,6 +162,8 @@ async def run_once(
             model=model,
             error=error,
             failure=failure,
+            archives=archives,
+            recalls=recalls,
         )
 
     try:
@@ -175,9 +184,12 @@ async def run_once(
                         model = event.model
                 elif isinstance(event, ApprovalRequested):
                     asked[event.call.id] = event.request.title
+                elif isinstance(event, ContextArchived):
+                    archives += 1
                 elif isinstance(event, ToolFinished):
                     # As the loop counts them: the skipped ones are not.
                     tool_calls += not event.skipped
+                    recalls += event.call.name == Recall.name and not event.skipped
                     if event.decision == "deny":
                         denials.append(asked.get(event.call.id, event.call.name))
                     elif event.result.is_error and not event.skipped:

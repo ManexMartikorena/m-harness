@@ -185,6 +185,13 @@ class TaskRun(BaseModel, frozen=True):
     # The test files of the fixture the run had changed, and its check saw
     # as the fixture has them (deep audit, I1).
     restored: list[str] = []
+    # The input tokens, and of those, the ones read from the cache; the
+    # times it archived, and its calls to `recall` (spec hito 11, §5). Zero
+    # in the runs before hito 11.
+    input_tokens: int = 0
+    cache_read: int = 0
+    archives: int = 0
+    recalls: int = 0
 
 
 class Stats(BaseModel, frozen=True):

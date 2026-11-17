@@ -289,3 +289,30 @@ def test_a_changed_base_prompt_is_said() -> None:
             prompts={"glm-5.3-flash": now},
         )
         assert (note in out.getvalue()) is said
+
+
+def test_the_report_says_the_cache_and_where_it_archived() -> None:
+    # Spec hito 11, §5: the part read from the cache, and the tasks that
+    # archived and used recall, in how many of their runs.
+    plain = run().model_copy(update={"input_tokens": 3_000, "cache_read": 2_000})
+    archived = run("27-recuperar").model_copy(
+        update={"input_tokens": 1_000, "cache_read": 600, "archives": 2, "recalls": 1}
+    )
+    again = run("27-recuperar", attempt=2).model_copy(update={"archives": 1})
+    out = io.StringIO()
+
+    eval_report([plain, archived, again], {"glm-5.3-flash": None}, out)
+
+    text = out.getvalue()
+    assert "  cache: 65.0 % of the input read from the cache\n" in text
+    assert "  archived: 27-recuperar 2/2\n" in text
+    assert "  recall: 27-recuperar 1/2\n" in text
+
+
+def test_without_archives_the_report_says_nothing_of_them() -> None:
+    out = io.StringIO()
+
+    eval_report([run()], {"glm-5.3-flash": None}, out)
+
+    assert "archived:" not in out.getvalue()
+    assert "cache:" not in out.getvalue()
