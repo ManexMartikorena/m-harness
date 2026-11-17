@@ -836,4 +836,36 @@ Del mantenedor, al aprobar (2026-11-16):
 
 ## 12. Aprendido al implementar
 
-Se añade al implementar.
+**PR 1 (2026-11-17):**
+- **Lo "Sin comprobar" de §1.0, comprobado con OpenCode Go** (formato de
+  OpenAI, llamadas reales del 2026-11-17, unos 0,03 $ en total):
+  - **El error cuando el prompt no cabe** (`iceman-contributor-free`,
+    ventana de 262.144): HTTP 400,
+    `{"error":{"type":"invalid_request_error","message":"Upstream request
+    failed: [invalid_request_error] Input token count (600025) exceeds the
+    model's maximum context length of (262144), no tokens left for
+    generation"}}`. Se reconoce por el 400 y "maximum context length" en
+    el mensaje (es también la frase de la documentación de OpenAI).
+  - **No siempre hay error.** Con `hy3` (ventana de 256.000) el mismo
+    prompt de 300.000 palabras dio **200**, `finish_reason: stop`, y
+    `prompt_tokens: 196608`: el proveedor **cortó el prompt en silencio**
+    (196.608 es justo el 75 % de 262.144) y cobró 0,028 $. Con ese
+    proveedor, la repetición tras `ContextOverflowError` (§1.10) nunca
+    salta: la única defensa es no llegar, con el techo y la reserva
+    (§1.3). Se lleva al mantenedor antes del PR 3 (§1.10).
+  - **Prompt + `max_tokens` por encima de la ventana se acepta**:
+    `kimi-k2.7-code` con 10 + 262.144 y `hy3` con 15 + 250.000 dieron 200.
+  - **`prompt_cache_key` se acepta** (`glm-5.3-flash`, tres llamadas con
+    el mismo system de 3.772 tokens): la segunda y la tercera leyeron
+    3.264 de caché. Sin la clave, con la misma cabecera
+    `x-opencode-session`, también: en OpenCode Go la clave no cambia nada
+    medible, pero no estorba y ayuda en otros proveedores (§1.13). Se
+    queda, sin opción para apagarla (decisión 13).
+  - **OpenCode Go exige la cabecera `x-opencode-session`**: sin ella, 400
+    `MissingSessionID`. `maha` ya la manda (spec 2).
+- **El formato de OpenAI no manda `max_tokens`** (spec 9, §1.6: "los
+  servidores compatibles tienen su propio límite"); §1.4 decía que cada
+  petición lo lleva, y es así solo en el de Anthropic. Con lo comprobado
+  arriba, no se empieza a mandar: `ModelRequest.max_tokens` pasa a ser
+  `min(max_output, ventana − prompt estimado)` y cada adaptador sigue
+  decidiendo si lo manda.
