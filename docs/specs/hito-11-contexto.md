@@ -743,8 +743,9 @@ Cada punto, un commit pequeño, con tests y lint en verde.
 3. Archivar en el bucle y repetir tras `ContextOverflowError`, también
    cuando el proveedor corta el prompt en silencio (decisión 14).
    *Commit:* "Archivar antes de cada llamada si no cabe"
-4. `ArchiveEntry`, `replay()` y `SessionTooNew`. *Commit:* "Guardar el
-   archivado en la sesión"
+4. `ArchiveEntry`, `replay()` y `SessionTooNew`; también cada salida
+   entera archivada, para rehacer el archivo desde la sesión (§12, PR 2).
+   *Commit:* "Guardar el archivado en la sesión"
 5. `/compact`, la línea al archivar, `-p` y `/export`. *Commit:* "Añadir
    /compact"
 6. Evals: `history` y `context_budget`; tareas 25 a 28; la pasada,
@@ -931,3 +932,44 @@ Del mantenedor, tras el PR 1 (2026-11-17):
   El porcentaje del total es del techo ("archives at"), no del
   presupuesto: con una ventana pequeña son distintos, y lo que importa es
   cuánto falta para archivar.
+
+**PR 2 (2026-11-17):**
+- **`recall` vive en `application`, no en `adapters`** (§3.1 decía
+  `adapters/tools/recall.py`). No hace E/S propia: usa el puerto
+  `ContextArchive`. Y necesita el archivo de *la sesión en curso*, que
+  cambia con `/resume` y `/new`, mientras las herramientas se crean una
+  vez por `maha`. Cada agente tiene su `ArchiveSlot`, compartido con su
+  `recall`; la sesión pone ahí su archivo. Un hueco común se descartó:
+  al cerrar la conversación que se deja tras `/resume`, su guardado puede
+  cambiarle el id y reapuntaría el hueco a su archivo.
+- **El archivo sigue al id de la sesión.** El id puede cambiar antes de
+  que exista el fichero de la sesión (otro `maha` tomó el mismo): las
+  salidas de su primer turno ya están archivadas con el id viejo, y se
+  mueven con él. Se borra con la sesión (`/delete`, `maha sessions
+  delete`).
+- **Perezoso:** el `.db` se crea con lo primero que se archiva. Abrir una
+  sesión que no archiva nada no deja fichero.
+- **Lo que el modelo ve de una salida cortada lo calcula el bucle**, no
+  cada herramienta: vale igual para las de hoy y para las de MCP (hito
+  18). El resumen de la terminal ("4.210 líneas") sale de la salida
+  entera.
+- **Un comando guarda hasta 1.000.000 de caracteres** (250.000 del
+  principio y 750.000 del final; antes, 30.000) para que haya algo entero
+  que archivar. Por encima, el centro se pierde también del archivo, con
+  la marca de cuántos bytes. La memoria de un comando queda acotada (unos
+  4 MB de búfer en el peor caso).
+- **`read_file` baja a 36.000 caracteres**, no a 40.000 (§1.6): con los
+  números de línea, una lectura entera sigue por debajo del tope común y
+  nunca se archiva. El fichero está en disco y se lee por partes.
+- **Visto con un modelo real:** `cat` de un log de unos 980 KB, salida
+  cortada y archivada, y el modelo usó `recall(query="ERROR")` y dio el
+  código bien. Pero citó la línea como `[ERROR]`: los corchetes eran el
+  resaltado que FTS5 pone alrededor de lo encontrado, y el modelo los tomó
+  como parte del dato. El fragmento va ahora tal cual, con su test.
+- **La parte fija, con `recall`:** base 758 y herramientas 2.078 (2.836
+  de 3.500).
+- **Para el PR 3 (decisión 14):** hoy las salidas enteras solo están en
+  el `.db`. Si se borra, `recall` ya no las encuentra, y §1.5 dice que el
+  archivo es un índice que se rehace desde el JSONL. En el PR 3, pieza 4,
+  la sesión guarda también cada salida entera archivada (una entrada
+  nueva, como `ArchiveEntry`), y `rebuild()` la recupera de ahí.

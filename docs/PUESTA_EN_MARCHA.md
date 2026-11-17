@@ -87,7 +87,10 @@ de esto entra en git:
   nunca el texto de la conversación. Respeta `XDG_STATE_HOME`. Desde el
   hito 8, también `evals/<fecha-hora>/`: las sesiones y trazas de cada
   ejecución de `maha eval`, aparte de las tuyas (§4.1). Se pueden borrar
-  cuando ya no hagan falta.
+  cuando ya no hagan falta. Desde el hito 11, `archive/`: el archivo de
+  cada sesión (`<id>.db`, SQLite, solo legible por el usuario), con las
+  salidas enteras que no cabían en el contexto; guarda lo mismo que la
+  sesión, y se borra con ella.
 
 Lo que se haga en una máquina no está en la otra.
 
