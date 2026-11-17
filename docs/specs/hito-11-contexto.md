@@ -715,8 +715,9 @@ Cada punto, un commit pequeño, con tests y lint en verde.
    archiva y construir el índice"
 2. `prompts/archive.md` y el `Archivist`. *Commit:* "Resumir lo archivado
    con el modelo barato"
-3. Archivar en el bucle y repetir tras `ContextOverflowError`. *Commit:*
-   "Archivar antes de cada llamada si no cabe"
+3. Archivar en el bucle y repetir tras `ContextOverflowError`, también
+   cuando el proveedor corta el prompt en silencio (decisión 14).
+   *Commit:* "Archivar antes de cada llamada si no cabe"
 4. `ArchiveEntry`, `replay()` y `SessionTooNew`. *Commit:* "Guardar el
    archivado en la sesión"
 5. `/compact`, la línea al archivar, `-p` y `/export`. *Commit:* "Añadir
@@ -834,6 +835,14 @@ Del mantenedor, al aprobar (2026-11-16):
     sesiones. El mismo criterio vale al implementar: lo que no lo cumpla
     se quita, y se anota en §12.
 
+Del mantenedor, tras el PR 1 (2026-11-17):
+14. **Ningún límite aceptado: un producto robusto y competitivo.** El
+    proveedor que corta el prompt en silencio (§12, `hy3`) se detecta y
+    se trata como el error de contexto excedido (§1.10): si el proveedor
+    cuenta bastantes menos tokens de los que se mandaron y lo mandado no
+    cabía en la ventana, se archiva y se repite la llamada una vez. Entra
+    en el PR 3, pieza 3, con su test.
+
 ## 12. Aprendido al implementar
 
 **PR 1 (2026-11-17):**
@@ -852,7 +861,7 @@ Del mantenedor, al aprobar (2026-11-16):
     (196.608 es justo el 75 % de 262.144) y cobró 0,028 $. Con ese
     proveedor, la repetición tras `ContextOverflowError` (§1.10) nunca
     salta: la única defensa es no llegar, con el techo y la reserva
-    (§1.3). Se lleva al mantenedor antes del PR 3 (§1.10).
+    (§1.3). Decidido por el mantenedor: se detecta y se trata (decisión 14).
   - **Prompt + `max_tokens` por encima de la ventana se acepta**:
     `kimi-k2.7-code` con 10 + 262.144 y `hy3` con 15 + 250.000 dieron 200.
   - **`prompt_cache_key` se acepta** (`glm-5.3-flash`, tres llamadas con

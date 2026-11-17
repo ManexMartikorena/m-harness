@@ -58,8 +58,8 @@ trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 1. **Humano:** revisar los 9 commits de `feature/hito-11-contar`
    (`git log main..feature/hito-11-contar`), hacer push y abrir el PR 1
    al milestone "Hito 11 — Contexto virtual" (o pedírselo al agente).
-   Decidir antes del PR 3 qué hacer con el proveedor que corta el prompt
-   en silencio (spec 11, §12, `hy3`).
+   El proveedor que corta el prompt en silencio se detecta en el PR 3
+   (spec 11, decisión 14: ningún límite aceptado).
 2. **Agente, tras el PR 1:** los PRs 2 (el archivo), 3 (archivar) y 4
    (instrucciones y herramientas), en ese orden (§6), con las evals de §5.
 3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
