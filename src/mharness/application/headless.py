@@ -165,11 +165,14 @@ async def run_once(
                 if isinstance(event, TextDelta):
                     current.add(event)
                 elif isinstance(event, ModelCallFinished):
-                    answer, current = current.text, Accumulator()
-                    steps += 1
                     usage += event.usage
                     cost = add_cost(cost, event.cost)
-                    model = event.model
+                    if not event.archivist:
+                        # The archivist's calls cost, but are no steps and
+                        # give no answer (spec hito 11, §1.7).
+                        answer, current = current.text, Accumulator()
+                        steps += 1
+                        model = event.model
                 elif isinstance(event, ApprovalRequested):
                     asked[event.call.id] = event.request.title
                 elif isinstance(event, ToolFinished):

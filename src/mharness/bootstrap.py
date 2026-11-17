@@ -49,6 +49,7 @@ from mharness.adapters.tools import (
 from mharness.adapters.tracing import JsonlTraceSink
 from mharness.application.agent import Agent
 from mharness.application.approvals import AllowList
+from mharness.application.context import Archivist
 from mharness.application.evals import Evaluator, choose
 from mharness.application.prompt import PromptTemplates, SystemPromptBuilder
 from mharness.application.recall import ArchiveSlot, Recall
@@ -537,6 +538,7 @@ async def _eval(
                     # Retries, but no fallback: an eval measures the model
                     # it names.
                     slot=slot,
+                    archivist=_archivist(settings, catalog, client, model),
                 )
 
             sessions = Sessions(
@@ -800,6 +802,7 @@ def _sessions(
             fallback=settings.fallback_model,
             context_budget=settings.context_budget,
             slot=slot,
+            archivist=_archivist(settings, catalog, client, model),
         )
 
     return Sessions(
@@ -926,6 +929,28 @@ async def _print(
             start=start,
             notes=_notes(settings),
         )
+
+
+def _archivist(
+    settings: config.Settings, catalog: ModelCatalog, client: ModelClient, model: str
+) -> Archivist:
+    """Who summarizes what leaves the working window of a session with
+    `model` (spec hito 11, §1.7): `[context] archivist_model`; if none, the
+    small model of the titles; if none, `model` itself."""
+    template = (resources.files("mharness") / "prompts" / "archive.md").read_text(
+        encoding="utf-8"
+    )
+    chosen = settings.archivist_model or small_model(
+        settings.small_model, catalog, settings.provider_name, model
+    )
+    return Archivist(
+        client,
+        model=chosen,
+        template=template,
+        catalog=catalog,
+        provider=settings.provider_name,
+        failed=cli.archive_failed,
+    )
 
 
 def _titler(

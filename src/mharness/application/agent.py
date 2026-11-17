@@ -18,6 +18,7 @@ from pydantic import BaseModel, ValidationError
 
 from mharness.application.approvals import SessionApprovals
 from mharness.application.collect import Accumulator
+from mharness.application.context import Archived, Archivist
 from mharness.application.pricing import call_cost
 from mharness.application.recall import ArchiveSlot
 from mharness.application.tools import ToolRegistry
@@ -25,6 +26,8 @@ from mharness.domain.agent_events import (
     AgentEvent,
     ApprovalCovered,
     ApprovalRequested,
+    ContextArchived,
+    ContextArchiving,
     ModelCallFinished,
     ModelFallback,
     ModelRetry,
@@ -35,19 +38,32 @@ from mharness.domain.agent_events import (
     TurnStarted,
 )
 from mharness.domain.approval import ApprovalRequest, Decision
-from mharness.domain.archive import ArchiveError, ArchiveItem
+from mharness.domain.archive import (
+    ArchiveError,
+    ArchiveItem,
+    ArchiveNotes,
+    message_item,
+)
 from mharness.domain.catalog import add_cost
 from mharness.domain.context import (
     DEFAULT_BUDGET,
     OUTPUT_LIMIT,
     ContextPolicy,
     ContextUsage,
+    archive_cut,
+    archive_index,
     estimate,
     estimate_messages,
     estimate_tools,
     fit,
+    message_text,
+    step_starts,
 )
-from mharness.domain.errors import RetryableModelError
+from mharness.domain.errors import (
+    ContextOverflowError,
+    ModelResponseError,
+    RetryableModelError,
+)
 from mharness.domain.events import ModelEvent, TextDelta, UsageSoFar
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import (
@@ -80,6 +96,16 @@ INTERRUPTED = "interrupted by an internal error"
 TIMED_OUT = "stopped by the time limit"
 CONTEXT_FULL = "not run: the conversation filled your context window"
 REFUSED = "not run: the provider refused your answer"
+
+# A provider that cuts the prompt in silence (spec hito 11, decision 14)
+# shows it in its count: below this share of what was sent, when that could
+# not fit in the window; or, after a call it counted, below that call's
+# prompt plus this share of what was added since, when that was at least
+# `SILENT_GROWTH` tokens. A prompt holds the one before it whole, and text
+# never has four times fewer tokens than characters / 4 says.
+SILENT_CUT = 0.9
+SILENT_SHARE = 0.25
+SILENT_GROWTH = 1_000
 
 # The only answers that run a call that asked, or deny it.
 DECISIONS: tuple[Decision, ...] = ("once", "session", "deny")
@@ -117,6 +143,7 @@ class Agent:
         system: str | None = None,
         context_budget: int = DEFAULT_BUDGET,
         slot: ArchiveSlot | None = None,
+        archivist: Archivist | None = None,
     ) -> None:
         self._client = client
         self._tools = tools
@@ -151,6 +178,21 @@ class Agent:
         self.context_budget = context_budget
         # Where the session puts its archive, shared with `recall` (§1.9).
         self._slot = slot if slot is not None else ArchiveSlot()
+        # Who summarizes what leaves the window; None: the code's index
+        # alone (§1.7).
+        self._archivist = archivist
+        # How many messages of the conversation, from the start, left the
+        # working window, the message that stands for them, and the
+        # archivist's index, for the next time (§1.8).
+        self._archived = 0
+        self._index: Message | None = None
+        self._notes: str | None = None
+        # The tokens of the prompt of the call in progress, as maha counts
+        # them, and, if it goes on from the last call counted, that call's
+        # prompt and what was added since: a provider that counts far fewer
+        # cut it (decision 14).
+        self._sent_tokens = 0
+        self._sent_growth: tuple[int, int] | None = None
 
     @property
     def archive(self) -> ContextArchive | None:
@@ -165,8 +207,27 @@ class Agent:
 
     @property
     def messages(self) -> Sequence[Message]:
-        """The conversation so far, oldest first."""
+        """The whole conversation so far, oldest first, also what left the
+        working window."""
         return tuple(self._messages)
+
+    @property
+    def working(self) -> Sequence[Message]:
+        """What the model gets of the conversation: the index of what was
+        archived, and the rest as it is (spec hito 11, §1.8)."""
+        return tuple(self._working(()))
+
+    @property
+    def archived(self) -> int:
+        """How many messages of the conversation, from the start, the index
+        stands for."""
+        return self._archived
+
+    def _working(self, turn: Sequence[Message]) -> list[Message]:
+        full = [*self._messages, *turn]
+        if self._index is None:
+            return full
+        return [self._index, *full[self._archived :]]
 
     @property
     def tool_names(self) -> list[str]:
@@ -206,9 +267,18 @@ class Agent:
                     self._keep(turn)
                     yield turn.finished(limit, steps=turn.step - 1)
                     return
-                async with aclosing(self._answer(turn)) as events:
+                async with aclosing(self._archive_if_full(turn)) as events:
                     async for event in events:
                         yield event
+                async with aclosing(self._fitting_answer(turn)) as events:
+                    async for event in events:
+                        yield event
+                if turn.no_room:
+                    # It did not fit even after archiving: the turn ends.
+                    if turn.must_keep:
+                        self._keep(turn)
+                    yield turn.finished("context_full", steps=turn.step)
+                    return
                 response, call_cost = self._take_answer(turn)
                 yield ModelCallFinished(
                     usage=response.usage, model=response.model, cost=call_cost
@@ -256,7 +326,7 @@ class Agent:
                 # happened, not the limit; an eval counts it as the
                 # provider's (audit of hito 8; spec hito 8, §12.9). What ran
                 # is kept, as after any failed call to the model.
-                if turn.executed and not turn.kept:
+                if turn.must_keep and not turn.kept:
                     self._messages.extend(turn.messages)
                 raise turn.failing[0] from None
             self._keep_timed_out(turn)
@@ -345,6 +415,235 @@ class Agent:
                 if isinstance(event, TextDelta):
                     yield event
         turn.streaming = False
+
+    async def _fitting_answer(self, turn: _Turn) -> AsyncGenerator[AgentEvent]:
+        """The step's answer. If the provider says that the prompt does not
+        fit, or answers a prompt it cut in silence, the oldest steps are
+        archived, all but the last, and the call is made once more (spec
+        hito 11, §1.10, decision 14). `turn.no_room` if it still cannot
+        fit."""
+        for last in (False, True):
+            overflowed = False
+            try:
+                async with aclosing(self._answer(turn)) as events:
+                    async for event in events:
+                        yield event
+            except ContextOverflowError:
+                turn.streaming = False
+                overflowed = True
+            # Out of the `except`: a Ctrl+C here is not "during" the error.
+            if not overflowed:
+                if last or not self._overflowed(turn) or not self._can_archive(turn):
+                    return
+                # The answer of a prompt that did not fit: paid, not kept.
+                yield self._discard_answer(turn)
+            elif last or not self._can_archive(turn):
+                turn.no_room = True
+                return
+            async with aclosing(self._archive(turn, tail=0)) as events:
+                async for event in events:
+                    yield event
+
+    def _overflowed(self, turn: _Turn) -> bool:
+        """Whether the answer that came says that its prompt did not fit:
+        the provider stopped for it, or counted far fewer tokens than were
+        sent when they could not fit in the window (it cut them)."""
+        try:
+            response = turn.accumulator.response()
+        except ModelResponseError:
+            return False
+        if response.stop_reason == "context_full":
+            return True
+        counted = response.usage.input_tokens
+        if counted <= 0:
+            # The provider did not count it.
+            return False
+        window = self._policy(turn.model).window
+        sent = self._sent_tokens
+        if window is not None and sent > window and counted < sent * SILENT_CUT:
+            return True
+        if self._sent_growth is None:
+            return False
+        before, added = self._sent_growth
+        return added >= SILENT_GROWTH and counted < before + added * SILENT_SHARE
+
+    def _growth(
+        self,
+        model: str,
+        system: str | None,
+        tools: list[ToolSpec],
+        messages: Sequence[Message],
+    ) -> tuple[int, int] | None:
+        """The prompt of the last call counted, and an estimate of what this
+        prompt adds to it, if this one goes on from it with the same model
+        (another one counts its own way); None if not."""
+        measured = self._measured
+        if (
+            measured is None
+            or measured.model != model
+            or not measured.matches(system, tools)
+        ):
+            return None
+        for index in range(len(messages) - 1, -1, -1):
+            if messages[index] is measured.answer:
+                # Its visible text, not its reasoning: that may not go back.
+                added = estimate(message_text(_without_reasoning(measured.answer)))
+                return measured.prompt, added + estimate_messages(
+                    list(messages[index + 1 :])
+                )
+        return None
+
+    def _discard_answer(self, turn: _Turn) -> ModelCallFinished:
+        """Count the answer that came, and leave it out of the turn."""
+        response = turn.accumulator.response()
+        turn.usage += response.usage
+        call_cost = self._cost(response, turn.model)
+        turn.cost = add_cost(turn.cost, call_cost)
+        turn.accumulator = Accumulator()
+        self._measured = None
+        return ModelCallFinished(
+            usage=response.usage, model=response.model, cost=call_cost
+        )
+
+    def _can_archive(self, turn: _Turn) -> bool:
+        """Whether some step, besides the last, is still in the window."""
+        full = [*self._messages, *turn.messages]
+        return archive_cut(full, 0, start=self._archived) > self._archived
+
+    async def _archive_if_full(self, turn: _Turn) -> AsyncGenerator[AgentEvent]:
+        """Archive the oldest steps if the next call would pass the ceiling
+        (spec hito 11, §1.3): before each call, also in the middle of a
+        turn."""
+        policy = self._policy(turn.model)
+        tokens = self.prompt_tokens(
+            self._system_of(turn.model),
+            self._tools.specs(),
+            self._working(turn.messages),
+        )
+        if tokens <= policy.ceiling:
+            return
+        async with aclosing(self._archive(turn, tail=policy.tail)) as events:
+            async for event in events:
+                yield event
+
+    async def compact(
+        self, instructions: str | None = None
+    ) -> AsyncGenerator[AgentEvent]:
+        """Archive now all but the last steps, also if they fit (`/compact`,
+        spec hito 11, §1.11); the person's `instructions` go to the
+        archivist. Nothing happens if there is nothing to archive."""
+        turn = _Turn(messages=[], model=self.model, deadline=None)
+        tail = self._policy(self.model).tail
+        async with aclosing(
+            self._archive(turn, tail=tail, manual=True, instructions=instructions)
+        ) as events:
+            async for event in events:
+                yield event
+
+    async def _archive(
+        self,
+        turn: _Turn,
+        *,
+        tail: int,
+        manual: bool = False,
+        instructions: str | None = None,
+    ) -> AsyncGenerator[AgentEvent]:
+        """Move out of the working window the steps before the last ones
+        that fit in `tail` tokens (spec hito 11, §1.10). Whole steps, also of
+        this turn. Atomic: a Ctrl+C or a failure before the end leaves the
+        conversation as it was; what was archived meanwhile is archived
+        again with the same ids."""
+        full = [*self._messages, *turn.messages]
+        cut = archive_cut(full, tail, start=self._archived)
+        if cut <= self._archived:
+            return
+        system, tools = self._system_of(turn.model), self._tools.specs()
+        before = self.prompt_tokens(system, tools, self._working(turn.messages))
+        yield ContextArchiving(before=before, manual=manual)
+        first = self._archived
+        leaving = full[first:cut]
+        archived = Archived(None)
+        if self._archivist is not None:
+            archived = await _within(
+                self._archivist.archive(
+                    leaving,
+                    first=first,
+                    previous=self._notes,
+                    instructions=instructions,
+                ),
+                turn.deadline,
+            )
+        cost: Decimal | None = Decimal(0)
+        calls = []
+        for call in archived.calls:
+            turn.usage += call.usage
+            turn.cost = add_cost(turn.cost, call.cost)
+            cost = add_cost(cost, call.cost)
+            calls.append(
+                ModelCallFinished(
+                    usage=call.usage, model=call.model, cost=call.cost, archivist=True
+                )
+            )
+        notes = archived.notes
+        problem = await self._keep_archived(full, first, cut, notes)
+        # All at once, after every wait.
+        self._notes = notes.index if notes is not None else self._notes
+        self._index = archive_index(full[:cut], self._notes)
+        self._archived = cut
+        self._measured = None
+        turn.archived = turn.archived or cut > len(self._messages)
+        for paid in calls:
+            yield paid
+        yield ContextArchived(
+            before=before,
+            after=self.prompt_tokens(system, tools, self._working(turn.messages)),
+            steps=len(step_starts(leaving)),
+            manual=manual,
+            cost=cost,
+            notes=notes is not None,
+            problem=problem,
+        )
+
+    async def _keep_archived(
+        self, full: list[Message], first: int, cut: int, notes: ArchiveNotes | None
+    ) -> str | None:
+        """Put in the archive the messages that leave, and the archivist's
+        summary of them; why it could not, if it could not."""
+        if self.archive is None:
+            return None
+        names = {
+            block.id: block.name
+            for message in full[:cut]
+            for block in message.blocks
+            if isinstance(block, ToolCallBlock)
+        }
+        items: list[ArchiveItem] = []
+        for position in range(first, cut):
+            message = full[position]
+            used = [
+                names.get(block.call_id, "tool")
+                for block in message.blocks
+                if isinstance(block, ToolResultBlock)
+            ]
+            tool = ", ".join(dict.fromkeys(used)) if used else None
+            items.append(
+                message_item(position, message.role, message_text(message), tool)
+            )
+        if notes is not None:
+            items.append(
+                ArchiveItem(
+                    kind="summary",
+                    position=cut - 1,
+                    role="assistant",
+                    text=notes.summary,
+                    number=cut,
+                )
+            )
+        try:
+            await self.archive.add(items)
+        except ArchiveError as exc:
+            return f"archive: {exc}"
+        return None
 
     def _take_answer(self, turn: _Turn) -> tuple[ModelResponse, Decimal | None]:
         """Count the answer that came, put it in the turn and take its tool
@@ -471,7 +770,7 @@ class Agent:
         """What a turn stopped by its time limit keeps: as after Ctrl+C,
         but the turn ends here (spec hito 8, §1.1). A half answer is not
         kept: its mark says the user cut it."""
-        if turn.executed and not turn.kept:
+        if turn.must_keep and not turn.kept:
             if turn.calls:
                 blocks = turn.interrupted(TIMED_OUT)
                 turn.messages.append(Message(role="tool", blocks=[*blocks]))
@@ -484,7 +783,8 @@ class Agent:
         # The text the person already saw; a half tool call never ran. A
         # failed model call keeps none: its text may be broken.
         half = turn.accumulator.text if turn.streaming and by_user else ""
-        if (turn.executed or half or (turn.answered and by_user)) and not turn.kept:
+        kept = turn.must_keep or half or (turn.answered and by_user)
+        if kept and not turn.kept:
             if turn.calls:
                 # The model is not called while the calls run: here only
                 # Ctrl+C or an unexpected error can cut the step.
@@ -567,19 +867,32 @@ class Agent:
     def _cost(self, response: ModelResponse, model: str) -> Decimal | None:
         return call_cost(response, model, self._catalog, self._provider)
 
+    def _system_of(self, model: str) -> str | None:
+        """The system prompt that `model` gets: the session's, with the
+        family layer of the fallback if it is another model."""
+        if model != self.model and self.system_for is not None:
+            return self.system_for(model)
+        return self.system
+
+    def _policy(self, model: str) -> ContextPolicy:
+        info = self._catalog.get(self._provider, model)
+        return ContextPolicy(
+            budget=self.context_budget,
+            window=info.context if info is not None else None,
+        )
+
     def _request(self, turn: list[Message], model: str) -> ModelRequest:
         info = self._catalog.get(self._provider, model)
-        system = self.system
-        if model != self.model and self.system_for is not None:
-            system = self.system_for(model)
-        messages = [*self._messages, *turn]
+        system = self._system_of(model)
+        messages = self._working(turn)
         tools = self._tools.specs()
         # What the model may write without passing its window (spec hito
         # 11, §1.4).
         policy = ContextPolicy(window=info.context if info is not None else None)
+        self._sent_tokens = self.prompt_tokens(system, tools, messages)
+        self._sent_growth = self._growth(model, system, tools, messages)
         max_tokens = policy.answer_room(
-            self.prompt_tokens(system, tools, messages),
-            info.max_output if info is not None else None,
+            self._sent_tokens, info.max_output if info is not None else None
         )
         return ModelRequest(
             model=model,
@@ -598,7 +911,7 @@ class Agent:
             window=info.context if info is not None else None,
         )
         tools = self._tools.specs()
-        messages = self._messages
+        messages = self._working(())
         results = sum(
             estimate(block.content)
             for message in messages
@@ -613,8 +926,10 @@ class Agent:
             system=estimate(self.system or ""),
             tools=estimate_tools(tools),
             tool_count=len(tools),
-            messages=estimate_messages(list(messages)),
+            messages=estimate_messages(list(messages[1:] if self._index else messages)),
             tool_results=results,
+            index=estimate(self._index.text) if self._index is not None else 0,
+            archived=self._archived,
             total=self.prompt_tokens(self.system, tools, messages),
             exact=measured is not None
             and measured.matches(self.system, tools)
@@ -652,6 +967,7 @@ class Agent:
             self._measured = None
             return
         self._measured = _Measured(
+            model=sent.model,
             answer=answer,
             tokens=tokens,
             prompt=usage.input_tokens,
@@ -801,6 +1117,8 @@ class _Measured:
     """The last call that answered, as the provider counted it: its
     prompt and its `answer` came to `tokens` (spec hito 11, §1.2)."""
 
+    # The model that answered it, as asked.
+    model: str
     answer: Message
     tokens: int
     # Of `tokens`, the prompt's, and of those, the ones read from the cache.
@@ -849,6 +1167,17 @@ class _Turn:
     # The provider's last failure while a call is being retried; empty
     # once an answer begins.
     failing: list[RetryableModelError] = field(default_factory=list)
+    # Whether steps of this turn left the working window: then the turn is
+    # kept however it ends, as the index stands for them (spec hito 11).
+    archived: bool = False
+    # Whether the prompt did not fit even after archiving.
+    no_room: bool = False
+
+    @property
+    def must_keep(self) -> bool:
+        """Whether the turn is kept even if it is cut: a tool ran, or some
+        of its steps were archived."""
+        return self.executed or self.archived
 
     def finished(
         self, reason: TurnEnd, *, steps: int, answering: bool = False
@@ -904,6 +1233,13 @@ def _error(
     text = f"error: {message}"
     result = ToolResultBlock(call_id=call.id, content=text, is_error=True)
     return _Outcome(result=result, summary=text, internal_error=internal_error)
+
+
+def _without_reasoning(message: Message) -> Message:
+    blocks = [
+        block for block in message.blocks if not isinstance(block, ReasoningBlock)
+    ]
+    return message.model_copy(update={"blocks": blocks})
 
 
 def _stamped(message: Message, model: str) -> Message:

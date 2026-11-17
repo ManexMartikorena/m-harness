@@ -4,7 +4,7 @@ questions before a tool call."""
 from mharness.adapters.cli.app import fail, parse
 from mharness.adapters.cli.approval import DenyAll, TerminalApproval
 from mharness.adapters.cli.commands import parse_command, project_note, prompt_notes
-from mharness.adapters.cli.conversation import converse, title_failed
+from mharness.adapters.cli.conversation import archive_failed, converse, title_failed
 from mharness.adapters.cli.headless import drop_output, print_mode
 from mharness.adapters.cli.init import Init
 from mharness.adapters.cli.input import Hangup, StdinLines, bracketed_paste
@@ -28,6 +28,7 @@ __all__ = [
     "StdinLines",
     "TerminalApproval",
     "TerminalQuestions",
+    "archive_failed",
     "bracketed_paste",
     "converse",
     "delete_session",

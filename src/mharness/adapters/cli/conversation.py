@@ -552,6 +552,12 @@ def title_failed(kind: str) -> None:
     _log.warning("session title not written: %s", kind)
 
 
+def archive_failed(kind: str) -> None:
+    """An index the archivist could not write: only to maha.log, by its
+    kind; the code writes it alone (spec hito 11, §1.7)."""
+    _log.warning("archive index not written: %s", kind)
+
+
 def warn_crash(event: ToolFinished, err: TextIO) -> None:
     """A tool that crashed is a bug of ours: said, and logged."""
     if not event.internal_error:

@@ -166,6 +166,9 @@ class ContextUsage(BaseModel, frozen=True):
     total: int
     # Whether `total` starts from the provider's exact count.
     exact: bool
+    # The index of what was archived, and how many messages it stands for.
+    index: int = 0
+    archived: int = 0
     # The prompt of the last call that answered, and the part of it read
     # from the cache, as the provider said; None before the first one.
     last_prompt: int | None = None

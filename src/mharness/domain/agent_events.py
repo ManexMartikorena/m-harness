@@ -8,7 +8,7 @@ exceptions, and the trace records them from outside the loop.
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.events import TextDelta
@@ -89,6 +89,39 @@ class ModelCallFinished(BaseModel, frozen=True):
     # None if the catalog has no prices for the model. No default: a
     # forgotten cost must not pass for "no price".
     cost: Usd | None
+    # A call of the archivist, not an answer of the turn (spec hito 11,
+    # §1.7): it costs, but is no step.
+    archivist: bool = Field(default=False, exclude_if=lambda archivist: not archivist)
+
+
+class ContextArchiving(BaseModel, frozen=True):
+    """The oldest steps leave the working window: the next call would pass
+    its ceiling, the provider said the prompt did not fit, or `/compact`
+    asked (spec hito 11, §1.10)."""
+
+    type: Literal["context_archiving"] = "context_archiving"
+    # Tokens of the prompt before archiving.
+    before: int
+    manual: bool = False
+
+
+class ContextArchived(BaseModel, frozen=True):
+    """The steps left the window: an index stands for them, and they are
+    whole in the archive."""
+
+    type: Literal["context_archived"] = "context_archived"
+    before: int
+    after: int
+    # Steps that left.
+    steps: int
+    manual: bool = False
+    # What the archivist cost; None if a call had no price.
+    cost: Usd | None = None
+    # Whether the archivist wrote the index; if not, the code's alone.
+    notes: bool = True
+    # Why the archive could not keep them, if it could not: they are still
+    # in the session.
+    problem: str | None = None
 
 
 class ModelRetry(BaseModel, frozen=True):
@@ -156,5 +189,7 @@ type AgentEvent = (
     | ModelCallFinished
     | ModelRetry
     | ModelFallback
+    | ContextArchiving
+    | ContextArchived
     | TurnFinished
 )
