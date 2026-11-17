@@ -673,3 +673,18 @@ async def test_a_task_of_hito_11_half_done_does_not_pass(
     task_id: str, change: Callable[[Path], object]
 ) -> None:
     assert not await checked(task_id, change, "Hecho.")
+
+
+def all_reviewed_index_beside_reports(repo: Path) -> None:
+    for report in REPORTS:
+        append(repo / "informes" / f"{report}.md", "Revisado: sí\n")
+    urgent_list(repo, "informes/indice.md")
+    edit(repo / "estado.txt", "equipo de mantenimiento", "equipo de calidad")
+
+
+async def test_task_28_takes_the_index_beside_the_reports() -> None:
+    # Every other path of the instruction starts with informes/: writing
+    # informes/indice.md is a fair reading (spec hito 11, §5, PR 3).
+    assert await checked(
+        "28-tareas-largas", all_reviewed_index_beside_reports, "Hecho."
+    )

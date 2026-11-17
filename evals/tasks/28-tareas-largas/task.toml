@@ -1,6 +1,8 @@
 # Una lista larga de tareas con un presupuesto pequeño: la lista tiene que
 # sobrevivir al archivo (spec del hito 11, §5; también mide otra vez
-# todo_write, spec del hito 10, §5).
+# todo_write, spec del hito 10, §5). indice.md vale en la raíz o en
+# informes/: la instrucción lo admite, y lo que se mide es la lista
+# (spec del hito 11, §5, "Resultados (PR 3)").
 instruction = """Haz estas ocho tareas, todas y en este orden:
 1. Lee entero informes/01-almacen-norte.md y añade al final la línea «Revisado: sí».
 2. Lo mismo con informes/02-flota.md.
@@ -22,6 +24,9 @@ max_steps = 40
 command = '''
 python3 -c "
 import pathlib
+indices = [p for p in (pathlib.Path('indice.md'), pathlib.Path('informes', 'indice.md')) if p.exists()]
+assert indices, 'falta indice.md'
+indice = indices[0].read_text(encoding='utf-8')
 for nombre, urgente in [
     ('01-almacen-norte', 'pasillo 4'),
     ('02-flota', 'furgoneta 7'),
@@ -35,7 +40,6 @@ for nombre, urgente in [
     assert lineas[-1].strip() == 'Revisado: sí', nombre + ' sin revisar'
     assert texto.count('lo más urgente es revisar') == 1, nombre + ' perdió texto'
     assert len(texto) > 15_000, nombre + ' perdió texto'
-    indice = open('indice.md', encoding='utf-8').read()
     assert nombre in indice and urgente in indice.lower(), 'indice.md sin ' + nombre
 estado = open('estado.txt', encoding='utf-8').read()
 assert 'equipo de calidad' in estado and 'KX-4471-Q' in estado, estado
