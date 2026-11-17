@@ -86,3 +86,12 @@ def search_terms(query: str) -> list[str]:
     """The words of a query, as a full-text search takes them: letters,
     digits and `_`, without operators the model did not mean."""
     return re.findall(r"\w+", query)
+
+
+class ArchiveNotes(BaseModel, frozen=True):
+    """What the archivist writes of the steps that leave the window (§1.7):
+    a summary of them alone, searchable in the archive, and the new index
+    of everything archived, shown to the model."""
+
+    summary: str = Field(min_length=1)
+    index: str = Field(min_length=1)
