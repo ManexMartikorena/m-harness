@@ -1,0 +1,19 @@
+# Seguir una conversación anterior donde el agente hizo la mitad: lo que
+# falta solo lo dice esa conversación (spec del hito 11, §5).
+instruction = "Sigue."
+fixture = "recetas"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = '''
+python3 -c "
+import recetas
+r = recetas.RECETAS
+assert recetas.tiempo_total(r['tortilla']) == 38, recetas.tiempo_total(r['tortilla'])
+assert recetas.tiempo_total(r['gazpacho']) == 20, recetas.tiempo_total(r['gazpacho'])
+assert recetas.tiempo_total(r['lentejas']) == 75, recetas.tiempo_total(r['lentejas'])
+assert recetas.escalar(r['tortilla'], 2)['huevos'] == 3
+codigo = open('recetas.py', encoding='utf-8').read()
+assert codigo.count('def escalar') == 1, 'escalar repetida'
+"
+'''

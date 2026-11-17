@@ -1,0 +1,43 @@
+# Una lista larga de tareas con un presupuesto pequeño: la lista tiene que
+# sobrevivir al archivo (spec del hito 11, §5; también mide otra vez
+# todo_write, spec del hito 10, §5).
+instruction = """Haz estas ocho tareas, todas y en este orden:
+1. Lee entero informes/01-almacen-norte.md y añade al final la línea «Revisado: sí».
+2. Lo mismo con informes/02-flota.md.
+3. Lo mismo con informes/03-cocina.md.
+4. Lo mismo con informes/04-tejado.md.
+5. Lo mismo con informes/05-calderas.md.
+6. Lo mismo con informes/06-oficinas.md.
+7. Escribe indice.md con una línea por informe: su nombre de fichero y lo más urgente que pide revisar.
+8. En estado.txt, cambia el responsable por «equipo de calidad»."""
+fixture = "informes"
+split = "validation"
+allow = ["write_file", "edit_file"]
+context_budget = 20_000
+
+[limits]
+max_steps = 40
+
+[check]
+command = '''
+python3 -c "
+import pathlib
+for nombre, urgente in [
+    ('01-almacen-norte', 'pasillo 4'),
+    ('02-flota', 'furgoneta 7'),
+    ('03-cocina', 'cámara de frío'),
+    ('04-tejado', 'canaletas'),
+    ('05-calderas', 'caldera 2'),
+    ('06-oficinas', 'sala de reuniones'),
+]:
+    texto = pathlib.Path('informes', nombre + '.md').read_text(encoding='utf-8')
+    lineas = [linea for linea in texto.splitlines() if linea.strip()]
+    assert lineas[-1].strip() == 'Revisado: sí', nombre + ' sin revisar'
+    assert texto.count('lo más urgente es revisar') == 1, nombre + ' perdió texto'
+    assert len(texto) > 15_000, nombre + ' perdió texto'
+    indice = open('indice.md', encoding='utf-8').read()
+    assert nombre in indice and urgente in indice.lower(), 'indice.md sin ' + nombre
+estado = open('estado.txt', encoding='utf-8').read()
+assert 'equipo de calidad' in estado and 'KX-4471-Q' in estado, estado
+"
+'''
