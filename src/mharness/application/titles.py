@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 
-from mharness.application.agent import call_cost
+from mharness.application.pricing import call_cost
 from mharness.domain.messages import Message, TextBlock
 from mharness.domain.model import ModelRequest, Usage
 from mharness.domain.prompt import render
