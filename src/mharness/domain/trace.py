@@ -17,6 +17,8 @@ from pydantic import AwareDatetime, BaseModel, Field
 from mharness.domain.agent_events import (
     ApprovalCovered,
     ApprovalRequested,
+    ContextArchived,
+    ContextArchiving,
     ModelCallFinished,
     ModelFallback,
     ModelRetry,
@@ -132,6 +134,8 @@ type TraceEvent = Annotated[
     | ModelCallFinished
     | ModelRetry
     | ModelFallback
+    | ContextArchiving
+    | ContextArchived
     | TurnFinished
     | TurnFailed
     | TurnInterrupted,

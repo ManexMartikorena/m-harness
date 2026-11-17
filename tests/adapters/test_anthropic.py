@@ -17,6 +17,7 @@ from mharness.adapters.models.anthropic import (
     AnthropicClient,
 )
 from mharness.domain.errors import (
+    ContextOverflowError,
     ModelAuthError,
     ModelError,
     ModelRateLimitError,
@@ -534,3 +535,33 @@ async def test_complete_keeps_no_empty_signature(client: AnthropicClient) -> Non
     response = await client.complete(ModelRequest(model=MODEL, messages=[user("a")]))
 
     assert response.message.blocks[0] == ReasoningBlock(signature=None)
+
+
+# The prompt that does not fit (spec hito 11, §1.10 and test 18).
+
+
+@respx.mock
+async def test_a_prompt_too_long_is_a_context_overflow(
+    client: AnthropicClient,
+) -> None:
+    # The body of Anthropic's documentation (spec hito 11, §1.0).
+    respx.post(ENDPOINT).mock(
+        return_value=error(400, "prompt is too long: 210000 tokens > 200000 maximum")
+    )
+    request = ModelRequest(model=MODEL, messages=[user("a")])
+
+    with pytest.raises(ContextOverflowError):
+        await collect(client.stream(request))
+
+
+@respx.mock
+async def test_another_400_of_anthropic_is_no_context_overflow(
+    client: AnthropicClient,
+) -> None:
+    respx.post(ENDPOINT).mock(return_value=error(400, "messages: field required"))
+    request = ModelRequest(model=MODEL, messages=[user("a")])
+
+    with pytest.raises(ModelRequestError) as raised:
+        await collect(client.stream(request))
+
+    assert not isinstance(raised.value, ContextOverflowError)

@@ -33,6 +33,8 @@ from mharness.domain.evals import (
     is_test_file,
 )
 from mharness.domain.limits import TurnLimits
+from mharness.domain.messages import Message
+from mharness.domain.session import SessionError, check_history
 
 # Left by running a fixture's tests by hand; git does not keep them, so a
 # copy does not either (audit after hito 10, I12).
@@ -144,8 +146,11 @@ class TomlEvalSuite:
             raise EvalError(f"task {name}: invalid TOML: {exc}") from None
         if "id" in data:
             raise EvalError(f"task {name}: id: unknown field (the folder is the id)")
+        if "history" in data:
+            raise EvalError(f"task {name}: history: goes in history.jsonl")
         try:
             data["limits"] = _limits(data.get("limits", {}))
+            data["history"] = _history(path.parent / "history.jsonl")
             task = Task.model_validate({**data, "id": name})
         except ValidationError as exc:
             raise EvalError(f"task {name}: {_problems(exc)}") from None
@@ -275,6 +280,31 @@ def _number(path: Path, baseline: Baseline) -> int:
         return 1
     number = path.stem.removeprefix(f"{stem}-")
     return int(number) if number != path.stem and number.isdigit() else 0
+
+
+def _history(path: Path) -> list[Message]:
+    """The conversation a task starts with: one message per line of its
+    `history.jsonl`, none if it has no such file (spec hito 11, §5). It has
+    to be a history the API takes."""
+    if not path.exists():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise EvalError(f"cannot read {path.name}: {exc}") from None
+    messages: list[Message] = []
+    for number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            messages.append(Message.model_validate_json(line))
+        except ValidationError as exc:
+            raise EvalError(f"{path.name}, line {number}: {_problems(exc)}") from None
+    try:
+        check_history(messages)
+    except SessionError as exc:
+        raise EvalError(f"{path.name}: {exc}") from None
+    return messages
 
 
 def _limits(table: Any) -> TurnLimits:

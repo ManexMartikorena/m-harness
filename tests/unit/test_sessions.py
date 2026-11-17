@@ -10,6 +10,7 @@ from decimal import Decimal
 import pytest
 
 from mharness.application.agent import Agent
+from mharness.application.context import Archivist
 from mharness.application.prompt import SystemPromptBuilder
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.titles import Titler
@@ -39,8 +40,10 @@ from mharness.domain.model import Effort, ModelResponse, Usage
 from mharness.domain.prompt import Layer
 from mharness.domain.retry import RetryPolicy
 from mharness.domain.session import (
+    ArchiveEntry,
     MessageEntry,
     ModelEntry,
+    OutputEntry,
     Session,
     SessionCorrupt,
     SessionEntry,
@@ -105,6 +108,8 @@ class World:
         prompt: SystemPromptBuilder | None = None,
         titler: Titler | None = None,
         archives: MemoryArchiveStore | None = None,
+        context_budget: int = 100_000,
+        archivist: Archivist | None = None,
     ) -> None:
         self.gate = gate or FakeApproval()
         self.traces = traces or MemoryTraceSink()
@@ -127,6 +132,8 @@ class World:
                 sleep=no_wait,
                 fallback=fallback,
                 limits=limits or TurnLimits(),
+                context_budget=context_budget,
+                archivist=archivist,
             )
 
         self.sessions = Sessions(
@@ -2054,3 +2061,200 @@ async def test_an_archive_that_cannot_be_deleted_is_said() -> None:
 
     with pytest.raises(SessionError, match="deleted, but not its archive"):
         await world.sessions.delete(FIRST, current=current)
+
+
+# What was archived goes in the session (spec hito 11, §1.12, and §4,
+# test 14). With a budget of 10,000 the ceiling is 5,000 tokens: each step
+# of `ARCHIVING`, a call and its result of 4,000 characters, is some 2,000.
+
+WORDS = "palabra " * 500
+
+
+def big_echo(id: str) -> ToolCallBlock:
+    return ToolCallBlock(id=id, name="echo", arguments=f'{{"text": "{WORDS}"}}')
+
+
+def archiving() -> FakeModelClient:
+    return FakeModelClient(
+        [tool_calls(big_echo(f"c{n}")) for n in range(1, 5)] + [reply("Hecho.")]
+    )
+
+
+async def archived_session(
+    store: MemorySessionStore, archives: MemoryArchiveStore
+) -> str:
+    world = World(store, archiving(), archives=archives, context_budget=10_000)
+    conversation = await world.sessions.start()
+    await turn(conversation, "Lee")
+    await conversation.close()
+    return conversation.id
+
+
+async def test_an_archive_is_saved_after_the_messages_it_stands_for() -> None:
+    store = MemorySessionStore()
+
+    await archived_session(store, MemoryArchiveStore())
+
+    saved = entries(store)
+    [archive] = [e for e in saved if isinstance(e, ArchiveEntry)]
+    position = saved.index(archive)
+    messages = [e for e in saved[:position] if isinstance(e, MessageEntry)]
+    assert len(messages) == 10
+    assert archive.replaces == 5
+    assert archive.index.text.startswith("<context-archive>")
+
+
+async def test_resume_gives_the_working_conversation_and_the_whole_one() -> None:
+    store = MemorySessionStore()
+    archives = MemoryArchiveStore()
+    first = await archived_session(store, archives)
+    fake = FakeModelClient([reply("Sigo.")])
+    world = World(store, fake, archives=archives, tokens=["b01c"])
+    current = await world.sessions.start()
+
+    resumed = await world.sessions.resume(first, current=current)
+    await turn(resumed.conversation, "Sigue")
+
+    assert resumed.messages == 10
+    sent = fake.requests[0].messages
+    assert sent[0].text.startswith("<context-archive>")
+    assert len(sent) == 1 + 5 + 1
+    assert len(resumed.conversation.messages) == 12
+
+
+async def test_resume_makes_a_lost_archive_again() -> None:
+    store = MemorySessionStore()
+    archives = MemoryArchiveStore()
+    first = await archived_session(store, archives)
+    archives.archives[first].items.clear()
+    world = World(store, FakeModelClient([]), archives=archives, tokens=["b01c"])
+    current = await world.sessions.start()
+
+    await world.sessions.resume(first, current=current)
+
+    assert sorted(archives.archives[first].items) == [
+        "msg-1",
+        "msg-2",
+        "msg-3",
+        "msg-4",
+        "msg-5",
+    ]
+
+
+async def test_resume_makes_a_broken_archive_again_with_the_outputs() -> None:
+    store = MemorySessionStore()
+    archives = MemoryArchiveStore()
+    world = World(
+        store,
+        FakeModelClient([tool_calls(echo_call()), reply("Visto.")]),
+        tools=[FakeTool(results=[BIG])],
+        archives=archives,
+    )
+    conversation = await world.sessions.start()
+    await turn(conversation, "Lanza")
+    await conversation.close()
+    archives.archives[FIRST].broken = True
+    again = World(store, FakeModelClient([]), archives=archives, tokens=["b01c"])
+    current = await again.sessions.start()
+
+    await again.sessions.resume(FIRST, current=current)
+
+    item = archives.archives[FIRST].items["out-1"]
+    assert (item.text, item.position, item.tool) == (BIG, 2, "echo")
+
+
+async def test_a_whole_output_is_saved_in_the_session() -> None:
+    store = MemorySessionStore()
+    world = World(
+        store,
+        FakeModelClient([tool_calls(echo_call()), reply("Visto.")]),
+        tools=[FakeTool(results=[BIG])],
+        archives=MemoryArchiveStore(),
+    )
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "Lanza")
+
+    [output] = [e for e in entries(store) if isinstance(e, OutputEntry)]
+    assert (output.id, output.position, output.text) == ("out-1", 2, BIG)
+
+
+async def test_an_imported_session_keeps_what_it_archived() -> None:
+    store = MemorySessionStore()
+    first = await archived_session(store, MemoryArchiveStore())
+    world = World(store, FakeModelClient([]), tokens=["b01c", "c0de"])
+    exported = await world.sessions.read(first)
+
+    imported = await world.sessions.import_session(exported)
+
+    again = await world.sessions.read(imported)
+    assert again.archived == 5
+    assert again.working == exported.working
+
+
+async def test_compact_saves_what_it_archived_and_what_it_cost() -> None:
+    store = MemorySessionStore()
+    notes = FakeModelClient(
+        [reply('{"summary": "s", "index": "i"}', usage=Usage(input_tokens=900))]
+    )
+    archivist = Archivist(
+        notes,
+        model="small",
+        template="{{instructions}}{{previous}}{{conversation}}",
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
+    )
+    world = World(
+        store,
+        FakeModelClient([reply("Uno."), reply("Dos.")]),
+        context_budget=10_000,
+        archivist=archivist,
+    )
+    conversation = await world.sessions.start()
+    await turn(conversation, "primero " * 900)
+    await turn(conversation, "Hola")
+
+    events = [e async for e in conversation.compact("el IVA")]
+
+    assert any(isinstance(e, ModelCallFinished) and e.archivist for e in events)
+    saved = entries(store)
+    assert isinstance(saved[-2], ArchiveEntry)
+    assert saved[-2].manual
+    assert saved[-1] == UsageEntry(usage=Usage(input_tokens=900), cost=None)
+    assert conversation.uncosted_turns == 3
+    traced = [record.event.type for record in await world.traces.read(FIRST)]
+    assert traced[-3:] == [
+        "context_archiving",
+        "model_call_finished",
+        "context_archived",
+    ]
+
+
+async def test_a_conversation_can_start_with_a_history_saved_with_its_turn() -> None:
+    # An eval task that goes on from a conversation (spec hito 11, §5).
+    store = MemorySessionStore()
+    fake = FakeModelClient([reply("Sigo.")])
+    world = World(store, fake)
+    before = [
+        user("Arregla el IVA"),
+        said("Voy a").model_copy(update={"interrupted": True}),
+    ]
+    conversation = await world.sessions.start(history=before)
+
+    await turn(conversation, "Sigue")
+
+    assert fake.requests[0].messages[:2] == before
+    saved = [e.message for e in entries(store) if isinstance(e, MessageEntry)]
+    assert saved[:2] == before
+    assert len(saved) == 4
+
+
+async def test_a_history_the_api_would_refuse_is_not_started() -> None:
+    calls = Message(
+        role="assistant",
+        blocks=[ToolCallBlock(id="c1", name="echo", arguments="{}")],
+    )
+    world = World(MemorySessionStore(), FakeModelClient([]))
+
+    with pytest.raises(SessionCorrupt):
+        await world.sessions.start(history=[user("a"), calls])

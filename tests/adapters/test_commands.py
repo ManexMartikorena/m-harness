@@ -26,13 +26,20 @@ from mharness.application.agent import Agent
 from mharness.application.sessions import Resumed, Sessions, TraceReport
 from mharness.application.tools import ToolRegistry
 from mharness.application.traces import TraceSummary
-from mharness.domain.agent_events import ModelCallFinished, TurnFinished, TurnStarted
+from mharness.domain.agent_events import (
+    ContextArchived,
+    ContextArchiving,
+    ModelCallFinished,
+    TurnFinished,
+    TurnStarted,
+)
 from mharness.domain.catalog import ModelInfo
 from mharness.domain.context import ContextUsage
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock
 from mharness.domain.model import ModelResponse, Usage
 from mharness.domain.prompt import Layer, SystemPrompt
 from mharness.domain.session import (
+    ArchiveEntry,
     MessageEntry,
     SessionError,
     SessionHeader,
@@ -97,6 +104,7 @@ def test_the_known_commands() -> None:
         "init",
         "export",
         "context",
+        "compact",
         "help",
         "exit",
     }
@@ -134,6 +142,7 @@ class Maha:
         *,
         cwd: str = CWD,
         tokens: tuple[str, ...] = ("3fa2", "b01c", "c0de", "d00d"),
+        budget: int = 100_000,
     ) -> None:
         self.fake = FakeModelClient(list(replies))
         self.traces = MemoryTraceSink()
@@ -148,6 +157,7 @@ class Maha:
                 catalog=MemoryCatalog(),
                 provider="opencode-go",
                 history=history,
+                context_budget=budget,
             ),
             cwd=cwd,
             provider="opencode-go",
@@ -929,6 +939,7 @@ def test_context_shows_each_part_and_the_cache() -> None:
         "budget 100,000 · window 262,144 · archives at 100,000",
         "system prompt     2,140   (base 700 · AGENTS.md 1,300 · environment 140)",
         "tools             2,110   (10 tools)",
+        "archive index         0   (nothing archived)",
         "messages         61,300   (tool results 48,900)",
         "total            65,550   (65.5 % of 100,000 · last call 64,950)",
         "cache         last call 58,200 of 64,950 read from cache (89.6 %)",
@@ -972,3 +983,68 @@ async def test_context_in_the_conversation_counts_the_last_call() -> None:
     assert "  cache         last call: nothing read from cache\n" in out
     # Nothing went to the model but the turn.
     assert len(maha.fake.requests) == 1
+
+
+# Archiving, seen by the person (spec hito 11, §1.10 and §1.11). With a
+# budget of 10,000 the ceiling is 5,000 tokens and the tail 1,500.
+
+LONG = "palabra " * 1_250
+
+
+async def test_an_archive_in_a_turn_is_told() -> None:
+    maha = Maha(MemorySessionStore(), [reply("Uno."), reply("Dos.")], budget=10_000)
+
+    _, out, _ = await maha.run(LONG, LONG, "/exit")
+
+    assert "  [archiving " in out
+    assert " tokens of earlier steps…]\n" in out
+    [line] = [line for line in out.splitlines() if line.startswith("  [archived: ")]
+    assert "maha wrote the index alone" in line
+
+
+async def test_compact_archives_and_says_so() -> None:
+    store = MemorySessionStore()
+    maha = Maha(store, [reply("Uno."), reply("Dos.")], budget=10_000)
+
+    _, out, _ = await maha.run(
+        "primero " * 900, "Hola", "/compact", "/context", "/exit"
+    )
+
+    assert "  [archiving " in out
+    assert "  [archived: " in out
+    assert "archive index" in out
+    assert "1 message archived" in out
+    [archive] = [
+        e for e in store.sessions[FIRST].entries if isinstance(e, ArchiveEntry)
+    ]
+    assert archive.manual
+
+
+async def test_compact_with_nothing_to_archive_says_so() -> None:
+    maha = Maha(MemorySessionStore(), [reply("Uno.")])
+
+    _, out, _ = await maha.run("Hola", "/compact", "/exit")
+
+    assert "  [nothing to archive: only the last steps are in the context]\n" in out
+
+
+def test_the_line_of_an_archive_says_what_it_cost() -> None:
+    archived = ContextArchived(
+        before=98_400, after=31_200, steps=7, cost=Decimal("0.002")
+    )
+    assert (
+        commands.archive_note(archived) == "[archived: 98,400 → 31,200 tokens; $0.0020]"
+    )
+    assert commands.archive_note(ContextArchiving(before=64_210)) == (
+        "[archiving 64,210 tokens of earlier steps…]"
+    )
+
+
+def test_the_line_of_an_archive_says_what_went_wrong() -> None:
+    archived = ContextArchived(
+        before=10, after=5, steps=1, cost=None, notes=False, problem="archive: full"
+    )
+    assert commands.archive_note(archived) == (
+        "[archived: 10 → 5 tokens; cost unknown; maha wrote the index alone]"
+        "\n  [warning: archive: full]"
+    )

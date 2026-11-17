@@ -16,8 +16,10 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from mharness.domain.context import MIN_BUDGET
 from mharness.domain.environment import CREDENTIAL_SUFFIXES
 from mharness.domain.limits import TurnLimits
+from mharness.domain.messages import Message
 from mharness.domain.money import Usd
 from mharness.domain.money import mean as mean_usd
 
@@ -161,6 +163,11 @@ class Task(BaseModel, frozen=True, extra="forbid"):
     allow: list[str] = []
     limits: TurnLimits = TASK_LIMITS
     check: Check
+    # The conversation it starts with, from its `history.jsonl` (spec hito
+    # 11, §5): the instruction goes on from it.
+    history: list[Message] = []
+    # The tokens per call at most; None: the default (spec hito 11, §1.3).
+    context_budget: int | None = Field(default=None, ge=MIN_BUDGET)
 
 
 class TaskRun(BaseModel, frozen=True):
@@ -185,6 +192,13 @@ class TaskRun(BaseModel, frozen=True):
     # The test files of the fixture the run had changed, and its check saw
     # as the fixture has them (deep audit, I1).
     restored: list[str] = []
+    # The input tokens, and of those, the ones read from the cache; the
+    # times it archived, and its calls to `recall` (spec hito 11, §5). Zero
+    # in the runs before hito 11.
+    input_tokens: int = 0
+    cache_read: int = 0
+    archives: int = 0
+    recalls: int = 0
 
 
 class Stats(BaseModel, frozen=True):

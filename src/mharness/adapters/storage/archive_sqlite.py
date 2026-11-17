@@ -218,20 +218,26 @@ class SqliteArchiveStore:
 
 
 def _insert(db: sqlite3.Connection, item: ArchiveItem) -> str:
+    """Add an item; one with a number that is already there stays as it
+    was: archiving the same message again adds nothing."""
     kind: ItemKind = item.kind
-    (last,) = db.execute(
-        "SELECT COALESCE(MAX(number), 0) FROM items WHERE kind = ?", (kind,)
-    ).fetchone()
-    number = last + 1
+    number = item.number
+    if number is None:
+        (last,) = db.execute(
+            "SELECT COALESCE(MAX(number), 0) FROM items WHERE kind = ?", (kind,)
+        ).fetchone()
+        number = last + 1
+    # Only a taken number is skipped: any other failure undoes the add.
     cursor = db.execute(
         "INSERT INTO items (kind, number, position, role, tool, text)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
+        " VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (kind, number) DO NOTHING",
         (kind, number, item.position, item.role, item.tool, item.text),
     )
-    db.execute(
-        "INSERT INTO items_fts (rowid, text) VALUES (?, ?)",
-        (cursor.lastrowid, item.text),
-    )
+    if cursor.rowcount == 1:
+        db.execute(
+            "INSERT INTO items_fts (rowid, text) VALUES (?, ?)",
+            (cursor.lastrowid, item.text),
+        )
     return item_id(kind, number)
 
 

@@ -4,6 +4,7 @@
 import asyncio
 import re
 from collections.abc import Mapping
+from contextlib import aclosing
 from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import TextIO
@@ -19,6 +20,7 @@ from mharness.application.sessions import (
     TraceReport,
 )
 from mharness.application.traces import TraceSummary, TurnSummary
+from mharness.domain.agent_events import ContextArchived, ContextArchiving
 from mharness.domain.context import ContextUsage, estimate
 from mharness.domain.model import EFFORTS, Usage
 from mharness.domain.prompt import INSTRUCTION_KINDS, SystemPrompt
@@ -42,6 +44,8 @@ COMMANDS = {
     "to stress",
     "export": "/export [FILE] — this conversation in Markdown; by default, ID.md",
     "context": "/context — what the context of the next call holds, by parts",
+    "compact": "/compact [TEXT] — archive the earlier steps now, all but the "
+    "last ones; TEXT, what the index should keep in mind",
     "help": "/help — this list",
     "exit": "/exit — quit",
 }
@@ -125,6 +129,8 @@ class Commands:
                     await self._new()
                 case "rename":
                     await self._rename(command.argument)
+                case "compact":
+                    await self._compact(command.argument)
                 case "context":
                     for line in context_lines(
                         self.conversation.context(), self.conversation.prompt
@@ -326,6 +332,20 @@ class Commands:
     def _shown(self, cwd: str) -> str:
         return shown_dir(cwd, self._home)
 
+    async def _compact(self, instructions: str | None) -> None:
+        """`/compact [TEXT]`: archive now all but the last steps (spec hito
+        11, §1.11)."""
+        told = False
+        async with aclosing(self.conversation.compact(instructions)) as events:
+            async for event in events:
+                if isinstance(event, ContextArchiving | ContextArchived):
+                    self._say(archive_note(event))
+                    told = True
+        if not told:
+            self._say("[nothing to archive: only the last steps are in the context]")
+        self.warn_unsaved()
+        self.warn_trace()
+
     async def _rename(self, title: str | None) -> None:
         """The session's title by hand; the small model never replaces it
         (spec hito 10, §1.12)."""
@@ -437,6 +457,24 @@ _CHOICES = {
 }
 
 
+def archive_note(event: ContextArchiving | ContextArchived) -> str:
+    """The line of an archive (spec hito 11, §1.10):
+    `[archived: 98,400 → 31,200 tokens; $0.0020]`."""
+    if isinstance(event, ContextArchiving):
+        return f"[archiving {event.before:,} tokens of earlier steps…]"
+    said = f"[archived: {event.before:,} → {event.after:,} tokens"
+    if event.cost is None:
+        said += "; cost unknown"
+    elif event.cost:
+        said += f"; {usd(event.cost)}"
+    if not event.notes:
+        said += "; maha wrote the index alone"
+    said += "]"
+    if event.problem is not None:
+        said += f"\n  [warning: {clean_line(event.problem)}]"
+    return said
+
+
 def context_lines(usage: ContextUsage, prompt: SystemPrompt | None) -> list[str]:
     """`/context`: what the next call would send, by parts, and the cache
     of the last one (spec hito 11, §1.11). The parts are estimated; the
@@ -453,6 +491,13 @@ def context_lines(usage: ContextUsage, prompt: SystemPrompt | None) -> list[str]
         f"budget {usage.budget:,} · window {window} · archives at {usage.ceiling:,}",
         _context_row("system prompt", usage.system, _layers(prompt)),
         _context_row("tools", usage.tools, _count(usage.tool_count, "tool")),
+        _context_row(
+            "archive index",
+            usage.index,
+            _count(usage.archived, "message") + " archived"
+            if usage.archived
+            else "nothing archived",
+        ),
         _context_row(
             "messages", usage.messages, f"tool results {usage.tool_results:,}"
         ),

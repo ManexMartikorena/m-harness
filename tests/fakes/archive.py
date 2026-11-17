@@ -26,15 +26,19 @@ class MemoryArchive:
     async def add(self, items: Sequence[ArchiveItem]) -> list[str]:
         self._check()
         ids = []
-        numbers = {
-            kind: sum(1 for each in self.items.values() if each.kind == kind)
-            for kind in ("output", "message")
-        }
         added: dict[str, ArchiveItem] = {}
         for item in items:
-            numbers[item.kind] += 1
-            ids.append(item_id(item.kind, numbers[item.kind]))
-            added[ids[-1]] = item
+            number = item.number
+            if number is None:
+                taken = [
+                    int(key.split("-")[1])
+                    for key, each in (self.items | added).items()
+                    if each.kind == item.kind
+                ]
+                number = max(taken, default=0) + 1
+            ids.append(item_id(item.kind, number))
+            if ids[-1] not in self.items:
+                added.setdefault(ids[-1], item)
         self.items.update(added)
         return ids
 

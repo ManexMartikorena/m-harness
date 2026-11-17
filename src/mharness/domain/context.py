@@ -6,9 +6,11 @@ sent at most in one call (§1.3), and `fit()` caps one tool result (§1.6).
 """
 
 import json
+from collections.abc import Sequence
 
 from pydantic import BaseModel, Field
 
+from mharness.domain.archive import ArchiveItem, message_item
 from mharness.domain.messages import (
     Message,
     ReasoningBlock,
@@ -17,6 +19,7 @@ from mharness.domain.messages import (
     ToolResultBlock,
 )
 from mharness.domain.model import ToolSpec
+from mharness.domain.todo import TODO_TOOL, TodoList, todo_list
 
 # Characters per token, rounded down: English text has about 4 (§1.2).
 CHARS_PER_TOKEN = 4
@@ -43,6 +46,17 @@ OUTPUT_LIMIT = 40_000
 
 # Room kept for the line that says what was cut.
 _MARK_ROOM = 300
+
+# What the model sees in place of the archived steps (§1.8).
+ARCHIVE_TAG = "context-archive"
+# The user's own words kept in the index, the most recent first (as Codex).
+USER_WORDS = 20_000
+# The archivist's part of the index: about 2,000 tokens (§1.7).
+NOTES_CHARS = 8_000
+# The tools whose successful calls change a file, by their `path`.
+EDIT_TOOLS = ("write_file", "edit_file")
+
+_TODO_MARKS = {"completed": "[x]", "in_progress": "[~]", "pending": "[ ]"}
 
 
 def estimate(text: str) -> int:
@@ -153,6 +167,9 @@ class ContextUsage(BaseModel, frozen=True):
     total: int
     # Whether `total` starts from the provider's exact count.
     exact: bool
+    # The index of what was archived, and how many messages it stands for.
+    index: int = 0
+    archived: int = 0
     # The prompt of the last call that answered, and the part of it read
     # from the cache, as the provider said; None before the first one.
     last_prompt: int | None = None
@@ -195,3 +212,157 @@ def _tail(text: str, size: int) -> str:
     tail = text[-size:]
     newline = tail.find("\n")
     return tail[newline + 1 :] if 0 <= newline < size // 2 else tail
+
+
+def step_starts(messages: Sequence[Message]) -> list[int]:
+    """Where each step begins: a message of the person, or an answer of the
+    model, which its tool results follow. A step is archived whole: a call
+    never goes without its result (§1.10)."""
+    return [index for index, message in enumerate(messages) if message.role != "tool"]
+
+
+def archive_cut(messages: Sequence[Message], tail: int, *, start: int = 0) -> int:
+    """How many messages, from the start, leave the working window: all but
+    the last whole steps that fit in `tail` tokens, and never the last
+    step. `start` were archived already; the result is `start` when there
+    is nothing more to archive."""
+    starts = [index for index in step_starts(messages) if index >= start]
+    if not starts or starts[-1] <= start:
+        return start
+    cut = starts[-1]
+    used = estimate_messages(list(messages[cut:]))
+    for begin in reversed(starts[:-1]):
+        size = estimate_messages(list(messages[begin:cut]))
+        if used + size > tail:
+            break
+        used += size
+        cut = begin
+    return cut
+
+
+def archive_index(archived: Sequence[Message], notes: str | None) -> Message:
+    """The message that stands for the archived steps, first in the
+    conversation (§1.8). The code writes what it knows exactly: what the
+    person asked, in their words, the last task list and the files
+    changed; `notes` is the archivist's index, None if it failed."""
+    parts = [
+        "Earlier steps of this conversation are archived. Search or read "
+        "them with the recall tool."
+    ]
+    words = _user_words(archived)
+    if words:
+        parts.append("What the user asked, in their words:\n" + "\n".join(words))
+    todos = _last_todos(archived)
+    if todos is not None:
+        tasks = " · ".join(
+            f"{_TODO_MARKS.get(todo.status, '[-]')} {todo.content}"
+            for todo in todos.todos
+        )
+        parts.append(f"Task list: {tasks}")
+    files = _changed_files(archived)
+    if files:
+        parts.append("Files changed: " + ", ".join(files))
+    if notes is not None and notes.strip():
+        parts.append("Index (archivist):\n" + fit(notes.strip(), NOTES_CHARS))
+    else:
+        parts.append("Index: none was written; search the archive for details.")
+    body = _unclosed("\n\n".join(parts))
+    text = f"<{ARCHIVE_TAG}>\n{body}\n</{ARCHIVE_TAG}>"
+    return Message(role="user", blocks=[TextBlock(text=text)])
+
+
+def _user_words(messages: Sequence[Message]) -> list[str]:
+    """The person's messages, quoted, the most recent that fit in
+    `USER_WORDS` characters, oldest first."""
+    quoted: list[str] = []
+    left = USER_WORDS
+    for message in reversed(messages):
+        if message.role != "user" or not message.text.strip():
+            continue
+        text = message.text.strip()
+        if len(text) > left:
+            if quoted:
+                break
+            text = fit(text, left)
+        left -= len(text)
+        quoted.append('- "' + text.replace("\n", "\n  ") + '"')
+    return quoted[::-1]
+
+
+def _last_todos(messages: Sequence[Message]) -> TodoList | None:
+    """The last valid task list the model wrote."""
+    for message in reversed(messages):
+        for block in reversed(message.blocks):
+            if isinstance(block, ToolCallBlock) and block.name == TODO_TOOL:
+                found = todo_list(block.arguments)
+                if found is not None:
+                    return found
+    return None
+
+
+def _changed_files(messages: Sequence[Message]) -> list[str]:
+    """The paths that `write_file` and `edit_file` changed, in order, once."""
+    succeeded = {
+        block.call_id
+        for message in messages
+        for block in message.blocks
+        if isinstance(block, ToolResultBlock) and not block.is_error
+    }
+    paths: list[str] = []
+    for message in messages:
+        for block in message.blocks:
+            if (
+                isinstance(block, ToolCallBlock)
+                and block.name in EDIT_TOOLS
+                and block.id in succeeded
+            ):
+                path = _path_of(block.arguments)
+                if path is not None and path not in paths:
+                    paths.append(path)
+    return paths
+
+
+def _path_of(arguments: str) -> str | None:
+    try:
+        value = json.loads(arguments or "{}")
+    except ValueError, RecursionError:
+        return None
+    path = value.get("path") if isinstance(value, dict) else None
+    return path if isinstance(path, str) and path else None
+
+
+def _unclosed(text: str) -> str:
+    """Text in the index cannot close it early."""
+    return text.replace(f"</{ARCHIVE_TAG}>", f"<\\/{ARCHIVE_TAG}>")
+
+
+def archive_items(
+    messages: Sequence[Message], first: int, cut: int
+) -> list[ArchiveItem]:
+    """The messages from `first` to `cut` as the archive keeps them: each
+    one numbered by its position, and a tool message named by its tools."""
+    names = {
+        block.id: block.name
+        for message in messages[:cut]
+        for block in message.blocks
+        if isinstance(block, ToolCallBlock)
+    }
+    items: list[ArchiveItem] = []
+    for position in range(first, cut):
+        message = messages[position]
+        used = [
+            names.get(block.call_id, "tool")
+            for block in message.blocks
+            if isinstance(block, ToolResultBlock)
+        ]
+        tool = ", ".join(dict.fromkeys(used)) if used else None
+        items.append(message_item(position, message.role, message_text(message), tool))
+    return items
+
+
+def summary_item(cut: int, summary: str) -> ArchiveItem:
+    """The archivist's summary of the steps before `cut`, numbered by it:
+    archiving them again adds nothing."""
+    return ArchiveItem(
+        kind="summary", position=cut - 1, role="assistant", text=summary, number=cut
+    )

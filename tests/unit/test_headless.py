@@ -307,3 +307,30 @@ async def test_a_turn_that_fails_gives_no_answer() -> None:
     result = await run_once(await world.sessions.start(), "Hola")
 
     assert (result.reason, result.text) == ("error", "")
+
+
+async def test_it_counts_the_archives_and_the_calls_to_recall() -> None:
+    # Spec hito 11, §5: what the evals measure. The archivist's call is no
+    # step, and its text is no answer.
+    words = "palabra " * 500
+    big = ToolCallBlock(id="c1", name="echo", arguments=f'{{"text": "{words}"}}')
+    recall = ToolCallBlock(id="r1", name="recall", arguments='{"query": "palabra"}')
+    fake = FakeModelClient(
+        [
+            *[tool_calls(big.model_copy(update={"id": f"c{n}"})) for n in range(1, 5)],
+            tool_calls(recall),
+            reply("Hecho."),
+        ]
+    )
+    world = World(
+        MemorySessionStore(),
+        fake,
+        tools=[FakeTool(), FakeTool("recall")],
+        context_budget=10_000,
+    )
+    conversation = await world.sessions.start()
+
+    result = await run_once(conversation, "Lee")
+
+    assert (result.archives, result.recalls) == (1, 1)
+    assert (result.steps, result.text) == (6, "Hecho.")

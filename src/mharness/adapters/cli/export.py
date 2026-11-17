@@ -53,7 +53,17 @@ def markdown(session: Session) -> str:
     # The name of each call, for its result.
     names: dict[str, str] = {}
     speaker = ""
-    for message in session.messages:
+    # Where an index took the place of the messages before (spec hito 11,
+    # §1.12): the person sees them all.
+    archived = {entry.replaces: entry.manual for entry in session.archives}
+    for position, message in enumerate(session.messages):
+        if position in archived:
+            how = " by /compact" if archived[position] else ""
+            lines += [
+                "",
+                f"_(archived{how} up to here: from now on the model got an "
+                "index instead of the messages above)_",
+            ]
         now = "User" if message.role == "user" else "maha"
         if now != speaker:
             lines += ["", f"## {now}"]

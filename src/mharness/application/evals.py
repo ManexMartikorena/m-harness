@@ -253,4 +253,8 @@ def _run(
         cost=result.cost,
         duration=result.duration,
         detail=detail,
+        input_tokens=result.usage.input_tokens,
+        cache_read=result.usage.cache_read_tokens,
+        archives=result.archives,
+        recalls=result.recalls,
     )

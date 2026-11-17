@@ -27,8 +27,8 @@ from mharness.domain.agent_events import (
     TurnFinished,
     TurnStarted,
 )
-from mharness.domain.archive import ArchiveError
-from mharness.domain.context import ContextUsage
+from mharness.domain.archive import ArchiveError, ArchiveItem, parse_id
+from mharness.domain.context import ContextUsage, archive_items, summary_item
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
 from mharness.domain.model import Effort, Usage
@@ -133,6 +133,7 @@ class Conversation:
         uncosted_turns: int = 0,
         prompt: SystemPrompt | None = None,
         title: TitleEntry | None = None,
+        unsaved: int = 0,
     ) -> None:
         self._store = store
         self._agent = agent
@@ -159,8 +160,9 @@ class Conversation:
         self._turn_traced = True
         # The model a new session's header names: the one it started with.
         self._first_model = agent.model
-        # How many messages of the agent are already queued or saved.
-        self._queued = len(agent.messages)
+        # How many messages of the agent are already queued or saved: all
+        # but the `unsaved` ones it started with.
+        self._queued = len(agent.messages) - unsaved
         # What happened and is not in the file yet, in order.
         self._pending: list[SessionEntry] = []
         # Why the last save failed; None once it works.
@@ -305,6 +307,8 @@ class Conversation:
             fresh = self._agent.messages[self._queued :]
             self._queued += len(fresh)
             self._pending += [MessageEntry(message=m) for m in fresh]
+            # After its messages: an archive stands for some of them.
+            self._pending += self._agent.take_entries()
             if calls:
                 self._pending.append(
                     UsageEntry(usage=usage, cost=cost if priced else None)
@@ -321,6 +325,42 @@ class Conversation:
             # saved and a later one was (audit after hito 10, S5).
             if self._stored:
                 self.name()
+
+    async def compact(
+        self, instructions: str | None = None
+    ) -> AsyncGenerator[AgentEvent]:
+        """`/compact`: archive now all but the last steps, also if they fit
+        (spec hito 11, §1.11). The archivist's calls are paid as a turn's,
+        and what was archived is saved. Nothing happens if there is
+        nothing to archive."""
+        usage = Usage()
+        cost = Decimal(0)
+        priced = unpriced = 0
+        try:
+            async with aclosing(self._agent.compact(instructions)) as events:
+                async for event in events:
+                    if isinstance(event, ModelCallFinished):
+                        usage += event.usage
+                        if event.cost is None:
+                            unpriced += 1
+                        else:
+                            priced += 1
+                            cost += event.cost
+                    if not isinstance(event, TextDelta):
+                        await self._record(event)
+                    yield event
+        finally:
+            self._pending += self._agent.take_entries()
+            if priced or unpriced:
+                self._pending.append(
+                    UsageEntry(usage=usage, cost=cost if priced else None)
+                )
+                if priced and unpriced:
+                    # As in a turn: the session's cost is then a minimum.
+                    self._pending.append(UsageEntry(usage=Usage(), cost=None))
+                self._count(cost if priced else None, unpriced)
+            await self._save()
+            await self._sync_trace()
 
     def name(self) -> None:
         """Ask for the title in the background, from the first message, if
@@ -705,18 +745,24 @@ class Sessions:
         """The directory where this maha runs, and its tools work."""
         return self._origin.cwd
 
-    async def start(self, model: str | None = None) -> Conversation:
+    async def start(
+        self, model: str | None = None, *, history: Sequence[Message] = ()
+    ) -> Conversation:
         """A new conversation, with `model` or the configured one; its
-        session is created with the first turn. Raises `SessionError` if
-        there is neither: the commands that never call the model run
-        without one."""
+        session is created with the first turn. It starts with `history`,
+        saved with that turn: an eval task that goes on from a conversation
+        (spec hito 11, §5). Raises `SessionError` if there is no model: the
+        commands that never call the model run without one."""
         chosen = model or self._model
         if chosen is None:
             raise SessionError("no model configured")
+        check_history(list(history))
         prompt = await self._build(chosen, None)
-        agent = self._new_agent(chosen, ())
+        agent = self._new_agent(chosen, history)
         agent.effort = self.effort
-        return Conversation(self._store, agent, self._origin, prompt=prompt)
+        return Conversation(
+            self._store, agent, self._origin, prompt=prompt, unsaved=len(history)
+        )
 
     async def open(self, start: Start | None = None) -> Opened:
         """The first conversation of this maha: a new one, or a session
@@ -763,6 +809,9 @@ class Sessions:
             prompt = await self._build(model, header.cwd)
             agent = self._new_agent(model, loaded.messages)
             agent.effort = self.effort
+            if loaded.archives:
+                newest = loaded.archives[-1]
+                agent.restore(newest.replaces, newest.index, newest.notes)
         except BaseException:
             await log.close()
             raise
@@ -777,6 +826,7 @@ class Sessions:
             prompt=prompt,
             title=loaded.title,
         )
+        await self._restore_archive(loaded)
         # One left without a title gets it now (decision of the maintainer,
         # 2026-11-10).
         conversation.name()
@@ -789,6 +839,24 @@ class Sessions:
             interrupted=last is not None and last.interrupted,
             unknown=unknown,
         )
+
+    async def _restore_archive(self, session: Session) -> None:
+        """Make the session's archive again from its file if it is missing
+        or broken: it is an index of the session (spec hito 11, §1.5). A
+        failure is logged; `recall` then finds less, and the session works."""
+        archives = self._origin.archives
+        if archives is None or not (session.archives or session.outputs):
+            return
+        archive = archives.open(session.header.id)
+        try:
+            if not await archive.empty():
+                return
+        except ArchiveError:
+            pass
+        try:
+            await archive.rebuild(archive_contents(session))
+        except ArchiveError as exc:
+            _log.warning("session %s: %s", session.header.id, exc)
 
     async def _build(self, model: str, started_in: str | None) -> SystemPrompt | None:
         if self._origin.prompt is None:
@@ -829,6 +897,9 @@ class Sessions:
         if session.title is not None:
             # Its title, and whether the person gave it (spec hito 10, §1.12).
             entries.append(session.title)
+        # What it archived, after the messages it stands for (hito 11).
+        entries += session.outputs
+        entries += session.archives
         origin = self._origin
         # A trace left without its session keeps its id too, even empty.
         traced = set(await origin.traces.sessions())
@@ -977,6 +1048,32 @@ class Sessions:
         if busy:
             raise SessionInUse(f"the {other}sessions here are open in another maha")
         raise SessionNotFound(f"no {other}session in this directory")
+
+
+def archive_contents(session: Session) -> list[ArchiveItem]:
+    """What the archive of `session` holds: the archived messages, the
+    archivist's summaries and the whole outputs, with their ids."""
+    items = archive_items(session.messages, 0, session.archived)
+    items += [
+        summary_item(entry.replaces, entry.summary)
+        for entry in session.archives
+        if entry.summary is not None
+    ]
+    for output in session.outputs:
+        parsed = parse_id(output.id)
+        if parsed is None or parsed[0] != "output":
+            continue
+        items.append(
+            ArchiveItem(
+                kind="output",
+                position=output.position,
+                role="tool",
+                tool=output.tool,
+                text=output.text,
+                number=parsed[1],
+            )
+        )
+    return items
 
 
 def _is_current(session: str, current: Conversation | None) -> bool:

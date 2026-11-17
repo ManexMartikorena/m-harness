@@ -274,6 +274,50 @@ AGENTS = """# Tienda
 
 
 # What a model that gets it right would leave, and answer.
+TOTAL_TIME = """
+
+def tiempo_total(receta: dict) -> int:
+    return sum(m for paso, m in receta["pasos"] if paso not in ("reposar", "enfriar"))
+"""
+
+SHOPPING = """
+
+def lista_compra(nombres: list[str]) -> dict[str, float]:
+    total: dict[str, float] = {}
+    for nombre in nombres:
+        for cosa, cantidad in RECETAS[nombre]["ingredientes"].items():
+            total[cosa] = total.get(cosa, 0) + cantidad
+    return total
+"""
+
+REPORTS = {
+    "01-almacen-norte": "las estanterías del pasillo 4",
+    "02-flota": "los frenos de la furgoneta 7",
+    "03-cocina": "la cámara de frío",
+    "04-tejado": "las canaletas del lado este",
+    "05-calderas": "la válvula de la caldera 2",
+    "06-oficinas": "el cableado de la sala de reuniones",
+}
+
+
+def urgent_list(repo: Path, name: str) -> None:
+    lines = [f"- {report}: {urgent}" for report, urgent in REPORTS.items()]
+    (repo / name).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def lot_recovered(repo: Path) -> None:
+    edit(repo / "estado.txt", "KX-4471-Q", "PENDIENTE")
+    (repo / "lote.txt").write_text("KX-4471-Q\n", encoding="utf-8")
+    urgent_list(repo, "resumen.md")
+
+
+def all_reviewed(repo: Path) -> None:
+    for report in REPORTS:
+        append(repo / "informes" / f"{report}.md", "Revisado: sí\n")
+    urgent_list(repo, "indice.md")
+    edit(repo / "estado.txt", "equipo de mantenimiento", "equipo de calidad")
+
+
 SOLUTIONS: dict[str, tuple[Callable[[Path], object], str]] = {
     "01-version": (lambda repo: None, "La versión es 1.4.2."),
     "02-buscar-funcion": (lambda repo: None, "En src/tienda/iva.py."),
@@ -332,6 +376,13 @@ SOLUTIONS: dict[str, tuple[Callable[[Path], object], str]] = {
     "22-convenciones-claude": (reject_below_zero, "Hecho."),
     "23-varios-pasos": (capped_fine, "Hecho."),
     "24-init": (lambda repo: (repo / "AGENTS.md").write_text(AGENTS), "Hecho."),
+    "25-historial-previo": (
+        lambda repo: append(repo / "recetas.py", TOTAL_TIME),
+        "Hecho.",
+    ),
+    "26-interrumpido": (lambda repo: append(repo / "recetas.py", SHOPPING), "Hecho."),
+    "27-recuperar": (lot_recovered, "Hecho."),
+    "28-tareas-largas": (all_reviewed, "Hecho."),
 }
 
 
@@ -355,6 +406,7 @@ async def test_the_battery_and_its_validation_tasks() -> None:
         "14-descuento-volumen",
         "18-parse-duration",
         "23-varios-pasos",
+        "28-tareas-largas",
     ]
     # No run_command until hito 16 (decision 2).
     assert all("run_command" not in task.allow for task in tasks)
@@ -570,3 +622,69 @@ def test_init_in_a_task_is_never_a_subfolder(tmp_path: Path) -> None:
     sent = bootstrap._eval_instruction("/init algo", copy)
 
     assert "part of the project at" not in sent
+
+
+# The tasks of hito 11 (spec hito 11, §5): half done is not done.
+
+
+def reorganized(repo: Path) -> None:
+    append(repo / "recetas.py", SHOPPING + "\n\nclass Receta:\n    pass\n")
+
+
+def lot_forgotten(repo: Path) -> None:
+    lot_recovered(repo)
+    (repo / "lote.txt").write_text("PENDIENTE\n", encoding="utf-8")
+
+
+def five_reviewed(repo: Path) -> None:
+    all_reviewed(repo)
+    path = repo / "informes" / "06-oficinas.md"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("Revisado: sí\n", ""), encoding="utf-8"
+    )
+
+
+def all_with_text_lost(repo: Path) -> None:
+    all_reviewed(repo)
+    (repo / "informes" / "03-cocina.md").write_text(
+        "En resumen, lo más urgente es revisar la cámara de frío.\nRevisado: sí\n",
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize(
+    ("task_id", "change"),
+    [
+        ("25-historial-previo", lambda repo: append(repo / "recetas.py", "")),
+        (
+            "25-historial-previo",
+            lambda repo: append(
+                repo / "recetas.py",
+                TOTAL_TIME.replace('not in ("reposar", "enfriar")', "!= ''"),
+            ),
+        ),
+        ("26-interrumpido", reorganized),
+        ("27-recuperar", lot_forgotten),
+        ("28-tareas-largas", five_reviewed),
+        ("28-tareas-largas", all_with_text_lost),
+    ],
+)
+async def test_a_task_of_hito_11_half_done_does_not_pass(
+    task_id: str, change: Callable[[Path], object]
+) -> None:
+    assert not await checked(task_id, change, "Hecho.")
+
+
+def all_reviewed_index_beside_reports(repo: Path) -> None:
+    for report in REPORTS:
+        append(repo / "informes" / f"{report}.md", "Revisado: sí\n")
+    urgent_list(repo, "informes/indice.md")
+    edit(repo / "estado.txt", "equipo de mantenimiento", "equipo de calidad")
+
+
+async def test_task_28_takes_the_index_beside_the_reports() -> None:
+    # Every other path of the instruction starts with informes/: writing
+    # informes/indice.md is a fair reading (spec hito 11, §5, PR 3).
+    assert await checked(
+        "28-tareas-largas", all_reviewed_index_beside_reports, "Hecho."
+    )

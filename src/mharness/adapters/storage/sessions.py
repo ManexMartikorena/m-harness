@@ -20,6 +20,7 @@ from pathlib import Path
 from pydantic import TypeAdapter, ValidationError
 
 from mharness.domain.session import (
+    ENTRY_TYPES,
     Session,
     SessionCorrupt,
     SessionEntry,
@@ -29,6 +30,7 @@ from mharness.domain.session import (
     SessionInUse,
     SessionNotFound,
     SessionSummary,
+    SessionTooNew,
     is_session_id,
     replay,
     summarize,
@@ -398,12 +400,21 @@ def _parse(data: bytes, session_id: str) -> tuple[SessionHeader, list[SessionEnt
     entries = []
     for number, line in enumerate(lines[1:], start=2):
         try:
-            entries.append(_ENTRY.validate_python(json.loads(line)))
-        # First: a ValidationError is also a ValueError.
-        except ValidationError as exc:
-            raise corrupt(f"line {number} is not valid: {_first(exc)}") from None
+            data = json.loads(line)
         except ValueError, RecursionError:
             raise corrupt(f"line {number} is not valid JSON") from None
+        kind = data.get("type") if isinstance(data, dict) else None
+        if isinstance(kind, str) and kind not in ENTRY_TYPES:
+            # The format only grows: a newer maha wrote it (spec hito 11,
+            # §1.12).
+            raise SessionTooNew(
+                f"session {session_id}: line {number} is of a newer maha "
+                f"({kind!r}); update maha to open it"
+            )
+        try:
+            entries.append(_ENTRY.validate_python(data))
+        except ValidationError as exc:
+            raise corrupt(f"line {number} is not valid: {_first(exc)}") from None
     return header, entries
 
 

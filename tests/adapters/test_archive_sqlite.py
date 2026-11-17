@@ -16,6 +16,7 @@ from mharness.domain.archive import (
     ArchiveError,
     ArchiveItem,
     ItemNotFound,
+    message_item,
     parse_id,
     search_terms,
 )
@@ -58,6 +59,39 @@ async def test_ids_go_by_kind_and_in_order(archive: ContextArchive) -> None:
     assert first == ["out-1", "msg-1", "out-2"]
     assert second == ["out-3"]
     assert not await archive.empty()
+
+
+async def test_a_numbered_item_keeps_its_number(archive: ContextArchive) -> None:
+    ids = await archive.add([message_item(6, "user", "siete"), output("uno")])
+
+    assert ids == ["msg-7", "out-1"]
+    assert (await archive.read("msg-7", 1, 5)).lines == ["siete"]
+
+
+async def test_adding_a_numbered_item_again_adds_nothing(
+    archive: ContextArchive,
+) -> None:
+    # Archiving the same message twice, after a Ctrl+C (spec hito 11, §1.10).
+    await archive.add([message_item(0, "user", "hola iva")])
+    again = await archive.add([message_item(0, "user", "otra cosa")])
+
+    assert again == ["msg-1"]
+    assert (await archive.read("msg-1", 1, 5)).lines == ["hola iva"]
+    assert len(await archive.search("iva otra", 5)) == 1
+
+
+async def test_a_summary_is_searched_and_read(archive: ContextArchive) -> None:
+    summary = ArchiveItem(
+        kind="summary",
+        position=14,
+        role="assistant",
+        text="arreglado el IVA",
+        number=15,
+    )
+    assert await archive.add([summary]) == ["sum-15"]
+
+    [hit] = await archive.search("iva", 5)
+    assert (hit.id, hit.kind) == ("sum-15", "summary")
 
 
 async def test_adding_nothing_gives_nothing(archive: ContextArchive) -> None:
@@ -262,6 +296,7 @@ def test_both_stores_follow_the_port(tmp_path: Path) -> None:
 def test_ids_are_parsed_strictly() -> None:
     assert parse_id("out-17") == ("output", 17)
     assert parse_id("msg-1") == ("message", 1)
+    assert parse_id("sum-40") == ("summary", 40)
     for wrong in ("out-0", "out-01", "out-", "foo-1", "out-1 ", "OUT-1"):
         assert parse_id(wrong) is None
 

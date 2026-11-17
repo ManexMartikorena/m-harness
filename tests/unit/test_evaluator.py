@@ -102,6 +102,7 @@ async def test_an_answer_that_passes_its_check() -> None:
         tokens=100,
         cost=None,
         duration=run.duration,
+        input_tokens=100,
     )
 
 

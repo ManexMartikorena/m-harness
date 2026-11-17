@@ -13,6 +13,7 @@ import respx
 from mharness.adapters.models import OpenAIChatClient
 from mharness.adapters.models.http import TIMEOUT, retry_after
 from mharness.domain.errors import (
+    ContextOverflowError,
     ModelAuthError,
     ModelError,
     ModelRateLimitError,
@@ -981,3 +982,61 @@ async def test_a_refusal_comes_as_text(client: OpenAIChatClient) -> None:
     response = await client.complete(ModelRequest(model="m", messages=CONVERSATION))
 
     assert response.message.text == "No puedo ayudar."
+
+
+# The prompt that does not fit (spec hito 11, §1.10 and test 18).
+
+# The body OpenCode Go gave on 2026-11-17 (spec hito 11, §12).
+OVERFLOW_BODY = {
+    "error": {
+        "type": "invalid_request_error",
+        "message": "Upstream request failed: [invalid_request_error] Input token "
+        "count (600025) exceeds the model's maximum context length of (262144), "
+        "no tokens left for generation",
+    }
+}
+
+
+@respx.mock
+async def test_a_prompt_that_does_not_fit_is_a_context_overflow(
+    client: OpenAIChatClient,
+) -> None:
+    respx.post(ENDPOINT).respond(400, json=OVERFLOW_BODY)
+
+    with pytest.raises(ContextOverflowError) as raised:
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert str(raised.value).startswith("HTTP 400: Upstream request failed")
+
+
+@respx.mock
+async def test_a_streamed_prompt_that_does_not_fit_is_a_context_overflow(
+    client: OpenAIChatClient,
+) -> None:
+    respx.post(ENDPOINT).respond(400, json=OVERFLOW_BODY)
+    request = ModelRequest(model="m", messages=CONVERSATION)
+
+    with pytest.raises(ContextOverflowError):
+        _ = [event async for event in client.stream(request)]
+
+
+@respx.mock
+async def test_another_400_is_no_context_overflow(client: OpenAIChatClient) -> None:
+    respx.post(ENDPOINT).respond(400, json=error_body("Model is unavailable"))
+
+    with pytest.raises(ModelRequestError) as raised:
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert not isinstance(raised.value, ContextOverflowError)
+
+
+@respx.mock
+async def test_the_words_on_another_status_are_no_context_overflow(
+    client: OpenAIChatClient,
+) -> None:
+    respx.post(ENDPOINT).respond(404, json=OVERFLOW_BODY)
+
+    with pytest.raises(ModelRequestError) as raised:
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert not isinstance(raised.value, ContextOverflowError)

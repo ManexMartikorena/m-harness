@@ -79,6 +79,11 @@ STOP_REASONS: dict[str, StopReason] = {
 INTERRUPTED_MARK = "[interrupted by the user]"
 
 
+# What a 400 says when the prompt does not fit (Anthropic's documentation,
+# checked on 2026-11-16, spec hito 11, §1.0).
+OVERFLOW = ("prompt is too long",)
+
+
 class AnthropicClient:
     """A `ModelClient` over HTTP, in Anthropic's Messages API format.
 
@@ -134,7 +139,7 @@ class AnthropicClient:
             reason = self._safe(str(exc)) or type(exc).__name__
             raise ModelUnavailableError(f"cannot reach the provider: {reason}") from exc
         if not response.is_success:
-            raise status_error(response, self._api_key)
+            raise status_error(response, self._api_key, overflow=OVERFLOW)
         try:
             body = response.json()
         except ValueError:
@@ -151,7 +156,7 @@ class AnthropicClient:
             async with self._http.stream("POST", "messages", json=body) as response:
                 if not response.is_success:
                     await response.aread()
-                    raise status_error(response, self._api_key)
+                    raise status_error(response, self._api_key, overflow=OVERFLOW)
                 await check_streaming(response, self._api_key)
                 async for event in self._events(response, request):
                     yield event

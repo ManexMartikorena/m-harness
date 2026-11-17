@@ -1,0 +1,21 @@
+# La persona cortó una respuesta y corrige el rumbo: la marca
+# [interrupted by the user] y lo que pidió antes (spec 6, §5; spec del
+# hito 11, §5).
+instruction = "No, no reorganices nada ni crees clases: deja recetas.py como está y añade solo la función que te pedí."
+fixture = "recetas"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = '''
+python3 -c "
+import recetas
+compra = recetas.lista_compra(['tortilla', 'gazpacho'])
+assert compra['aceite_ml'] == 160, compra
+assert compra['huevos'] == 6 and compra['tomates_g'] == 1000, compra
+assert recetas.lista_compra(['lentejas'])['lentejas_g'] == 400
+codigo = open('recetas.py', encoding='utf-8').read()
+assert 'class ' not in codigo, 'creó una clase'
+assert 'def escalar(receta: dict, raciones: int) -> dict[str, float]:' in codigo, 'tocó escalar'
+assert isinstance(recetas.RECETAS['tortilla'], dict), 'cambió los datos'
+"
+'''

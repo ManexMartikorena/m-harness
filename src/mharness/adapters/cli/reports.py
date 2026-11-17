@@ -48,6 +48,29 @@ def _why(detail: str) -> str:
     return f"{head.removesuffix(':')}: {(errors or rest)[-1]}"
 
 
+def _window(runs: Sequence[TaskRun], out: TextIO) -> None:
+    """The part of the input read from the cache, and which tasks archived
+    and used `recall`, and in how many runs (spec hito 11, §5)."""
+    sent = sum(run.input_tokens for run in runs)
+    if sent:
+        share = 100 * sum(run.cache_read for run in runs) / sent
+        print(f"  cache: {share:.1f} % of the input read from the cache", file=out)
+    for what, field in (("archived", "archives"), ("recall", "recalls")):
+        used: dict[str, int] = {}
+        for run in runs:
+            if getattr(run, field):
+                used[run.task] = used.get(run.task, 0) + 1
+        if used:
+            listed = ", ".join(
+                f"{task} {count}/{_runs(runs, task)}" for task, count in used.items()
+            )
+            print(f"  {what}: {listed}", file=out)
+
+
+def _runs(runs: Sequence[TaskRun], task: str) -> int:
+    return sum(run.task == task for run in runs)
+
+
 def eval_report(
     runs: Sequence[TaskRun],
     baselines: Mapping[str, Baseline | None],
@@ -101,6 +124,7 @@ def eval_report(
                 part = stats([run for run in mine if run.split == split])
                 _total(split, part, None, width, passed, out)
         _total("total", stats(mine), _spent(mine), width, passed, out)
+        _window(mine, out)
         _errors(mine, out)
         if baseline is not None:
             # ⚠ a regression; · a difference within the noise (deep audit,
