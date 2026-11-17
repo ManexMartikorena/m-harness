@@ -17,7 +17,7 @@ from typing import TextIO
 
 from mharness import __version__
 from mharness.adapters.cli.approval import show_covered
-from mharness.adapters.cli.commands import Commands, parse_command
+from mharness.adapters.cli.commands import Commands, archive_note, parse_command
 from mharness.adapters.cli.init import TAKES_EFFECT, Init
 from mharness.adapters.cli.input import (
     Discard,
@@ -39,6 +39,8 @@ from mharness.application.sessions import (
 from mharness.domain.agent_events import (
     ApprovalCovered,
     ApprovalRequested,
+    ContextArchived,
+    ContextArchiving,
     ModelFallback,
     ModelRetry,
     ToolCallProposed,
@@ -435,6 +437,15 @@ async def _answer(
                         asking = True
                     case ApprovalCovered(request=request):
                         show_covered(request, out)
+                    case ContextArchiving() | ContextArchived():
+                        spinner.stop()
+                        if wrote:
+                            print(file=out)
+                            wrote = False
+                        print(f"  {archive_note(event)}", file=out, flush=True)
+                        if isinstance(event, ContextArchived):
+                            # The model is called next.
+                            spinner.start()
                     case ModelRetry() | ModelFallback():
                         spinner.stop()
                         if wrote:

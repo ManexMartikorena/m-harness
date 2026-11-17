@@ -324,6 +324,42 @@ class Conversation:
             if self._stored:
                 self.name()
 
+    async def compact(
+        self, instructions: str | None = None
+    ) -> AsyncGenerator[AgentEvent]:
+        """`/compact`: archive now all but the last steps, also if they fit
+        (spec hito 11, §1.11). The archivist's calls are paid as a turn's,
+        and what was archived is saved. Nothing happens if there is
+        nothing to archive."""
+        usage = Usage()
+        cost = Decimal(0)
+        priced = unpriced = 0
+        try:
+            async with aclosing(self._agent.compact(instructions)) as events:
+                async for event in events:
+                    if isinstance(event, ModelCallFinished):
+                        usage += event.usage
+                        if event.cost is None:
+                            unpriced += 1
+                        else:
+                            priced += 1
+                            cost += event.cost
+                    if not isinstance(event, TextDelta):
+                        await self._record(event)
+                    yield event
+        finally:
+            self._pending += self._agent.take_entries()
+            if priced or unpriced:
+                self._pending.append(
+                    UsageEntry(usage=usage, cost=cost if priced else None)
+                )
+                if priced and unpriced:
+                    # As in a turn: the session's cost is then a minimum.
+                    self._pending.append(UsageEntry(usage=Usage(), cost=None))
+                self._count(cost if priced else None, unpriced)
+            await self._save()
+            await self._sync_trace()
+
     def name(self) -> None:
         """Ask for the title in the background, from the first message, if
         the session has none yet: nobody waits for it."""

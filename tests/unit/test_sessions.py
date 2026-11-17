@@ -10,6 +10,7 @@ from decimal import Decimal
 import pytest
 
 from mharness.application.agent import Agent
+from mharness.application.context import Archivist
 from mharness.application.prompt import SystemPromptBuilder
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.titles import Titler
@@ -108,6 +109,7 @@ class World:
         titler: Titler | None = None,
         archives: MemoryArchiveStore | None = None,
         context_budget: int = 100_000,
+        archivist: Archivist | None = None,
     ) -> None:
         self.gate = gate or FakeApproval()
         self.traces = traces or MemoryTraceSink()
@@ -131,6 +133,7 @@ class World:
                 fallback=fallback,
                 limits=limits or TurnLimits(),
                 context_budget=context_budget,
+                archivist=archivist,
             )
 
         self.sessions = Sessions(
@@ -2187,3 +2190,41 @@ async def test_an_imported_session_keeps_what_it_archived() -> None:
     again = await world.sessions.read(imported)
     assert again.archived == 5
     assert again.working == exported.working
+
+
+async def test_compact_saves_what_it_archived_and_what_it_cost() -> None:
+    store = MemorySessionStore()
+    notes = FakeModelClient(
+        [reply('{"summary": "s", "index": "i"}', usage=Usage(input_tokens=900))]
+    )
+    archivist = Archivist(
+        notes,
+        model="small",
+        template="{{instructions}}{{previous}}{{conversation}}",
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
+    )
+    world = World(
+        store,
+        FakeModelClient([reply("Uno."), reply("Dos.")]),
+        context_budget=10_000,
+        archivist=archivist,
+    )
+    conversation = await world.sessions.start()
+    await turn(conversation, "primero " * 900)
+    await turn(conversation, "Hola")
+
+    events = [e async for e in conversation.compact("el IVA")]
+
+    assert any(isinstance(e, ModelCallFinished) and e.archivist for e in events)
+    saved = entries(store)
+    assert isinstance(saved[-2], ArchiveEntry)
+    assert saved[-2].manual
+    assert saved[-1] == UsageEntry(usage=Usage(input_tokens=900), cost=None)
+    assert conversation.uncosted_turns == 3
+    traced = [record.event.type for record in await world.traces.read(FIRST)]
+    assert traced[-3:] == [
+        "context_archiving",
+        "model_call_finished",
+        "context_archived",
+    ]

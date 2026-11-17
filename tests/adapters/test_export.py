@@ -6,7 +6,7 @@ from decimal import Decimal
 from mharness.adapters.cli.export import markdown
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
-from mharness.domain.session import Session, SessionHeader, TitleEntry
+from mharness.domain.session import ArchiveEntry, Session, SessionHeader, TitleEntry
 
 HEADER = SessionHeader(
     id="20261030-101500-3fa2",
@@ -168,3 +168,25 @@ def test_the_title_of_the_session_heads_it() -> None:
     )
 
     assert markdown(titled).startswith("# Saludo a Ane\n")
+
+
+def test_where_it_was_archived_is_marked_and_nothing_is_left_out() -> None:
+    # Spec hito 11, §1.12: what the model stops seeing, the person still sees.
+    index = user("<context-archive>\nindex\n</context-archive>")
+    base = session(user("Uno"), said("Hecho uno"), user("Dos"), said("Hecho dos"))
+    archived = base.model_copy(
+        update={
+            "archives": [
+                ArchiveEntry(replaces=2, index=index),
+                ArchiveEntry(replaces=3, index=index, manual=True),
+            ]
+        }
+    )
+
+    text = markdown(archived)
+
+    first = text.index("_(archived up to here")
+    second = text.index("_(archived by /compact up to here")
+    assert text.index("Hecho uno") < first < text.index("Dos") < second
+    assert second < text.index("Hecho dos")
+    assert "<context-archive>" not in text
