@@ -57,6 +57,7 @@ from mharness.application.routing import ModelRouter
 from mharness.application.sessions import Conversation, Sessions, Start
 from mharness.application.titles import Titler, small_model
 from mharness.application.tools import ToolRegistry
+from mharness.domain.context import DEFAULT_BUDGET
 from mharness.domain.environment import command_env
 from mharness.domain.evals import (
     BASELINE_REPEAT,
@@ -539,6 +540,7 @@ async def _eval(
                     # it names.
                     slot=slot,
                     archivist=_archivist(settings, catalog, client, model),
+                    context_budget=task.context_budget or DEFAULT_BUDGET,
                 )
 
             sessions = Sessions(
@@ -554,7 +556,7 @@ async def _eval(
                 prompt=_eval_prompt(settings, catalog, cwd, _with_recall(tools)),
                 archives=SqliteArchiveStore(run_dir / "archive"),
             )
-            conversation = await sessions.start()
+            conversation = await sessions.start(history=task.history)
             try:
                 yield conversation
             finally:

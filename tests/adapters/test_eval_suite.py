@@ -359,3 +359,78 @@ async def test_the_home_of_a_check_is_empty_out_of_the_copy_and_goes_with_it(
         assert not home.is_relative_to(copy)
 
     assert not home.exists()
+
+
+# A task that goes on from a conversation, and one with its own budget
+# (spec hito 11, §5, and §4, test 21).
+
+HISTORY_LINES = [
+    '{"role": "user", "blocks": [{"type": "text", "text": "Arregla el IVA"}]}',
+    '{"role": "assistant", "blocks": [{"type": "text", "text": "Voy a"}],'
+    ' "interrupted": true}',
+]
+
+
+async def test_a_task_starts_with_its_history_and_its_budget(tmp_path: Path) -> None:
+    # A TOML table ends at the next one: the key goes before [limits].
+    text = TASK_TOML.replace("[limits]", "context_budget = 20_000\n\n[limits]")
+    root = battery(tmp_path, {"25-sigue": text})
+    (root / "tasks" / "25-sigue" / "history.jsonl").write_text(
+        "\n".join(HISTORY_LINES) + "\n", encoding="utf-8"
+    )
+
+    [task] = await TomlEvalSuite(root).tasks()
+
+    assert [m.text for m in task.history] == ["Arregla el IVA", "Voy a"]
+    assert task.history[1].interrupted
+    assert task.context_budget == 20_000
+
+
+async def test_without_history_a_task_starts_from_nothing(tmp_path: Path) -> None:
+    [task] = await TomlEvalSuite(battery(tmp_path)).tasks()
+
+    assert (task.history, task.context_budget) == ([], None)
+
+
+@pytest.mark.parametrize(
+    ("lines", "says"),
+    [
+        (['{"role": "user"}'], "history.jsonl, line 1: blocks"),
+        (["no json"], "history.jsonl, line 1"),
+        (
+            [
+                '{"role": "assistant", "blocks": [{"type": "tool_call", "id": "c1",'
+                ' "name": "read_file", "arguments": "{}"}]}'
+            ],
+            "call c1 has no result",
+        ),
+    ],
+)
+async def test_a_wrong_history_is_an_error_that_names_it(
+    tmp_path: Path, lines: list[str], says: str
+) -> None:
+    root = battery(tmp_path, {"25-mal": TASK_TOML})
+    (root / "tasks" / "25-mal" / "history.jsonl").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8"
+    )
+
+    with pytest.raises(EvalError) as raised:
+        await TomlEvalSuite(root).tasks()
+
+    assert "25-mal" in str(raised.value)
+    assert says in str(raised.value)
+
+
+async def test_history_never_goes_in_the_toml(tmp_path: Path) -> None:
+    root = battery(tmp_path, {"25-mal": 'history = ["hola"]\n' + TASK_TOML})
+
+    with pytest.raises(EvalError, match=r"goes in history\.jsonl"):
+        await TomlEvalSuite(root).tasks()
+
+
+async def test_a_budget_below_the_minimum_is_an_error(tmp_path: Path) -> None:
+    text = TASK_TOML.replace("[limits]", "context_budget = 5_000\n\n[limits]")
+    root = battery(tmp_path, {"25-mal": text})
+
+    with pytest.raises(EvalError, match="context_budget"):
+        await TomlEvalSuite(root).tasks()

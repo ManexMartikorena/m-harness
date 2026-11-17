@@ -16,8 +16,10 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from mharness.domain.context import MIN_BUDGET
 from mharness.domain.environment import CREDENTIAL_SUFFIXES
 from mharness.domain.limits import TurnLimits
+from mharness.domain.messages import Message
 from mharness.domain.money import Usd
 from mharness.domain.money import mean as mean_usd
 
@@ -161,6 +163,11 @@ class Task(BaseModel, frozen=True, extra="forbid"):
     allow: list[str] = []
     limits: TurnLimits = TASK_LIMITS
     check: Check
+    # The conversation it starts with, from its `history.jsonl` (spec hito
+    # 11, §5): the instruction goes on from it.
+    history: list[Message] = []
+    # The tokens per call at most; None: the default (spec hito 11, §1.3).
+    context_budget: int | None = Field(default=None, ge=MIN_BUDGET)
 
 
 class TaskRun(BaseModel, frozen=True):

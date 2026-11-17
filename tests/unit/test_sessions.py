@@ -2228,3 +2228,33 @@ async def test_compact_saves_what_it_archived_and_what_it_cost() -> None:
         "model_call_finished",
         "context_archived",
     ]
+
+
+async def test_a_conversation_can_start_with_a_history_saved_with_its_turn() -> None:
+    # An eval task that goes on from a conversation (spec hito 11, §5).
+    store = MemorySessionStore()
+    fake = FakeModelClient([reply("Sigo.")])
+    world = World(store, fake)
+    before = [
+        user("Arregla el IVA"),
+        said("Voy a").model_copy(update={"interrupted": True}),
+    ]
+    conversation = await world.sessions.start(history=before)
+
+    await turn(conversation, "Sigue")
+
+    assert fake.requests[0].messages[:2] == before
+    saved = [e.message for e in entries(store) if isinstance(e, MessageEntry)]
+    assert saved[:2] == before
+    assert len(saved) == 4
+
+
+async def test_a_history_the_api_would_refuse_is_not_started() -> None:
+    calls = Message(
+        role="assistant",
+        blocks=[ToolCallBlock(id="c1", name="echo", arguments="{}")],
+    )
+    world = World(MemorySessionStore(), FakeModelClient([]))
+
+    with pytest.raises(SessionCorrupt):
+        await world.sessions.start(history=[user("a"), calls])

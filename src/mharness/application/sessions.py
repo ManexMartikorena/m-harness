@@ -133,6 +133,7 @@ class Conversation:
         uncosted_turns: int = 0,
         prompt: SystemPrompt | None = None,
         title: TitleEntry | None = None,
+        unsaved: int = 0,
     ) -> None:
         self._store = store
         self._agent = agent
@@ -159,8 +160,9 @@ class Conversation:
         self._turn_traced = True
         # The model a new session's header names: the one it started with.
         self._first_model = agent.model
-        # How many messages of the agent are already queued or saved.
-        self._queued = len(agent.messages)
+        # How many messages of the agent are already queued or saved: all
+        # but the `unsaved` ones it started with.
+        self._queued = len(agent.messages) - unsaved
         # What happened and is not in the file yet, in order.
         self._pending: list[SessionEntry] = []
         # Why the last save failed; None once it works.
@@ -743,18 +745,24 @@ class Sessions:
         """The directory where this maha runs, and its tools work."""
         return self._origin.cwd
 
-    async def start(self, model: str | None = None) -> Conversation:
+    async def start(
+        self, model: str | None = None, *, history: Sequence[Message] = ()
+    ) -> Conversation:
         """A new conversation, with `model` or the configured one; its
-        session is created with the first turn. Raises `SessionError` if
-        there is neither: the commands that never call the model run
-        without one."""
+        session is created with the first turn. It starts with `history`,
+        saved with that turn: an eval task that goes on from a conversation
+        (spec hito 11, §5). Raises `SessionError` if there is no model: the
+        commands that never call the model run without one."""
         chosen = model or self._model
         if chosen is None:
             raise SessionError("no model configured")
+        check_history(list(history))
         prompt = await self._build(chosen, None)
-        agent = self._new_agent(chosen, ())
+        agent = self._new_agent(chosen, history)
         agent.effort = self.effort
-        return Conversation(self._store, agent, self._origin, prompt=prompt)
+        return Conversation(
+            self._store, agent, self._origin, prompt=prompt, unsaved=len(history)
+        )
 
     async def open(self, start: Start | None = None) -> Opened:
         """The first conversation of this maha: a new one, or a session
