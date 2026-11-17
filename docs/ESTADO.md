@@ -3,9 +3,11 @@
 Última actualización: 2026-11-17. **Hito 10 cerrado: `v0.10.0` (system
 prompt por capas), `v0.10.1` (la auditoría tras el hito 10) y `v0.10.2`
 (su segunda, tercera y cuarta revisión, cero deuda). En curso: el hito 11
-(contexto virtual), con su spec APROBADA e integrada (#116) y su PR 1
-commiteado en `feature/hito-11-contar`, sin push. Lo siguiente: revisar y
-abrir ese PR. Plan ampliado a 24 hitos (la órbita larga, hito 12 nuevo).**
+(contexto virtual): spec integrada (#116), PR 1 integrado (#117) y PR 2
+(el archivo) abierto (#118), con sus evals. Lo siguiente: revisar e
+integrar el #118, y después los PRs 3 y 4. Tras el hito 11, auditorías
+hasta cero deuda antes del hito 12. Plan ampliado a 24 hitos (la órbita
+larga, hito 12 nuevo).**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
@@ -14,15 +16,15 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 **Desarrollo. Hitos 1 a 10 cerrados, con la auditoría tras el hito 10
 (`v0.10.1`) y sus revisiones (`v0.10.2`). En curso, el hito 11 (contexto
-virtual): spec aprobada; el PR 1 (contar, acotar y ver), commiteado. Plan: 24 hitos hasta
-la 1.0 (DESIGN §14).**
+virtual): spec aprobada; el PR 1 (contar, acotar y ver), integrado; el
+PR 2 (el archivo), abierto. Plan: 24 hitos hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.10.2` — Revisiones de la auditoría tras el hito
   10** (2026-11-13):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.2
-- Ramas abiertas: `feature/hito-11-contar` (PR 1 del hito 11), solo en
-  local hasta el push. Las integradas se conservan en GitHub.
+- Ramas abiertas: `feature/hito-11-archivo` (PR 2 del hito 11, #118). Las
+  integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -55,14 +57,16 @@ spec, su nota de la guía y su release.
 Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
 trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
-1. **Humano:** revisar los 9 commits de `feature/hito-11-contar`
-   (`git log main..feature/hito-11-contar`), hacer push y abrir el PR 1
-   al milestone "Hito 11 — Contexto virtual" (o pedírselo al agente).
-   El proveedor que corta el prompt en silencio se detecta en el PR 3
-   (spec 11, decisión 14: ningún límite aceptado).
-2. **Agente, tras el PR 1:** los PRs 2 (el archivo), 3 (archivar) y 4
-   (instrucciones y herramientas), en ese orden (§6), con las evals de §5.
-3. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+1. **Humano:** revisar e integrar el PR 2 (#118, `feature/hito-11-archivo`,
+   con merge commit). Sus evals, en la spec 11, §5 "Resultados (PR 2)".
+2. **Agente, tras el PR 2:** los PRs 3 (archivar) y 4 (instrucciones y
+   herramientas), en ese orden (§6), con las evals de §5. El proveedor que
+   corta el prompt en silencio se detecta en el PR 3 (spec 11, decisión
+   14: ningún límite aceptado).
+3. **Agente y humano, tras cerrar el hito 11:** auditorías del código
+   hasta dejar cero deuda técnica, antes de empezar el hito 12, como tras
+   el hito 10 (decisión del mantenedor, 2026-11-17).
+4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
