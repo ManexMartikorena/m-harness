@@ -4,9 +4,8 @@
 prompt por capas), `v0.10.1` (la auditoría tras el hito 10) y `v0.10.2`
 (su segunda, tercera y cuarta revisión, cero deuda). En curso: el hito 11
 (contexto virtual): spec integrada (#116), PRs 1 y 2 integrados (#117,
-#118) y PR 3 (archivar) en `feature/hito-11-archivar`, con sus evals
-pasadas y anotadas. Lo siguiente: abrir e integrar el PR 3, y después el
-PR 4.
+#118) y PR 3 (archivar) abierto como #119, con sus evals pasadas y anotadas.
+Lo siguiente: integrar el #119 con el CI en verde, y después el PR 4.
 Tras el hito 11, auditorías hasta cero deuda antes del hito 12. Plan
 ampliado a 24 hitos (la órbita larga, hito 12 nuevo).**
 
@@ -25,7 +24,7 @@ hasta la 1.0 (DESIGN §14).**
 - Última versión: **`v0.10.2` — Revisiones de la auditoría tras el hito
   10** (2026-11-13):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.2
-- Ramas abiertas: `feature/hito-11-archivar` (PR 3 del hito 11). Las
+- Ramas abiertas: `feature/hito-11-archivar` (PR 3 del hito 11, #119). Las
   integradas se conservan en GitHub.
 
 ## Para la release
@@ -59,10 +58,10 @@ spec, su nota de la guía y su release.
 Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
 trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
-1. **Agente (con permiso del mantenedor) o humano:** push de
-   `feature/hito-11-archivar`, abrir el PR 3 al milestone "Hito 11 —
-   Contexto virtual" e integrarlo con merge commit con el CI en verde.
-   Las evals ya están pasadas y anotadas (spec 11, §5, "Resultados (PR
+1. **Humano:** integrar el PR 3 (#119, ya abierto en el milestone
+   "Hito 11 — Contexto virtual") con merge commit, con el CI en verde.
+   Después, `git switch main && git pull` y borrar la rama local. Las
+   evals ya están pasadas y anotadas (spec 11, §5, "Resultados (PR
    3)"), con la tarea 28 ajustada por decisión del mantenedor.
 2. **Agente, tras el PR 3:** el PR 4 (instrucciones y herramientas, §6),
    con la tarea 29, la pasada final y las líneas base nuevas. Decidir con
