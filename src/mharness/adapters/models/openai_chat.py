@@ -60,6 +60,12 @@ STOP_REASONS: dict[str, StopReason] = {
 }
 
 
+# What a 400 says when the prompt does not fit: the words of OpenAI's
+# documentation, also those of OpenCode Go (checked on 2026-11-17, spec hito
+# 11, §12).
+OVERFLOW = ("maximum context length",)
+
+
 class OpenAIChatClient:
     """A `ModelClient` over HTTP, in the OpenAI Chat Completions format.
 
@@ -114,7 +120,7 @@ class OpenAIChatClient:
             reason = self._safe(str(exc)) or type(exc).__name__
             raise ModelUnavailableError(f"cannot reach the provider: {reason}") from exc
         if not response.is_success:
-            raise status_error(response, self._api_key)
+            raise status_error(response, self._api_key, overflow=OVERFLOW)
         try:
             completion = _Completion.model_validate_json(response.content)
         except ValidationError:
@@ -138,7 +144,7 @@ class OpenAIChatClient:
             ) as response:
                 if not response.is_success:
                     await response.aread()
-                    raise status_error(response, self._api_key)
+                    raise status_error(response, self._api_key, overflow=OVERFLOW)
                 await check_streaming(response, self._api_key)
                 async for event in self._events(response, request):
                     yield event

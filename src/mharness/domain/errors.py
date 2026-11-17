@@ -31,6 +31,11 @@ class ModelRequestError(ModelError):
     """The provider rejected the request (another 4xx, such as an unknown model)."""
 
 
+class ContextOverflowError(ModelRequestError):
+    """The provider says the prompt does not fit in the model's window
+    (spec hito 11, §1.10): the loop archives and calls once more."""
+
+
 class ModelUnavailableError(RetryableModelError):
     """The provider could not answer (5xx, timeout or network failure)."""
 

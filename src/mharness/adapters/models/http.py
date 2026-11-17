@@ -16,6 +16,7 @@ import httpx
 
 from mharness import __version__
 from mharness.domain.errors import (
+    ContextOverflowError,
     ModelAuthError,
     ModelError,
     ModelRateLimitError,
@@ -139,11 +140,16 @@ def count(tokens: Any) -> int:
     return max(whole(tokens) or 0, 0)
 
 
-def status_error(response: httpx.Response, api_key: str | None) -> ModelError:
+def status_error(
+    response: httpx.Response, api_key: str | None, *, overflow: tuple[str, ...] = ()
+) -> ModelError:
     """The error of a response that is not a success: what to tell the
-    person, and whether and when it can be tried again."""
+    person, and whether and when it can be tried again. A 400 whose message
+    holds one of the `overflow` phrases says that the prompt does not fit
+    (spec hito 11, §1.10)."""
     status = response.status_code
-    detail = safe(provider_message(response), api_key)
+    said = provider_message(response)
+    detail = safe(said, api_key)
     message = f"HTTP {status}: {detail}" if detail else f"HTTP {status}"
     if status in (401, 403):
         return ModelAuthError(message)
@@ -155,6 +161,10 @@ def status_error(response: httpx.Response, api_key: str | None) -> ModelError:
     # audit after hito 9, M8).
     if status >= 500 or status == 408:
         return ModelUnavailableError(message, retry_after=wait)
+    if status == 400 and said is not None:
+        lowered = said.lower()
+        if any(phrase in lowered for phrase in overflow):
+            return ContextOverflowError(message)
     return ModelRequestError(message)
 
 
