@@ -175,7 +175,7 @@ class _Asked:
     compares: the same call, the same resolved path (decision D1, review of
     PR 2, fix 5) and, to change a file, the same bytes it would replace
     (decision W6). One slot is enough because calls run one at a time; with
-    parallel calls (hito 16) it must keep one per call.
+    parallel calls (hito 17) it must keep one per call.
     """
 
     def __init__(self) -> None:
@@ -1493,7 +1493,7 @@ class WriteFile:
 # The files that run code by themselves; a Makefile or a test runs only
 # with a command, which asks first (or was allowed with its exact text):
 # the line any source file is on (second review of the audit after hito 10,
-# decision of the maintainer). Hito 15's sandbox bounds what they run.
+# decision of the maintainer). Hito 16's sandbox bounds what they run.
 # Every exception of change_warning, and no more: what [a] covers is what
 # the person approves (third review of the audit after hito 10).
 _COVERS = (

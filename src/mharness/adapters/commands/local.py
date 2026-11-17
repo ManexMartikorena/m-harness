@@ -12,15 +12,15 @@ command that writes a lot never blocks on a full pipe.
 A process that leaves the group (`setsid`) is caught too: `maha` becomes a
 subreaper, so the orphans of a command become its children instead of
 init's, and the ones left when the command ends are killed (decision of the
-maintainer, 2026-10-23: it came forward from the sandbox, now hito 15). Linux only.
+maintainer, 2026-10-23: it came forward from the sandbox, now hito 16). Linux only.
 
 One command at a time in the whole process: the cleanup takes every child
 of `maha` it did not know as escaped, and so killed the commands that
 started after it and were still running (found running the evals in
 parallel, 2026-10-27). Running several at once needs another way to tell
-them apart (hito 16).
+them apart (hito 17).
 
-It runs with your permissions and no sandbox until hito 15: the defence is
+It runs with your permissions and no sandbox until hito 16: the defence is
 that you read the command before approving it.
 """
 

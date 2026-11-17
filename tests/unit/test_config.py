@@ -768,3 +768,67 @@ def test_the_folder_of_the_projects_file_is_known(home: Path, project: Path) -> 
 
     assert load(home, inner).project_dir == project
     assert load(home, project / ".git").project_dir == project
+
+
+# The context (spec hito 11, §1.3 and §1.7).
+
+
+def test_the_context_budget_is_100_000_unless_said(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\n')
+
+    settings = load(home, project)
+
+    assert settings.context_budget == 100_000
+    assert settings.archivist_model is None
+
+
+def test_the_user_sets_the_context(home: Path, project: Path) -> None:
+    write_user(
+        home,
+        'model = "m"\n[context]\nbudget = 200_000\narchivist_model = "glm-5.3-flash"\n',
+    )
+
+    settings = load(home, project)
+
+    assert settings.context_budget == 200_000
+    assert settings.archivist_model == "glm-5.3-flash"
+
+
+def test_a_project_can_only_lower_the_context_budget(home: Path, project: Path) -> None:
+    # As a limit: a foreign repository cannot make each call bigger.
+    write_user(home, 'model = "m"\n[context]\nbudget = 50_000\n')
+    write_project(project, "[context]\nbudget = 900_000\n")
+    assert load(home, project).context_budget == 50_000
+
+    write_project(project, "[context]\nbudget = 20_000\n")
+    assert load(home, project).context_budget == 20_000
+
+
+def test_a_project_cannot_raise_the_default_context_budget(
+    home: Path, project: Path
+) -> None:
+    write_user(home, 'model = "m"\n')
+    write_project(project, "[context]\nbudget = 900_000\n")
+
+    assert load(home, project).context_budget == 100_000
+
+
+def test_the_project_archivist_is_said_at_start(home: Path, project: Path) -> None:
+    write_user(home, 'model = "m"\n[context]\narchivist_model = "barato"\n')
+    write_project(project, '[context]\narchivist_model = "caro"\n')
+
+    settings = load(home, project)
+
+    assert settings.archivist_model == "caro"
+    assert settings.from_project == {"archivist_model": "caro"}
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["budget = 9_999", "budget = true", 'archivist_model = ""', "window = 3"],
+)
+def test_a_wrong_context_is_an_error(home: Path, project: Path, line: str) -> None:
+    write_user(home, f'model = "m"\n[context]\n{line}\n')
+
+    with pytest.raises(ConfigError, match="context"):
+        load(home, project)

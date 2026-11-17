@@ -75,12 +75,13 @@ class OpenAIChatClient:
         session_id: str | None = None,
     ) -> None:
         self._api_key = api_key
+        # One stable id per run of `maha`, as OpenCode asks third parties.
+        self._session = session_id or str(uuid.uuid4())
         headers = {"User-Agent": USER_AGENT}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         if session_header:
-            # One stable id per run of `maha`, as OpenCode asks third parties.
-            headers[session_header] = session_id or str(uuid.uuid4())
+            headers[session_header] = self._session
         self._http = httpx.AsyncClient(
             base_url=base_url, headers=headers, timeout=TIMEOUT
         )
@@ -103,7 +104,7 @@ class OpenAIChatClient:
         """Send the request; raise a `ModelError` if anything goes wrong."""
         try:
             response = await self._http.post(
-                "chat/completions", json=_to_openai(request)
+                "chat/completions", json=_to_openai(request, self._session)
             )
         except httpx.TimeoutException as exc:
             raise ModelUnavailableError("the provider took too long to answer") from exc
@@ -126,7 +127,7 @@ class OpenAIChatClient:
     async def stream(self, request: ModelRequest) -> AsyncGenerator[ModelEvent]:
         """Yield the answer as it arrives; raise a `ModelError` on failure."""
         body = {
-            **_to_openai(request),
+            **_to_openai(request, self._session),
             "stream": True,
             # OpenAI only sends usage if asked; OpenCode sends it anyway.
             "stream_options": {"include_usage": True},
@@ -230,15 +231,24 @@ class OpenAIChatClient:
         return safe(detail, self._api_key)
 
 
-def _to_openai(request: ModelRequest) -> dict[str, Any]:
-    """The request body: the system prompt, if any, goes first as a message."""
+def _to_openai(request: ModelRequest, cache_key: str) -> dict[str, Any]:
+    """The request body: the system prompt, if any, goes first as a message.
+
+    `prompt_cache_key` helps the requests of one session land where their
+    prefix is cached, as OpenCode does (spec hito 11, §1.13); OpenCode Go
+    takes it (§12).
+    """
     messages: list[dict[str, Any]] = []
     if request.system:
         # `system`, not `developer`: it is the role compatible servers know.
         messages.append({"role": "system", "content": request.system})
     for message in request.messages:
         messages.extend(_message_to_openai(message, request.model))
-    body: dict[str, Any] = {"model": request.model, "messages": messages}
+    body: dict[str, Any] = {
+        "model": request.model,
+        "messages": messages,
+        "prompt_cache_key": cache_key,
+    }
     if request.effort is not None:
         # Its name in this format (spec hito 9, §1.7). `max_tokens` is not
         # sent: compatible servers have their own limit (§1.6).

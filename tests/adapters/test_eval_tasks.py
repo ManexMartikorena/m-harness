@@ -356,7 +356,7 @@ async def test_the_battery_and_its_validation_tasks() -> None:
         "18-parse-duration",
         "23-varios-pasos",
     ]
-    # No run_command until hito 15 (decision 2).
+    # No run_command until hito 16 (decision 2).
     assert all("run_command" not in task.allow for task in tasks)
 
 

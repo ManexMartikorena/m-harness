@@ -134,6 +134,7 @@ async def test_asks_for_a_stream_with_usage(
         "messages": [*system_message, {"role": "user", "content": "Hola"}],
         "stream": True,
         "stream_options": {"include_usage": True},
+        "prompt_cache_key": "session-1",
     }
 
 

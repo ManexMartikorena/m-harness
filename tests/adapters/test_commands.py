@@ -28,6 +28,7 @@ from mharness.application.tools import ToolRegistry
 from mharness.application.traces import TraceSummary
 from mharness.domain.agent_events import ModelCallFinished, TurnFinished, TurnStarted
 from mharness.domain.catalog import ModelInfo
+from mharness.domain.context import ContextUsage
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock
 from mharness.domain.model import ModelResponse, Usage
 from mharness.domain.prompt import Layer, SystemPrompt
@@ -95,6 +96,7 @@ def test_the_known_commands() -> None:
         "rename",
         "init",
         "export",
+        "context",
         "help",
         "exit",
     }
@@ -886,3 +888,87 @@ def test_a_resume_tells_the_unreadable_sessions_it_may_have_skipped() -> None:
         "[session 20261027-091502-dead cannot be read and may be the last one "
         "here: see /sessions]"
     )
+
+
+def test_the_project_note_names_the_archivist() -> None:
+    # Spec hito 11, §1.7: the archivist is one more call, and it costs.
+    note = commands.project_note({"archivist_model": "caro"})
+
+    assert note == "[from .maha/config.toml: archives with caro]"
+
+
+# /context (spec hito 11, §1.11).
+
+
+def test_context_shows_each_part_and_the_cache() -> None:
+    usage = ContextUsage(
+        budget=100_000,
+        window=262_144,
+        ceiling=100_000,
+        system=2_140,
+        tools=2_110,
+        tool_count=10,
+        messages=61_300,
+        tool_results=48_900,
+        total=65_550,
+        exact=True,
+        last_prompt=64_950,
+        last_cached=58_200,
+    )
+    prompt = SystemPrompt(
+        layers=(
+            Layer(kind="base", source="maha", text="b" * 2_800),
+            Layer(kind="project", source="AGENTS.md", text="a" * 5_200),
+            Layer(kind="environment", source="maha", text="e" * 560),
+        )
+    )
+
+    lines = commands.context_lines(usage, prompt)
+
+    assert lines == [
+        "budget 100,000 · window 262,144 · archives at 100,000",
+        "system prompt     2,140   (base 700 · AGENTS.md 1,300 · environment 140)",
+        "tools             2,110   (10 tools)",
+        "messages         61,300   (tool results 48,900)",
+        "total            65,550   (65.5 % of 100,000 · last call 64,950)",
+        "cache         last call 58,200 of 64,950 read from cache (89.6 %)",
+    ]
+
+
+def test_context_before_any_call_is_estimated() -> None:
+    usage = ContextUsage(
+        budget=100_000,
+        window=None,
+        ceiling=84_000,
+        system=0,
+        tools=0,
+        tool_count=0,
+        messages=0,
+        tool_results=0,
+        total=0,
+        exact=False,
+    )
+
+    lines = commands.context_lines(usage, None)
+
+    assert lines[0] == "budget 100,000 · window unknown · archives at 84,000"
+    assert lines[1] == "system prompt         0   (none)"
+    assert lines[-1] == (
+        "total                 0   (0.0 % of 84,000 · nothing sent yet (estimated))"
+    )
+
+
+async def test_context_in_the_conversation_counts_the_last_call() -> None:
+    maha = Maha(
+        MemorySessionStore(),
+        [reply("Hola.", usage=Usage(input_tokens=900, output_tokens=20))],
+    )
+
+    _, out, _ = await maha.run("/context", "Hola", "/context", "/exit")
+
+    assert out.count("  budget 100,000 · window unknown · archives at 84,000\n") == 2
+    assert "nothing sent yet (estimated))\n" in out
+    assert "  total               920   (1.1 % of 84,000 · last call 900)\n" in out
+    assert "  cache         last call: nothing read from cache\n" in out
+    # Nothing went to the model but the turn.
+    assert len(maha.fake.requests) == 1

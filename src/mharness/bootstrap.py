@@ -443,7 +443,7 @@ def _eval_prompt(
 
 def _eval_tools(cwd: Path) -> ToolRegistry:
     """The tools of an eval run: all but `run_command`, until the sandbox
-    of hito 15 (spec hito 8, decision 2), and `ask_user`: nobody answers
+    of hito 16 (spec hito 8, decision 2), and `ask_user`: nobody answers
     (spec hito 10, §1.11)."""
     workspace = Workspace(cwd)
     return ToolRegistry(
@@ -785,6 +785,7 @@ def _sessions(
             history=history,
             # Retries with the default policy (spec hito 8, §1.14).
             fallback=settings.fallback_model,
+            context_budget=settings.context_budget,
         )
 
     return Sessions(

@@ -21,7 +21,7 @@ from mharness.domain.paths import printable
 INSTRUCTIONS_MAX = 64 * 1024
 
 # Where each layer goes, in this order (§1.1). Skills and memory, from
-# hitos 13 and 14, go after "extra".
+# hitos 14 and 15, go after "extra".
 type LayerKind = Literal[
     "base", "family", "user", "project", "extra", "environment", "append"
 ]

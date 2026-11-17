@@ -28,6 +28,7 @@ from mharness.domain.agent_events import (
 )
 from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.catalog import ModelInfo, Prices
+from mharness.domain.context import estimate, estimate_messages, estimate_tools
 from mharness.domain.errors import (
     ModelAuthError,
     ModelError,
@@ -77,6 +78,7 @@ def agent(
     retry: RetryPolicy = NO_RETRIES,
     sleep: Callable[[float], Awaitable[None]] | None = None,
     fallback: str | None = None,
+    context_budget: int = 100_000,
 ) -> Agent:
     registry = ToolRegistry(tools or [FakeTool()])
     # With no script, being asked fails the test.
@@ -92,6 +94,7 @@ def agent(
         retry=retry,
         sleep=sleep or asyncio.sleep,
         fallback=fallback,
+        context_budget=context_budget,
     )
 
 
@@ -314,7 +317,7 @@ async def test_a_crash_is_hidden_from_the_model_but_reported() -> None:
 
 
 async def test_a_result_that_is_not_text_is_an_internal_error() -> None:
-    # A tool that breaks its contract (an MCP one, hito 17) does not cut the
+    # A tool that breaks its contract (an MCP one, hito 18) does not cut the
     # turn (spec mejora-2026-10-26-deuda-pre-hito-6, B3).
     echo = FakeTool(results=[cast(str, None)])
 
@@ -1798,6 +1801,131 @@ async def test_the_fallback_asks_for_its_own_longest_answer() -> None:
     await run(agent(fake, catalog=catalog, fallback="respaldo"))
 
     assert [r.max_tokens for r in fake.requests] == [128_000, 8_000]
+
+
+# The longest answer that fits in the window, and the size of the prompt
+# (spec hito 11, §1.2 and §1.4).
+
+
+async def test_the_longest_answer_never_passes_the_window() -> None:
+    fake = FakeModelClient([reply("Hola.")])
+    catalog = MemoryCatalog(
+        [ModelInfo(provider=PROVIDER, model=MODEL, max_output=262_144, context=262_144)]
+    )
+
+    await run(agent(fake, catalog=catalog), "x" * 4_000)
+
+    request = fake.requests[0]
+    assert request.max_tokens is not None
+    assert request.max_tokens < 262_144
+    assert request.max_tokens == 262_144 - _estimated(request)
+
+
+async def test_a_big_window_keeps_the_models_longest_answer() -> None:
+    fake = FakeModelClient([reply("Hola.")])
+    catalog = MemoryCatalog(
+        [ModelInfo(provider=PROVIDER, model=MODEL, max_output=8_000, context=1_000_000)]
+    )
+
+    await run(agent(fake, catalog=catalog))
+
+    assert fake.requests[0].max_tokens == 8_000
+
+
+async def test_a_new_prompt_is_estimated() -> None:
+    fake = FakeModelClient([reply("Hola.")])
+    subject = agent(fake, FakeTool())
+
+    await run(subject, "a" * 400)
+
+    request = fake.requests[0]
+    assert subject.prompt_tokens(
+        request.system, request.tools, request.messages
+    ) == _estimated(request)
+
+
+async def test_after_a_call_the_prompt_counts_what_the_provider_said() -> None:
+    fake = FakeModelClient(
+        [reply("Hola.", usage=Usage(input_tokens=5_000, output_tokens=300))]
+    )
+    subject = agent(fake, FakeTool())
+    await run(subject)
+    request = fake.requests[0]
+    new = user("b" * 400)
+
+    tokens = subject.prompt_tokens(
+        request.system, request.tools, [*subject.messages, new]
+    )
+
+    # Exact up to the answer, and the new message estimated (400 / 4).
+    assert tokens == 5_300 + 100
+
+
+async def test_the_exact_count_is_not_used_for_another_prompt() -> None:
+    fake = FakeModelClient(
+        [reply("Hola.", usage=Usage(input_tokens=5_000, output_tokens=300))]
+    )
+    subject = agent(fake, FakeTool())
+    await run(subject)
+    request = fake.requests[0]
+
+    # Another system prompt (the fallback's), or a conversation that is not
+    # the one measured: all estimated.
+    other_system = subject.prompt_tokens("otro", request.tools, subject.messages)
+    other_messages = subject.prompt_tokens(
+        request.system, request.tools, [user("c" * 40)]
+    )
+
+    assert other_system < 5_300
+    assert other_messages < 5_300
+
+
+async def test_a_call_without_usage_leaves_the_prompt_estimated() -> None:
+    fake = FakeModelClient([reply("Hola.")])
+    subject = agent(fake, FakeTool())
+    await run(subject)
+    request = fake.requests[0]
+    messages = subject.messages
+
+    tokens = subject.prompt_tokens(request.system, request.tools, messages)
+
+    assert tokens == _estimated(request.model_copy(update={"messages": messages}))
+
+
+async def test_context_usage_has_each_part_and_the_last_call() -> None:
+    echo = ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')
+    fake = FakeModelClient(
+        [
+            tool_calls(echo),
+            reply(
+                "Hecho.",
+                usage=Usage(
+                    input_tokens=1_000, output_tokens=50, cache_read_tokens=800
+                ),
+            ),
+        ]
+    )
+    catalog = MemoryCatalog([ModelInfo(provider=PROVIDER, model=MODEL, context=64_000)])
+    subject = agent(fake, FakeTool(), catalog=catalog, context_budget=20_000)
+    subject.system = "s" * 400
+
+    await run(subject)
+    usage = subject.context_usage()
+
+    assert (usage.budget, usage.window, usage.ceiling) == (20_000, 64_000, 20_000)
+    assert usage.system == 100
+    assert usage.tool_count == 1
+    assert usage.tool_results == estimate("echo: x")
+    assert (usage.total, usage.exact) == (1_050, True)
+    assert (usage.last_prompt, usage.last_cached) == (1_000, 800)
+
+
+def _estimated(request: ModelRequest) -> int:
+    return (
+        estimate(request.system or "")
+        + estimate_tools(request.tools)
+        + estimate_messages(request.messages)
+    )
 
 
 # What goes to the model only grows at the end (spec hito 9, §1.5): an

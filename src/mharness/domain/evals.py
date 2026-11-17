@@ -132,7 +132,7 @@ def is_test_file(path: str) -> bool:
 
 # What a check command may see of maha's own variables: enough to find
 # python3 and speak the user's language, nothing of the user's home (deep
-# audit, I5). Until the sandbox of hito 15, a mitigation: the check runs
+# audit, I5). Until the sandbox of hito 16, a mitigation: the check runs
 # code the model wrote, on this machine.
 CHECK_VARIABLES = frozenset({"PATH", "LANG", "LANGUAGE", "TZ"})
 

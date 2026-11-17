@@ -86,6 +86,7 @@ async def test_sends_the_conversation_in_openai_format(
             {"role": "assistant", "content": "Hola, Ane."},
             {"role": "user", "content": "¿Cómo me llamo?"},
         ],
+        "prompt_cache_key": "session-1",
     }
 
 
@@ -311,6 +312,36 @@ async def test_session_id_is_stable_across_calls() -> None:
     first, second = (call.request.headers["x-opencode-session"] for call in route.calls)
     assert first == second
     assert first
+
+
+@respx.mock
+async def test_the_cache_key_is_the_session_of_the_provider() -> None:
+    # Spec hito 11, §1.13: the requests of one session land where their
+    # prefix is cached; the same id as the session header.
+    route = respx.post(ENDPOINT).respond(json=fixture("completion.json"))
+    request = ModelRequest(model="m", messages=CONVERSATION)
+
+    async with OpenAIChatClient(
+        base_url=BASE_URL, session_header="x-opencode-session"
+    ) as client:
+        await client.complete(request)
+        await client.complete(request)
+
+    keys = [
+        json.loads(call.request.content)["prompt_cache_key"] for call in route.calls
+    ]
+    assert keys[0] == keys[1] == route.calls[0].request.headers["x-opencode-session"]
+
+
+@respx.mock
+async def test_the_cache_key_goes_without_a_session_header() -> None:
+    # Any server of the format: OpenAI itself has no session header.
+    route = respx.post(ENDPOINT).respond(json=fixture("completion.json"))
+
+    async with OpenAIChatClient(base_url=BASE_URL) as client:
+        await client.complete(ModelRequest(model="m", messages=CONVERSATION))
+
+    assert json.loads(route.calls.last.request.content)["prompt_cache_key"]
 
 
 async def test_closing_closes_the_http_client() -> None:

@@ -684,6 +684,31 @@ la batería entera.
 
 El resultado se anota aquí al implementar.
 
+### Resultados (PR 1)
+
+2026-11-17, `maha eval --models glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5
+--repeat 5 --retry-errors`, contra las líneas base del 2026-11-10 (24
+tareas). El PR 1 cambia lo que se manda (`max_tokens` en el formato de
+Anthropic, `prompt_cache_key` en el de OpenAI), no el prompt.
+
+| Modelo | Éxito | Validación | Coste total | Caché leída | Llamadas |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 119/120 | 24/25 | 0,142 $ | 68,0 % | 608 |
+| `kimi-k2.7-code` | 118/120 | 24/25 | 0,984 $ | 85,2 % | 660 |
+| `claude-haiku-5-5` | 120/120 | 25/25 | 0,593 $ | 70,2 % | 479 |
+
+- **Sin regresiones de éxito**; las bajadas de una tarea, dentro del
+  ruido (p = 0,5).
+- **El ⚠ de coste de Kimi (+51 %) no es de este PR.** Es el mismo +51 %
+  de la auditoría tras el hito 10, por devolverle su razonamiento (R4,
+  P8), que el mantenedor aceptó el 2026-11-11; las líneas base son de
+  antes. Contra la pasada de `v0.10.2` (2026-11-13), Kimi cuesta menos
+  (0,984 $ frente a 1,084 $) con las mismas llamadas (660 frente a 651).
+- **`prompt_cache_key` no cambia la caché:** la parte leída de caché de
+  cada modelo está en el rango de las pasadas del 10 al 13 de noviembre
+  (GLM 67-73 %, Kimi 84,5-86,1 %, Haiku 68,9-71,2 %).
+- Las líneas base nuevas, al final del hito (§5).
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit pequeño, con tests y lint en verde.
@@ -715,8 +740,9 @@ Cada punto, un commit pequeño, con tests y lint en verde.
    archiva y construir el índice"
 2. `prompts/archive.md` y el `Archivist`. *Commit:* "Resumir lo archivado
    con el modelo barato"
-3. Archivar en el bucle y repetir tras `ContextOverflowError`. *Commit:*
-   "Archivar antes de cada llamada si no cabe"
+3. Archivar en el bucle y repetir tras `ContextOverflowError`, también
+   cuando el proveedor corta el prompt en silencio (decisión 14).
+   *Commit:* "Archivar antes de cada llamada si no cabe"
 4. `ArchiveEntry`, `replay()` y `SessionTooNew`. *Commit:* "Guardar el
    archivado en la sesión"
 5. `/compact`, la línea al archivar, `-p` y `/export`. *Commit:* "Añadir
@@ -834,6 +860,74 @@ Del mantenedor, al aprobar (2026-11-16):
     sesiones. El mismo criterio vale al implementar: lo que no lo cumpla
     se quita, y se anota en §12.
 
+Del mantenedor, tras el PR 1 (2026-11-17):
+14. **Ningún límite aceptado: un producto robusto y competitivo.** El
+    proveedor que corta el prompt en silencio (§12, `hy3`) se detecta y
+    se trata como el error de contexto excedido (§1.10): si el proveedor
+    cuenta bastantes menos tokens de los que se mandaron y lo mandado no
+    cabía en la ventana, se archiva y se repite la llamada una vez. Entra
+    en el PR 3, pieza 3, con su test.
+
 ## 12. Aprendido al implementar
 
-Se añade al implementar.
+**PR 1 (2026-11-17):**
+- **Lo "Sin comprobar" de §1.0, comprobado con OpenCode Go** (formato de
+  OpenAI, llamadas reales del 2026-11-17, unos 0,03 $ en total):
+  - **El error cuando el prompt no cabe** (`iceman-contributor-free`,
+    ventana de 262.144): HTTP 400,
+    `{"error":{"type":"invalid_request_error","message":"Upstream request
+    failed: [invalid_request_error] Input token count (600025) exceeds the
+    model's maximum context length of (262144), no tokens left for
+    generation"}}`. Se reconoce por el 400 y "maximum context length" en
+    el mensaje (es también la frase de la documentación de OpenAI).
+  - **No siempre hay error.** Con `hy3` (ventana de 256.000) el mismo
+    prompt de 300.000 palabras dio **200**, `finish_reason: stop`, y
+    `prompt_tokens: 196608`: el proveedor **cortó el prompt en silencio**
+    (196.608 es justo el 75 % de 262.144) y cobró 0,028 $. Con ese
+    proveedor, la repetición tras `ContextOverflowError` (§1.10) nunca
+    salta: la única defensa es no llegar, con el techo y la reserva
+    (§1.3). Decidido por el mantenedor: se detecta y se trata (decisión 14).
+  - **Prompt + `max_tokens` por encima de la ventana se acepta**:
+    `kimi-k2.7-code` con 10 + 262.144 y `hy3` con 15 + 250.000 dieron 200.
+  - **`prompt_cache_key` se acepta** (`glm-5.3-flash`, tres llamadas con
+    el mismo system de 3.772 tokens): la segunda y la tercera leyeron
+    3.264 de caché. Sin la clave, con la misma cabecera
+    `x-opencode-session`, también: en OpenCode Go la clave no cambia nada
+    medible, pero no estorba y ayuda en otros proveedores (§1.13). Se
+    queda, sin opción para apagarla (decisión 13).
+  - **OpenCode Go exige la cabecera `x-opencode-session`**: sin ella, 400
+    `MissingSessionID`. `maha` ya la manda (spec 2).
+- **El formato de OpenAI no manda `max_tokens`** (spec 9, §1.6: "los
+  servidores compatibles tienen su propio límite"); §1.4 decía que cada
+  petición lo lleva, y es así solo en el de Anthropic. Con lo comprobado
+  arriba, no se empieza a mandar: `ModelRequest.max_tokens` pasa a ser
+  `min(max_output, ventana − prompt estimado)` y cada adaptador sigue
+  decidiendo si lo manda.
+- **La reserva, como mucho media ventana.** Con la fórmula de §1.3, un
+  modelo local de 8.192 tendría una reserva de 16.000 y un techo
+  negativo. La reserva queda en `min(max(15 %, 16.000), ventana / 2)`:
+  con 8.192, techo de 4.096.
+- **Lo que §1.3 no decía del presupuesto:** 10.000 como mínimo (la parte
+  fija ya ronda los 3.500, y las instrucciones del proyecto llegan a
+  16.000), y un proyecto solo puede bajarlo, como los límites (spec 8,
+  §3.2): un repositorio ajeno no hace más cara cada llamada. Un
+  `archivist_model` del proyecto se avisa al arrancar, como
+  `small_model`.
+- **La parte fija, medida con el test:** base 706 y herramientas 1.829
+  (2.535 en total, de 3.500); §1.1 estimaba 700 y 1.960.
+- **La estimación se queda corta, y la reserva lo cubre.** En una sesión
+  nueva con `glm-5.3-flash`, `/context` estimó 2.083 tokens y el
+  proveedor contó 2.385 (un 13 % menos). Tras la primera llamada, el
+  total parte de la cifra exacta (§1.2). Se vuelve a mirar con el PR 3,
+  con sesiones largas.
+- **`prompt_cache_key` es el id de sesión del proveedor**, el de la
+  cabecera (uno por ejecución de `maha`, spec 2), no el de la sesión de
+  `maha`: el cliente se crea antes que la sesión, y la clave solo
+  reparte, la caché va por prefijo. Va también sin cabecera de sesión.
+- **La caché ya estaba en la traza:** cada `ModelCallFinished` lleva su
+  `Usage` con `cache_read_tokens`, y `/trace` la enseña. El informe de
+  `maha eval`, con el PR 3 (§3.1).
+- **`/context`, sin la línea del índice** hasta que haya archivo (PR 3).
+  El porcentaje del total es del techo ("archives at"), no del
+  presupuesto: con una ventana pequeña son distintos, y lo que importa es
+  cuánto falta para archivar.

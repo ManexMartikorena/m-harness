@@ -1,8 +1,9 @@
 """Load and validate the configuration (spec hito 2, §1.10).
 
 Three levels, the later one winning for `provider`, `model`,
-`fallback_model`, `effort` and `cache_ttl`; of each limit of the turn, the
-stricter one wins (spec hito 8, §3.2):
+`fallback_model`, `effort`, `cache_ttl` and `[context] archivist_model`; of
+each limit of the turn and of the context budget, the stricter one wins
+(spec hito 8, §3.2; spec hito 11, §1.3):
 
 1. built-in providers, in this module;
 2. the user's file, `$XDG_CONFIG_HOME/maha/config.toml`;
@@ -32,6 +33,7 @@ from pydantic import (
 )
 
 from mharness.domain.catalog import SpokenApi
+from mharness.domain.context import DEFAULT_BUDGET, MIN_BUDGET
 from mharness.domain.environment import looks_like_credential
 from mharness.domain.limits import TurnLimits
 from mharness.domain.model import CacheTtl, Effort
@@ -122,6 +124,10 @@ class Settings(BaseModel, frozen=True):
     # How long Anthropic's prompt cache lasts (spec hito 9, decision 9).
     cache_ttl: CacheTtl = "5m"
     limits: TurnLimits = TurnLimits()
+    # Tokens sent to the model in one call at most (spec hito 11, §1.3).
+    context_budget: int = Field(default=DEFAULT_BUDGET, ge=MIN_BUDGET)
+    # Summarizes what is archived; None: the small model (§1.7).
+    archivist_model: str | None = None
     # Kept out of repr, so it never lands in a log or a traceback.
     api_key: str | None = Field(default=None, repr=False)
     # What the project's file chose, by name: maha says it at start, so a
@@ -159,6 +165,13 @@ class _Limits(BaseModel, extra="forbid"):
     timeout: StrictFloat | None = Field(default=None, gt=0)
 
 
+class _Context(BaseModel, extra="forbid"):
+    """`[context]` (spec hito 11, §3.2)."""
+
+    budget: StrictInt | None = Field(default=None, ge=MIN_BUDGET)
+    archivist_model: str | None = Field(default=None, min_length=1)
+
+
 class _ProjectFile(BaseModel, extra="forbid"):
     provider: str | None = Field(default=None, min_length=1)
     model: str | None = Field(default=None, min_length=1)
@@ -167,6 +180,7 @@ class _ProjectFile(BaseModel, extra="forbid"):
     effort: Effort | None = None
     cache_ttl: CacheTtl | None = None
     limits: _Limits = _Limits()
+    context: _Context = _Context()
     instructions: list[Annotated[str, Field(min_length=1)]] = []
     compat_claude: StrictBool | None = None
 
@@ -288,6 +302,10 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
         effort=project.effort or user.effort,
         cache_ttl=project.cache_ttl or user.cache_ttl or "5m",
         limits=_stricter(user.limits, project.limits),
+        context_budget=_budget(user.context, project.context),
+        archivist_model=(
+            project.context.archivist_model or user.context.archivist_model
+        ),
         instructions=tuple(user.instructions),
         project_instructions=tuple(dict.fromkeys(project.instructions)),
         project_dir=project_path.parent.parent if project_path.is_file() else None,
@@ -310,7 +328,12 @@ def load(*, cwd: Path, env: Mapping[str, str], calls_model: bool = True) -> Sett
                 "cache_ttl",
             )
             if (value := getattr(project, name)) is not None
-        },
+        }
+        | (
+            {"archivist_model": project.context.archivist_model}
+            if project.context.archivist_model is not None
+            else {}
+        ),
     )
 
 
@@ -380,6 +403,13 @@ def _stricter(user: _Limits, project: _Limits) -> TurnLimits:
         if set_to:
             values[name] = min(set_to)
     return TurnLimits(**values)
+
+
+def _budget(user: _Context, project: _Context) -> int:
+    """The context budget: as a limit, a project can lower the user's, or
+    the default, never raise it (spec hito 11, §1.3)."""
+    mine = user.budget or DEFAULT_BUDGET
+    return mine if project.budget is None else min(mine, project.budget)
 
 
 def _home() -> Path:
