@@ -33,7 +33,7 @@ from mharness.adapters.commands import LocalCommandRunner, command_shell
 from mharness.adapters.evals import TomlEvalSuite
 from mharness.adapters.models import AnthropicClient, OpenAIChatClient
 from mharness.adapters.project import LocalProject, git_root
-from mharness.adapters.storage import JsonlSessionStore
+from mharness.adapters.storage import JsonlSessionStore, SqliteArchiveStore
 from mharness.adapters.tools import (
     AskUser,
     EditFile,
@@ -539,6 +539,7 @@ async def _eval(
                 masked=masked,
                 effort=effort,
                 prompt=_eval_prompt(settings, catalog, cwd, tools),
+                archives=SqliteArchiveStore(run_dir / "archive"),
             )
             conversation = await sessions.start()
             try:
@@ -802,6 +803,8 @@ def _sessions(
         effort=settings.effort,
         prompt=_prompt(settings, catalog, cwd, tools, files),
         titler=titler,
+        # What leaves the context, whole (spec hito 11, §1.5).
+        archives=SqliteArchiveStore(config.state_dir(os.environ) / "archive"),
     )
 
 

@@ -8,6 +8,7 @@ them through the `SessionStore` and `TraceSink` ports.
 """
 
 import asyncio
+import logging
 import secrets
 from collections.abc import AsyncGenerator, Callable, Collection, Coroutine, Sequence
 from contextlib import aclosing, suppress
@@ -26,6 +27,7 @@ from mharness.domain.agent_events import (
     TurnFinished,
     TurnStarted,
 )
+from mharness.domain.archive import ArchiveError
 from mharness.domain.context import ContextUsage
 from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
@@ -65,12 +67,17 @@ from mharness.domain.trace import (
     TurnInterrupted,
     redact,
 )
+from mharness.ports.archive import ArchiveStore
 from mharness.ports.sessions import SessionLog, SessionStore
 from mharness.ports.tracing import TraceLog, TraceSink
 
 # Builds the agent of a conversation: its model and the history it starts
 # with. Which client and tools it has is not this module's business.
 type NewAgent = Callable[[str, Sequence[Message]], Agent]
+
+
+# What cannot be told to the person in the moment, to maha.log.
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -90,6 +97,8 @@ class _Origin:
     # Names each new session after its first turn; None: no titles (`-p`,
     # the evals; spec hito 10, §1.12).
     titler: Titler | None = None
+    # The archive of each session (spec hito 11, §1.5); None: none.
+    archives: ArchiveStore | None = None
 
 
 class Conversation:
@@ -129,6 +138,7 @@ class Conversation:
         self._agent = agent
         self._origin = origin
         self._log = log
+        self._id = ""
         # When a new session started; its header says so. `_new_id()` sets
         # it again with each id it takes.
         self._created = origin.now()
@@ -170,6 +180,18 @@ class Conversation:
         self._titling: asyncio.Task[None] | None = None
         # The title is saved while a turn may run: one save at a time.
         self._saving = asyncio.Lock()
+
+    @property
+    def id(self) -> str:
+        return self._id
+
+    @id.setter
+    def id(self, session: str) -> None:
+        """Its id, and its archive with it: the agent archives where the
+        session's id says (spec hito 11, §1.5)."""
+        self._id = session
+        archives = self._origin.archives
+        self._agent.archive = None if archives is None else archives.open(session)
 
     def _system_for(self, model: str) -> str | None:
         """The session's prompt for `model`: its own family layer."""
@@ -550,6 +572,13 @@ class Conversation:
         is this conversation's alone (it was created new): it moves."""
         old = self.id
         self.id = self._new_id()
+        archives = self._origin.archives
+        if archives is not None:
+            # Outputs of its first turn may be archived under the old id.
+            try:
+                await archives.move(old, self.id)
+            except ArchiveError as exc:
+                _log.warning("session %s: %s", self.id, exc)
         if not self._reserved:
             return
         # The trace is reserved again under the new id when it moves.
@@ -650,6 +679,7 @@ class Sessions:
         effort: Effort | None = None,
         prompt: SystemPromptBuilder | None = None,
         titler: Titler | None = None,
+        archives: ArchiveStore | None = None,
     ) -> None:
         self._store = store
         self._new_agent = new_agent
@@ -658,7 +688,16 @@ class Sessions:
         # changes it (spec hito 9, §1.7).
         self.effort = effort
         self._origin = _Origin(
-            cwd, provider, version, now, token, traces, Secrets(masked), prompt, titler
+            cwd,
+            provider,
+            version,
+            now,
+            token,
+            traces,
+            Secrets(masked),
+            prompt,
+            titler,
+            archives,
         )
 
     @property
@@ -864,6 +903,13 @@ class Sessions:
             raise SessionError(
                 f"session {session} deleted, but not its trace: {exc}"
             ) from None
+        if self._origin.archives is not None:
+            try:
+                await self._origin.archives.delete(session)
+            except ArchiveError as exc:
+                raise SessionError(
+                    f"session {session} deleted, but not its archive: {exc}"
+                ) from None
 
     async def trace(
         self, session: str | None, *, current: Conversation | None = None

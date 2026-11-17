@@ -33,14 +33,17 @@ from mharness.domain.agent_events import (
     TurnStarted,
 )
 from mharness.domain.approval import ApprovalRequest, Decision
+from mharness.domain.archive import ArchiveError, ArchiveItem
 from mharness.domain.catalog import add_cost, cost
 from mharness.domain.context import (
     DEFAULT_BUDGET,
+    OUTPUT_LIMIT,
     ContextPolicy,
     ContextUsage,
     estimate,
     estimate_messages,
     estimate_tools,
+    fit,
 )
 from mharness.domain.errors import RetryableModelError
 from mharness.domain.events import ModelEvent, TextDelta, UsageSoFar
@@ -64,6 +67,7 @@ from mharness.domain.money import known
 from mharness.domain.retry import RetryPolicy
 from mharness.domain.tools import ToolError
 from mharness.ports.approval import ApprovalGate
+from mharness.ports.archive import ContextArchive
 from mharness.ports.catalog import ModelCatalog
 from mharness.ports.model import ModelClient
 from mharness.ports.tools import Tool
@@ -143,6 +147,10 @@ class Agent:
         self._measured: _Measured | None = None
         # Tokens per call at most (spec hito 11, §1.3).
         self.context_budget = context_budget
+        # The session's archive, where a whole output too big for the
+        # context goes (§1.6); the session sets it. None: none, and such an
+        # output is only cut.
+        self.archive: ContextArchive | None = None
 
     @property
     def messages(self) -> Sequence[Message]:
@@ -417,7 +425,9 @@ class Agent:
                 else:
                     # Nobody was asked, or "once" or "session".
                     turn.executed = True
-                    outcome = await _within(self._run(call, prepared), turn.deadline)
+                    outcome = await _within(
+                        self._run(call, prepared, self._position(turn)), turn.deadline
+                    )
             turn.calls_run += 1
             turn.results.append(outcome.result)
             yield ToolFinished(
@@ -444,7 +454,7 @@ class Agent:
         """Run a tool that waits for the person (`ask_user`). As while they
         decide on a call, the turn's clock stops: a person reading is no
         slow model (spec hito 10, §1.11)."""
-        return await _paused(turn, self._run(call, ready))
+        return await _paused(turn, self._run(call, ready, self._position(turn)))
 
     def _keep_timed_out(self, turn: _Turn) -> None:
         """What a turn stopped by its time limit keeps: as after Ctrl+C,
@@ -675,8 +685,14 @@ class Agent:
             )
         return _Ready(tool=tool, params=params, request=request)
 
-    async def _run(self, call: ToolCallBlock, ready: _Ready) -> _Outcome:
-        """Run an allowed call. Every failure becomes an error result."""
+    def _position(self, turn: _Turn) -> int:
+        """Where the step's results go in the conversation."""
+        return len(self._messages) + len(turn.messages)
+
+    async def _run(self, call: ToolCallBlock, ready: _Ready, position: int) -> _Outcome:
+        """Run an allowed call. Every failure becomes an error result. An
+        output too big for the context goes whole to the archive, and the
+        model gets its beginning, its end and its id (spec hito 11, §1.6)."""
         try:
             content = await ready.tool.run(ready.params)
         except ToolError as exc:
@@ -687,8 +703,10 @@ class Agent:
             # A tool that breaks its contract does not cut the turn (spec
             # mejora-2026-10-26-deuda-pre-hito-6, B3).
             return _crash(call, f"run() returned {type(content).__name__}, not str")
-        result = ToolResultBlock(call_id=call.id, content=content)
+        shown, problem = await self._fit(call, ready.tool.name, content, position)
+        result = ToolResultBlock(call_id=call.id, content=shown)
         try:
+            # Of the whole output: "4,210 lines" is what the tool gave.
             summary = ready.tool.summary(content)
         except Exception as exc:
             # The tool already ran: the model keeps its real result, and the
@@ -698,7 +716,25 @@ class Agent:
                 summary="(no summary)",
                 internal_error=f"summary: {type(exc).__name__}: {exc}",
             )
-        return _Outcome(result=result, summary=summary)
+        return _Outcome(result=result, summary=summary, internal_error=problem)
+
+    async def _fit(
+        self, call: ToolCallBlock, tool: str, content: str, position: int
+    ) -> tuple[str, str | None]:
+        """The output as the model gets it, and why it could not be
+        archived, if it could not: then it is only cut."""
+        if len(content) <= OUTPUT_LIMIT:
+            return content, None
+        if self.archive is None:
+            return fit(content), None
+        item = ArchiveItem(
+            kind="output", position=position, role="tool", tool=tool, text=content
+        )
+        try:
+            [archived] = await self.archive.add([item])
+        except ArchiveError as exc:
+            return fit(content), f"archive: {exc}"
+        return fit(content, archived_as=archived), None
 
 
 def call_cost(

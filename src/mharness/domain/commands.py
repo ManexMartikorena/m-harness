@@ -4,9 +4,11 @@ from pydantic import BaseModel
 
 # A runner keeps at most this much of the output: its start and its end,
 # where a long `pytest` or a build says what failed (audit after hito 10,
-# H4).
-OUTPUT_HEAD_CHARS = 10_000
-OUTPUT_TAIL_CHARS = 20_000
+# H4). What passes 40,000 characters goes whole to the session's archive,
+# and the model sees its start, its end and its id (spec hito 11, §1.6):
+# up to a million, the memory of a command stays bounded.
+OUTPUT_HEAD_CHARS = 250_000
+OUTPUT_TAIL_CHARS = 750_000
 OUTPUT_MAX_CHARS = OUTPUT_HEAD_CHARS + OUTPUT_TAIL_CHARS
 
 

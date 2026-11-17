@@ -612,6 +612,9 @@ async def test_the_bytes_left_out_count_bytes_that_are_not_utf8(
     tmp_path: Path,
 ) -> None:
     # Review: each U+FFFD counted as three bytes.
-    result = await run("head -c 100000 /dev/zero | tr '\\0' '\\377'", tmp_path)
+    kept = OUTPUT_MAX_CHARS
+    result = await run(
+        f"head -c {kept + 100_000} /dev/zero | tr '\\0' '\\377'", tmp_path
+    )
 
-    assert "[output cut here: 70000 bytes left out]" in result.output
+    assert "[output cut here: 100000 bytes left out]" in result.output
