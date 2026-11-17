@@ -684,6 +684,31 @@ la batería entera.
 
 El resultado se anota aquí al implementar.
 
+### Resultados (PR 1)
+
+2026-11-17, `maha eval --models glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5
+--repeat 5 --retry-errors`, contra las líneas base del 2026-11-10 (24
+tareas). El PR 1 cambia lo que se manda (`max_tokens` en el formato de
+Anthropic, `prompt_cache_key` en el de OpenAI), no el prompt.
+
+| Modelo | Éxito | Validación | Coste total | Caché leída | Llamadas |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 119/120 | 24/25 | 0,142 $ | 68,0 % | 608 |
+| `kimi-k2.7-code` | 118/120 | 24/25 | 0,984 $ | 85,2 % | 660 |
+| `claude-haiku-5-5` | 120/120 | 25/25 | 0,593 $ | 70,2 % | 479 |
+
+- **Sin regresiones de éxito**; las bajadas de una tarea, dentro del
+  ruido (p = 0,5).
+- **El ⚠ de coste de Kimi (+51 %) no es de este PR.** Es el mismo +51 %
+  de la auditoría tras el hito 10, por devolverle su razonamiento (R4,
+  P8), que el mantenedor aceptó el 2026-11-11; las líneas base son de
+  antes. Contra la pasada de `v0.10.2` (2026-11-13), Kimi cuesta menos
+  (0,984 $ frente a 1,084 $) con las mismas llamadas (660 frente a 651).
+- **`prompt_cache_key` no cambia la caché:** la parte leída de caché de
+  cada modelo está en el rango de las pasadas del 10 al 13 de noviembre
+  (GLM 67-73 %, Kimi 84,5-86,1 %, Haiku 68,9-71,2 %).
+- Las líneas base nuevas, al final del hito (§5).
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit pequeño, con tests y lint en verde.
