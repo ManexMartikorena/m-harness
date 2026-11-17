@@ -1,4 +1,4 @@
-"""Traces on the disk (spec hito 7, §1.7); OpenTelemetry in hito 22."""
+"""Traces on the disk (spec hito 7, §1.7); OpenTelemetry in hito 23."""
 
 from mharness.adapters.tracing.jsonl_traces import JsonlTraceSink
 

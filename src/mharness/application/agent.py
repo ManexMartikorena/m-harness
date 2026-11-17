@@ -338,7 +338,7 @@ class Agent:
         need it, run, and their results put in the turn."""
         # The block the model was writing when an output limit cut it.
         last = turn.messages[-1].blocks[-1]
-        # In order, not in parallel, until hito 16 (spec hito 4, §1.7).
+        # In order, not in parallel, until hito 17 (spec hito 4, §1.7).
         for call in turn.calls:
             yield ToolCallProposed(call=call)
             if turn.denied:

@@ -193,7 +193,7 @@ class Evaluator:
                 return why
         if check.command is not None:
             # Code the model wrote: an empty HOME, and no XDG folder nor
-            # credential, until the sandbox of hito 15 (deep audit, I5).
+            # credential, until the sandbox of hito 16 (deep audit, I5).
             home = await self._suite.home(path)
             done = await self._runner.run(
                 check.command,
