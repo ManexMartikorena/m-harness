@@ -53,16 +53,19 @@ en GitHub.
     `informes/`.
 - **Con hito asignado, resuelto aquí** (estaba en ESTADO: "Hito 11"):
   - los `AGENTS.md` de subcarpetas (spec 10, decisión 6);
-  - el coste en tokens de las herramientas: 2.191 tokens las diez, medido
-    con un test;
+  - el coste en tokens de las herramientas en cada llamada (~700 con las
+    cuatro del hito 4): 2.191 tokens las diez, medido con un test;
   - compactar (spec 4, §12.14);
   - tareas con historial previo y la marca `[interrupted by the user]`
-    (25 y 26);
+    (25 y 26; spec 6, §5; pasó del hito 8 por decisión del mantenedor,
+    spec 8, §11.8);
   - `grep` con contexto o solo ficheros;
   - la política de versiones del formato de sesión (el formato solo
     crece);
   - subir el tope de pasos;
-  - volver a medir `todo_write` con la batería más larga.
+  - volver a medir `todo_write` con la batería más larga: lo usan donde
+    hay una lista de pasos (la 28 en 15/15, la 23 en 10/15) y casi nunca
+    sin ella; la guía no cambia.
 
 ## Hito 10 (2026-11-04 a 2026-11-13)
 
