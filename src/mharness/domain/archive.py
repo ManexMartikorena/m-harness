@@ -6,7 +6,10 @@ message that is archived, and each tool output too big for the context
 (§1.6). What comes out: hits of a search, and an item read by lines.
 """
 
+import bisect
 import re
+import unicodedata
+from functools import cache
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -107,6 +110,93 @@ def search_terms(query: str) -> list[str]:
     """The words of a query, as a full-text search takes them: letters,
     digits and `_`, without operators the model did not mean."""
     return re.findall(r"\w+", query)
+
+
+# The characters of a search's fragment, about 40 words (§1.9).
+SNIPPET_CHARS = 300
+# The places of each word a fragment looks at, at most: FTS5's own
+# snippet() grows with the square of the matches, and took minutes over an
+# output with the words on every line (hand verification of hito 11).
+SNIPPET_MAX_PLACES = 2_000
+
+
+def snippet(text: str, terms: list[str], size: int = SNIPPET_CHARS) -> str:
+    """The part of `text`, about `size` characters, with the most words of
+    `terms`, found as the archive's search finds them: whole words,
+    without case or accents. Cut at spaces, with "…" where text was left
+    out; the start, if no word is there. Its cost is bounded: each word is
+    looked for in `SNIPPET_MAX_PLACES` places at most."""
+    if len(text) <= size:
+        return text
+    places: dict[str, list[int]] = {}
+    for term in dict.fromkeys(_plain(term) for term in terms if term):
+        found: list[int] = []
+        for match in _word(term).finditer(text):
+            found.append(match.start())
+            if len(found) == SNIPPET_MAX_PLACES:
+                break
+        if found:
+            places[term] = found
+    if not places:
+        return _window(text, 0, size)
+    half = size // 2
+    rarest = min(places.values(), key=len)
+    best, best_score = rarest[0], -1
+    for place in rarest:
+        score = sum(
+            1
+            for found in places.values()
+            if bisect.bisect_right(found, place + half)
+            > bisect.bisect_left(found, place - half)
+        )
+        if score > best_score:
+            best, best_score = place, score
+    return _window(text, max(0, min(best - half, len(text) - size)), size)
+
+
+def _window(text: str, start: int, size: int) -> str:
+    """`size` characters of `text` from `start`, without halves of words."""
+    end = min(len(text), start + size)
+    if start > 0:
+        space = text.find(" ", start, end)
+        newline = text.find("\n", start, end)
+        cuts = [cut for cut in (space, newline) if cut >= 0]
+        start = min(cuts) + 1 if cuts else start
+    if end < len(text):
+        cut = max(text.rfind(" ", start, end), text.rfind("\n", start, end))
+        end = cut if cut > start else end
+    return (
+        ("…" if start > 0 else "") + text[start:end] + ("…" if end < len(text) else "")
+    )
+
+
+def _plain(word: str) -> str:
+    """`word` without accents and in lower case."""
+    decomposed = unicodedata.normalize("NFKD", word)
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
+
+
+@cache
+def _accented() -> dict[str, str]:
+    """Each base letter and the Latin letters with accents built on it."""
+    letters: dict[str, str] = {}
+    for code in range(0xC0, 0x250):
+        char = chr(code)
+        base = _plain(char)
+        if len(base) == 1 and base.isascii() and base.isalpha() and base != char:
+            letters[base] = letters.get(base, base) + char.lower()
+    return letters
+
+
+@cache
+def _word(term: str) -> re.Pattern[str]:
+    """A whole word, `term` with or without accents, in any case."""
+    letters = _accented()
+    parts = (
+        f"[{re.escape(letters[char])}]" if char in letters else re.escape(char)
+        for char in term
+    )
+    return re.compile(r"(?<!\w)" + "".join(parts) + r"(?!\w)", re.IGNORECASE)
 
 
 class ArchiveNotes(BaseModel, frozen=True):

@@ -4,6 +4,7 @@ SQLite one, and the fake in memory where they must agree."""
 import os
 import sqlite3
 import stat
+import time
 from pathlib import Path
 
 import pytest
@@ -315,3 +316,33 @@ async def test_a_hit_shows_the_text_as_it_is(tmp_path: Path) -> None:
     [hit] = await archive.search("ERROR", 5)
 
     assert hit.snippet == "013458 ERROR payment failed code=PX-4471"
+
+
+async def test_a_hit_in_a_huge_output_comes_at_once(tmp_path: Path) -> None:
+    # Seen at the hand verification of hito 11: FTS5's snippet() grows with
+    # the square of the matches, and over an output of 400,000 lines with
+    # words in every one it took more than two minutes. 10,000 lines say
+    # the same: 1.9 s with snippet().
+    archive = SqliteArchive(tmp_path / f"{SESSION}.db")
+    text = "".join(f"linea numero {n}\n" for n in range(1, 10_001))
+    await archive.add([output(text)])
+
+    started = time.monotonic()
+    [hit] = await archive.search("linea numero 1234", 5)
+
+    assert time.monotonic() - started < 1.0
+    assert "linea numero 1234\n" in hit.snippet + "\n"
+
+
+async def test_a_search_that_takes_too_long_is_an_archive_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mharness.adapters.storage import archive_sqlite
+
+    archive = SqliteArchive(tmp_path / f"{SESSION}.db")
+    await archive.add([output("iva " * 1000)])
+    monkeypatch.setattr(archive_sqlite, "SEARCH_TIME_LIMIT", 0.0)
+    monkeypatch.setattr(archive_sqlite, "_CLOCK_EVERY", 1)
+
+    with pytest.raises(ArchiveError, match="search took more than"):
+        await archive.search("iva", 5)
