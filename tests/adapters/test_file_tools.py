@@ -514,6 +514,14 @@ async def test_grep_cuts_lines_and_results(root: Path) -> None:
     assert tool.summary(many) == "100 matches"
 
 
+async def test_grep_without_context_puts_no_breaks(root: Path) -> None:
+    # Seen in the evals of PR 4 of hito 11: "--" between two matches of
+    # one file that do not touch, with no lines around them.
+    write(root, "a.py", "def uno():\n    pass\n\ndef dos():\n    pass\n")
+
+    assert await grep(root, "^def ") == "a.py:1: def uno():\na.py:4: def dos():"
+
+
 async def test_grep_gives_the_lines_around_each_match(root: Path) -> None:
     # Spec hito 11, §1.15: no need to read the file to see the function.
     write(root, "a.py", "1\n2\nTOTAL\n4\n5\n6\n7\nTOTAL\nTOTAL\n10\n")

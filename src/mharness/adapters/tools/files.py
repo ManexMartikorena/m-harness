@@ -936,7 +936,7 @@ def _matching_lines(
         text = whole[:GREP_MAX_LINE]
         if matches < room and regex.search(whole):
             first = before[0][0] if before else number
-            if found and first > last + 1:
+            if context and found and first > last + 1:
                 found.append(("break", "--"))
             found += [("context", f"{shown}-{n}- {t}") for n, t in before]
             before.clear()
