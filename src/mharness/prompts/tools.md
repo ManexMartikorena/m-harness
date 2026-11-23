@@ -9,7 +9,8 @@ Find files by name; prefer it to listing directory after directory.
 
 ## grep
 Find where something is defined or used; search before you read files one by
-one.
+one. Use context to see the lines around a match without reading the whole
+file, and output "files" when you only need to know where.
 
 ## write_file
 Create new files. For a change to a file that exists, use edit_file.

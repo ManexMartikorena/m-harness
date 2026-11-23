@@ -12,7 +12,7 @@ import json
 import re
 import sys
 
-from mharness.adapters.tools.files import compile_pattern, search_files
+from mharness.adapters.tools.files import SearchMode, compile_pattern, search_files
 from mharness.domain.tools import ToolError
 
 
@@ -31,6 +31,7 @@ def main() -> None:
                     request["raw"],
                     request["max_bytes"],
                     request["max_matches"],
+                    SearchMode(context=request["context"], output=request["output"]),
                 )
             }
         except ToolError as exc:

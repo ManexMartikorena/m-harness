@@ -21,11 +21,12 @@ import re
 import secrets
 import stat
 import sys
+from collections import deque
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePath
-from typing import IO
+from typing import IO, Literal
 
 from pydantic import BaseModel, Field
 
@@ -707,6 +708,18 @@ GREP_TIME_LIMIT = 30.0
 # Files searched per child process: the walk stops once there are enough
 # matches.
 GREP_BATCH_FILES = 500
+# Lines around each match, at most (spec hito 11, §1.15).
+GREP_MAX_CONTEXT = 10
+
+type GrepOutput = Literal["lines", "files", "count"]
+# What one entry of a search is: a match (or a file, or a file's count),
+# a line around one, or the break between two groups of lines.
+type _Kind = Literal["match", "context", "break"]
+
+
+# Where a line of grep says its number: ":12: " for a match, "-12- " for a
+# line around one.
+_LINE_MARK = re.compile(r"[:-]\d+[:-] ")
 
 
 class GrepParams(BaseModel, extra="forbid"):
@@ -719,13 +732,24 @@ class GrepParams(BaseModel, extra="forbid"):
         default=None,
         description='Only files that match, like "*.py" (by name) or "src/**/*.py"',
     )
+    context: int = Field(
+        default=0,
+        ge=0,
+        le=GREP_MAX_CONTEXT,
+        description="Lines to show before and after each match",
+    )
+    output: GrepOutput = Field(
+        default="lines",
+        description='"lines" (each match), "files" (only the paths) or "count"',
+    )
 
 
 class Grep:
     name = "grep"
     description = (
         "Search file contents with a Python regular expression. Gives "
-        '"path:line: text". Example: {"pattern": "def main", "glob": "*.py"}'
+        '"path:line: text", and "path-line- text" for the lines around with '
+        'context. Example: {"pattern": "def main", "glob": "*.py", "context": 2}'
     )
     params = GrepParams
     permission: Permission = "read"
@@ -758,35 +782,51 @@ class Grep:
         base = self._workspace.resolve(params.path)
         self._asked.check(params, params.path, base, self._warning(base, params.path))
         _check_grep(params, base)
-        async with _Searcher(params.pattern) as searcher:
+        output = params.output
+        async with _Searcher(params) as searcher:
             if base.is_file():
                 shown = self._workspace.shown(base)
                 found = await searcher.search([(str(base), shown)], params.path)
-                return _grep_result(found, stopped_early=False)
+                return _grep_result(found, output, stopped_early=False)
             # The walk stays here: its perimeter, secrets and .gitignore
             # rules are not the child's to decide. It goes in batches, and
             # stops once there are enough matches.
             walk = _Walk(self._workspace, base)
-            matches: list[str] = []
+            entries: list[tuple[_Kind, str]] = []
             batch: list[tuple[str, str]] = []
             async for file in walk.files():
                 if params.glob and not _glob_matches(file.in_base, params.glob):
                     continue
                 batch.append((str(file.real), file.shown))
                 if len(batch) == GREP_BATCH_FILES:
-                    matches += await searcher.search(batch, None)
+                    found = await searcher.search(batch, None)
+                    entries += _joined(entries, found, params.context)
                     batch = []
-                    if len(matches) > GREP_MAX_MATCHES:
-                        return _grep_result(matches, stopped_early=False)
+                    if _units(entries) > GREP_MAX_MATCHES:
+                        return _grep_result(entries, output, stopped_early=False)
             if batch:
-                matches += await searcher.search(batch, None)
-            return _grep_result(matches, stopped_early=walk.stopped_early)
+                found = await searcher.search(batch, None)
+                entries += _joined(entries, found, params.context)
+            return _grep_result(entries, output, stopped_early=walk.stopped_early)
+
+    def summary(self, result: str) -> str:
+        """Its matches ("path:line: text"), without the lines around; or,
+        of "files" and "count", its files."""
+        if result == "(no matches)":
+            return _count(0, "match", "matches")
+        lines = [
+            line
+            for line in result.splitlines()
+            if not line.startswith("… [") and line != "--"
+        ]
+        marks = [_LINE_MARK.search(line) for line in lines]
+        if not any(marks):
+            return _count(len(lines), "file")
+        found = sum(1 for mark in marks if mark and mark.group().startswith(":"))
+        return _count(found, "match", "matches")
 
     def touched(self, params: GrepParams) -> str | None:
         return None
-
-    def summary(self, result: str) -> str:
-        return _count_lines(result, "(no matches)", "match", "matches")
 
 
 def _check_grep(params: GrepParams, base: Path) -> None:
@@ -829,14 +869,27 @@ def _glob_matches(in_base: PurePath, pattern: str) -> bool:
     return glob_matches(pattern, in_base)
 
 
+@dataclass(frozen=True)
+class SearchMode:
+    """How a search gives what it finds (spec hito 11, §1.15): the lines
+    around each match, and whether matches, files or counts."""
+
+    context: int = 0
+    output: GrepOutput = "lines"
+
+
 def _search(
     path: Path,
     shown: str,
     regex: re.Pattern[str],
     raw: str | None,
     max_bytes: int,
-) -> list[str]:
-    """The matching lines of one text file, as "path:line: text".
+    mode: SearchMode,
+    room: int,
+) -> list[tuple[_Kind, str]]:
+    """What one text file has, as entries: "path:line: text" for a match,
+    "path-line- text" for a line around one, and a break between groups;
+    or its path, or "path: count". At most `room` matches.
 
     With `raw`, the one file the model asked for: what cannot be searched is
     an error, not "(no matches)" (spec mejora-2026-10-23-deuda-hito-5, A4).
@@ -848,7 +901,6 @@ def _search(
         if raw is None:
             return []
         raise ToolError(f"not a regular file: {raw}")
-    found = []
     with _as_text(file) as lines:
         size = os.fstat(file.fileno()).st_size
         binary = size <= max_bytes and is_binary(file)
@@ -858,12 +910,46 @@ def _search(
                 raise ToolError(f"binary file, not searchable: {raw}")
         if size > max_bytes or binary:
             return []
-        for number, line in enumerate(lines, start=1):
-            text = line.rstrip("\r\n")
-            if regex.search(text):
-                found.append(f"{shown}:{number}: {text[:GREP_MAX_LINE]}")
-                if len(found) > GREP_MAX_MATCHES:
-                    break
+        if mode.output == "files":
+            hit = any(regex.search(line.rstrip("\r\n")) for line in lines)
+            return [("match", shown)] if hit else []
+        if mode.output == "count":
+            count = sum(1 for line in lines if regex.search(line.rstrip("\r\n")))
+            return [("match", f"{shown}: {count}")] if count else []
+        return _matching_lines(lines, shown, regex, mode.context, room)
+
+
+def _matching_lines(
+    lines: IO[str], shown: str, regex: re.Pattern[str], context: int, room: int
+) -> list[tuple[_Kind, str]]:
+    """The matches of one file, each with `context` lines before and after,
+    as grep and ripgrep give them; a break between groups that do not
+    touch. It ends after the context of the match number `room`."""
+    found: list[tuple[_Kind, str]] = []
+    # The lines just before, and how many of the next go after a match.
+    before: deque[tuple[int, str]] = deque(maxlen=context)
+    after = 0
+    last = 0
+    matches = 0
+    for number, line in enumerate(lines, start=1):
+        whole = line.rstrip("\r\n")
+        text = whole[:GREP_MAX_LINE]
+        if matches < room and regex.search(whole):
+            first = before[0][0] if before else number
+            if found and first > last + 1:
+                found.append(("break", "--"))
+            found += [("context", f"{shown}-{n}- {t}") for n, t in before]
+            before.clear()
+            found.append(("match", f"{shown}:{number}: {text}"))
+            matches += 1
+            last, after = number, context
+        elif after:
+            found.append(("context", f"{shown}-{number}- {text}"))
+            last, after = number, after - 1
+        elif matches >= room:
+            break
+        elif context:
+            before.append((number, text))
     return found
 
 
@@ -873,26 +959,45 @@ def search_files(
     raw: str | None,
     max_bytes: int,
     max_matches: int,
-) -> list[str]:
-    """The matches of `regex` in `files` (resolved path, shown path), at
-    most one more than `max_matches`. With `raw`, the one file the model
-    asked for, and its failures are errors. It runs in the child process of
-    `_Searcher`."""
-    matches: list[str] = []
+    mode: SearchMode | None = None,
+) -> list[tuple[_Kind, str]]:
+    """What `regex` finds in `files` (resolved path, shown path), as the
+    entries of `_search`: at most one match (or file) more than
+    `max_matches`. With `raw`, the one file the model asked for, and its
+    failures are errors. It runs in the child process of `_Searcher`."""
+    mode = mode or SearchMode()
+    entries: list[tuple[_Kind, str]] = []
     for real, shown in files:
+        # One more than shown: it tells whether something was left out.
+        room = max_matches + 1 - _units(entries)
         if raw is not None:
             with _reading(raw):
-                return _search(Path(real), shown, regex, raw, max_bytes)
+                return _search(Path(real), shown, regex, raw, max_bytes, mode, room)
         try:
-            matches.extend(_search(Path(real), shown, regex, None, max_bytes))
+            found = _search(Path(real), shown, regex, None, max_bytes, mode, room)
         except OSError:
             # Skipped, as secrets, binary and large files (review of PR 2,
             # fix 8).
             continue
-        # One more than shown: it tells whether something was left out.
-        if len(matches) > max_matches:
+        entries += _joined(entries, found, mode.context)
+        if _units(entries) > max_matches:
             break
-    return matches
+    return entries
+
+
+def _joined(
+    before: list[tuple[_Kind, str]], found: list[tuple[_Kind, str]], context: int
+) -> list[tuple[_Kind, str]]:
+    """`found`, with a break first if the search gives lines around its
+    matches and it comes after others: two files never touch."""
+    if context and before and found:
+        return [("break", "--"), *found]
+    return found
+
+
+def _units(entries: list[tuple[_Kind, str]]) -> int:
+    """The matches, or files, of a search's entries."""
+    return sum(1 for kind, _ in entries if kind == "match")
 
 
 # The variables of the search child: none but the locale (H9).
@@ -912,8 +1017,9 @@ class _Searcher:
     It gets no environment: the key of maha is not its own (H9).
     """
 
-    def __init__(self, pattern: str) -> None:
-        self._pattern = pattern
+    def __init__(self, params: GrepParams) -> None:
+        self._pattern = params.pattern
+        self._mode = SearchMode(context=params.context, output=params.output)
         self._process: asyncio.subprocess.Process | None = None
         self._deadline = 0.0
 
@@ -942,7 +1048,9 @@ class _Searcher:
             process.kill()
         await process.wait()
 
-    async def search(self, files: list[tuple[str, str]], raw: str | None) -> list[str]:
+    async def search(
+        self, files: list[tuple[str, str]], raw: str | None
+    ) -> list[tuple[_Kind, str]]:
         process = self._process
         assert process is not None
         assert process.stdin is not None
@@ -953,6 +1061,8 @@ class _Searcher:
             "raw": raw,
             "max_bytes": GREP_MAX_FILE_BYTES,
             "max_matches": GREP_MAX_MATCHES,
+            "context": self._mode.context,
+            "output": self._mode.output,
         }
         time_left = self._deadline - asyncio.get_running_loop().time()
         try:
@@ -977,14 +1087,33 @@ class _Searcher:
         answer = json.loads(line)
         if "error" in answer:
             raise ToolError(answer["error"])
-        matches: list[str] = answer["matches"]
-        return matches
+        entries: list[tuple[_Kind, str]] = [
+            (kind, text) for kind, text in answer["matches"]
+        ]
+        return entries
 
 
-def _grep_result(matches: list[str], *, stopped_early: bool) -> str:
-    lines = matches[:GREP_MAX_MATCHES]
-    if len(matches) > GREP_MAX_MATCHES:
-        lines.append(f"… [stopped at {GREP_MAX_MATCHES} matches; narrow the search]")
+def _grep_result(
+    entries: list[tuple[_Kind, str]],
+    output: GrepOutput = "lines",
+    *,
+    stopped_early: bool,
+) -> str:
+    """The search as the model reads it: up to `GREP_MAX_MATCHES` matches,
+    or files, with their lines around."""
+    lines: list[str] = []
+    units = 0
+    for kind, text in entries:
+        if kind == "match":
+            units += 1
+            if units > GREP_MAX_MATCHES:
+                break
+        lines.append(text)
+    if units > GREP_MAX_MATCHES:
+        while lines and lines[-1] == "--":
+            lines.pop()
+        what = "matches" if output == "lines" else "files"
+        lines.append(f"… [stopped at {GREP_MAX_MATCHES} {what}; narrow the search]")
     if stopped_early:
         lines.append(_walk_stopped())
     return "\n".join(lines) if lines else "(no matches)"

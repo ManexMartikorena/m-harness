@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from mharness.adapters.tools import (
     EditFile,
@@ -430,7 +431,7 @@ async def test_glob_refuses_patterns_that_escape(root: Path, pattern: str) -> No
 # grep
 
 
-async def grep(root: Path, pattern: str, **params: str) -> str:
+async def grep(root: Path, pattern: str, **params: Any) -> str:
     return await Grep(Workspace(root)).run(GrepParams(pattern=pattern, **params))
 
 
@@ -511,6 +512,78 @@ async def test_grep_cuts_lines_and_results(root: Path) -> None:
     assert len(long_line) == len("long.txt:1: ") + 300
     assert many.splitlines()[-1] == "… [stopped at 100 matches; narrow the search]"
     assert tool.summary(many) == "100 matches"
+
+
+async def test_grep_gives_the_lines_around_each_match(root: Path) -> None:
+    # Spec hito 11, §1.15: no need to read the file to see the function.
+    write(root, "a.py", "1\n2\nTOTAL\n4\n5\n6\n7\nTOTAL\nTOTAL\n10\n")
+    write(root, "b.py", "TOTAL\n2\n")
+
+    result = await grep(root, "TOTAL", context=1)
+
+    assert result == (
+        "a.py-2- 2\n"
+        "a.py:3: TOTAL\n"
+        "a.py-4- 4\n"
+        "--\n"
+        "a.py-7- 7\n"
+        "a.py:8: TOTAL\n"
+        "a.py:9: TOTAL\n"
+        "a.py-10- 10\n"
+        "--\n"
+        "b.py:1: TOTAL\n"
+        "b.py-2- 2"
+    )
+    assert Grep(Workspace(root)).summary(result) == "4 matches"
+
+
+async def test_grep_with_context_stops_at_the_match_limit(root: Path) -> None:
+    write(root, "many.txt", "Ane\nx\n" * 150)
+    tool = Grep(Workspace(root))
+
+    result = await tool.run(GrepParams(pattern="Ane", path="many.txt", context=1))
+
+    lines = result.splitlines()
+    assert lines[-1] == "… [stopped at 100 matches; narrow the search]"
+    assert sum(1 for line in lines if ":" in line.split(" ")[0]) == 100
+    assert lines[-2] == "many.txt-200- x"
+    assert tool.summary(result) == "100 matches"
+
+
+async def test_grep_gives_only_the_files_or_their_counts(root: Path) -> None:
+    write(root, "a.py", "TODO\nTODO\n")
+    write(root, "b.py", "nada\n")
+    write(root, "src/c.py", "TODO\n")
+    tool = Grep(Workspace(root))
+
+    files_ = await tool.run(GrepParams(pattern="TODO", output="files"))
+    counts = await tool.run(GrepParams(pattern="TODO", output="count"))
+
+    assert files_ == "a.py\nsrc/c.py"
+    assert counts == "a.py: 2\nsrc/c.py: 1"
+    assert tool.summary(files_) == tool.summary(counts) == "2 files"
+    assert await grep(root, "TODO", path="b.py", output="files") == "(no matches)"
+
+
+async def test_grep_with_only_files_stops_at_the_limit(root: Path) -> None:
+    for n in range(105):
+        write(root, f"f{n:03}.txt", "Ane\n")
+
+    result = await grep(root, "Ane", output="files")
+
+    lines = result.splitlines()
+    assert len(lines) == 101
+    assert lines[-1] == "… [stopped at 100 files; narrow the search]"
+
+
+@pytest.mark.parametrize(
+    "params",
+    [{"context": -1}, {"context": 11}, {"output": "paths"}],
+)
+def test_grep_refuses_a_context_or_output_out_of_range(params: dict[str, Any]) -> None:
+    # The loop gives the validation error back to the model (DESIGN §6).
+    with pytest.raises(ValidationError):
+        GrepParams(pattern="x", **params)
 
 
 async def test_grep_errors(root: Path) -> None:
@@ -3008,7 +3081,7 @@ async def test_grep_stops_searching_once_it_has_enough_matches(
 
     async def counting_batches(
         self: Any, batch: list[tuple[str, str]], raw: str | None
-    ) -> list[str]:
+    ) -> Any:
         nonlocal sent
         sent += 1
         return await real_search(self, batch, raw)
