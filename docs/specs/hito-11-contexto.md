@@ -898,6 +898,66 @@ nadie lo usa de relleno: la guía de `tools.md` no se toca.
 **Líneas base nuevas:** `evals/baselines/2026-11-23-opencode-go-*.json`,
 con la batería de 30 (§5).
 
+### Resultados (PR 4, tras los arreglos)
+
+Revisadas las trazas de la pasada anterior (decisión del mantenedor,
+2026-11-23: "no aceptamos ningún límite; lo que falla se arregla"), salieron
+dos fallos de `grep` del PR 4, que se arreglaron con su test primero: ponía
+`--` entre coincidencias de un fichero sin `context` (`4b1860d`), y GLM le
+pidió `"output": "content"`, el nombre del `Grep` de Claude Code
+(code.claude.com, *tools reference*, comprobado el 2026-11-23: `content`,
+`files_with_matches` y `count`), y recibió un error. `grep` acepta ahora
+esos nombres; el esquema que ve el modelo no cambia (`2fdf0f6`). La
+comprobación de la 27 acepta el resumen en la raíz o en `informes/`, como
+la de la 28 (`9859e2d`).
+
+Pasada otra vez, 2026-11-23 (14:09-15:40), la misma orden, contra las
+líneas base de la pasada anterior:
+
+| Modelo | Éxito | Validación | Coste total | Caché leída | Llamadas |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 147/150 | 30/30 | 0,327 $ | 75,5 % | 821 |
+| `kimi-k2.7-code` | 148/150 | 29/30 | 1,777 $ | 75,9 % | 788 |
+| `claude-haiku-5-5` | 150/150 | 30/30 | 1,246 $ | 61,8 % | 620 |
+
+| Tarea | Modelo | Pasos | Coste | Caché leída | Archivados | `recall` | Éxito |
+|---|---|---|---|---|---|---|---|
+| 27 | `glm-5.3-flash` | 10,8 | 0,0089 $ | 69,1 % | 1 | 0 | 5/5 |
+| 27 | `kimi-k2.7-code` | 5,2 | 0,0370 $ | 26,9 % | 2 | 0 | 5/5 |
+| 27 | `claude-haiku-5-5` | 9,4 | 0,0362 $ | 43,9 % | 2-3 | 0 | 5/5 |
+| 28 | `glm-5.3-flash` | 16,8 | 0,0140 $ | 79,4 % | 1 | 0 | 5/5 |
+| 28 | `kimi-k2.7-code` | 12,2 | 0,0660 $ | 64,1 % | 2 | 0 | 5/5 |
+| 28 | `claude-haiku-5-5` | 11,4 | 0,0575 $ | 52,4 % | 3 | 0 | 5/5 |
+| 29 | `glm-5.3-flash` | 4,8 | 0,0045 $ | 66,6 % | 0 | 0-1 | 5/5 |
+| 29 | `kimi-k2.7-code` | 4,4 | 0,0240 $ | 66,5 % | 0 | 0 | 5/5 |
+| 29 | `claude-haiku-5-5` | 4,6 | 0,0080 $ | 68,8 % | 0 | 0 | 5/5 |
+| 30 | `glm-5.3-flash` | 3,8 | 0,0039 $ | 65,0 % | 1 | 1-3 | 5/5 |
+| 30 | `kimi-k2.7-code` | 3,0 | 0,0117 $ | 66,9 % | 1 | 1 | 5/5 |
+| 30 | `claude-haiku-5-5` | 3,8 | 0,0103 $ | 62,3 % | 1 | 1-2 | 5/5 |
+
+- **Sin ⚠ en ningún modelo**, y las 24 tareas de antes no archivan. Las
+  nuevas, 5/5 en los tres modelos, también la 27 de Haiku.
+- **Los cinco fallos son del modelo**, y el `grep` nuevo les dio lo
+  correcto. GLM falla dos veces la 13: una contesta `resumen`, que tiene
+  test, y otra acierta pero nombra también las demás (decir de más falla,
+  auditoría profunda, I10). GLM falla la 20 (la de siempre) y Kimi la 08
+  (su `slugify` da `version-20`). Ninguno puede ejecutar los tests hasta
+  que `run_command` entre en las evals con el sandbox (hito 16).
+- **Kimi en la 04** (validación) contestó "¿Confirmo?" y no creó el
+  fichero: pidió permiso por texto, cuando `maha` ya pregunta antes de cada
+  cambio. **Decisión del mantenedor (2026-11-23):** no se ajusta el prompt
+  por un fallo del conjunto de validación, que no se mira al ajustar
+  prompts. Si se ve en el uso o en una tarea de train, el arreglo entra
+  con esa prueba (ESTADO, pendientes).
+- **Pasos:** como mucho 27 (Kimi en la 28), con el tope de 50.
+- `recall` sin archivo (la 29 de GLM y la 23 de Haiku, una vez cada una)
+  responde "nothing archived yet" y el modelo sigue.
+
+**Líneas base:** las de esta pasada,
+`evals/baselines/2026-11-23-opencode-go-*-2.json`, son las del cierre del
+hito. Las de la pasada anterior se quedan como registro: se midieron con el
+fallo de `grep`.
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit pequeño, con tests y lint en verde.

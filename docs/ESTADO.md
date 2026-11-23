@@ -67,8 +67,8 @@ trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
    hecho (spec 11, §6): los `AGENTS.md` de subcarpetas, `grep` con
    `context` y `output`, el tope de 50 pasos, las tareas 29 y 30 (`recall`
    se mide con la 30, decisión 15 del mantenedor, 2026-11-23) y la pasada
-   final con las líneas base nuevas del 2026-11-23 (spec 11, §5,
-   "Resultados (PR 4)").
+   final con las líneas base nuevas del 2026-11-23 (`*-2.json`; spec 11,
+   §5, "Resultados (PR 4, tras los arreglos)").
 2. **Humano, con el agente:** la verificación a mano entera de la spec
    11, §7, tras el PR 4 (decisión del mantenedor, 2026-11-17: el PR 3 se
    integró sin ella). Después, el cierre del hito (`docs/cierre-hito-11`,
@@ -214,6 +214,12 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   "A su hito"; faltaban aquí, añadidos el 2026-11-16).
 - **Hito 24:** la limpieza de las sesiones antiguas (auditoría tras el
   hito 10, "A su hito"; faltaba aquí, añadido el 2026-11-16).
+- **Vigilar si un modelo pide confirmación por texto** en vez de actuar
+  ("¿Confirmo?", Kimi en la tarea 04, de validación, 2026-11-23). No se
+  ajusta el prompt por un fallo de validación (decisión del mantenedor,
+  2026-11-23); si se ve en el uso o en una tarea de train, se arregla en
+  `base.md` con esa prueba (spec 11, §5, "Resultados (PR 4, tras los
+  arreglos)").
 - **Medido de nuevo `todo_write`** (2026-11-23, spec 11, §5, "Resultados
   (PR 4)"): lo usan donde hay una lista de pasos (la 28 en 15/15, la 23 en
   10/15) y casi nunca sin ella. La guía no cambia.
