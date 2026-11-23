@@ -708,6 +708,18 @@ def all_reviewed_index_beside_reports(repo: Path) -> None:
     edit(repo / "estado.txt", "equipo de mantenimiento", "equipo de calidad")
 
 
+def lot_recovered_summary_beside_reports(repo: Path) -> None:
+    edit(repo / "estado.txt", "KX-4471-Q", "PENDIENTE")
+    (repo / "lote.txt").write_text("KX-4471-Q\n", encoding="utf-8")
+    urgent_list(repo, "informes/resumen.md")
+
+
+async def test_task_27_takes_the_summary_beside_the_reports() -> None:
+    # As the index of 28: Haiku wrote informes/resumen.md in the evals of
+    # PR 4 of hito 11, a fair reading of the instruction.
+    assert await checked("27-recuperar", lot_recovered_summary_beside_reports, "Hecho.")
+
+
 async def test_task_28_takes_the_index_beside_the_reports() -> None:
     # Every other path of the instruction starts with informes/: writing
     # informes/indice.md is a fair reading (spec hito 11, §5, PR 3).

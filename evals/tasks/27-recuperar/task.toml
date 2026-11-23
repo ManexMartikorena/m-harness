@@ -1,6 +1,8 @@
 # Un dato del principio hace falta al final, y para entonces ya salió de la
 # ventana: con un presupuesto pequeño se archiva, y solo está en el archivo
-# (spec del hito 11, §5).
+# (spec del hito 11, §5). resumen.md vale en la raíz o en informes/, como
+# el índice de la 28: la instrucción admite las dos (spec del hito 11, §5,
+# "Resultados (PR 4)").
 instruction = "Lee estado.txt y fíjate en el código de lote. Cambia en estado.txt ese código por PENDIENTE. Después lee enteros, uno por uno, los seis informes de la carpeta informes/ y escribe resumen.md con una línea por informe: su nombre de fichero y lo más urgente que pide revisar. Al final, escribe en lote.txt el código de lote que tenía estado.txt al principio."
 fixture = "informes"
 allow = ["write_file", "edit_file"]
@@ -12,10 +14,13 @@ max_steps = 30
 [check]
 command = '''
 python3 -c "
+import pathlib
 estado = open('estado.txt', encoding='utf-8').read()
 assert 'PENDIENTE' in estado and 'KX-4471-Q' not in estado, 'estado.txt no cambió'
 assert 'KX-4471-Q' in open('lote.txt', encoding='utf-8').read(), 'lote.txt sin el código'
-resumen = open('resumen.md', encoding='utf-8').read()
+resumenes = [p for p in (pathlib.Path('resumen.md'), pathlib.Path('informes', 'resumen.md')) if p.exists()]
+assert resumenes, 'falta resumen.md'
+resumen = resumenes[0].read_text(encoding='utf-8')
 for nombre, urgente in [
     ('01-almacen-norte', 'pasillo 4'),
     ('02-flota', 'furgoneta 7'),
