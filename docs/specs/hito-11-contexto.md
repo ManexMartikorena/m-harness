@@ -667,8 +667,11 @@ la batería entera.
     (pendiente de spec 10).
   - `29-grep-contexto` (train): encontrar y arreglar algo en ficheros
     grandes, donde `grep` con contexto ahorra lecturas.
+  - `30-recuperar-detalle` (train): un dato que solo está en lo archivado
+    y que el índice no tiene, así que solo `recall` lo encuentra
+    *(añadida en el PR 4, decisión 15)*.
 
-  Con ellas, 29 tareas; la validación, 6 de 29 (21 %).
+  Con ellas, 30 tareas; la validación, 6 de 30 (20 %).
 - **Modelos:** los de las líneas base del 2026-11-10, 5 repeticiones. El
   criterio es el mismo para todos: ningún ajuste para un modelo concreto.
 - **Aceptación:**
@@ -680,7 +683,7 @@ la batería entera.
     leída de caché, anotada por modelo;
   - los pasos de las tareas largas, anotados, para el tope de §1.16.
 - **El conjunto de validación no se mira al escribir `archive.md`.**
-- **Líneas base nuevas** al final del hito, con la batería de 29.
+- **Líneas base nuevas** al final del hito, con la batería de 30.
 
 El resultado se anota aquí al implementar.
 
@@ -977,6 +980,14 @@ Del mantenedor, tras el PR 1 (2026-11-17):
     cabía en la ventana, se archiva y se repite la llamada una vez. Entra
     en el PR 3, pieza 3, con su test.
 
+Del mantenedor, en el PR 4 (2026-11-23):
+15. **`recall` se mide con una tarea nueva, la 30** (train). En la 27 no
+    se usaba, porque el índice del archivero ya trae el código de lote. La
+    30 empieza con un historial donde el agente leyó un registro largo y
+    lo rotó. La línea CRÍTICO está en medio de esa lectura, donde el
+    archivero no mira (lee 2.000 caracteres de cada bloque, del principio
+    y del final). La 27 sigue igual: mide que el índice conserva el dato.
+
 ## 12. Aprendido al implementar
 
 **PR 1 (2026-11-17):**
@@ -1150,3 +1161,50 @@ Del mantenedor, tras el PR 1 (2026-11-17):
   22.506 tokens y quedaron 7.092; el índice del archivero guardaba el
   código de lote, lo hecho por fichero y lo pendiente; el archivero costó
   0,001 $. No usó `recall`: el índice ya tenía el dato.
+
+**PR 4 (2026-11-23):**
+- **Qué está ya cargado se lee de la ventana, no de un registro aparte.**
+  El bucle busca los bloques `<instructions source="…">` al final de los
+  resultados que siguen en la ventana de trabajo, y los del paso en curso.
+  Así "tras archivar se olvidan y vuelven" y una sesión retomada no los
+  repite, sin estado nuevo en la sesión. Un bloque acaba en su primera
+  etiqueta de cierre (la del fichero va escapada, como en el system
+  prompt).
+- **Solo carpetas por debajo del directorio de trabajo.** Las de encima, y
+  la suya, ya están en el system prompt (spec 10, §1.4). Un fichero fuera
+  del directorio de trabajo no trae nada, como en Claude Code. Un fichero
+  que ya nombra un glob de `instructions` no se repite: la sesión pasa al
+  bucle las capas de instrucciones de su prompt (`Agent.instructions`).
+- **El tope de 64 KiB cuenta todos:** los del system prompt, los que
+  siguen en la ventana y los nuevos. Lo que no cabe deja la marca
+  `[truncated: N bytes more]`, y el aviso nombra el tope entero, no lo que
+  quedaba (`cap(…, of=)`).
+- **Lo que no se puede leer** (un secreto, un enlace fuera, no UTF-8) se
+  avisa a la persona una vez por sesión (`ToolFinished.warnings`, solo en
+  el JSON si hay alguno), como los del system prompt. Al modelo no le
+  llega nada.
+- **El prompt base decía que solo mandan los bloques "de este prompt"**, y
+  el modelo hizo bien en no seguir uno que llegaba en un resultado. Visto
+  a mano con GLM (un `api/AGENTS.md` que pide acabar con una palabra):
+  el bloque llegaba intacto y no se seguía. Ahora `base.md` dice que
+  también mandan los que `maha` añade al final de `read_file`,
+  `edit_file` o `write_file`. Con el cambio, GLM y Haiku lo siguen. Solo
+  esas tres herramientas, y no por casualidad: un fichero no puede fingir
+  un bloque al final de `read_file` (sus líneas van numeradas), y un
+  bloque en la salida de un comando sigue siendo un dato.
+- **`grep`:** `context` da los grupos como grep y ripgrep (`ruta:N:` la
+  coincidencia, `ruta-N-` alrededor, `--` entre grupos que no se tocan y
+  entre ficheros). El tope de 100 cuenta coincidencias, no líneas, y en
+  `files` y `count`, ficheros. El resumen de la terminal sale del texto
+  ("4 matches", "2 files"). El valor por defecto sigue siendo `lines`: se
+  mide con la tarea 29 (§5) antes de cambiarlo.
+- **El tope de pasos, 50 también en las evals** (`TASK_LIMITS`). La 28 deja
+  su `max_steps = 40`; la 27 conserva sus 30.
+- **La parte fija, medida con el test:** base 819 y herramientas 2.191
+  (3.010 de 3.500).
+- **La tarea 30 no archivaba en la primera prueba.** Con la ventana del
+  catálogo, el techo es el presupuesto entero (20.000), no la mitad: el
+  historial cabía y el modelo leyó el código directamente. Con manuales
+  más largos, el historial pasa del techo él solo, y un test lo fija
+  (`test_task_30_needs_recall`). Probada con GLM (2/2): archiva y usa
+  `recall` en las dos.
