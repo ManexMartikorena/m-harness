@@ -888,6 +888,13 @@ La aceptación de §5, punto por punto:
 - **`grep` con contexto:** la 29 se resuelve en 4-5 pasos con los tres
   modelos. El valor por defecto de `output` sigue en `lines`.
 
+**`todo_write`, otra vez** (pendiente de spec 10, §5, "Resultados (PR
+2)"; de las sesiones de esta pasada): la 28 lo usa en 15/15 y la 23 en
+10/15 (GLM y Kimi siempre, Haiku nunca). Sin pedirlo, aparece poco: Kimi
+en la 07 (3/5), GLM y Kimi en la 27 (1/5 cada uno), Haiku en la 11 (1/5).
+La 12 ya no lo usa ningún modelo. Lo usan donde hay una lista de pasos, y
+nadie lo usa de relleno: la guía de `tools.md` no se toca.
+
 **Líneas base nuevas:** `evals/baselines/2026-11-23-opencode-go-*.json`,
 con la batería de 30 (§5).
 

@@ -1,11 +1,13 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-17. **Hito 10 cerrado: `v0.10.0` (system
+Última actualización: 2026-11-23. **Hito 10 cerrado: `v0.10.0` (system
 prompt por capas), `v0.10.1` (la auditoría tras el hito 10) y `v0.10.2`
 (su segunda, tercera y cuarta revisión, cero deuda). En curso: el hito 11
-(contexto virtual): spec integrada (#116) y PRs 1, 2 y 3 integrados
-(#117, #118, #119). Lo siguiente: el PR 4 (instrucciones y
-herramientas), y después la verificación a mano y el cierre del hito.
+(contexto virtual): spec integrada (#116), PRs 1, 2 y 3 integrados
+(#117, #118, #119) y el PR 4 (instrucciones y herramientas) hecho en
+`feature/hito-11-herramientas`, con sus evals y las líneas base nuevas,
+por subir. Lo siguiente: integrar el PR 4, y después la verificación a
+mano y el cierre del hito.
 Tras el hito 11, auditorías hasta cero deuda antes del hito 12. Plan
 ampliado a 24 hitos (la órbita larga, hito 12 nuevo).**
 
@@ -17,14 +19,16 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 **Desarrollo. Hitos 1 a 10 cerrados, con la auditoría tras el hito 10
 (`v0.10.1`) y sus revisiones (`v0.10.2`). En curso, el hito 11 (contexto
 virtual): spec aprobada; los PRs 1 (contar, acotar y ver), 2 (el
-archivo) y 3 (archivar), integrados; falta el PR 4. Plan: 24 hitos
-hasta la 1.0 (DESIGN §14).**
+archivo) y 3 (archivar), integrados; el PR 4 (instrucciones y
+herramientas), hecho y por subir. Plan: 24 hitos hasta la 1.0 (DESIGN
+§14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.10.2` — Revisiones de la auditoría tras el hito
   10** (2026-11-13):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.2
-- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
+- Ramas abiertas: `feature/hito-11-herramientas` (el PR 4, solo en
+  local hasta el push). Las integradas se conservan en GitHub.
 
 ## Para la release
 
@@ -57,14 +61,14 @@ spec, su nota de la guía y su release.
 Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
 trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
-1. **Agente:** el PR 4 del hito 11 (instrucciones y herramientas, spec
-   11, §6), en `feature/hito-11-herramientas` desde `main`: los
-   `AGENTS.md` de subcarpetas, `grep` con contexto y solo ficheros, el
-   tope de pasos a 50, y la tarea 29 con la pasada final y las líneas
-   base nuevas. Antes de la tarea 29, decidir con el mantenedor cómo
-   medir `recall`: en la pasada del PR 3 casi no se usó, porque el
-   índice del archivero ya trae el dato de la tarea 27 (spec 11, §5,
-   "Resultados (PR 3)").
+1. **Humano:** revisar los commits de `feature/hito-11-herramientas`
+   (`git log main..` y el diff), push y PR al milestone del hito 11 (o
+   el agente, si se le pide), e integrarlo con merge commit. El PR 4 está
+   hecho (spec 11, §6): los `AGENTS.md` de subcarpetas, `grep` con
+   `context` y `output`, el tope de 50 pasos, las tareas 29 y 30 (`recall`
+   se mide con la 30, decisión 15 del mantenedor, 2026-11-23) y la pasada
+   final con las líneas base nuevas del 2026-11-23 (spec 11, §5,
+   "Resultados (PR 4)").
 2. **Humano, con el agente:** la verificación a mano entera de la spec
    11, §7, tras el PR 4 (decisión del mantenedor, 2026-11-17: el PR 3 se
    integró sin ella). Después, el cierre del hito (`docs/cierre-hito-11`,
@@ -210,10 +214,9 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   "A su hito"; faltaban aquí, añadidos el 2026-11-16).
 - **Hito 24:** la limpieza de las sesiones antiguas (auditoría tras el
   hito 10, "A su hito"; faltaba aquí, añadido el 2026-11-16).
-- **Con la batería más larga (hito 11):** volver a medir cuándo usan los
-  modelos `todo_write`. Hoy solo la 12 (train) y la 23 (validación) son
-  trabajo largo; la guía se ajustó con la 12 y una tarea a mano (spec 10,
-  §5, "Resultados (PR 2)").
+- **Medido de nuevo `todo_write`** (2026-11-23, spec 11, §5, "Resultados
+  (PR 4)"): lo usan donde hay una lista de pasos (la 28 en 15/15, la 23 en
+  10/15) y casi nunca sin ella. La guía no cambia.
 - **Mejora posible:** refrescar los precios desde models.dev a una caché, a
   petición, si mantener a mano 113 modelos pesa (spec 7, §11). Hoy, con
   OpenCode Go, el coste que vale es el del proveedor.
@@ -286,7 +289,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 10. System prompt por capas. `v0.10.0` (2026-11-10) y los arreglos
   `v0.10.1` (2026-11-11, la auditoría) y `v0.10.2` (2026-11-13, sus
   revisiones)
-- [ ] 11. Contexto virtual (PRs 1, 2 y 3 integrados; falta el 4). `v0.11.0` *(antes "Gestión del contexto"; 2026-11-16)*
+- [ ] 11. Contexto virtual (PRs 1, 2 y 3 integrados; el 4, por subir). `v0.11.0` *(antes "Gestión del contexto"; 2026-11-16)*
 - [ ] 12. Órbita larga. `v0.12.0` *(nuevo, 2026-11-16)*
 - [ ] 13. Deshacer y puntos de control. `v0.13.0` *(nuevo, 2026-10-27)*
 - [ ] 14. Skills y comandos personalizados. `v0.14.0`
