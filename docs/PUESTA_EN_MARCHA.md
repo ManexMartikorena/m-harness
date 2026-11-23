@@ -229,6 +229,13 @@ uv run --env-file .env maha eval --models glm-5.3-flash,kimi-k2.7-code --repeat 
 - `--retry-errors` repite una vez lo que rompió el proveedor (429, 5xx,
   red); `--keep` deja la copia de cada ejecución para mirarla; las sesiones
   y trazas quedan en `~/.local/state/maha/evals/`.
+- **El límite de uso de OpenCode Go** (visto el 2026-11-23): la cuenta
+  tiene un tope por ventana de cinco horas. Con la batería de 30 tareas,
+  tres modelos y `--repeat 5` (unos 3,4 $ y entre 40 y 90 minutos), caben
+  unas dos pasadas y media seguidas. Al pasarlo, cada llamada da `HTTP 429:
+  OpenCode Go usage limit reached (5-hour, resets in …)`: las ejecuciones
+  quedan como error del proveedor y la línea base no se guarda. Se espera
+  al reinicio que dice el mensaje y se lanza la pasada entera otra vez.
 
 ## 5. GitHub (una vez por repositorio)
 
