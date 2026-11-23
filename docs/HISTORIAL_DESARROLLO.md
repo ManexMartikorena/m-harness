@@ -9,6 +9,61 @@ Para cada hito, además: su spec en `docs/specs/` (decisiones, verificación
 a mano y "Aprendido al implementar"), su nota en `docs/guia/` y su release
 en GitHub.
 
+## Hito 11 (2026-11-16 a 2026-11-23)
+
+- **Spec, 2026-11-16 (#116):** contexto virtual, en lugar de la
+  compactación clásica: una ventana de trabajo fija (100.000 tokens), el
+  archivo de la sesión en SQLite con FTS5, un modelo barato de archivero
+  y `recall`. El mantenedor decidió que el arnés tiene que ser barato con
+  cualquier modelo, y abrió el hito 12 (órbita larga): el plan pasa a 24
+  hitos.
+- **PR 1, 2026-11-17 (#117): contar, acotar y ver.** El presupuesto,
+  `max_tokens` por llamada, `prompt_cache_key` y `/context`. Comprobado con
+  OpenCode Go: un proveedor (`hy3`) corta el prompt en silencio. El
+  mantenedor decidió que se detecta y se trata (decisión 14).
+- **PR 2, 2026-11-17 (#118): el archivo.** SQLite con FTS5, `recall`, el
+  tope común de 40.000 caracteres por resultado y la salida entera de un
+  comando hasta 8.000.000 de caracteres.
+- **PR 3, 2026-11-17 (#119): archivar.** El archivero, archivar a mitad de
+  turno, repetir tras el error de contexto excedido o un prompt cortado en
+  silencio, `/compact`, la sesión que se rehace y las tareas 25 a 28 de
+  las evals.
+- **PR 4, 2026-11-23 (#120): instrucciones y herramientas.** Los
+  `AGENTS.md` de subcarpetas, al final del resultado que toca su carpeta
+  (y la línea de `base.md` que dice seguirlos, vista a mano). `grep` con
+  `context` y `output`, y los nombres de modo de Claude Code. El tope de
+  pasos, de 25 a 50. La tarea 29 (`grep`) y la 30 (`recall`, decisión 15
+  del mantenedor). Revisando las trazas de sus evals salió un fallo de
+  `grep` (`--` sin contexto).
+- **Verificación a mano y sus arreglos, 2026-11-23 (#121).** Los diez
+  puntos de la spec, conducidos por el agente en una pseudoterminal. Dos
+  fallos: un paso cuyos resultados no caben (se recortan antes de que los
+  vea el modelo) y `recall` colgado en una salida enorme (el fragmento lo
+  calcula `maha`). Sus evals sacaron dos más, de los prompts: el archivero
+  afirmaba lo que no vio, y `count` no dice qué coincidió. Una pasada se
+  cortó por el límite de cinco horas de OpenCode Go.
+- **Evals del cierre** (2026-11-23, 30 tareas, 3 modelos, 5 repeticiones):
+  GLM 146/150, Kimi 148/150 y Haiku 150/150, sin ⚠. Líneas base:
+  `evals/baselines/2026-11-23-*-3.json`.
+- **Decisiones del mantenedor en el hito:**
+  - ningún límite aceptado: lo que falla se arregla;
+  - no se ajusta el prompt por un fallo de validación (Kimi pidió
+    confirmación por texto en la 04): se vigila;
+  - la comprobación de la 27 y de la 28 acepta el fichero en la raíz o en
+    `informes/`.
+- **Con hito asignado, resuelto aquí** (estaba en ESTADO: "Hito 11"):
+  - los `AGENTS.md` de subcarpetas (spec 10, decisión 6);
+  - el coste en tokens de las herramientas: 2.191 tokens las diez, medido
+    con un test;
+  - compactar (spec 4, §12.14);
+  - tareas con historial previo y la marca `[interrupted by the user]`
+    (25 y 26);
+  - `grep` con contexto o solo ficheros;
+  - la política de versiones del formato de sesión (el formato solo
+    crece);
+  - subir el tope de pasos;
+  - volver a medir `todo_write` con la batería más larga.
+
 ## Hito 10 (2026-11-04 a 2026-11-13)
 
 - **Tercera y cuarta revisión de la auditoría, 2026-11-12 y 2026-11-13:
