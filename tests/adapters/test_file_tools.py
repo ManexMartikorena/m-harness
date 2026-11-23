@@ -585,6 +585,17 @@ async def test_grep_with_only_files_stops_at_the_limit(root: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    ("given", "taken"),
+    [("content", "lines"), ("files_with_matches", "files"), ("count", "count")],
+)
+def test_grep_takes_the_names_of_claude_codes_modes(given: str, taken: str) -> None:
+    # GLM asked for "content" in the evals of PR 4 of hito 11: the names of
+    # Claude Code's Grep (its documentation, 2026-11-23) are what models
+    # know.
+    assert GrepParams.model_validate({"pattern": "x", "output": given}).output == taken
+
+
+@pytest.mark.parametrize(
     "params",
     [{"context": -1}, {"context": 11}, {"output": "paths"}],
 )

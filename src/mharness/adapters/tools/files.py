@@ -26,9 +26,9 @@ from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePath
-from typing import IO, Literal
+from typing import IO, Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
 from mharness.domain.approval import ApprovalRequest
 from mharness.domain.gitignore import GitIgnore
@@ -712,6 +712,15 @@ GREP_BATCH_FILES = 500
 GREP_MAX_CONTEXT = 10
 
 type GrepOutput = Literal["lines", "files", "count"]
+# The names of the modes of Claude Code's Grep (code.claude.com, tools
+# reference, 2026-11-23): what models know, and GLM asked for "content".
+_OUTPUT_NAMES = {"content": "lines", "files_with_matches": "files"}
+
+
+def _output_name(value: object) -> object:
+    return _OUTPUT_NAMES.get(value, value) if isinstance(value, str) else value
+
+
 # What one entry of a search is: a match (or a file, or a file's count),
 # a line around one, or the break between two groups of lines.
 type _Kind = Literal["match", "context", "break"]
@@ -738,7 +747,7 @@ class GrepParams(BaseModel, extra="forbid"):
         le=GREP_MAX_CONTEXT,
         description="Lines to show before and after each match",
     )
-    output: GrepOutput = Field(
+    output: Annotated[GrepOutput, BeforeValidator(_output_name)] = Field(
         default="lines",
         description='"lines" (each match), "files" (only the paths) or "count"',
     )
