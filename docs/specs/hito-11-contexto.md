@@ -1351,3 +1351,38 @@ Del mantenedor, en el PR 4 (2026-11-23):
   más largos, el historial pasa del techo él solo, y un test lo fija
   (`test_task_30_needs_recall`). Probada con GLM (2/2): archiva y usa
   `recall` en las dos.
+
+**Verificación a mano (2026-11-23):** la lista de §7, entera, con
+OpenCode Go (GLM, y Haiku para el formato de Anthropic), en un directorio
+desechable con `[context] budget = 20_000`. El agente condujo la sesión
+interactiva por una pseudoterminal (un terminal simulado desde código),
+como haría una persona. Los diez puntos pasan, tras dos arreglos que
+salieron de ella (rama `fix/verificacion-hito-11`, cada uno con su test
+primero):
+- **Un paso cuyos resultados no caben** (punto 2): el modelo pidió las
+  seis lecturas de 16.000 caracteres en un solo paso, y la llamada salió
+  al 142 % del presupuesto. Un paso no se parte y el último no se archiva,
+  así que archivar no bastaba. Esos resultados el modelo aún no los ha
+  visto (la caché no se rompe): si la llamada sigue sin caber tras
+  archivar lo anterior, los más grandes se recortan a partes iguales, nunca
+  por debajo de 2.000 caracteres. Lo entero va al archivo y a la sesión, y
+  el modelo recibe el principio, el final y su id, como con el tope común
+  (§1.6). Visto con GLM: del 142 % al 97 %. Lo mismo con una salida de un
+  comando ya cortada a 40.000 caracteres: se recorta más con el mismo id.
+  La línea del archivado cuenta lo que de verdad va.
+- **`recall` colgado** (punto 7): buscar en una salida de 400.000 líneas
+  (8 MB) pasó de dos minutos. El `snippet()` de FTS5 crece con el cuadrado
+  de las coincidencias: 5.000 líneas, 0,5 s; 40.000, 31 s. El fragmento lo
+  calcula ahora `maha` (`domain/archive.py`, `snippet()`): palabras
+  enteras, sin acentos ni mayúsculas, mirando como mucho 2.000 sitios de
+  cada palabra. Sobre ese mismo archivo, 0,16 s. Además, la búsqueda tiene
+  un tiempo límite de 10 s: después es un error para el modelo, nunca un
+  `maha` colgado.
+
+Lo demás, tal cual: `/context` da cifras razonables y la caché en los dos
+formatos; `recall` recupera el código de lote y una frase exacta del
+principio; `/compact` con instrucciones; Ctrl+C mientras archiva deja la
+conversación igual; retomar da la ventana de trabajo, `/export` la
+conversación entera (en Markdown, cada resultado hasta 40 líneas), y
+borrar el `.db` lo rehace; el `AGENTS.md` de una subcarpeta llega y se
+sigue; `-p` archiva y la traza lo cuenta.
