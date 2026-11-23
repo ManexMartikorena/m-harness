@@ -40,6 +40,8 @@ La batería de `maha eval` (spec hito 8, §1.5 a §1.9). Solo datos inventados.
 | `fixtures/tienda/` | El repo de doce tareas (también la 24, `/init`): una tienda en Python con IVA, descuentos (con un fallo a propósito) y pedidos, y sus tests con `unittest` |
 | `fixtures/recetas/` | `recetas.py`: ingredientes, raciones y pasos de tres recetas, con `escalar()` (tareas 25 y 26, spec del hito 11) |
 | `fixtures/informes/` | Seis informes de inspección de unos 16.000 caracteres cada uno y `estado.txt`, con el código de lote (tareas 27 y 28, spec del hito 11) |
+| `fixtures/facturas/` | Tarifas, impuestos y descuentos en tres módulos de más de 1.100 líneas, con un fallo en el recargo de equivalencia a mitad de `impuestos.py` y sus tests (tarea 29, `grep` con contexto; spec del hito 11) |
+| `fixtures/registro/` | Un `registro.log` ya rotado y dos manuales de mantenimiento (tarea 30: el código de la incidencia CRÍTICO solo está en lo archivado de su `history.jsonl`; spec del hito 11) |
 | `fixtures/texto/` | `slugify` sin escribir y sus tests |
 | `fixtures/toolkit/` | En inglés: un README con una errata y `utils.py` |
 | `baselines/*.json` | Las líneas base: fecha, versión, commit, proveedor, modelo, repeticiones y las medias por tarea y en total; nunca respuestas ni trazas |

@@ -1,0 +1,15 @@
+# Encontrar y arreglar un fallo en ficheros grandes: grep con contexto
+# enseña la función sin leer el fichero entero (spec del hito 11, §1.15 y
+# §5).
+instruction = "Dos tests de tests/test_facturas.py fallan: test_recargo_general y test_recargo_reducido. Encuentra la causa en src/facturas y arréglala sin tocar los tests."
+fixture = "facturas"
+allow = ["write_file", "edit_file"]
+
+[check]
+command = '''
+PYTHONPATH=src python3 -m unittest -q tests.test_facturas && python3 -c "
+codigo = open('src/facturas/impuestos.py', encoding='utf-8').read()
+assert codigo.count('def retencion_actividad_') == 150, 'reescribió impuestos.py'
+assert 'RECARGOS = {\"general\": 5.2, \"reducido\": 1.4, \"superreducido\": 0.5}' in codigo, 'cambió los recargos'
+"
+'''
