@@ -817,7 +817,7 @@ La aceptación de §5, punto por punto:
 
 ### Resultados (PR 4) y líneas base nuevas
 
-2026-11-23 (12:19-13:55), `maha eval --models
+2026-11-23 (12:19-12:55), `maha eval --models
 glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5 --repeat 5 --retry-errors
 --save`, con las 30 tareas, contra las líneas base del 2026-11-10. El
 PR 4 trae los `AGENTS.md` de subcarpetas (y la línea de `base.md` que dice
@@ -911,7 +911,7 @@ esos nombres; el esquema que ve el modelo no cambia (`2fdf0f6`). La
 comprobación de la 27 acepta el resumen en la raíz o en `informes/`, como
 la de la 28 (`9859e2d`).
 
-Pasada otra vez, 2026-11-23 (14:09-15:40), la misma orden, contra las
+Pasada otra vez, 2026-11-23 (13:09-14:59), la misma orden, contra las
 líneas base de la pasada anterior:
 
 | Modelo | Éxito | Validación | Coste total | Caché leída | Llamadas |
