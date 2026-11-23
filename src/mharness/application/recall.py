@@ -99,6 +99,9 @@ class Recall:
         except ArchiveError as exc:
             raise ToolError(f"cannot read the archive: {exc}") from None
 
+    def touched(self, params: RecallParams) -> str | None:
+        return None
+
     def summary(self, result: str) -> str:
         if result == NOTHING_ARCHIVED:
             return NOTHING_ARCHIVED

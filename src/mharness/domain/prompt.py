@@ -141,11 +141,13 @@ def environment_layer(env: Environment) -> Layer:
 
 
 def cap(
-    layers: Sequence[Layer], limit: int = INSTRUCTIONS_MAX
+    layers: Sequence[Layer], limit: int = INSTRUCTIONS_MAX, *, of: int | None = None
 ) -> tuple[list[Layer], list[str]]:
     """The instruction layers within `limit` bytes of UTF-8 between them, in
     their order, and a warning for each one cut. A file past the limit
-    keeps only the mark, so the model knows it was there (§1.4)."""
+    keeps only the mark, so the model knows it was there (§1.4). `of` is
+    the whole limit the warning names, when `limit` is what is left of it
+    (spec hito 11, §1.14)."""
     kept: list[Layer] = []
     warnings: list[str] = []
     left = limit
@@ -166,7 +168,7 @@ def cap(
         kept.append(layer.model_copy(update={"text": text}))
         warnings.append(
             f"{layer.source}: cut, the instructions pass "
-            f"{limit // 1024} KiB ({more} bytes more)"
+            f"{(limit if of is None else of) // 1024} KiB ({more} bytes more)"
         )
         left = 0
     return kept, warnings
@@ -177,9 +179,59 @@ def _shown(layer: Layer) -> str:
     blank line between layers, whatever their files end with."""
     if layer.kind not in INSTRUCTION_KINDS:
         return layer.text.strip()
+    return instruction_block(layer)
+
+
+def block_source(source: str) -> str:
+    """`source` as the opening tag of its block says it."""
+    return printable(source).replace('"', "'")
+
+
+def instruction_block(layer: Layer) -> str:
+    """An instruction file, delimited with its source. The file cannot
+    close its own block: its closing tag is written escaped."""
     text = _CLOSING.sub("&lt;/instructions&gt;", layer.text.strip())
-    source = printable(layer.source).replace('"', "'")
-    return f'<instructions source="{source}">\n{text}\n</instructions>'
+    return (
+        f'<instructions source="{block_source(layer.source)}">\n{text}\n</instructions>'
+    )
+
+
+# What goes between a tool's result and the instruction files after it
+# (spec hito 11, §1.14).
+ATTACHED = "\n\n"
+_OPENING = '<instructions source="'
+_END = "\n</instructions>"
+
+
+def attached_instructions(result: str) -> list[tuple[str, str]]:
+    """The instruction files at the end of a tool's result, as `(source,
+    block)` in their order: what the loop put there (§1.14). Each block
+    ends at its first closing tag, as a file cannot hold one."""
+    start = result.find(ATTACHED + _OPENING)
+    while start >= 0:
+        found = _blocks(result, start)
+        if found is not None:
+            return found
+        start = result.find(ATTACHED + _OPENING, start + 1)
+    return []
+
+
+def _blocks(result: str, start: int) -> list[tuple[str, str]] | None:
+    """The blocks from `start` to the end of `result`, or None if
+    something else is there."""
+    found: list[tuple[str, str]] = []
+    position = start
+    while position < len(result):
+        if not result.startswith(ATTACHED + _OPENING, position):
+            return None
+        begin = position + len(ATTACHED)
+        head_end = result.find('">\n', begin)
+        end = result.find(_END, begin)
+        if head_end < 0 or end < 0 or "\n" in result[begin:head_end]:
+            return None
+        position = end + len(_END)
+        found.append((result[begin + len(_OPENING) : head_end], result[begin:position]))
+    return found
 
 
 class SystemPrompt(BaseModel, frozen=True):

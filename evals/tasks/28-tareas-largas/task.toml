@@ -17,9 +17,6 @@ split = "validation"
 allow = ["write_file", "edit_file"]
 context_budget = 20_000
 
-[limits]
-max_steps = 40
-
 [check]
 command = '''
 python3 -c "

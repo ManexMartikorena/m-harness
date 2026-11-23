@@ -81,6 +81,9 @@ class RunCommand:
         )
         return _text(result, params.timeout)
 
+    def touched(self, params: RunCommandParams) -> str | None:
+        return None
+
     def summary(self, result: str) -> str:
         first = result.split("\n", 1)[0]
         status = "timed out" if "\n[timed out after " in result else first

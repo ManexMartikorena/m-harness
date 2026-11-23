@@ -1,0 +1,18 @@
+# Un dato que solo está en lo archivado, y que el índice no tiene: el
+# registro ya se rotó, y su línea CRÍTICO quedó en medio de una lectura
+# larga, donde el archivero no mira (lee 2.000 caracteres de cada bloque,
+# principio y final). Solo `recall` lo encuentra (spec del hito 11, §5;
+# decisión del mantenedor, 2026-11-23). El historial sale de las
+# herramientas de maha, con datos inventados.
+instruction = "En registro.log había una sola incidencia de nivel CRÍTICO. Escribe su código en incidencia.txt, solo el código."
+fixture = "registro"
+allow = ["write_file", "edit_file"]
+context_budget = 20_000
+
+[check]
+command = '''
+python3 -c "
+texto = open('incidencia.txt', encoding='utf-8').read().strip()
+assert texto == 'INC-7Q3-DELTA', repr(texto)
+"
+'''

@@ -391,7 +391,7 @@ def _first(*values: bool | None) -> bool:
 def _stricter(user: _Limits, project: _Limits) -> TurnLimits:
     """Of each limit, the lower of the two files: a project can tighten the
     user's limits, never loosen them. What the user does not set is the
-    default, also for the project: 25 steps stay 25 (audit of hito 8)."""
+    default, also for the project: 50 steps stay 50 (audit of hito 8)."""
     defaults = TurnLimits()
     values: dict[str, Any] = {}
     for name in _Limits.model_fields:

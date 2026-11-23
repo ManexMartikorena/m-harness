@@ -43,5 +43,8 @@ class TodoWrite:
         # again, as Claude Code does in its result.
         return f"{params.summary()}\n{KEEP_CURRENT}"
 
+    def touched(self, params: TodoList) -> str | None:
+        return None
+
     def summary(self, result: str) -> str:
         return result.splitlines()[0]

@@ -13,8 +13,11 @@ import pytest
 from mharness import bootstrap
 from mharness.adapters.commands import LocalCommandRunner
 from mharness.adapters.evals import TomlEvalSuite
+from mharness.application.context import BLOCK_CHARS
 from mharness.application.evals import Evaluator
+from mharness.domain.context import ContextPolicy, archive_cut, estimate_messages, fit
 from mharness.domain.environment import command_env
+from mharness.domain.messages import ToolResultBlock
 
 EVALS = Path(__file__).parents[2] / "evals"
 
@@ -318,6 +321,17 @@ def all_reviewed(repo: Path) -> None:
     edit(repo / "estado.txt", "equipo de mantenimiento", "equipo de calidad")
 
 
+RECARGO = "src/facturas/impuestos.py"
+
+
+def recargo_fixed(repo: Path) -> None:
+    edit(repo / RECARGO, "base * puntos / 10,", "base * puntos / 100,")
+
+
+def incident_written(repo: Path) -> None:
+    (repo / "incidencia.txt").write_text("INC-7Q3-DELTA\n", encoding="utf-8")
+
+
 SOLUTIONS: dict[str, tuple[Callable[[Path], object], str]] = {
     "01-version": (lambda repo: None, "La versión es 1.4.2."),
     "02-buscar-funcion": (lambda repo: None, "En src/tienda/iva.py."),
@@ -383,6 +397,8 @@ SOLUTIONS: dict[str, tuple[Callable[[Path], object], str]] = {
     "26-interrumpido": (lambda repo: append(repo / "recetas.py", SHOPPING), "Hecho."),
     "27-recuperar": (lot_recovered, "Hecho."),
     "28-tareas-largas": (all_reviewed, "Hecho."),
+    "29-grep-contexto": (recargo_fixed, "Hecho."),
+    "30-recuperar-detalle": (incident_written, "Hecho."),
 }
 
 
@@ -667,6 +683,16 @@ def all_with_text_lost(repo: Path) -> None:
         ("27-recuperar", lot_forgotten),
         ("28-tareas-largas", five_reviewed),
         ("28-tareas-largas", all_with_text_lost),
+        (
+            "29-grep-contexto",
+            # The test passes by changing the data, not the bug.
+            lambda repo: edit(repo / RECARGO, '"reducido": 1.4,', '"reducido": 0.14,'),
+        ),
+        (
+            "30-recuperar-detalle",
+            # The code of an AVISO, from the start of the log: the wrong one.
+            lambda repo: (repo / "incidencia.txt").write_text("INC-8HA-ALFA\n"),
+        ),
     ],
 )
 async def test_a_task_of_hito_11_half_done_does_not_pass(
@@ -682,9 +708,52 @@ def all_reviewed_index_beside_reports(repo: Path) -> None:
     edit(repo / "estado.txt", "equipo de mantenimiento", "equipo de calidad")
 
 
+def lot_recovered_summary_beside_reports(repo: Path) -> None:
+    edit(repo / "estado.txt", "KX-4471-Q", "PENDIENTE")
+    (repo / "lote.txt").write_text("KX-4471-Q\n", encoding="utf-8")
+    urgent_list(repo, "informes/resumen.md")
+
+
+async def test_task_27_takes_the_summary_beside_the_reports() -> None:
+    # As the index of 28: Haiku wrote informes/resumen.md in the evals of
+    # PR 4 of hito 11, a fair reading of the instruction.
+    assert await checked("27-recuperar", lot_recovered_summary_beside_reports, "Hecho.")
+
+
 async def test_task_28_takes_the_index_beside_the_reports() -> None:
     # Every other path of the instruction starts with informes/: writing
     # informes/indice.md is a fair reading (spec hito 11, §5, PR 3).
     assert await checked(
         "28-tareas-largas", all_reviewed_index_beside_reports, "Hecho."
     )
+
+
+async def test_task_30_needs_recall() -> None:
+    # Spec hito 11, §5 (decision of the maintainer, 2026-11-23): the first
+    # call archives the reading of the log, and what the archivist reads of
+    # it has not the CRÍTICO line; the log on disk is already rotated.
+    [task] = [
+        task
+        for task in await TomlEvalSuite(EVALS).tasks()
+        if task.id == "30-recuperar-detalle"
+    ]
+    # With a known window the ceiling is the whole budget; the history
+    # alone passes it, without the system prompt and the tools.
+    policy = ContextPolicy(budget=task.context_budget or 0, window=200_000)
+    history = list(task.history)
+
+    assert policy.ceiling == task.context_budget
+    assert estimate_messages(history) > policy.ceiling
+    cut = archive_cut(history, policy.tail)
+    [log] = [
+        block.content
+        for message in history[:cut]
+        for block in message.blocks
+        if isinstance(block, ToolResultBlock) and "CRÍTICO" in block.content
+    ]
+    assert "INC-7Q3-DELTA" in log
+    assert "CRÍTICO" not in fit(log.strip(), BLOCK_CHARS)
+    assert "INC-7Q3-DELTA" not in "".join(
+        message.text for message in history if message.role != "tool"
+    )
+    assert (EVALS / "fixtures" / "registro" / "registro.log").read_text() == "rotado\n"

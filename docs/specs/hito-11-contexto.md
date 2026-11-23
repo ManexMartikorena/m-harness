@@ -667,8 +667,11 @@ la batería entera.
     (pendiente de spec 10).
   - `29-grep-contexto` (train): encontrar y arreglar algo en ficheros
     grandes, donde `grep` con contexto ahorra lecturas.
+  - `30-recuperar-detalle` (train): un dato que solo está en lo archivado
+    y que el índice no tiene, así que solo `recall` lo encuentra
+    *(añadida en el PR 4, decisión 15)*.
 
-  Con ellas, 29 tareas; la validación, 6 de 29 (21 %).
+  Con ellas, 30 tareas; la validación, 6 de 30 (20 %).
 - **Modelos:** los de las líneas base del 2026-11-10, 5 repeticiones. El
   criterio es el mismo para todos: ningún ajuste para un modelo concreto.
 - **Aceptación:**
@@ -680,7 +683,7 @@ la batería entera.
     leída de caché, anotada por modelo;
   - los pasos de las tareas largas, anotados, para el tope de §1.16.
 - **El conjunto de validación no se mira al escribir `archive.md`.**
-- **Líneas base nuevas** al final del hito, con la batería de 29.
+- **Líneas base nuevas** al final del hito, con la batería de 30.
 
 El resultado se anota aquí al implementar.
 
@@ -811,6 +814,149 @@ La aceptación de §5, punto por punto:
   del archivero ya trae el dato. La 27 mide que se archiva y que el dato
   sobrevive, pero no que `recall` lo encuentre. Queda para el PR 4
   (instrucciones y herramientas, §6), a decidir con el mantenedor.
+
+### Resultados (PR 4) y líneas base nuevas
+
+2026-11-23 (12:19-12:55), `maha eval --models
+glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5 --repeat 5 --retry-errors
+--save`, con las 30 tareas, contra las líneas base del 2026-11-10. El
+PR 4 trae los `AGENTS.md` de subcarpetas (y la línea de `base.md` que dice
+seguirlos), `grep` con `context` y `output` (y su línea en `tools.md`),
+el tope de 50 pasos y las tareas 29 y 30. Una pasada anterior (12:16) se
+paró a los pocos minutos para cambiar `base.md` y no cuenta.
+
+| Modelo | Éxito | Validación | Coste total | Caché leída | Llamadas |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 148/150 | 30/30 | 0,322 $ | 73,1 % | 796 |
+| `kimi-k2.7-code` | 148/150 | 29/30 | 1,832 $ | 78,5 % | 828 |
+| `claude-haiku-5-5` | 149/150 | 30/30 | 1,230 $ | 60,8 % | 600 |
+
+Solo las 24 tareas de antes, frente al PR 3:
+
+| Modelo | Coste | Caché leída | Llamadas |
+|---|---|---|---|
+| `glm-5.3-flash` | 0,163 $ (0,150 $) | 79,7 % (73,5 %) | 630 (603) |
+| `kimi-k2.7-code` | 1,035 $ (1,019 $) | 86,9 % (87,1 %) | 650 (639) |
+| `claude-haiku-5-5` | 0,644 $ (0,610 $) | 69,0 % (69,4 %) | 445 (451) |
+
+Las tareas largas y las nuevas (media de 5; la caché, de toda la tarea):
+
+| Tarea | Modelo | Pasos | Coste | Caché leída | Archivados | `recall` |
+|---|---|---|---|---|---|---|
+| 27 | `glm-5.3-flash` | 9,8 | 0,0093 $ | 61,9 % | 1-2 | 0 |
+| 27 | `kimi-k2.7-code` | 5,4 | 0,0378 $ | 28,2 % | 2 | 0 |
+| 27 | `claude-haiku-5-5` | 8,0 | 0,0350 $ | 40,4 % | 2-3 | 0 |
+| 28 | `glm-5.3-flash` | 10,6 | 0,0126 $ | 63,6 % | 1-2 | 0 |
+| 28 | `kimi-k2.7-code` | 18,0 | 0,0803 $ | 75,8 % | 2 | 0 |
+| 28 | `claude-haiku-5-5` | 11,0 | 0,0597 $ | 49,9 % | 3 | 0 |
+| 29 | `glm-5.3-flash` | 4,6 | 0,0046 $ | 61,1 % | 0 | 0 |
+| 29 | `kimi-k2.7-code` | 4,6 | 0,0237 $ | 64,6 % | 0 | 0 |
+| 29 | `claude-haiku-5-5` | 4,2 | 0,0057 $ | 71,6 % | 0 | 0 |
+| 30 | `glm-5.3-flash` | 4,0 | 0,0040 $ | 71,2 % | 1 | 1-3 |
+| 30 | `kimi-k2.7-code` | 3,4 | 0,0087 $ | 76,8 % | 1 | 1-2 |
+| 30 | `claude-haiku-5-5` | 3,8 | 0,0090 $ | 65,5 % | 1 | 1-3 |
+
+La aceptación de §5, punto por punto:
+
+- **Las 24 de antes, sin ⚠ y sin archivar: se cumple.** Ninguna archiva ni
+  usa `recall`. Las bajadas de una tarea (GLM en la 13 y la 20, Kimi en la
+  08 y la 18, de 5/5 a 4/5) son ruido (p = 0,5) y fallos del modelo; la 20
+  de GLM es la misma de los PRs 2 y 3. El único ⚠ es el coste de Kimi
+  (+58 %), el ya aceptado (PR 1). Frente al PR 3, las 24 cuestan un 2-9 %
+  más: la parte fija creció unos 175 tokens (`grep` y las dos líneas
+  nuevas del prompt), y GLM dio 27 llamadas más.
+- **Las nuevas, al menos 4/5 en cada modelo: se cumple.** La 29 y la 30,
+  5/5 en los tres. De las del PR 3, todas 5/5 salvo la 27 de Haiku, 4/5:
+  escribió `informes/resumen.md` en vez de `resumen.md` (archivó dos veces
+  y el lote estaba bien), la misma lectura de la ruta que en la 28 (PR 3).
+  La comprobación de la 27 no se afloja: no lo ha decidido el mantenedor.
+- **En la 27, la 28 y la 30 se archiva en todas las ejecuciones: se
+  cumple** (15/15 en cada una).
+- **`recall` (decisión 15): se usa en las 15 ejecuciones de la 30**, entre
+  una y tres veces, y las 15 dan el código bien. En la 27 y la 28, ninguna
+  vez: el índice ya basta.
+- **Coste de las tareas largas:** la 12, la 23 y la 24 no archivan, y el
+  informe no da ⚠ en ninguna tarea. La 27 y la 28, frente al PR 3: Kimi
+  cuesta menos (0,0438 → 0,0378 $ y 0,0910 → 0,0803 $), y GLM y Haiku más
+  (GLM 0,0083 → 0,0093 $ y 0,0097 → 0,0126 $; Haiku 0,0316 → 0,0350 $ y
+  0,0534 → 0,0597 $), con más archivados en la 28 de GLM y la 27 de
+  Haiku. Son 5 ejecuciones por tarea, y la línea base nueva queda como
+  referencia. La caché leída de la 27 sube en Kimi y Haiku (del 22-25 %
+  al 28-40 %).
+- **Pasos, para el tope de §1.16:** como mucho 27 (Kimi en la 28), con un
+  tope de 50. Ninguna ejecución llega al tope.
+- **`grep` con contexto:** la 29 se resuelve en 4-5 pasos con los tres
+  modelos. El valor por defecto de `output` sigue en `lines`.
+
+**`todo_write`, otra vez** (pendiente de spec 10, §5, "Resultados (PR
+2)"; de las sesiones de esta pasada): la 28 lo usa en 15/15 y la 23 en
+10/15 (GLM y Kimi siempre, Haiku nunca). Sin pedirlo, aparece poco: Kimi
+en la 07 (3/5), GLM y Kimi en la 27 (1/5 cada uno), Haiku en la 11 (1/5).
+La 12 ya no lo usa ningún modelo. Lo usan donde hay una lista de pasos, y
+nadie lo usa de relleno: la guía de `tools.md` no se toca.
+
+**Líneas base nuevas:** `evals/baselines/2026-11-23-opencode-go-*.json`,
+con la batería de 30 (§5).
+
+### Resultados (PR 4, tras los arreglos)
+
+Revisadas las trazas de la pasada anterior (decisión del mantenedor,
+2026-11-23: "no aceptamos ningún límite; lo que falla se arregla"), salieron
+dos fallos de `grep` del PR 4, que se arreglaron con su test primero: ponía
+`--` entre coincidencias de un fichero sin `context` (`4b1860d`), y GLM le
+pidió `"output": "content"`, el nombre del `Grep` de Claude Code
+(code.claude.com, *tools reference*, comprobado el 2026-11-23: `content`,
+`files_with_matches` y `count`), y recibió un error. `grep` acepta ahora
+esos nombres; el esquema que ve el modelo no cambia (`2fdf0f6`). La
+comprobación de la 27 acepta el resumen en la raíz o en `informes/`, como
+la de la 28 (`9859e2d`).
+
+Pasada otra vez, 2026-11-23 (13:09-14:59), la misma orden, contra las
+líneas base de la pasada anterior:
+
+| Modelo | Éxito | Validación | Coste total | Caché leída | Llamadas |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 147/150 | 30/30 | 0,327 $ | 75,5 % | 821 |
+| `kimi-k2.7-code` | 148/150 | 29/30 | 1,777 $ | 75,9 % | 788 |
+| `claude-haiku-5-5` | 150/150 | 30/30 | 1,246 $ | 61,8 % | 620 |
+
+| Tarea | Modelo | Pasos | Coste | Caché leída | Archivados | `recall` | Éxito |
+|---|---|---|---|---|---|---|---|
+| 27 | `glm-5.3-flash` | 10,8 | 0,0089 $ | 69,1 % | 1 | 0 | 5/5 |
+| 27 | `kimi-k2.7-code` | 5,2 | 0,0370 $ | 26,9 % | 2 | 0 | 5/5 |
+| 27 | `claude-haiku-5-5` | 9,4 | 0,0362 $ | 43,9 % | 2-3 | 0 | 5/5 |
+| 28 | `glm-5.3-flash` | 16,8 | 0,0140 $ | 79,4 % | 1 | 0 | 5/5 |
+| 28 | `kimi-k2.7-code` | 12,2 | 0,0660 $ | 64,1 % | 2 | 0 | 5/5 |
+| 28 | `claude-haiku-5-5` | 11,4 | 0,0575 $ | 52,4 % | 3 | 0 | 5/5 |
+| 29 | `glm-5.3-flash` | 4,8 | 0,0045 $ | 66,6 % | 0 | 0-1 | 5/5 |
+| 29 | `kimi-k2.7-code` | 4,4 | 0,0240 $ | 66,5 % | 0 | 0 | 5/5 |
+| 29 | `claude-haiku-5-5` | 4,6 | 0,0080 $ | 68,8 % | 0 | 0 | 5/5 |
+| 30 | `glm-5.3-flash` | 3,8 | 0,0039 $ | 65,0 % | 1 | 1-3 | 5/5 |
+| 30 | `kimi-k2.7-code` | 3,0 | 0,0117 $ | 66,9 % | 1 | 1 | 5/5 |
+| 30 | `claude-haiku-5-5` | 3,8 | 0,0103 $ | 62,3 % | 1 | 1-2 | 5/5 |
+
+- **Sin ⚠ en ningún modelo**, y las 24 tareas de antes no archivan. Las
+  nuevas, 5/5 en los tres modelos, también la 27 de Haiku.
+- **Los cinco fallos son del modelo**, y el `grep` nuevo les dio lo
+  correcto. GLM falla dos veces la 13: una contesta `resumen`, que tiene
+  test, y otra acierta pero nombra también las demás (decir de más falla,
+  auditoría profunda, I10). GLM falla la 20 (la de siempre) y Kimi la 08
+  (su `slugify` da `version-20`). Ninguno puede ejecutar los tests hasta
+  que `run_command` entre en las evals con el sandbox (hito 16).
+- **Kimi en la 04** (validación) contestó "¿Confirmo?" y no creó el
+  fichero: pidió permiso por texto, cuando `maha` ya pregunta antes de cada
+  cambio. **Decisión del mantenedor (2026-11-23):** no se ajusta el prompt
+  por un fallo del conjunto de validación, que no se mira al ajustar
+  prompts. Si se ve en el uso o en una tarea de train, el arreglo entra
+  con esa prueba (ESTADO, pendientes).
+- **Pasos:** como mucho 27 (Kimi en la 28), con el tope de 50.
+- `recall` sin archivo (la 29 de GLM y la 23 de Haiku, una vez cada una)
+  responde "nothing archived yet" y el modelo sigue.
+
+**Líneas base:** las de esta pasada,
+`evals/baselines/2026-11-23-opencode-go-*-2.json`, son las del cierre del
+hito. Las de la pasada anterior se quedan como registro: se midieron con el
+fallo de `grep`.
 
 ## 6. Orden de piezas para el implementador
 
@@ -976,6 +1122,14 @@ Del mantenedor, tras el PR 1 (2026-11-17):
     cuenta bastantes menos tokens de los que se mandaron y lo mandado no
     cabía en la ventana, se archiva y se repite la llamada una vez. Entra
     en el PR 3, pieza 3, con su test.
+
+Del mantenedor, en el PR 4 (2026-11-23):
+15. **`recall` se mide con una tarea nueva, la 30** (train). En la 27 no
+    se usaba, porque el índice del archivero ya trae el código de lote. La
+    30 empieza con un historial donde el agente leyó un registro largo y
+    lo rotó. La línea CRÍTICO está en medio de esa lectura, donde el
+    archivero no mira (lee 2.000 caracteres de cada bloque, del principio
+    y del final). La 27 sigue igual: mide que el índice conserva el dato.
 
 ## 12. Aprendido al implementar
 
@@ -1150,3 +1304,50 @@ Del mantenedor, tras el PR 1 (2026-11-17):
   22.506 tokens y quedaron 7.092; el índice del archivero guardaba el
   código de lote, lo hecho por fichero y lo pendiente; el archivero costó
   0,001 $. No usó `recall`: el índice ya tenía el dato.
+
+**PR 4 (2026-11-23):**
+- **Qué está ya cargado se lee de la ventana, no de un registro aparte.**
+  El bucle busca los bloques `<instructions source="…">` al final de los
+  resultados que siguen en la ventana de trabajo, y los del paso en curso.
+  Así "tras archivar se olvidan y vuelven" y una sesión retomada no los
+  repite, sin estado nuevo en la sesión. Un bloque acaba en su primera
+  etiqueta de cierre (la del fichero va escapada, como en el system
+  prompt).
+- **Solo carpetas por debajo del directorio de trabajo.** Las de encima, y
+  la suya, ya están en el system prompt (spec 10, §1.4). Un fichero fuera
+  del directorio de trabajo no trae nada, como en Claude Code. Un fichero
+  que ya nombra un glob de `instructions` no se repite: la sesión pasa al
+  bucle las capas de instrucciones de su prompt (`Agent.instructions`).
+- **El tope de 64 KiB cuenta todos:** los del system prompt, los que
+  siguen en la ventana y los nuevos. Lo que no cabe deja la marca
+  `[truncated: N bytes more]`, y el aviso nombra el tope entero, no lo que
+  quedaba (`cap(…, of=)`).
+- **Lo que no se puede leer** (un secreto, un enlace fuera, no UTF-8) se
+  avisa a la persona una vez por sesión (`ToolFinished.warnings`, solo en
+  el JSON si hay alguno), como los del system prompt. Al modelo no le
+  llega nada.
+- **El prompt base decía que solo mandan los bloques "de este prompt"**, y
+  el modelo hizo bien en no seguir uno que llegaba en un resultado. Visto
+  a mano con GLM (un `api/AGENTS.md` que pide acabar con una palabra):
+  el bloque llegaba intacto y no se seguía. Ahora `base.md` dice que
+  también mandan los que `maha` añade al final de `read_file`,
+  `edit_file` o `write_file`. Con el cambio, GLM y Haiku lo siguen. Solo
+  esas tres herramientas, y no por casualidad: un fichero no puede fingir
+  un bloque al final de `read_file` (sus líneas van numeradas), y un
+  bloque en la salida de un comando sigue siendo un dato.
+- **`grep`:** `context` da los grupos como grep y ripgrep (`ruta:N:` la
+  coincidencia, `ruta-N-` alrededor, `--` entre grupos que no se tocan y
+  entre ficheros). El tope de 100 cuenta coincidencias, no líneas, y en
+  `files` y `count`, ficheros. El resumen de la terminal sale del texto
+  ("4 matches", "2 files"). El valor por defecto sigue siendo `lines`: se
+  mide con la tarea 29 (§5) antes de cambiarlo.
+- **El tope de pasos, 50 también en las evals** (`TASK_LIMITS`). La 28 deja
+  su `max_steps = 40`; la 27 conserva sus 30.
+- **La parte fija, medida con el test:** base 819 y herramientas 2.191
+  (3.010 de 3.500).
+- **La tarea 30 no archivaba en la primera prueba.** Con la ventana del
+  catálogo, el techo es el presupuesto entero (20.000), no la mitad: el
+  historial cabía y el modelo leyó el código directamente. Con manuales
+  más largos, el historial pasa del techo él solo, y un test lo fija
+  (`test_task_30_needs_recall`). Probada con GLM (2/2): archiva y usa
+  `recall` en las dos.

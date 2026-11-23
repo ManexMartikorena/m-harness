@@ -109,6 +109,9 @@ class WritesAgents:
         self._path.write_text(params.text, encoding="utf-8")
         return "written"
 
+    def touched(self, params: object) -> str | None:
+        return None
+
     def summary(self, result: str) -> str:
         return result
 

@@ -110,11 +110,11 @@ model = "glm-5.3-flash"    # el id, tal cual lo da el proveedor (cambian a menud
 ```
 
 Desde el hito 8, límites de cada turno (todos opcionales; sin ellos, solo
-los 25 pasos de siempre):
+los 50 pasos por defecto; eran 25 hasta el hito 11):
 
 ```toml
 [limits]
-max_steps = 25       # llamadas al modelo
+max_steps = 50       # llamadas al modelo
 max_cost = 0.50      # dólares
 max_tokens = 400000  # entrada + salida
 timeout = 600        # segundos

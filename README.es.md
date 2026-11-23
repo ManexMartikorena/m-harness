@@ -171,7 +171,7 @@ small_model = "glm-5.3-flash"      # títulos; por defecto, el barato del provee
 instructions = ["CONTRIBUTING.md"] # se añaden al system prompt
 
 [limits]
-max_steps = 25       # llamadas al modelo
+max_steps = 50       # llamadas al modelo
 max_cost = 0.50      # dólares
 max_tokens = 400000  # entrada + salida
 timeout = 600        # segundos

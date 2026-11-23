@@ -37,7 +37,7 @@ from mharness.domain.messages import (
     ToolResultBlock,
 )
 from mharness.domain.model import Effort, ModelResponse, Usage
-from mharness.domain.prompt import Layer
+from mharness.domain.prompt import Instructions, Layer
 from mharness.domain.retry import RetryPolicy
 from mharness.domain.session import (
     ArchiveEntry,
@@ -110,6 +110,7 @@ class World:
         archives: MemoryArchiveStore | None = None,
         context_budget: int = 100_000,
         archivist: Archivist | None = None,
+        project: MemoryProject | None = None,
     ) -> None:
         self.gate = gate or FakeApproval()
         self.traces = traces or MemoryTraceSink()
@@ -134,6 +135,7 @@ class World:
                 limits=limits or TurnLimits(),
                 context_budget=context_budget,
                 archivist=archivist,
+                project=project,
             )
 
         self.sessions = Sessions(
@@ -1906,6 +1908,37 @@ async def test_every_call_of_a_session_sends_its_system_prompt() -> None:
     assert "v1" in first
     assert conversation.prompt is not None
     assert conversation.prompt.text == first
+
+
+async def test_the_loop_knows_the_instruction_files_of_the_prompt() -> None:
+    # A file of the system prompt never comes again after a result (spec
+    # hito 11, §1.14): here a glob of `instructions` named api/AGENTS.md.
+    api = Layer(kind="extra", source="api/AGENTS.md", text="api")
+    project = MemoryProject(
+        [Layer(kind="project", source="AGENTS.md", text="root"), api],
+        nested={"/x/api/app.py": Instructions(layers=(api,))},
+    )
+    fake = FakeModelClient(
+        [
+            tool_calls(ToolCallBlock(id="c1", name="echo", arguments='{"text": "x"}')),
+            reply("Hecho."),
+        ]
+    )
+    world = World(
+        MemorySessionStore(),
+        fake,
+        prompt=prompt_builder(project),
+        tools=[FakeTool(touches="/x/api/app.py")],
+        project=project,
+    )
+    conversation = await world.sessions.start()
+
+    await turn(conversation, "Lee api/app.py")
+
+    assert project.asked == ["/x/api/app.py"]
+    [result] = fake.requests[1].messages[-1].blocks
+    assert isinstance(result, ToolResultBlock)
+    assert result.content == "echo: x"
 
 
 async def test_another_model_gets_its_family_layer() -> None:

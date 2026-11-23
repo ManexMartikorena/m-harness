@@ -78,6 +78,15 @@ from mharness.domain.model import (
     ToolSpec,
     Usage,
 )
+from mharness.domain.prompt import (
+    ATTACHED,
+    INSTRUCTIONS_MAX,
+    Layer,
+    attached_instructions,
+    block_source,
+    cap,
+    instruction_block,
+)
 from mharness.domain.retry import RetryPolicy
 from mharness.domain.session import ArchiveEntry, OutputEntry
 from mharness.domain.tools import ToolError
@@ -85,6 +94,7 @@ from mharness.ports.approval import ApprovalGate
 from mharness.ports.archive import ContextArchive
 from mharness.ports.catalog import ModelCatalog
 from mharness.ports.model import ModelClient
+from mharness.ports.project import ProjectInfo
 from mharness.ports.tools import Tool
 
 NOT_RUN_DENIED = "not run: a previous call was denied"
@@ -142,6 +152,7 @@ class Agent:
         context_budget: int = DEFAULT_BUDGET,
         slot: ArchiveSlot | None = None,
         archivist: Archivist | None = None,
+        project: ProjectInfo | None = None,
     ) -> None:
         self._client = client
         self._tools = tools
@@ -194,6 +205,14 @@ class Agent:
         # What the session has to save of the archive, in order: each whole
         # output archived, and each time the window was archived (§1.12).
         self._entries: list[ArchiveEntry | OutputEntry] = []
+        # Where the instruction files of the folders the model works in
+        # come from; None: only those of the system prompt (§1.14).
+        self._project = project
+        # The instruction files of the system prompt: the session sets
+        # them with it. They never come again after a result.
+        self.instructions: tuple[Layer, ...] = ()
+        # What the person was told of the files that could not be read.
+        self._told: set[str] = set()
 
     @property
     def archive(self) -> ContextArchive | None:
@@ -736,7 +755,7 @@ class Agent:
                     # Nobody was asked, or "once" or "session".
                     turn.executed = True
                     outcome = await _within(
-                        self._run(call, prepared, self._position(turn)), turn.deadline
+                        self._run(call, prepared, turn), turn.deadline
                     )
             turn.calls_run += 1
             turn.results.append(outcome.result)
@@ -747,6 +766,7 @@ class Agent:
                 duration=time.monotonic() - started,
                 internal_error=outcome.internal_error,
                 decision=decision,
+                warnings=outcome.warnings,
             )
         turn.messages.append(Message(role="tool", blocks=list(turn.results)))
         turn.calls = []
@@ -764,7 +784,7 @@ class Agent:
         """Run a tool that waits for the person (`ask_user`). As while they
         decide on a call, the turn's clock stops: a person reading is no
         slow model (spec hito 10, §1.11)."""
-        return await _paused(turn, self._run(call, ready, self._position(turn)))
+        return await _paused(turn, self._run(call, ready, turn))
 
     def _keep_timed_out(self, turn: _Turn) -> None:
         """What a turn stopped by its time limit keeps: as after Ctrl+C,
@@ -1016,10 +1036,13 @@ class Agent:
         """Where the step's results go in the conversation."""
         return len(self._messages) + len(turn.messages)
 
-    async def _run(self, call: ToolCallBlock, ready: _Ready, position: int) -> _Outcome:
+    async def _run(self, call: ToolCallBlock, ready: _Ready, turn: _Turn) -> _Outcome:
         """Run an allowed call. Every failure becomes an error result. An
         output too big for the context goes whole to the archive, and the
-        model gets its beginning, its end and its id (spec hito 11, §1.6)."""
+        model gets its beginning, its end and its id (spec hito 11, §1.6).
+        After it come the instruction files of the folder it touched, not
+        yet in the working window (§1.14)."""
+        position = self._position(turn)
         try:
             content = await ready.tool.run(ready.params)
         except ToolError as exc:
@@ -1031,7 +1054,8 @@ class Agent:
             # mejora-2026-10-26-deuda-pre-hito-6, B3).
             return _crash(call, f"run() returned {type(content).__name__}, not str")
         shown, problem = await self._fit(call, ready.tool.name, content, position)
-        result = ToolResultBlock(call_id=call.id, content=shown)
+        attached, warnings = await self._nested(ready, turn)
+        result = ToolResultBlock(call_id=call.id, content=shown + attached)
         try:
             # Of the whole output: "4,210 lines" is what the tool gave.
             summary = ready.tool.summary(content)
@@ -1042,8 +1066,55 @@ class Agent:
                 result=result,
                 summary="(no summary)",
                 internal_error=f"summary: {type(exc).__name__}: {exc}",
+                warnings=warnings,
             )
-        return _Outcome(result=result, summary=summary, internal_error=problem)
+        return _Outcome(
+            result=result, summary=summary, internal_error=problem, warnings=warnings
+        )
+
+    async def _nested(self, ready: _Ready, turn: _Turn) -> tuple[str, tuple[str, ...]]:
+        """The instruction files to put after a result, and what the person
+        is told of those that could not be read, once (spec hito 11,
+        §1.14). Each file once in the working window: one that left it
+        with an archive comes again. All of them within the limit of the
+        system prompt's, counted with its own (spec hito 10, §1.4)."""
+        if self._project is None:
+            return "", ()
+        try:
+            path = ready.tool.touched(ready.params)
+        except Exception:
+            # The result is the tool's: a bug here only costs the files.
+            return "", ()
+        if path is None:
+            return "", ()
+        try:
+            found = await self._project.nested(path)
+        except Exception as exc:
+            return "", (f"instructions: {type(exc).__name__}: {exc}",)
+        loaded: dict[str, int] = {}
+        results = [
+            block
+            for message in self._working(turn.messages)
+            for block in message.blocks
+            if isinstance(block, ToolResultBlock)
+        ]
+        for block in [*results, *turn.results]:
+            for source, text in attached_instructions(block.content):
+                loaded[source] = len(text.encode("utf-8"))
+        mine = {block_source(layer.source) for layer in self.instructions}
+        used = sum(len(layer.text.encode("utf-8")) for layer in self.instructions)
+        new = [
+            layer
+            for layer in found.layers
+            if block_source(layer.source) not in loaded
+            and block_source(layer.source) not in mine
+        ]
+        room = max(INSTRUCTIONS_MAX - used - sum(loaded.values()), 0)
+        kept, cut = cap(new, room, of=INSTRUCTIONS_MAX)
+        warnings = [w for w in (*found.warnings, *cut) if w not in self._told]
+        self._told.update(warnings)
+        text = "".join(ATTACHED + instruction_block(layer) for layer in kept)
+        return text, tuple(warnings)
 
     async def _fit(
         self, call: ToolCallBlock, tool: str, content: str, position: int
@@ -1114,6 +1185,8 @@ class _Outcome:
     result: ToolResultBlock
     summary: str
     internal_error: str | None = None
+    # What the person is told of instruction files not read (§1.14).
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

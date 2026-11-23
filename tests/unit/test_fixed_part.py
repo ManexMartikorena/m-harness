@@ -11,8 +11,9 @@ from mharness.domain.context import estimate, estimate_tools
 from mharness.domain.prompt import render, sections, tool_guidance
 from tests.fakes.questions import FakePerson
 
-# Tokens, estimated. Measured on 2026-11-17: base 758, tools 2,078 (with
-# recall; without it, 706 and 1,829).
+# Tokens, estimated. Measured on 2026-11-23: base 819, tools 2,191 (grep
+# with context and output, AGENTS.md of subfolders); on 2026-11-17, 758
+# and 2,078 (with recall; without it, 706 and 1,829).
 FIXED_PART_MAX = 3_500
 
 PROMPTS = resources.files("mharness") / "prompts"

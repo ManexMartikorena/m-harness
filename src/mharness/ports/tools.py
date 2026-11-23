@@ -37,6 +37,12 @@ class Tool[P: BaseModel](Protocol):
         failure."""
         ...
 
+    def touched(self, params: P) -> str | None:
+        """The file a run with `params` read or changed, absolute, or None:
+        the loop adds the instruction files of its folder (spec hito 11,
+        §1.14). Called only after `run` worked."""
+        ...
+
     def summary(self, result: str) -> str:
         """A few words about a result, for the terminal: "3 lines"."""
         ...
