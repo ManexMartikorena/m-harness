@@ -10,7 +10,7 @@ import json
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import aclosing
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -41,6 +41,7 @@ from mharness.domain.approval import ApprovalRequest, Decision
 from mharness.domain.archive import ArchiveError, ArchiveItem, ArchiveNotes
 from mharness.domain.catalog import add_cost
 from mharness.domain.context import (
+    CHARS_PER_TOKEN,
     DEFAULT_BUDGET,
     OUTPUT_LIMIT,
     ContextPolicy,
@@ -64,6 +65,7 @@ from mharness.domain.errors import (
 from mharness.domain.events import ModelEvent, TextDelta, UsageSoFar
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import (
+    Block,
     Message,
     ReasoningBlock,
     TextBlock,
@@ -557,9 +559,57 @@ class Agent:
         )
         if tokens <= policy.ceiling:
             return
-        async with aclosing(self._archive(turn, tail=policy.tail)) as events:
+        archiving = self._archive(turn, tail=policy.tail, fit_to=policy.ceiling)
+        async with aclosing(archiving) as events:
             async for event in events:
                 yield event
+
+    async def _fit_step(self, turn: _Turn, ceiling: int) -> None:
+        """If the call still passes the ceiling and the turn ends in results
+        the model has not seen, cut the biggest of them, each to the same
+        size and never below `STEP_RESULT_MIN` characters: whole in the
+        archive, the model gets their start, end and id (spec hito 11, §1.6;
+        hand verification of hito 11). A step is never split: its last one
+        cannot be archived, and six big reads could pass the budget."""
+        if not turn.fresh or not turn.messages or turn.messages[-1].role != "tool":
+            return
+        system, tools = self._system_of(turn.model), self._tools.specs()
+        over = self.prompt_tokens(system, tools, self._working(turn.messages)) - ceiling
+        if over <= 0:
+            return
+        step = turn.messages[-1]
+        # What the model would get of each, without its instruction files.
+        sizes = {
+            block.call_id: len(block.content) - len(fresh.attached)
+            for block in step.blocks
+            if isinstance(block, ToolResultBlock)
+            and (fresh := turn.fresh.get(block.call_id)) is not None
+        }
+        limit = _equal_share(sizes, sum(sizes.values()) - over * CHARS_PER_TOKEN)
+        blocks: list[Block] = []
+        for block in step.blocks:
+            fresh = (
+                turn.fresh.get(block.call_id)
+                if isinstance(block, ToolResultBlock)
+                else None
+            )
+            if (
+                fresh is None
+                or not isinstance(block, ToolResultBlock)
+                or sizes[block.call_id] <= limit
+            ):
+                blocks.append(block)
+                continue
+            shown, _, archived = await self._fit(
+                fresh.tool,
+                fresh.content,
+                fresh.position,
+                limit=limit,
+                archived=fresh.archived,
+            )
+            turn.fresh[block.call_id] = replace(fresh, archived=archived)
+            blocks.append(block.model_copy(update={"content": shown + fresh.attached}))
+        turn.messages[-1] = step.model_copy(update={"blocks": blocks})
 
     async def compact(
         self, instructions: str | None = None
@@ -582,15 +632,20 @@ class Agent:
         tail: int,
         manual: bool = False,
         instructions: str | None = None,
+        fit_to: int | None = None,
     ) -> AsyncGenerator[AgentEvent]:
         """Move out of the working window the steps before the last ones
         that fit in `tail` tokens (spec hito 11, §1.10). Whole steps, also of
         this turn. Atomic: a Ctrl+C or a failure before the end leaves the
         conversation as it was; what was archived meanwhile is archived
-        again with the same ids."""
+        again with the same ids. With `fit_to`, then the step the model has
+        not seen is cut to fit in that many tokens, if it must be
+        (`_fit_step`), and `ContextArchived` counts it."""
         full = [*self._messages, *turn.messages]
         cut = archive_cut(full, tail, start=self._archived)
         if cut <= self._archived:
+            if fit_to is not None:
+                await self._fit_step(turn, fit_to)
             return
         system, tools = self._system_of(turn.model), self._tools.specs()
         before = self.prompt_tokens(system, tools, self._working(turn.messages))
@@ -636,6 +691,8 @@ class Agent:
             )
         )
         turn.archived = turn.archived or cut > len(self._messages)
+        if fit_to is not None:
+            await self._fit_step(turn, fit_to)
         for paid in calls:
             yield paid
         yield ContextArchived(
@@ -684,6 +741,7 @@ class Agent:
         # This step's results only: a cut right here must not give
         # its calls the last step's.
         turn.results = []
+        turn.fresh = {}
         return response, call_cost
 
     async def _handle_calls(
@@ -1053,9 +1111,17 @@ class Agent:
             # A tool that breaks its contract does not cut the turn (spec
             # mejora-2026-10-26-deuda-pre-hito-6, B3).
             return _crash(call, f"run() returned {type(content).__name__}, not str")
-        shown, problem = await self._fit(call, ready.tool.name, content, position)
+        shown, problem, archived = await self._fit(ready.tool.name, content, position)
         attached, warnings = await self._nested(ready, turn)
         result = ToolResultBlock(call_id=call.id, content=shown + attached)
+        # Whole, in case the step does not fit before the model sees it.
+        turn.fresh[call.id] = _Fresh(
+            tool=ready.tool.name,
+            content=content,
+            position=position,
+            archived=archived,
+            attached=attached,
+        )
         try:
             # Of the whole output: "4,210 lines" is what the tool gave.
             summary = ready.tool.summary(content)
@@ -1117,26 +1183,34 @@ class Agent:
         return text, tuple(warnings)
 
     async def _fit(
-        self, call: ToolCallBlock, tool: str, content: str, position: int
-    ) -> tuple[str, str | None]:
-        """The output as the model gets it, and why it could not be
-        archived, if it could not: then it is only cut."""
-        if len(content) <= OUTPUT_LIMIT:
-            return content, None
+        self,
+        tool: str,
+        content: str,
+        position: int,
+        limit: int = OUTPUT_LIMIT,
+        archived: str | None = None,
+    ) -> tuple[str, str | None, str | None]:
+        """The output as the model gets it in `limit` characters, why it
+        could not be archived, if it could not (then it is only cut), and
+        its id in the archive. One `archived` already is not added again."""
+        if len(content) <= limit:
+            return content, None, archived
+        if archived is not None:
+            return fit(content, limit, archived_as=archived), None, archived
         if self.archive is None:
-            return fit(content), None
+            return fit(content, limit), None, None
         item = ArchiveItem(
             kind="output", position=position, role="tool", tool=tool, text=content
         )
         try:
             [archived] = await self.archive.add([item])
         except ArchiveError as exc:
-            return fit(content), f"archive: {exc}"
+            return fit(content, limit), f"archive: {exc}", None
         # Whole in the session too: the archive is made again from it.
         self._entries.append(
             OutputEntry(id=archived, position=position, tool=tool, text=content)
         )
-        return fit(content, archived_as=archived), None
+        return fit(content, limit, archived_as=archived), None, archived
 
 
 class _TimedOut(Exception):
@@ -1169,6 +1243,37 @@ async def _within[T](waiting: Awaitable[T], deadline: float | None) -> T:
             raise _TimedOut from None
         # Not ours: the awaited code's own.
         raise
+
+
+@dataclass(frozen=True)
+class _Fresh:
+    """A result of the step in progress, whole, before the model sees it."""
+
+    tool: str
+    content: str
+    position: int
+    # Its id in the archive, if it is there already.
+    archived: str | None
+    # The instruction files after it (§1.14).
+    attached: str
+
+
+# What a result of a step too big keeps at least, in characters.
+STEP_RESULT_MIN = 2_000
+
+
+def _equal_share(sizes: dict[str, int], room: int) -> int:
+    """The size to cut every result above to, so that all of them come to
+    `room` characters, but never below `STEP_RESULT_MIN`."""
+    ordered = sorted(sizes.values())
+    left, count = room, len(ordered)
+    for size in ordered:
+        share = left // count
+        if size > share:
+            return max(share, STEP_RESULT_MIN)
+        left -= size
+        count -= 1
+    return max(ordered[-1], STEP_RESULT_MIN) if ordered else STEP_RESULT_MIN
 
 
 @dataclass(frozen=True)
@@ -1249,6 +1354,8 @@ class _Turn:
     archived: bool = False
     # Whether the prompt did not fit even after archiving.
     no_room: bool = False
+    # The step's results, whole, by call (spec hito 11, §1.6).
+    fresh: dict[str, _Fresh] = field(default_factory=dict)
 
     @property
     def must_keep(self) -> bool:

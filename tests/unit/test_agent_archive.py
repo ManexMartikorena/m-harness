@@ -25,7 +25,7 @@ from mharness.domain.errors import ContextOverflowError
 from mharness.domain.limits import TurnLimits
 from mharness.domain.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
 from mharness.domain.model import Usage
-from mharness.domain.session import check_history
+from mharness.domain.session import OutputEntry, check_history
 from tests.fakes.approval import FakeApproval
 from tests.fakes.archive import MemoryArchive
 from tests.fakes.catalog import MemoryCatalog
@@ -408,3 +408,121 @@ async def test_the_archivist_counts_in_the_limits_of_the_turn() -> None:
 
     assert isinstance(events[-1], TurnFinished)
     assert (events[-1].reason, events[-1].steps) == ("max_tokens", 4)
+
+
+# A step whose results alone do not fit (hand verification of hito 11).
+
+REPORT = "\n".join(f"línea {n} del informe, sin novedad" for n in range(1, 700))
+
+
+def report_call(id: str) -> ToolCallBlock:
+    return ToolCallBlock(id=id, name="echo", arguments=json.dumps({"text": id}))
+
+
+async def test_a_step_too_big_for_the_ceiling_sends_its_results_cut() -> None:
+    # Seen at the hand verification of hito 11: six reads of 16,000
+    # characters in one step, with a budget of 20,000. The step cannot be
+    # archived (it is the last one), and the call went at 142 % of the
+    # budget. The model has not seen these results yet: the biggest go
+    # whole to the archive, and it gets their start, end and id.
+    fake = FakeModelClient(
+        [tool_calls(*(report_call(f"c{n}") for n in range(1, 4))), reply("Hecho.")]
+    )
+    archive = MemoryArchive()
+    subject = Agent(
+        fake,
+        ToolRegistry([FakeTool(results=[REPORT, REPORT, REPORT])]),
+        gate=FakeApproval(),
+        model=MODEL,
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
+        retry=NO_RETRIES,
+        context_budget=BUDGET,
+    )
+    subject.archive = archive
+    policy = ContextPolicy(budget=BUDGET)
+    assert len(REPORT) * 3 // 4 > policy.ceiling
+
+    events = await run(subject)
+
+    second = fake.requests[1]
+    sent = subject.prompt_tokens(second.system, list(second.tools), second.messages)
+    assert sent <= policy.ceiling
+    # The line that tells the person says what really goes.
+    [archived] = [e for e in events if isinstance(e, ContextArchived)]
+    assert archived.after == sent
+    results = [
+        block
+        for block in second.messages[-1].blocks
+        if isinstance(block, ToolResultBlock)
+    ]
+    assert [block.call_id for block in results] == ["c1", "c2", "c3"]
+    for block in results:
+        assert block.content.startswith("línea 1 del informe")
+        assert block.content.endswith("línea 699 del informe, sin novedad")
+        assert "the whole output is archived as out-" in block.content
+    # Before that, what came earlier was archived: the person's message.
+    outputs = {
+        key: item for key, item in archive.items.items() if key.startswith("out-")
+    }
+    assert sorted(outputs) == ["out-1", "out-2", "out-3"]
+    assert all(item.text == REPORT for item in outputs.values())
+    # Whole in the session too, to make the archive again (§1.12).
+    entries = subject.take_entries()
+    assert [e.text for e in entries if isinstance(e, OutputEntry)] == [REPORT] * 3
+
+
+async def test_a_step_that_fits_is_sent_as_it_is() -> None:
+    small = "\n".join(f"línea {n}" for n in range(1, 50))
+    fake = FakeModelClient(
+        [tool_calls(report_call("c1"), report_call("c2")), reply("Hecho.")]
+    )
+    subject = Agent(
+        fake,
+        ToolRegistry([FakeTool(results=[small, small])]),
+        gate=FakeApproval(),
+        model=MODEL,
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
+        retry=NO_RETRIES,
+        context_budget=BUDGET,
+    )
+    subject.archive = MemoryArchive()
+
+    await run(subject)
+
+    contents = [
+        b.content
+        for b in fake.requests[1].messages[-1].blocks
+        if isinstance(b, ToolResultBlock)
+    ]
+    assert contents == [small, small]
+
+
+async def test_an_output_archived_already_is_cut_again_with_its_id() -> None:
+    # Over 40,000 characters it went to the archive when it came; cut
+    # further to fit, it keeps that id and is not added again.
+    huge = "\n".join(f"linea numero {n}" for n in range(1, 20_000))
+    fake = FakeModelClient([tool_calls(report_call("c1")), reply("Hecho.")])
+    archive = MemoryArchive()
+    subject = Agent(
+        fake,
+        ToolRegistry([FakeTool(results=[huge])]),
+        gate=FakeApproval(),
+        model=MODEL,
+        catalog=MemoryCatalog(),
+        provider="opencode-go",
+        retry=NO_RETRIES,
+        context_budget=BUDGET,
+    )
+    subject.archive = archive
+
+    await run(subject)
+
+    second = fake.requests[1]
+    sent = subject.prompt_tokens(second.system, list(second.tools), second.messages)
+    assert sent <= ContextPolicy(budget=BUDGET).ceiling
+    [result] = second.messages[-1].blocks
+    assert isinstance(result, ToolResultBlock)
+    assert 'recall(id="out-1"' in result.content
+    assert [key for key in archive.items if key.startswith("out-")] == ["out-1"]
