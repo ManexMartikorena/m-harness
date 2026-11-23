@@ -815,6 +815,78 @@ La aceptación de §5, punto por punto:
   sobrevive, pero no que `recall` lo encuentre. Queda para el PR 4
   (instrucciones y herramientas, §6), a decidir con el mantenedor.
 
+### Resultados (PR 4) y líneas base nuevas
+
+2026-11-23 (12:19-13:55), `maha eval --models
+glm-5.3-flash,kimi-k2.7-code,claude-haiku-5-5 --repeat 5 --retry-errors
+--save`, con las 30 tareas, contra las líneas base del 2026-11-10. El
+PR 4 trae los `AGENTS.md` de subcarpetas (y la línea de `base.md` que dice
+seguirlos), `grep` con `context` y `output` (y su línea en `tools.md`),
+el tope de 50 pasos y las tareas 29 y 30. Una pasada anterior (12:16) se
+paró a los pocos minutos para cambiar `base.md` y no cuenta.
+
+| Modelo | Éxito | Validación | Coste total | Caché leída | Llamadas |
+|---|---|---|---|---|---|
+| `glm-5.3-flash` | 148/150 | 30/30 | 0,322 $ | 73,1 % | 796 |
+| `kimi-k2.7-code` | 148/150 | 29/30 | 1,832 $ | 78,5 % | 828 |
+| `claude-haiku-5-5` | 149/150 | 30/30 | 1,230 $ | 60,8 % | 600 |
+
+Solo las 24 tareas de antes, frente al PR 3:
+
+| Modelo | Coste | Caché leída | Llamadas |
+|---|---|---|---|
+| `glm-5.3-flash` | 0,163 $ (0,150 $) | 79,7 % (73,5 %) | 630 (603) |
+| `kimi-k2.7-code` | 1,035 $ (1,019 $) | 86,9 % (87,1 %) | 650 (639) |
+| `claude-haiku-5-5` | 0,644 $ (0,610 $) | 69,0 % (69,4 %) | 445 (451) |
+
+Las tareas largas y las nuevas (media de 5; la caché, de toda la tarea):
+
+| Tarea | Modelo | Pasos | Coste | Caché leída | Archivados | `recall` |
+|---|---|---|---|---|---|---|
+| 27 | `glm-5.3-flash` | 9,8 | 0,0093 $ | 61,9 % | 1-2 | 0 |
+| 27 | `kimi-k2.7-code` | 5,4 | 0,0378 $ | 28,2 % | 2 | 0 |
+| 27 | `claude-haiku-5-5` | 8,0 | 0,0350 $ | 40,4 % | 2-3 | 0 |
+| 28 | `glm-5.3-flash` | 10,6 | 0,0126 $ | 63,6 % | 1-2 | 0 |
+| 28 | `kimi-k2.7-code` | 18,0 | 0,0803 $ | 75,8 % | 2 | 0 |
+| 28 | `claude-haiku-5-5` | 11,0 | 0,0597 $ | 49,9 % | 3 | 0 |
+| 29 | `glm-5.3-flash` | 4,6 | 0,0046 $ | 61,1 % | 0 | 0 |
+| 29 | `kimi-k2.7-code` | 4,6 | 0,0237 $ | 64,6 % | 0 | 0 |
+| 29 | `claude-haiku-5-5` | 4,2 | 0,0057 $ | 71,6 % | 0 | 0 |
+| 30 | `glm-5.3-flash` | 4,0 | 0,0040 $ | 71,2 % | 1 | 1-3 |
+| 30 | `kimi-k2.7-code` | 3,4 | 0,0087 $ | 76,8 % | 1 | 1-2 |
+| 30 | `claude-haiku-5-5` | 3,8 | 0,0090 $ | 65,5 % | 1 | 1-3 |
+
+La aceptación de §5, punto por punto:
+
+- **Las 24 de antes, sin ⚠ y sin archivar: se cumple.** Ninguna archiva ni
+  usa `recall`. Las bajadas de una tarea (GLM en la 13 y la 20, Kimi en la
+  08 y la 18, de 5/5 a 4/5) son ruido (p = 0,5) y fallos del modelo; la 20
+  de GLM es la misma de los PRs 2 y 3. El único ⚠ es el coste de Kimi
+  (+58 %), el ya aceptado (PR 1). Frente al PR 3, las 24 cuestan un 2-9 %
+  más: la parte fija creció unos 175 tokens (`grep` y las dos líneas
+  nuevas del prompt), y GLM dio 27 llamadas más.
+- **Las nuevas, al menos 4/5 en cada modelo: se cumple.** La 29 y la 30,
+  5/5 en los tres. De las del PR 3, todas 5/5 salvo la 27 de Haiku, 4/5:
+  escribió `informes/resumen.md` en vez de `resumen.md` (archivó dos veces
+  y el lote estaba bien), la misma lectura de la ruta que en la 28 (PR 3).
+  La comprobación de la 27 no se afloja: no lo ha decidido el mantenedor.
+- **En la 27, la 28 y la 30 se archiva en todas las ejecuciones: se
+  cumple** (15/15 en cada una).
+- **`recall` (decisión 15): se usa en las 15 ejecuciones de la 30**, entre
+  una y tres veces, y las 15 dan el código bien. En la 27 y la 28, ninguna
+  vez: el índice ya basta.
+- **Coste de las tareas largas:** la 12, la 23 y la 24 no archivan y
+  cuestan lo mismo que en el PR 3. La 27 y la 28 cuestan lo mismo o menos
+  que en el PR 3; la caché leída de la 27 sube en Kimi y Haiku (del 22-25 %
+  al 28-40 %).
+- **Pasos, para el tope de §1.16:** como mucho 27 (Kimi en la 28), con un
+  tope de 50. Ninguna ejecución llega al tope.
+- **`grep` con contexto:** la 29 se resuelve en 4-5 pasos con los tres
+  modelos. El valor por defecto de `output` sigue en `lines`.
+
+**Líneas base nuevas:** `evals/baselines/2026-11-23-opencode-go-*.json`,
+con la batería de 30 (§5).
+
 ## 6. Orden de piezas para el implementador
 
 Cada punto, un commit pequeño, con tests y lint en verde.
