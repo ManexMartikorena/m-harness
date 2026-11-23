@@ -10,8 +10,9 @@ from pydantic import BaseModel, Field
 
 from mharness.domain.money import Usd
 
-# Calls to the model in one turn, unless said otherwise.
-MAX_STEPS = 25
+# Calls to the model in one turn, unless said otherwise: 25 until the
+# working budget kept each call's size bounded (spec hito 11, §1.16).
+MAX_STEPS = 50
 
 
 class TurnLimits(BaseModel, frozen=True):

@@ -350,13 +350,14 @@ def test_a_project_can_only_tighten_the_limits(home: Path, project: Path) -> Non
 
 
 def test_a_project_cannot_loosen_the_default_limits(home: Path, project: Path) -> None:
-    # Audit of hito 8: a user without [limits] has the 25 steps of the
-    # default, and a foreign repository cannot raise them.
+    # Audit of hito 8: a user without [limits] has the 50 steps of the
+    # default (spec hito 11, §1.16), and a foreign repository cannot raise
+    # them.
     write_user(home, 'model = "m"\n')
     write_project(project, "[limits]\nmax_steps = 100000\nmax_cost = 0.2\n")
 
     assert load(home, project).limits == TurnLimits(
-        max_steps=25, max_cost=Decimal("0.2")
+        max_steps=50, max_cost=Decimal("0.2")
     )
 
 

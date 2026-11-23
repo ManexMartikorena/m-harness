@@ -18,13 +18,13 @@ from pydantic import BaseModel, Field, model_validator
 
 from mharness.domain.context import MIN_BUDGET
 from mharness.domain.environment import CREDENTIAL_SUFFIXES
-from mharness.domain.limits import TurnLimits
+from mharness.domain.limits import MAX_STEPS, TurnLimits
 from mharness.domain.messages import Message
 from mharness.domain.money import Usd
 from mharness.domain.money import mean as mean_usd
 
 # The limits of a task, unless it says otherwise.
-TASK_LIMITS = TurnLimits(max_steps=25, timeout=300)
+TASK_LIMITS = TurnLimits(max_steps=MAX_STEPS, timeout=300)
 # How much more cost or steps on average counts as a regression, beyond
 # the noise (deep audit, I4).
 WORSE_BY = Decimal("0.20")

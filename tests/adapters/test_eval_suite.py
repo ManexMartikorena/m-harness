@@ -71,7 +71,7 @@ async def test_reads_each_task_with_its_folder_as_id(tmp_path: Path) -> None:
         60,
     )
     # A table that sets only one limit keeps the others of a task.
-    assert task.limits.max_steps == 25
+    assert task.limits.max_steps == 50
     assert task.check == Check(answer_contains=["1.4.2"])
 
 

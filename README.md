@@ -167,7 +167,7 @@ small_model = "glm-5.3-flash"      # titles; by default, the provider's cheap on
 instructions = ["CONTRIBUTING.md"] # added to the system prompt
 
 [limits]
-max_steps = 25       # calls to the model
+max_steps = 50       # calls to the model
 max_cost = 0.50      # dollars
 max_tokens = 400000  # input + output
 timeout = 600        # seconds
