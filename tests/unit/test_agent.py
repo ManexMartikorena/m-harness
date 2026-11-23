@@ -828,6 +828,9 @@ async def test_an_invalid_decision_does_not_run_the_tool(answer: object) -> None
 class BrokenSummary(FakeTool):
     """A tool whose summary fails after it ran."""
 
+    def touched(self, params: object) -> str | None:
+        return None
+
     def summary(self, result: str) -> str:
         raise ValueError("bad summary")
 
@@ -1999,6 +2002,9 @@ async def test_a_broken_archive_cuts_the_result_and_says_so() -> None:
 
 async def test_the_summary_is_of_the_whole_result() -> None:
     class Counting(FakeTool):
+        def touched(self, params: object) -> str | None:
+            return None
+
         def summary(self, result: str) -> str:
             return f"{result.count(chr(10)) + 1} lines"
 

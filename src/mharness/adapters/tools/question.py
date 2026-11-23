@@ -40,6 +40,9 @@ class AskUser:
             raise ToolError(NO_ANSWER)
         return answers_text(answers)
 
+    def touched(self, params: Questions) -> str | None:
+        return None
+
     def summary(self, result: str) -> str:
         count = len(result.splitlines())
         return f"{count} answer{'' if count == 1 else 's'}"

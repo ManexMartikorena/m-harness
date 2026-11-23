@@ -426,3 +426,71 @@ async def test_the_projects_instructions_go_from_the_folder_of_its_file(
 
     layers = await found(info)
     assert "conventions" in [text for _, _, text in layers]
+
+
+# The instruction files of the folders below (spec hito 11, §1.14).
+
+
+async def nested(info: LocalProject, path: Path) -> list[tuple[str, str]]:
+    result = await info.nested(str(path))
+    return [(layer.source, layer.text) for layer in result.layers]
+
+
+async def test_nested_gives_the_folders_below_from_the_highest(tmp_path: Path) -> None:
+    cwd = repo(tmp_path)
+    write(cwd / "AGENTS.md", "in the system prompt")
+    write(cwd / "api" / "AGENTS.md", "api")
+    write(cwd / "api" / "v2" / "AGENTS.md", "v2")
+
+    found_ = await nested(project(cwd), cwd / "api" / "v2" / "app.py")
+
+    assert found_ == [("api/AGENTS.md", "api"), ("api/v2/AGENTS.md", "v2")]
+
+
+async def test_nested_gives_nothing_in_the_working_directory_or_out(
+    tmp_path: Path,
+) -> None:
+    cwd = repo(tmp_path)
+    write(cwd / "AGENTS.md", "in the system prompt")
+    write(cwd.parent / "AGENTS.md", "above")
+    write(cwd.parent / "lib" / "AGENTS.md", "beside")
+    info = project(cwd)
+
+    assert await nested(info, cwd / "app.py") == []
+    assert await nested(info, cwd.parent / "lib" / "util.py") == []
+    assert await nested(info, tmp_path / "elsewhere" / "x.py") == []
+
+
+async def test_nested_reads_claude_md_without_an_agents_md(tmp_path: Path) -> None:
+    cwd = repo(tmp_path)
+    write(cwd / "api" / "CLAUDE.md", "claude")
+    write(cwd / "web" / "AGENTS.md", "agents")
+    write(cwd / "web" / "CLAUDE.md", "not this one")
+
+    assert await nested(project(cwd), cwd / "api" / "x.py") == [
+        ("api/CLAUDE.md", "claude")
+    ]
+    assert await nested(project(cwd), cwd / "web" / "x.py") == [
+        ("web/AGENTS.md", "agents")
+    ]
+    assert await nested(project(cwd, compat_claude=False), cwd / "api" / "x.py") == []
+
+
+async def test_nested_keeps_the_rules_of_the_system_prompt(tmp_path: Path) -> None:
+    cwd = repo(tmp_path)
+    (cwd / "api").mkdir()
+    (cwd / "api" / "AGENTS.md").symlink_to(write(tmp_path / "out.md", "x"))
+    write(cwd / "api" / "v2" / ".env", "API_KEY=x")
+    (cwd / "api" / "v2" / "AGENTS.md").symlink_to(cwd / "api" / "v2" / ".env")
+    (cwd / "web").mkdir()
+    (cwd / "web" / "AGENTS.md").write_bytes(b"\xff\xfe")
+
+    result = await project(cwd).nested(str(cwd / "api" / "v2" / "x.py"))
+    web = await project(cwd).nested(str(cwd / "web" / "x.py"))
+
+    assert result.layers == ()
+    assert result.warnings == (
+        "api/AGENTS.md: a link out of the project, not read",
+        "api/v2/AGENTS.md: a secret file, not read",
+    )
+    assert web.warnings == ("web/AGENTS.md: not UTF-8, not read",)

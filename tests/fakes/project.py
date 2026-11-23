@@ -1,6 +1,6 @@
 """A `ProjectInfo` in memory (spec hito 10)."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 
 from mharness.domain.prompt import Environment, Instructions, Layer
@@ -24,11 +24,15 @@ class MemoryProject:
         *,
         warnings: Sequence[str] = (),
         environment: Environment = ENVIRONMENT,
+        nested: Mapping[str, Instructions] | None = None,
     ) -> None:
         self.layers = list(layers)
         self.warnings = tuple(warnings)
         self.env = environment
         self.reads = 0
+        # What `nested()` gives for each path, and the paths it was asked.
+        self.folders = dict(nested or {})
+        self.asked: list[str] = []
 
     async def environment(self) -> Environment:
         return self.env
@@ -36,3 +40,7 @@ class MemoryProject:
     async def instructions(self) -> Instructions:
         self.reads += 1
         return Instructions(layers=tuple(self.layers), warnings=self.warnings)
+
+    async def nested(self, path: str) -> Instructions:
+        self.asked.append(path)
+        return self.folders.get(path, Instructions())

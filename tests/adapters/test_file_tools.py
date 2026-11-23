@@ -3491,3 +3491,24 @@ async def test_the_search_process_keeps_the_locale(
     await grep(root, "x")
 
     assert seen["env"] == {"LANG": "es_ES.UTF-8", "LC_ALL": "C.UTF-8"}
+
+
+async def test_the_file_tools_say_what_they_touched(root: Path) -> None:
+    # The loop adds the instruction files of its folder (spec hito 11, §1.14).
+    workspace = Workspace(root)
+    target = str(root / "api" / "app.py")
+
+    assert ReadFile(workspace).touched(ReadFileParams(path="api/app.py")) == target
+    assert (
+        WriteFile(workspace).touched(WriteFileParams(path="api/app.py", content=""))
+        == target
+    )
+    assert (
+        EditFile(workspace).touched(
+            EditFileParams(path="api/app.py", old_string="a", new_string="b")
+        )
+        == target
+    )
+    assert ListDir(workspace).touched(ListDirParams(path="api")) is None
+    assert Glob(workspace).touched(GlobParams(pattern="*.py")) is None
+    assert Grep(workspace).touched(GrepParams(pattern="x")) is None

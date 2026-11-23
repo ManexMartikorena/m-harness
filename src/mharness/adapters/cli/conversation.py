@@ -570,7 +570,11 @@ def archive_failed(kind: str) -> None:
 
 
 def warn_crash(event: ToolFinished, err: TextIO) -> None:
-    """A tool that crashed is a bug of ours: said, and logged."""
+    """A tool that crashed is a bug of ours: said, and logged. So are the
+    instruction files of its folder that could not be read (spec hito 11,
+    §1.14)."""
+    for warning in event.warnings:
+        print(f"warning: {clean(warning)}", file=err, flush=True)
     if not event.internal_error:
         return
     # Only its kind: the message may carry what the tool read, and the log

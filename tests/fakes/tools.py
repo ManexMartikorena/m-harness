@@ -31,6 +31,7 @@ class FakeTool:
         requests: list[ApprovalRequest | Exception | None] | None = None,
         gate: asyncio.Event | None = None,
         waits_for_user: bool = False,
+        touches: str | None = None,
     ) -> None:
         self.name = name
         self.description = f"Echo a text ({name})."
@@ -40,6 +41,8 @@ class FakeTool:
         self._requests = list(requests or [])
         self._gate = gate
         self.calls: list[EchoParams] = []
+        # The file each run says it touched (spec hito 11, §1.14).
+        self._touches = touches
 
     async def approval(self, params: EchoParams) -> ApprovalRequest | None:
         if not self._requests:
@@ -59,6 +62,9 @@ class FakeTool:
         if isinstance(result, Exception):
             raise result
         return result
+
+    def touched(self, params: EchoParams) -> str | None:
+        return self._touches
 
     def summary(self, result: str) -> str:
         return f"{len(result)} chars"

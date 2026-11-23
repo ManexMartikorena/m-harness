@@ -33,7 +33,7 @@ from mharness.domain.events import TextDelta
 from mharness.domain.messages import Message
 from mharness.domain.model import Effort, Usage
 from mharness.domain.money import known
-from mharness.domain.prompt import SystemPrompt
+from mharness.domain.prompt import INSTRUCTION_KINDS, SystemPrompt
 from mharness.domain.session import (
     MessageEntry,
     ModelEntry,
@@ -174,6 +174,13 @@ class Conversation:
         # hito 10, §1.2); its warnings are told when it opens.
         self.prompt = prompt
         agent.system = None if prompt is None else prompt.text
+        agent.instructions = (
+            ()
+            if prompt is None
+            else tuple(
+                layer for layer in prompt.layers if layer.kind in INSTRUCTION_KINDS
+            )
+        )
         agent.system_for = self._system_for
         # Traced with the next turn that starts (spec hito 10, §1.13).
         self._prompt_untraced = prompt is not None

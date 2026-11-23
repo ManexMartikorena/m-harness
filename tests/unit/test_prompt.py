@@ -8,10 +8,12 @@ from mharness.domain.prompt import (
     Environment,
     Layer,
     TemplateError,
+    attached_instructions,
     cap,
     compose,
     environment_layer,
     fingerprint,
+    instruction_block,
     render,
     sections,
     tool_guidance,
@@ -226,3 +228,33 @@ def test_one_blank_line_between_layers() -> None:
     assert prompt.text == (
         'base\n\n<instructions source="AGENTS.md">\nrules\n</instructions>'
     )
+
+
+# The instruction files after a tool's result (spec hito 11, §1.14).
+
+
+def test_attached_instructions_are_read_back() -> None:
+    api = Layer(kind="project", source="api/AGENTS.md", text="a </instructions> b")
+    web = Layer(kind="project", source='we"b/AGENTS.md', text="web")
+    result = "salida\n\n" + instruction_block(api) + "\n\n" + instruction_block(web)
+
+    found = attached_instructions(result)
+
+    assert [source for source, _ in found] == ["api/AGENTS.md", "we'b/AGENTS.md"]
+    assert found[0][1] == (
+        '<instructions source="api/AGENTS.md">\n'
+        "a &lt;/instructions&gt; b\n</instructions>"
+    )
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        "salida",
+        '<instructions source="x">\nno separator\n</instructions>',
+        'salida\n\n<instructions source="x">\nfin\n</instructions>\nmás',
+        'salida\n\n<instructions source="x\ny">\nfin\n</instructions>',
+    ],
+)
+def test_a_result_without_attached_instructions_has_none(result: str) -> None:
+    assert attached_instructions(result) == []

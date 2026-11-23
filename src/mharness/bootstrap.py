@@ -392,15 +392,10 @@ def _templates() -> PromptTemplates:
     )
 
 
-def _prompt(
-    settings: config.Settings,
-    catalog: ModelCatalog,
-    cwd: Path,
-    tools: ToolRegistry,
-    files: _PromptFiles | None = None,
-) -> SystemPromptBuilder:
-    """The system prompt of the user's sessions (spec hito 10)."""
-    project = LocalProject(
+def _project(settings: config.Settings, cwd: Path, tools: ToolRegistry) -> LocalProject:
+    """The project of the user's sessions: its system prompt, and the
+    instruction files of the folders a tool touches (spec hito 11, §1.14)."""
+    return LocalProject(
         cwd,
         shell=COMMAND_SHELL if tools.get("run_command") is not None else None,
         home=config.home(),
@@ -410,6 +405,18 @@ def _prompt(
         extra_project=settings.project_instructions,
         project_base=settings.project_dir,
     )
+
+
+def _prompt(
+    settings: config.Settings,
+    catalog: ModelCatalog,
+    cwd: Path,
+    tools: ToolRegistry,
+    files: _PromptFiles | None = None,
+    project: LocalProject | None = None,
+) -> SystemPromptBuilder:
+    """The system prompt of the user's sessions (spec hito 10)."""
+    project = project or _project(settings, cwd, tools)
     files = files or _PromptFiles()
     return SystemPromptBuilder(
         project,
@@ -422,19 +429,24 @@ def _prompt(
     )
 
 
-def _eval_prompt(
-    settings: config.Settings, catalog: ModelCatalog, cwd: Path, tools: ToolRegistry
-) -> SystemPromptBuilder:
-    """The system prompt of an eval run: only the task's own files, never
-    the user's instructions nor those of the directory maha eval runs in
-    (spec hito 10, §5)."""
-    project = LocalProject(
+def _eval_project(cwd: Path) -> LocalProject:
+    """The project of an eval run: only the task's own files, never the
+    user's instructions nor those of the directory maha eval runs in (spec
+    hito 10, §5)."""
+    return LocalProject(
         cwd,
         shell=None,
         home=config.home(),
         config_dir=config.config_dir(os.environ),
         user=False,
     )
+
+
+def _eval_prompt(
+    settings: config.Settings, catalog: ModelCatalog, cwd: Path, tools: ToolRegistry
+) -> SystemPromptBuilder:
+    """The system prompt of an eval run (`_eval_project`)."""
+    project = _eval_project(cwd)
     return SystemPromptBuilder(
         project,
         _templates(),
@@ -524,6 +536,7 @@ async def _eval(
         # provider, as a `maha -p` would be.
         async with _client(settings, catalog) as client:
             tools = _eval_tools(cwd)
+            project = _eval_project(cwd)
 
             def new_agent(model: str, history: Sequence[Message]) -> Agent:
                 slot = ArchiveSlot()
@@ -541,6 +554,7 @@ async def _eval(
                     slot=slot,
                     archivist=_archivist(settings, catalog, client, model),
                     context_budget=task.context_budget or DEFAULT_BUDGET,
+                    project=project,
                 )
 
             sessions = Sessions(
@@ -788,6 +802,7 @@ def _sessions(
     drop = [provider.api_key_env] if provider.api_key_env else []
     env = command_env(os.environ, drop=drop, extra=settings.command_env)
     tools = _tools(cwd, env, questions)
+    project = _project(settings, cwd, tools)
 
     def new_agent(model: str, history: Sequence[Message]) -> Agent:
         slot = ArchiveSlot()
@@ -805,6 +820,7 @@ def _sessions(
             context_budget=settings.context_budget,
             slot=slot,
             archivist=_archivist(settings, catalog, client, model),
+            project=project,
         )
 
     return Sessions(
@@ -819,7 +835,7 @@ def _sessions(
         # reach a trace (spec hito 7, §1.8).
         masked=known_secrets(os.environ, also=[settings.api_key]),
         effort=settings.effort,
-        prompt=_prompt(settings, catalog, cwd, _with_recall(tools), files),
+        prompt=_prompt(settings, catalog, cwd, _with_recall(tools), files, project),
         titler=titler,
         # What leaves the context, whole (spec hito 11, §1.5).
         archives=SqliteArchiveStore(config.state_dir(os.environ) / "archive"),

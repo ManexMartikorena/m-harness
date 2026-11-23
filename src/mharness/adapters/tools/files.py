@@ -334,6 +334,9 @@ class ReadFile:
                         "what you need"
                     ) from None
 
+    def touched(self, params: ReadFileParams) -> str | None:
+        return str(self._workspace.resolve(params.path))
+
     def summary(self, result: str) -> str:
         lines = sum(1 for line in result.splitlines() if _NUMBERED.match(line))
         cut = " (truncated)" if result.endswith("]") and "[truncated" in result else ""
@@ -482,6 +485,9 @@ class ListDir:
         name = printable(f"{entry.name}/" if entry.is_dir() else entry.name)
         # Shown, so the model knows it exists and does not ask for it.
         return f"{name} [secret]" if self._workspace.secret(entry) else name
+
+    def touched(self, params: ListDirParams) -> str | None:
+        return None
 
     def summary(self, result: str) -> str:
         return _count_lines(result, "(empty directory)", "entry", "entries")
@@ -685,6 +691,9 @@ class Glob:
             lines.append(_walk_stopped())
         return "\n".join(lines) if lines else "(no files match)"
 
+    def touched(self, params: GlobParams) -> str | None:
+        return None
+
     def summary(self, result: str) -> str:
         return _count_lines(result, "(no files match)", "file")
 
@@ -772,6 +781,9 @@ class Grep:
             if batch:
                 matches += await searcher.search(batch, None)
             return _grep_result(matches, stopped_early=walk.stopped_early)
+
+    def touched(self, params: GrepParams) -> str | None:
+        return None
 
     def summary(self, result: str) -> str:
         return _count_lines(result, "(no matches)", "match", "matches")
@@ -1484,6 +1496,9 @@ class WriteFile:
         lines = _count(len(_split(params.content)), "line")
         return f"wrote {workspace.shown(path)} ({lines})"
 
+    def touched(self, params: WriteFileParams) -> str | None:
+        return str(self._workspace.resolve(params.path))
+
     def summary(self, result: str) -> str:
         # "wrote notas.txt (3 lines)" → "3 lines".
         return result[result.rfind("(") + 1 : -1]
@@ -1801,6 +1816,9 @@ class EditFile:
         _, new, found = _edited(data, params)
         _write(workspace, path, new, data, parents=False)
         return f"edited {workspace.shown(path)} ({_count(found, 'replacement')})"
+
+    def touched(self, params: EditFileParams) -> str | None:
+        return str(self._workspace.resolve(params.path))
 
     def summary(self, result: str) -> str:
         # "edited app.py (1 replacement)" → "1 replacement".

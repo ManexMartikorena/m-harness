@@ -98,6 +98,41 @@ def _read(path: Path, *, inside: Path | None) -> tuple[str, int | None] | None:
     return (kept, None) if kept else None
 
 
+class _Found:
+    """The instruction files read so far, each once (also when a glob names
+    an AGENTS.md again), and what the user is told of the others."""
+
+    def __init__(self, shown: Callable[[Path], str]) -> None:
+        self._shown = shown
+        self.layers: list[Layer] = []
+        self.warnings: list[str] = []
+        self._seen: set[Path] = set()
+
+    def add(self, kind: LayerKind, path: Path, inside: Path | None) -> bool:
+        """Read `path` as a layer of `kind`; False if there is no file."""
+        source = self._shown(path)
+        try:
+            real = path.resolve()
+        except OSError, RuntimeError:
+            real = path
+        if real in self._seen:
+            return True
+        try:
+            read = _read(path, inside=inside)
+        except _Unread as why:
+            self.warnings.append(f"{source}: {why}")
+            return True
+        if read is None:
+            return False
+        self._seen.add(real)
+        text, size = read
+        self.layers.append(Layer(kind=kind, source=source, text=text, size=size))
+        return True
+
+    def instructions(self) -> Instructions:
+        return Instructions(layers=tuple(self.layers), warnings=tuple(self.warnings))
+
+
 class LocalProject:
     """A `ProjectInfo` over the directory where `maha` runs.
 
@@ -155,43 +190,20 @@ class LocalProject:
     async def instructions(self) -> Instructions:
         return await asyncio.to_thread(self._instructions)
 
+    async def nested(self, path: str) -> Instructions:
+        return await asyncio.to_thread(self._nested, Path(path))
+
     def _instructions(self) -> Instructions:
-        layers: list[Layer] = []
-        warnings: list[str] = []
-
-        # Each file once, also when a glob names an AGENTS.md again.
-        seen: set[Path] = set()
-
-        def add(kind: LayerKind, path: Path, inside: Path | None) -> bool:
-            source = self._shown(path)
-            try:
-                real = path.resolve()
-            except OSError, RuntimeError:
-                real = path
-            if real in seen:
-                return True
-            try:
-                read = _read(path, inside=inside)
-            except _Unread as why:
-                warnings.append(f"{source}: {why}")
-                return True
-            if read is None:
-                return False
-            seen.add(real)
-            text, size = read
-            layers.append(Layer(kind=kind, source=source, text=text, size=size))
-            return True
-
+        found = _Found(self._shown)
+        add = found.add
         if self._user:
             mine = self._config_dir / AGENTS
             if not add("user", mine, None) and self._compat_claude:
                 add("user", self._home / ".claude" / "CLAUDE.md", None)
         root = git_root(self._cwd) or self._cwd
         for directory in _down(root, self._cwd):
-            if add("project", directory / AGENTS, root) or not self._compat_claude:
-                continue
-            for name in CLAUDE:
-                add("project", directory / name, root)
+            self._folder(found, directory, root)
+        warnings = found.warnings
         for patterns, inside in (
             (self._extra_user, None),
             (self._extra_project, root),
@@ -207,7 +219,27 @@ class LocalProject:
                         warnings.append(
                             f"instructions {printable(pattern)!r}: matches no file"
                         )
-        return Instructions(layers=tuple(layers), warnings=tuple(warnings))
+        return found.instructions()
+
+    def _nested(self, path: Path) -> Instructions:
+        """The folders strictly below the working directory down to the one
+        of `path`: those above it, and itself, are in the system prompt."""
+        found = _Found(self._shown)
+        folder = path.parent
+        if folder == self._cwd or not folder.is_relative_to(self._cwd):
+            return found.instructions()
+        root = git_root(self._cwd) or self._cwd
+        for directory in list(_down(self._cwd, folder))[1:]:
+            self._folder(found, directory, root)
+        return found.instructions()
+
+    def _folder(self, found: _Found, directory: Path, root: Path) -> None:
+        """The instruction file of one folder of the project: its AGENTS.md
+        or, without one and with `compat_claude`, its CLAUDE.md files."""
+        if found.add("project", directory / AGENTS, root) or not self._compat_claude:
+            return
+        for name in CLAUDE:
+            found.add("project", directory / name, root)
 
     def _expand(
         self, pattern: str, inside: Path | None

@@ -78,6 +78,9 @@ class ToolFinished(BaseModel, frozen=True):
     decision: Decision | None = None
     # Not run, because a previous call of the step was denied.
     skipped: bool = False
+    # Instruction files of the folder it touched that could not be read,
+    # for the person (spec hito 11, §1.14).
+    warnings: tuple[str, ...] = Field(default=(), exclude_if=lambda w: not w)
 
 
 class ModelCallFinished(BaseModel, frozen=True):
