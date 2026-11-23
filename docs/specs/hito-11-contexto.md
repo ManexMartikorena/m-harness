@@ -875,9 +875,13 @@ La aceptación de §5, punto por punto:
 - **`recall` (decisión 15): se usa en las 15 ejecuciones de la 30**, entre
   una y tres veces, y las 15 dan el código bien. En la 27 y la 28, ninguna
   vez: el índice ya basta.
-- **Coste de las tareas largas:** la 12, la 23 y la 24 no archivan y
-  cuestan lo mismo que en el PR 3. La 27 y la 28 cuestan lo mismo o menos
-  que en el PR 3; la caché leída de la 27 sube en Kimi y Haiku (del 22-25 %
+- **Coste de las tareas largas:** la 12, la 23 y la 24 no archivan, y el
+  informe no da ⚠ en ninguna tarea. La 27 y la 28, frente al PR 3: Kimi
+  cuesta menos (0,0438 → 0,0378 $ y 0,0910 → 0,0803 $), y GLM y Haiku más
+  (GLM 0,0083 → 0,0093 $ y 0,0097 → 0,0126 $; Haiku 0,0316 → 0,0350 $ y
+  0,0534 → 0,0597 $), con más archivados en la 28 de GLM y la 27 de
+  Haiku. Son 5 ejecuciones por tarea, y la línea base nueva queda como
+  referencia. La caché leída de la 27 sube en Kimi y Haiku (del 22-25 %
   al 28-40 %).
 - **Pasos, para el tope de §1.16:** como mucho 27 (Kimi en la 28), con un
   tope de 50. Ninguna ejecución llega al tope.
