@@ -10,7 +10,8 @@ Find files by name; prefer it to listing directory after directory.
 ## grep
 Find where something is defined or used; search before you read files one by
 one. Use context to see the lines around a match without reading the whole
-file, and output "files" when you only need to know where.
+file, and output "files" when you only need to know where. "files" and
+"count" do not say what matched: to know which names appear, use "lines".
 
 ## write_file
 Create new files. For a change to a file that exists, use edit_file.
@@ -39,4 +40,6 @@ the tools can find.
 ## recall
 When an output was cut, or you need something said earlier that is no
 longer in the conversation, search the archive with a few precise words,
-then read the item by its id. Never guess what it said.
+then read the item by its id. Never guess what it said. The index is a
+summary and may miss details: search before you say something is not
+there.

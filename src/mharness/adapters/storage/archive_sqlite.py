@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import os
 import sqlite3
+import time
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from mharness.domain.archive import (
     item_id,
     parse_id,
     search_terms,
+    snippet,
 )
 from mharness.domain.session import is_session_id
 
@@ -42,8 +44,11 @@ _SCHEMA = (
     " tokenize='unicode61 remove_diacritics 2')",
 )
 
-# Words around a match in each hit.
-_SNIPPET_TOKENS = 40
+# Seconds a search may take; then it is an error for the model, never a
+# maha that hangs (hand verification of hito 11).
+SEARCH_TIME_LIMIT = 10.0
+# SQLite's steps between two looks at the clock.
+_CLOCK_EVERY = 10_000
 
 
 class SqliteArchive:
@@ -82,15 +87,29 @@ class SqliteArchive:
             return []
         # Each word quoted: a word is never an operator (`AND`, `NEAR`).
         match = " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
+        deadline = time.monotonic() + SEARCH_TIME_LIMIT
         with self._connect() as db:
-            rows = db.execute(
-                "SELECT items.kind, items.number, items.position, items.role,"
-                " items.tool,"
-                " snippet(items_fts, 0, '', '', '…', ?)"
-                " FROM items_fts JOIN items ON items.id = items_fts.rowid"
-                " WHERE items_fts MATCH ? ORDER BY bm25(items_fts) LIMIT ?",
-                (_SNIPPET_TOKENS, match, limit),
-            ).fetchall()
+            # A non-zero answer stops the query: it ends in an error.
+            db.set_progress_handler(lambda: time.monotonic() > deadline, _CLOCK_EVERY)
+            try:
+                rows = db.execute(
+                    "SELECT items.kind, items.number, items.position, items.role,"
+                    " items.tool, items.text"
+                    " FROM items_fts JOIN items ON items.id = items_fts.rowid"
+                    " WHERE items_fts MATCH ? ORDER BY bm25(items_fts) LIMIT ?",
+                    (match, limit),
+                ).fetchall()
+            except sqlite3.OperationalError as exc:
+                if time.monotonic() <= deadline:
+                    raise
+                raise ArchiveError(
+                    f"search took more than {SEARCH_TIME_LIMIT:g} s; "
+                    "search for fewer or rarer words"
+                ) from exc
+            finally:
+                db.set_progress_handler(None, 0)
+        # The fragment is maha's: FTS5's snippet() grows with the square of
+        # the matches (hand verification of hito 11).
         return [
             Hit(
                 id=item_id(kind, number),
@@ -98,9 +117,9 @@ class SqliteArchive:
                 position=position,
                 role=role,
                 tool=tool,
-                snippet=snippet,
+                snippet=snippet(text, terms),
             )
-            for kind, number, position, role, tool, snippet in rows
+            for kind, number, position, role, tool, text in rows
         ]
 
     def _read(self, item: str, offset: int, limit: int) -> ItemLines:

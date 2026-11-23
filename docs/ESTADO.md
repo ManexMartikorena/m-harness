@@ -4,10 +4,9 @@
 prompt por capas), `v0.10.1` (la auditoría tras el hito 10) y `v0.10.2`
 (su segunda, tercera y cuarta revisión, cero deuda). En curso: el hito 11
 (contexto virtual): spec integrada (#116), PRs 1, 2 y 3 integrados
-(#117, #118, #119) y el PR 4 (instrucciones y herramientas) hecho en
-`feature/hito-11-herramientas`, con sus evals y las líneas base nuevas,
-por subir. Lo siguiente: integrar el PR 4, y después la verificación a
-mano y el cierre del hito.
+(#117, #118, #119), el PR 4 integrado (#120) y la verificación a mano
+hecha; sus arreglos, en `fix/verificacion-hito-11`. Lo siguiente:
+integrar esos arreglos y cerrar el hito.
 Tras el hito 11, auditorías hasta cero deuda antes del hito 12. Plan
 ampliado a 24 hitos (la órbita larga, hito 12 nuevo).**
 
@@ -19,16 +18,16 @@ está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 **Desarrollo. Hitos 1 a 10 cerrados, con la auditoría tras el hito 10
 (`v0.10.1`) y sus revisiones (`v0.10.2`). En curso, el hito 11 (contexto
 virtual): spec aprobada; los PRs 1 (contar, acotar y ver), 2 (el
-archivo) y 3 (archivar), integrados; el PR 4 (instrucciones y
-herramientas), hecho y por subir. Plan: 24 hitos hasta la 1.0 (DESIGN
-§14).**
+archivo), 3 (archivar) y 4 (instrucciones y herramientas), integrados;
+verificación a mano hecha, con sus arreglos por integrar. Plan: 24 hitos
+hasta la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
 - Última versión: **`v0.10.2` — Revisiones de la auditoría tras el hito
   10** (2026-11-13):
   https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.2
-- Ramas abiertas: `feature/hito-11-herramientas` (el PR 4, solo en
-  local hasta el push). Las integradas se conservan en GitHub.
+- Ramas abiertas: `fix/verificacion-hito-11`. Las integradas se
+  conservan en GitHub.
 
 ## Para la release
 
@@ -61,18 +60,15 @@ spec, su nota de la guía y su release.
 Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
 trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
-1. **Humano:** revisar los commits de `feature/hito-11-herramientas`
-   (`git log main..` y el diff), push y PR al milestone del hito 11 (o
-   el agente, si se le pide), e integrarlo con merge commit. El PR 4 está
-   hecho (spec 11, §6): los `AGENTS.md` de subcarpetas, `grep` con
-   `context` y `output`, el tope de 50 pasos, las tareas 29 y 30 (`recall`
-   se mide con la 30, decisión 15 del mantenedor, 2026-11-23) y la pasada
-   final con las líneas base nuevas del 2026-11-23 (`*-2.json`; spec 11,
-   §5, "Resultados (PR 4, tras los arreglos)").
-2. **Humano, con el agente:** la verificación a mano entera de la spec
-   11, §7, tras el PR 4 (decisión del mantenedor, 2026-11-17: el PR 3 se
-   integró sin ella). Después, el cierre del hito (`docs/cierre-hito-11`,
-   spec 11, §6) y el tag `v0.11.0`.
+1. **Agente:** integrar el PR de `fix/verificacion-hito-11`: los dos
+   fallos de la verificación a mano (un paso que no cabe, `recall` lento
+   en una salida enorme) y los dos que salieron en sus evals (el archivero
+   que afirmaba lo que no vio, `count` en `grep`), con la pasada que vale y
+   las líneas base del cierre (`*-3.json`; spec 11, §12, "Verificación a
+   mano" y "Evals de los arreglos"). El PR 4 ya está integrado (#120), y
+   la verificación a mano de la spec 11, §7, hecha (2026-11-23).
+2. **Agente:** el cierre del hito (`docs/cierre-hito-11`, spec 11, §6) y
+   el tag `v0.11.0`, que empuja el humano (o el agente, si se le pide).
 3. **Agente y humano, tras cerrar el hito 11:** auditorías del código
    hasta dejar cero deuda técnica, antes de empezar el hito 12, como tras
    el hito 10 (decisión del mantenedor, 2026-11-17).
@@ -295,7 +291,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 10. System prompt por capas. `v0.10.0` (2026-11-10) y los arreglos
   `v0.10.1` (2026-11-11, la auditoría) y `v0.10.2` (2026-11-13, sus
   revisiones)
-- [ ] 11. Contexto virtual (PRs 1, 2 y 3 integrados; el 4, por subir). `v0.11.0` *(antes "Gestión del contexto"; 2026-11-16)*
+- [ ] 11. Contexto virtual (PRs 1 a 4 integrados; los arreglos de la verificación, por integrar). `v0.11.0` *(antes "Gestión del contexto"; 2026-11-16)*
 - [ ] 12. Órbita larga. `v0.12.0` *(nuevo, 2026-11-16)*
 - [ ] 13. Deshacer y puntos de control. `v0.13.0` *(nuevo, 2026-10-27)*
 - [ ] 14. Skills y comandos personalizados. `v0.14.0`
