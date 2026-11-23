@@ -141,8 +141,8 @@ Tres cosas aprendidas al medirlo:
 - Por eso **nada de lo ya enviado se reescribe**: ni el system prompt ni
   los resultados viejos. Archivar sí cambia el principio, y esa llamada
   paga entera; las siguientes vuelven a leer de la caché.
-- En las evals del cierre, del 60 % (Haiku) al 81 % (Kimi) de la entrada se lee de la caché,
-  según el modelo.
+- En las evals del cierre, del 60 % (Haiku) al 81 % (Kimi) de la entrada
+  se lee de la caché.
 
 ### 7. Instrucciones de subcarpetas y `grep` con contexto
 
