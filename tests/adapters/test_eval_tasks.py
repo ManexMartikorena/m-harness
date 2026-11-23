@@ -725,9 +725,12 @@ async def test_task_30_needs_recall() -> None:
         for task in await TomlEvalSuite(EVALS).tasks()
         if task.id == "30-recuperar-detalle"
     ]
-    policy = ContextPolicy(budget=task.context_budget or 0)
+    # With a known window the ceiling is the whole budget; the history
+    # alone passes it, without the system prompt and the tools.
+    policy = ContextPolicy(budget=task.context_budget or 0, window=200_000)
     history = list(task.history)
 
+    assert policy.ceiling == task.context_budget
     assert estimate_messages(history) > policy.ceiling
     cut = archive_cut(history, policy.tail)
     [log] = [
