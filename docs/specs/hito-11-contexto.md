@@ -1386,3 +1386,55 @@ conversación igual; retomar da la ventana de trabajo, `/export` la
 conversación entera (en Markdown, cada resultado hasta 40 líneas), y
 borrar el `.db` lo rehace; el `AGENTS.md` de una subcarpeta llega y se
 sigue; `-p` archiva y la traza lo cuenta.
+
+**Evals de los arreglos de la verificación** (rama
+`fix/verificacion-hito-11`, 2026-11-23, la misma orden de §5, contra las
+líneas base `*-2.json`):
+- **Primera pasada (con el recorte del paso y el
+  fragmento de `recall`):** sin ⚠. Haiku usó `recall` en la 27 (5/5).
+  Pero la 30 falló con Kimi y con Haiku (4/5 cada uno), y GLM falló dos
+  veces la 13. Las trazas dicen por qué, y en los dos casos era el
+  producto:
+  - **El archivero afirmaba lo que no vio.** Solo lee el principio y el
+    final de un bloque largo, y escribió en el índice "niveles INFO y
+    AVISO", como si fuera todo el registro, y que "el contenido original
+    se perdió". Con ese índice, el modelo no buscó con `recall`. Arreglo
+    (`43fea98`): `archive.md` dice que un bloque cortado se vio solo en
+    parte, que nunca se cuente o liste lo que no se vio, y que nada
+    archivado se pierde.
+  - **`count` no dice qué coincidió.** GLM buscó todos los nombres a la
+    vez con `"output": "count"`, recibió solo cuántas coincidencias había
+    por fichero, y concluyó que "ninguna" faltaba. Arreglo (`3c983f7`): la
+    guía de `grep` lo avisa, y la de `recall` dice que el índice es un
+    resumen y que hay que buscar antes de decir que algo no está.
+
+  Las dos tareas son de train: el conjunto de validación no se miró.
+- **Una pasada a medias (no cuenta):** a mitad, OpenCode Go devolvió
+  `HTTP 429: OpenCode Go usage limit reached (5-hour, resets in 30m)`. El
+  límite de cinco horas de la cuenta se agotó con las pasadas del día.
+  `maha` no reintentó en bucle (`Retry-After` de más de 60 s) y cada
+  ejecución quedó como error del proveedor; las líneas base no se
+  guardaron.
+- **La pasada que vale (17:18-17:57, con todo):**
+
+  | Modelo | Éxito | Validación | Coste total | Caché leída | Llamadas |
+  |---|---|---|---|---|---|
+  | `glm-5.3-flash` | 146/150 | 28/30 | 0,339 $ | 74,9 % | 793 |
+  | `kimi-k2.7-code` | 148/150 | 29/30 | 1,807 $ | 80,6 % | 833 |
+  | `claude-haiku-5-5` | 150/150 | 30/30 | 1,307 $ | 60,0 % | 610 |
+
+  - **Sin ⚠ en ningún modelo**, y las 24 tareas de antes no archivan.
+  - **La 13, la 27, la 29 y la 30, 5/5 en los tres modelos**; la 28, 5/5
+    en GLM y Haiku y 4/5 en Kimi. `recall` se usa en las 15 ejecuciones
+    de la 30.
+  - **Los seis fallos son del código que escribe el modelo**, sin tocar
+    `grep`, `recall` ni el archivo: GLM en la 12 (dos veces: un
+    `TypeError` y una variable sin definir), la 14 y la 18; Kimi en la 08
+    (la de siempre) y en la 28 (buscó "…del pasillo 4" sin el punto, y el
+    "Revisado: sí" quedó delante de él). Todo dentro del ruido (p ≥ 0,22).
+    En las evals el modelo no puede ejecutar los tests hasta el hito 16.
+  - **Pasos:** como mucho 27 (Kimi en la 28), con el tope de 50.
+
+  **Líneas base del cierre del hito:**
+  `evals/baselines/2026-11-23-opencode-go-*-3.json`. Las `*-2.json` se
+  quedan como registro.
