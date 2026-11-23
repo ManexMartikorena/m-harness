@@ -1,6 +1,6 @@
 Estado: PROPUESTA (2026-11-16) → APROBADA (2026-11-16, por el humano, con
 las 12 decisiones de §11 y el recorte de lo que no hace el producto más
-competitivo)
+competitivo) → IMPLEMENTADA (2026-11-23, `v0.11.0`)
 
 # Spec — Hito 11: Contexto virtual
 

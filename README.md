@@ -11,10 +11,11 @@
 done, **asking you before every change**. It works with the provider and
 model you choose, and tells you what each turn cost.
 
-> 🚧 **In development: `v0.10.2`.** Already usable to work on a project:
+> 🚧 **In development: `v0.11.0`.** Already usable to work on a project:
 > chat, read and change files, run commands, follow the project's
 > `AGENTS.md`, save and resume sessions and see the cost, with OpenAI-format
-> models and with Claude; and in scripts, with `maha -p`. What comes next
+> models and with Claude; long sessions stay cheap; and in scripts, with
+> `maha -p`. What comes next
 > is in the [roadmap](#roadmap).
 
 ```
@@ -62,13 +63,15 @@ from the prompt cache (`cached` in `/trace`), and costs much less; the
 ## What it does
 
 - **Works on your project.** Reads, lists and searches files (`read_file`,
-  `list_dir`, `glob`, `grep`; `glob` and `grep` skip what `.gitignore`
-  ignores), writes and edits them (`write_file`, `edit_file`, showing the
+  `list_dir`, `glob`, `grep`, with the lines around each match or only the
+  files; `glob` and `grep` skip what `.gitignore` ignores), writes and
+  edits them (`write_file`, `edit_file`, showing the
   diff) and runs commands (`run_command`).
 - **It knows your project.** Before your first message, the model reads
   the project's `AGENTS.md` (or `CLAUDE.md`, if there is none), your own
   `~/.config/maha/AGENTS.md` and where it works: directory, git root,
-  platform and date. At start, `maha` says which instruction files it
+  platform and date. The `AGENTS.md` of a subfolder comes when the model
+  reads or changes a file there. `maha` says which instruction files it
   loaded, and they never change permissions. `/init` writes or improves the
   project's `AGENTS.md`, and `maha prompt` shows the whole system prompt.
 
@@ -100,6 +103,20 @@ from the prompt cache (`cached` in `/trace`), and costs much less; the
   switch with `/model` in the middle of a session. OpenCode Go and Zen and
   Anthropic's API come configured, and you can declare any compatible
   server. Choose how hard the model works with `--effort` or `/effort`.
+- **Long sessions stay cheap.** The model always gets a working window of
+  a fixed size (100,000 tokens by default, for every model): the older
+  steps go whole to the session's archive, a cheap model keeps an index of
+  them, and the model reads back what it needs with `recall`. A huge
+  output goes to the archive too, and the model gets its start, its end
+  and its id. `/context` shows what each call takes, and `/compact` archives
+  now, with your instructions.
+
+  ```
+    [archiving 28,522 tokens of earlier steps…]
+    [archived: 28,522 → 4,535 tokens; $0.0033]
+    → recall(query="cocina cámara de frío")
+    ✓ 5 found
+  ```
 - **It uses the provider's prompt cache.** With Anthropic's format, each
   step reads from the cache what the previous one wrote: much cheaper than
   sending the whole conversation again. With Claude, the model's reasoning
@@ -134,7 +151,7 @@ You need [uv](https://docs.astral.sh/uv/) (it also installs Python 3.14 if
 missing).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.10.2
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.11.0
 ```
 
 Then choose a provider and a model:
@@ -158,13 +175,17 @@ maha
 Optional, in the same file: a fallback model, how hard the model works
 (`effort`: `low`, `medium`, `high`, `xhigh` or `max`; without it, the
 model's own), the model that titles the sessions, more instruction files,
-and limits for each turn.
+the working window, and limits for each turn.
 
 ```toml
 fallback_model = "glm-5.3"
 effort = "high"
 small_model = "glm-5.3-flash"      # titles; by default, the provider's cheap one
 instructions = ["CONTRIBUTING.md"] # added to the system prompt
+
+[context]
+budget = 100000                    # tokens per call at most
+# archivist_model = "glm-5.3-flash" # who keeps the archive's index
 
 [limits]
 max_steps = 50       # calls to the model
@@ -231,6 +252,8 @@ your cost unseen: `[from .maha/config.toml: effort max, cache 1h]`.
 | `/new` | A new session without quitting, with the same model |
 | `/init [TEXT]` | Writes or improves the project's `AGENTS.md`; TEXT, what to stress |
 | `/rename [TITLE]` | Shows the session's title, or gives it one |
+| `/context` | What the next call takes: system prompt, tools, archive index and messages, and the cache |
+| `/compact [TEXT]` | Archives now all but the last steps; TEXT, what the index should keep |
 | `/export [FILE]` | This conversation in Markdown; by default, `ID.md` |
 | `/exit` | Quits (also Ctrl+D) |
 
@@ -293,17 +316,17 @@ $ git diff | maha -p "review this diff" --output-format json | jq -r .result
 | Own prices (optional) | `~/.config/maha/models.toml` |
 | Sessions | `~/.local/share/maha/sessions/` |
 | Traces | `~/.local/share/maha/traces/` |
+| Session archives | `~/.local/state/maha/archive/` |
 | Diagnostic log | `~/.local/state/maha/maha.log` |
 
-Everything is local. Sessions, traces and the log are readable only by your
-user. It honors the `XDG_*` variables.
+Everything is local. Sessions, traces, archives and the log are readable
+only by your user. It honors the `XDG_*` variables.
 
 ## Roadmap
 
 `maha` grows milestone by milestone up to version 1.0. Next:
 
-- **Virtual context**, so that a long conversation stays cheap with any
-  model; **fewer round trips** to the model; and **undo**.
+- **Fewer round trips** to the model, and **undo**.
 - **Skills and custom commands, memory across sessions, sandbox, permission
   modes, subagents, MCP and hooks.**
 - **Web and images.**

@@ -1,40 +1,33 @@
 # Estado del proyecto
 
-Última actualización: 2026-11-23. **Hito 10 cerrado: `v0.10.0` (system
-prompt por capas), `v0.10.1` (la auditoría tras el hito 10) y `v0.10.2`
-(su segunda, tercera y cuarta revisión, cero deuda). En curso: el hito 11
-(contexto virtual): spec integrada (#116), PRs 1, 2 y 3 integrados
-(#117, #118, #119), el PR 4 integrado (#120) y la verificación a mano
-hecha; sus arreglos, en `fix/verificacion-hito-11`. Lo siguiente:
-integrar esos arreglos y cerrar el hito.
-Tras el hito 11, auditorías hasta cero deuda antes del hito 12. Plan
-ampliado a 24 hitos (la órbita larga, hito 12 nuevo).**
+Última actualización: 2026-11-23. **Hito 11 cerrado: `v0.11.0`
+(contexto virtual: ventana fija, archivo y `recall`; los `AGENTS.md` de
+subcarpetas, `grep` con contexto y el tope de 50 pasos). Lo siguiente:
+auditorías hasta cero deuda, antes del hito 12 (la órbita larga). Plan:
+24 hitos.**
 
 Lo primero al abrir: "Siguiente paso", más abajo. El detalle de lo hecho
 está en [`HISTORIAL_DESARROLLO.md`](HISTORIAL_DESARROLLO.md).
 
 ## Fase actual
 
-**Desarrollo. Hitos 1 a 10 cerrados, con la auditoría tras el hito 10
-(`v0.10.1`) y sus revisiones (`v0.10.2`). En curso, el hito 11 (contexto
-virtual): spec aprobada; los PRs 1 (contar, acotar y ver), 2 (el
-archivo), 3 (archivar) y 4 (instrucciones y herramientas), integrados;
-verificación a mano hecha, con sus arreglos por integrar. Plan: 24 hitos
-hasta la 1.0 (DESIGN §14).**
+**Desarrollo. Hitos 1 a 11 cerrados. Lo siguiente: las auditorías tras
+el hito 11, y después el hito 12 (la órbita larga). Plan: 24 hitos hasta
+la 1.0 (DESIGN §14).**
 
 - Repositorio: https://github.com/ManexMartikorena/m-harness (público).
-- Última versión: **`v0.10.2` — Revisiones de la auditoría tras el hito
-  10** (2026-11-13):
-  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.10.2
-- Ramas abiertas: `fix/verificacion-hito-11`. Las integradas se
-  conservan en GitHub.
+- Última versión: **`v0.11.0` — Contexto virtual** (2026-11-23):
+  https://github.com/ManexMartikorena/m-harness/releases/tag/v0.11.0
+- Ramas abiertas: ninguna. Las integradas se conservan en GitHub.
 
 ## Para la release
 
 Aquí va solo lo que el workflow de release no hace solo: una variable nueva o
 un paso fuera de lo normal.
 
-- Nada pendiente.
+- **`v0.11.0`, en las notas de la release:** una sesión que ya archivó no
+  la abre un `maha` anterior (spec 11, §1.12 y §8): dice que hay que
+  actualizar `maha`.
 
 ## Hecho
 
@@ -54,25 +47,19 @@ spec, su nota de la guía y su release.
 | 8 | Evals (20 tareas, dos modelos, línea base), `maha -p`, reintentos con respaldo y comandos de línea; auditoría con tres revisiones independientes | `v0.8.0` (2026-10-30), `v0.8.1` (2026-11-03) |
 | 9 | Formato de Anthropic (Claude, MiniMax y Qwen por OpenCode; la API directa), el formato de cada modelo, razonamiento devuelto intacto, effort y caché del prompt; auditoría profunda con cinco revisores y una revisión de los arreglos | `v0.9.0` (2026-11-03), `v0.9.1` (2026-11-04) |
 | 10 | System prompt por capas (`AGENTS.md`, entorno, `maha prompt`), `todo_write`, `ask_user`, `/init`, títulos de sesión y `/rename`; evals con 24 tareas y líneas base nuevas; auditoría con cinco revisores, mejoras de producto y cuatro revisiones independientes de los arreglos | `v0.10.0` (2026-11-10), `v0.10.1` (2026-11-11), `v0.10.2` (2026-11-13) |
+| 11 | Contexto virtual: ventana de trabajo fija, archivo SQLite con FTS5, archivero, `recall`, `/compact` y `/context`; `AGENTS.md` de subcarpetas, `grep` con contexto y tope de 50 pasos; evals con 30 tareas y líneas base nuevas; verificación a mano con sus arreglos | `v0.11.0` (2026-11-23) |
 
 ## Siguiente paso
 
 Al abrir: contrastar con GitHub (`gh pr list`, `gh release list`) y
 trabajar desde `main` al día (`git switch main && git pull`, `uv sync`).
 
-1. **Agente:** integrar el PR de `fix/verificacion-hito-11`: los dos
-   fallos de la verificación a mano (un paso que no cabe, `recall` lento
-   en una salida enorme) y los dos que salieron en sus evals (el archivero
-   que afirmaba lo que no vio, `count` en `grep`), con la pasada que vale y
-   las líneas base del cierre (`*-3.json`; spec 11, §12, "Verificación a
-   mano" y "Evals de los arreglos"). El PR 4 ya está integrado (#120), y
-   la verificación a mano de la spec 11, §7, hecha (2026-11-23).
-2. **Agente:** el cierre del hito (`docs/cierre-hito-11`, spec 11, §6) y
-   el tag `v0.11.0`, que empuja el humano (o el agente, si se le pide).
-3. **Agente y humano, tras cerrar el hito 11:** auditorías del código
-   hasta dejar cero deuda técnica, antes de empezar el hito 12, como tras
-   el hito 10 (decisión del mantenedor, 2026-11-17).
-4. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
+1. **Agente y humano:** auditorías del código tras el hito 11 hasta dejar
+   cero deuda técnica, antes de empezar el hito 12, como tras el hito 10
+   (decisión del mantenedor, 2026-11-17): una spec de mejora
+   (`docs/specs/mejora-AAAA-MM-DD-auditoria-hito-11.md`) con el reparto de
+   los revisores, en su propio PR.
+2. **Agente, si se puede desde el Ubuntu de casa:** lo que sigue POR
    VERIFICAR del hito 3 (cortar la red a mitad de una respuesta); anotarlo
    en la spec 3 §12.
 
@@ -102,7 +89,7 @@ borrar en ese PC las ramas locales ya integradas:
    primera ejecución de los hooks descarga Go y compila gitleaks.
 5. Comprobar: `uv run pytest`, `uv run mypy` y `uv run lint-imports` en
    verde, y `uv run maha --version` → la versión del último tag (hoy,
-   `maha 0.10.2`).
+   `maha 0.11.0`).
 6. Para conversar: `cp .env.example .env` con la clave de OpenCode Go, y
    `~/.config/maha/config.toml` (`PUESTA_EN_MARCHA` §2 y §3.1). La clave no
    viaja por git: se copia de la consola de opencode.ai (o se crea otra para
@@ -152,15 +139,6 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
 - canal de distribución (hito 24).
 
 **Con hito asignado** (salieron de hitos anteriores; cada uno, de su spec):
-- **Hito 11:** los `AGENTS.md` de subcarpetas, cargados al leer un fichero
-  de allí (spec 10, decisión 6); el coste en tokens de las
-  herramientas en cada llamada (~700 con las cuatro del hito 4; hoy son
-  siete, por medir) y compactar (spec 4, §12.14); en la batería de evals, tareas con historial previo y la marca
-  `[interrupted by the user]` (spec 6, §5; pasa del hito 8 por decisión
-  del mantenedor, spec 8, §11.8); `grep` con contexto o solo ficheros,
-  la política de versiones del formato de sesión y subir el tope de
-  pasos (auditoría tras el hito 10, "A su hito"; faltaban aquí, añadidos
-  el 2026-11-16). Todo, en la spec 11.
 - **Hito 13:** bifurcar una sesión (spec 8, §11.8).
 - **Hito 14:** las reglas de instrucciones por ruta, como `.claude/rules/`
   con `paths` (spec 10, decisión 6).
@@ -216,9 +194,6 @@ Regla: no trabajar en los dos PCs a la vez sin push entre medias.
   2026-11-23); si se ve en el uso o en una tarea de train, se arregla en
   `base.md` con esa prueba (spec 11, §5, "Resultados (PR 4, tras los
   arreglos)").
-- **Medido de nuevo `todo_write`** (2026-11-23, spec 11, §5, "Resultados
-  (PR 4)"): lo usan donde hay una lista de pasos (la 28 en 15/15, la 23 en
-  10/15) y casi nunca sin ella. La guía no cambia.
 - **Mejora posible:** refrescar los precios desde models.dev a una caché, a
   petición, si mantener a mano 113 modelos pesa (spec 7, §11). Hoy, con
   OpenCode Go, el coste que vale es el del proveedor.
@@ -267,8 +242,9 @@ momento (spec 5, §10).
 - Ahorro de tokens de la memoria (hito 15).
 
 **Medido:** la primera línea base de las evals (2026-10-27, `evals/baselines/`;
-spec 8, §5). La batería tiene que crecer con tareas exigentes hasta 30 o
-más antes de la 1.0 (DESIGN §9): con 20, el éxito ronda el 94-99 %.
+spec 8, §5). La batería tenía que crecer con tareas exigentes hasta 30 o
+más antes de la 1.0 (DESIGN §9): con el hito 11 tiene 30 (2026-11-23), y
+el éxito ronda el 97-100 %. Sigue creciendo con cada hito.
 
 ## Versiones
 
@@ -291,7 +267,7 @@ Fase de desarrollo (DESIGN §14), un tag por hito:
 - [x] 10. System prompt por capas. `v0.10.0` (2026-11-10) y los arreglos
   `v0.10.1` (2026-11-11, la auditoría) y `v0.10.2` (2026-11-13, sus
   revisiones)
-- [ ] 11. Contexto virtual (PRs 1 a 4 integrados; los arreglos de la verificación, por integrar). `v0.11.0` *(antes "Gestión del contexto"; 2026-11-16)*
+- [x] 11. Contexto virtual. `v0.11.0` (2026-11-23) *(antes "Gestión del contexto"; 2026-11-16)*
 - [ ] 12. Órbita larga. `v0.12.0` *(nuevo, 2026-11-16)*
 - [ ] 13. Deshacer y puntos de control. `v0.13.0` *(nuevo, 2026-10-27)*
 - [ ] 14. Skills y comandos personalizados. `v0.14.0`

@@ -105,7 +105,7 @@ debe. El detalle: [`DESIGN.md`](DESIGN.md); dónde está cada fichero:
 | 8 | Evals y modo no interactivo | ✅ `v0.8.0` (y `v0.8.1`) |
 | 9 | Adaptador de Anthropic | ✅ `v0.9.0` (y `v0.9.1`) |
 | 10 | System prompt por capas | ✅ `v0.10.0` (y `v0.10.1`, `v0.10.2`) |
-| 11 | Contexto virtual | ⬜ |
+| 11 | Contexto virtual | ✅ `v0.11.0` |
 | 12 | Órbita larga | ⬜ |
 | 13 | Deshacer y puntos de control | ⬜ |
 | 14 | Skills y comandos personalizados | ⬜ |

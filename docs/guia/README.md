@@ -20,7 +20,7 @@ Cada nota se escribe en el mismo PR que cierra su hito.
 | 08 | [Cómo se evalúa un agente](08-evals.md) | Escrita (hito 8, `v0.8.0`) |
 | 09 | [Dos formatos para hablar con un modelo](09-formatos-de-api.md) | Escrita (hito 9, `v0.9.0`) |
 | 10 | [El system prompt: lo que el modelo sabe antes de leerte](10-system-prompt.md) | Escrita (hito 10, `v0.10.0`) |
-| 11 | El contexto virtual: ventana fija, archivo y `recall` | Pendiente (hito 11) |
+| 11 | [El contexto virtual: ventana fija, archivo y `recall`](11-contexto-virtual.md) | Escrita (hito 11, `v0.11.0`) |
 | 12 | La órbita larga: menos idas y vueltas al modelo | Pendiente (hito 12) |
 | 13 | Deshacer: puntos de control | Pendiente (hito 13) |
 | 14 | Skills y comandos personalizados | Pendiente (hito 14) |

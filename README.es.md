@@ -11,10 +11,11 @@
 hacerlo, **preguntándote antes de cada cambio**. Funciona con el proveedor y
 el modelo que elijas, y te dice en cada turno lo que ha costado.
 
-> 🚧 **En desarrollo: `v0.10.2`.** Ya es usable para trabajar en un
+> 🚧 **En desarrollo: `v0.11.0`.** Ya es usable para trabajar en un
 > proyecto: conversar, leer y cambiar ficheros, ejecutar comandos, seguir el
 > `AGENTS.md` del proyecto, guardar y retomar sesiones y ver el coste, con
-> modelos del formato de OpenAI y con Claude; y en scripts, con `maha -p`.
+> modelos del formato de OpenAI y con Claude; las sesiones largas cuestan
+> poco; y en scripts, con `maha -p`.
 > Lo que viene, en la [hoja de ruta](#hoja-de-ruta).
 
 ```
@@ -62,13 +63,15 @@ tituló la sesión.)*
 ## Qué hace
 
 - **Trabaja en tu proyecto.** Lee, lista y busca ficheros (`read_file`,
-  `list_dir`, `glob`, `grep`; `glob` y `grep` se saltan lo que ignora
+  `list_dir`, `glob`, `grep`, con las líneas de alrededor de cada
+  coincidencia o solo los ficheros; `glob` y `grep` se saltan lo que ignora
   `.gitignore`), los escribe y edita (`write_file`, `edit_file`, con el diff
   a la vista) y ejecuta comandos (`run_command`).
 - **Conoce tu proyecto.** Antes de tu primer mensaje, el modelo lee el
   `AGENTS.md` del proyecto (o `CLAUDE.md`, si no lo hay), tu
   `~/.config/maha/AGENTS.md` y dónde trabaja: directorio, raíz git,
-  plataforma y fecha. Al arrancar, `maha` dice qué ficheros de
+  plataforma y fecha. El `AGENTS.md` de una subcarpeta llega cuando el
+  modelo lee o cambia un fichero de allí. `maha` dice qué ficheros de
   instrucciones ha cargado, y nunca cambian los permisos. `/init` escribe o
   mejora el `AGENTS.md` del proyecto, y `maha prompt` enseña el system
   prompt entero.
@@ -103,6 +106,20 @@ tituló la sesión.)*
   Anthropic vienen configurados, y puedes declarar cualquier servidor
   compatible. Eliges cuánto se esfuerza el modelo con `--effort` o
   `/effort`.
+- **Las sesiones largas cuestan poco.** El modelo recibe siempre una
+  ventana de trabajo de tamaño fijo (100.000 tokens por defecto, para
+  todos los modelos): los pasos más viejos van enteros al archivo de la
+  sesión, un modelo barato lleva su índice, y el modelo recupera lo que
+  necesita con `recall`. Una salida enorme también va al archivo, y el
+  modelo recibe su principio, su final y su id. `/context` enseña lo que
+  ocupa cada llamada, y `/compact` archiva ya, con tus instrucciones.
+
+  ```
+    [archiving 28,522 tokens of earlier steps…]
+    [archived: 28,522 → 4,535 tokens; $0.0033]
+    → recall(query="cocina cámara de frío")
+    ✓ 5 found
+  ```
 - **Aprovecha la caché del prompt del proveedor.** Con el formato de
   Anthropic, cada paso lee de la caché lo que escribió el anterior: mucho
   más barato que reenviar la conversación entera. Con Claude, el
@@ -138,7 +155,7 @@ Necesitas [uv](https://docs.astral.sh/uv/) (instala también Python 3.14 si
 falta).
 
 ```
-uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.10.2
+uv tool install git+https://github.com/ManexMartikorena/m-harness@v0.11.0
 ```
 
 Después, elige proveedor y modelo:
@@ -162,13 +179,17 @@ maha
 Opcional, en el mismo fichero: un modelo de respaldo, cuánto se esfuerza
 el modelo (`effort`: `low`, `medium`, `high`, `xhigh` o `max`; sin él, el
 del modelo), el modelo que titula las sesiones, más ficheros de
-instrucciones y topes para cada turno.
+instrucciones, la ventana de trabajo y topes para cada turno.
 
 ```toml
 fallback_model = "glm-5.3"
 effort = "high"
 small_model = "glm-5.3-flash"      # títulos; por defecto, el barato del proveedor
 instructions = ["CONTRIBUTING.md"] # se añaden al system prompt
+
+[context]
+budget = 100000                    # tokens por llamada, como mucho
+# archivist_model = "glm-5.3-flash" # quién lleva el índice del archivo
 
 [limits]
 max_steps = 50       # llamadas al modelo
@@ -237,6 +258,8 @@ effort max, cache 1h]`.
 | `/new` | Una sesión nueva sin salir, con el mismo modelo |
 | `/init [TEXTO]` | Escribe o mejora el `AGENTS.md` del proyecto; TEXTO, lo que destacar |
 | `/rename [TÍTULO]` | Enseña el título de la sesión, o le pone uno |
+| `/context` | Lo que ocupa la próxima llamada: system prompt, herramientas, índice del archivo y mensajes, y la caché |
+| `/compact [TEXTO]` | Archiva ya todo menos los últimos pasos; TEXTO, lo que el índice debe conservar |
 | `/export [FICHERO]` | Esta conversación en Markdown; por defecto, `ID.md` |
 | `/exit` | Sale (también Ctrl+D) |
 
@@ -301,18 +324,17 @@ $ git diff | maha -p "revisa este diff" --output-format json | jq -r .result
 | Precios propios (opcional) | `~/.config/maha/models.toml` |
 | Sesiones | `~/.local/share/maha/sessions/` |
 | Trazas | `~/.local/share/maha/traces/` |
+| Archivos de las sesiones | `~/.local/state/maha/archive/` |
 | Registro de diagnóstico | `~/.local/state/maha/maha.log` |
 
-Todo es local. Las sesiones, las trazas y el registro solo los puede leer
-tu usuario. Respeta las variables `XDG_*`.
+Todo es local. Las sesiones, las trazas, los archivos y el registro solo
+los puede leer tu usuario. Respeta las variables `XDG_*`.
 
 ## Hoja de ruta
 
 `maha` crece hito a hito hasta la versión 1.0. Lo siguiente:
 
-- **Contexto virtual**, para que una conversación larga cueste poco con
-  cualquier modelo; **menos idas y vueltas** al modelo, y **deshacer**
-  cambios.
+- **Menos idas y vueltas** al modelo, y **deshacer** cambios.
 - **Skills y comandos propios, memoria entre sesiones, sandbox, modos de
   permiso, subagentes, MCP y hooks.**
 - **Web e imágenes.**
